@@ -54,6 +54,19 @@ def _aux_add_gen(model, network, pm_to_ls, isolated_ls_bus):
     voltage_regulator_on = [True] * len(gen_keys)
     model.init_generators_full(pg, vg, qg, voltage_regulator_on, qmin, qmax, gen_bus)
 
+    # active power limits ("pmin" / "pmax", MATPOWER's PMIN / PMAX): optional in the
+    # source data and never read by the powerflow -- they are what says whether the
+    # active power a distributed slack ended up asking of a machine is one it could
+    # actually deliver (see the batch algorithms' `compute_physical_violations`). A
+    # generator whose limit is missing or not a finite number gets NaN, which the checks
+    # read as "no limit for that one".
+    min_p_mw = np.array([gen[k].get("pmin", np.nan) for k in gen_keys], dtype=np.float64)
+    max_p_mw = np.array([gen[k].get("pmax", np.nan) for k in gen_keys], dtype=np.float64)
+    min_p_mw[~np.isfinite(min_p_mw)] = np.nan
+    max_p_mw[~np.isfinite(max_p_mw)] = np.nan
+    if np.any(np.isfinite(min_p_mw)) or np.any(np.isfinite(max_p_mw)):
+        model.set_gen_p_limits(min_p_mw, max_p_mw)
+
     gen_status = np.array([gen[k].get("gen_status", 1) for k in gen_keys]) > 0
     if isolated_ls_bus.size:
         gen_status &= ~np.isin(gen_bus, isolated_ls_bus)

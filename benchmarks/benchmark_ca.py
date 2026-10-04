@@ -6,21 +6,15 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid a implements a c++ backend targeting the Grid2Op platform.
 
-import warnings
-import copy
+import time
+
 import pandapower as pp
 import numpy as np        
-import hashlib
-from scipy.interpolate import interp1d
-import matplotlib.pyplot as plt
-from grid2op import make, Parameters
-from grid2op.Chronics import FromNPY
-from grid2op.Backend import PandaPowerBackend
-from lightsim2grid import LightSimBackend, TimeSerie, ContingencyAnalysis
+from lightsim2grid import ContingencyAnalysis
 
 from tqdm import tqdm
 import os
-from utils_benchmark import print_configuration, get_env_name_displayed
+from utils_benchmark import get_env_name_displayed
 from benchmark_solvers import solver_names
 
 try:
@@ -93,9 +87,11 @@ def _run_one_config(env_lightsim, *, init_from_n_powerflow=False,
     sa.init_from_n_powerflow = init_from_n_powerflow
     sa.handle_disconnected_grid = handle_disconnected_grid
     sa.nb_thread = nb_thread
+    beg_ = time.perf_counter()
     sa.get_flows()
+    end_ = time.perf_counter()
     computer_sa = sa.computer
-    total_time = computer_sa.total_time() + computer_sa.amps_computation_time()
+    total_time = end_ - beg_
     nb_solved = computer_sa.nb_solved()
     pf_per_s = nb_solved / total_time if total_time > 0. else float("nan")
     sa.close()

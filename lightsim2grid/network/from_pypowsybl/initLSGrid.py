@@ -54,6 +54,8 @@ def init(net : pypo.network.Network,
          fuse_zero_impedance_branches: bool=False,
          zero_impedance_threshold_pu: float=1e-8,
          battery_active_power_control: str="auto",
+         can_be_pv=None,
+         can_participate_slack=None,
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -209,11 +211,42 @@ def init(net : pypo.network.Network,
         extension is read from, when the default distributed slack (no ``gen_slack_id``
         nor ``slack_bus_id``) also distributes on the batteries, as OpenLoadFlow does.
         ``"auto"`` (default) reads it off pypowsybl when it lists batteries there, else
-        off an XIIDM export of ``net`` (pypowsybl <= 1.16.1 does not list them; the
-        export costs about the size of the network file); ``"extension"`` never exports
+        off a JIIDM export of ``net`` (pypowsybl <= 1.16.1 does not list them; the
+        export serializes the whole network); ``"extension"`` never exports
         the network; ``"default"`` gives every battery OpenLoadFlow's defaults
         (participating, droop 4).
     :type battery_active_power_control: str
+
+    :param can_be_pv: The elements an outer loop froze out of voltage control and would
+        switch (back) to it: the ids ``bake_outer_loops`` returns, or any iterable of
+        generator / static var compensator ids, or a boolean ``pandas.Series`` indexed by
+        id, or a boolean array in the order of ``net.get_generators()`` (sorted when
+        ``sort_index``; it flags generators only). ``None`` (default) flags nothing. A
+        generator is flagged as "pinned at a reactive limit" (``LSGrid.set_gen_can_be_pv``
+        / ``GenInfo.can_be_pv``); a static var compensator whose ``standbyAutomaton`` says
+        ``standby`` as a standby SVC left idle, its thresholds handed to
+        ``LSGrid.set_svc_standby``; any other static var compensator as frozen at a reactive
+        limit (``LSGrid.set_svc_can_be_pv`` / ``SvcInfo.can_be_pv``); a VSC converter station as
+        frozen at a reactive limit (``LSGrid.set_hvdc_can_be_pv`` / ``ConverterStationInfo.can_be_pv``,
+        per hvdc line and side). Nothing in a powerflow reads it: it only opens those elements to
+        the physical check of that switch (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on
+        a generator, a frozen SVC or the hvdc line of a frozen station,
+        ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on an idle standby SVC, see
+        ``LSGrid.get_physical_violations``). An unknown id raises.
+    :type can_be_pv: None, Iterable[str], pandas.Series or numpy.ndarray
+
+    :param can_participate_slack: The generators and batteries an outer loop left out of the
+        distributed slack ONLY because they sat at an active limit in the reference solve --
+        the ids ``bake_outer_loops(..., return_details=True).can_participate_slack`` returns.
+        They get the weight OpenLoadFlow's rule gives a participant, normalised with the
+        slack weights, and take part in the bounded redistribution pre-pass only
+        (``LSGrid.set_gen_can_participate_slack``, ``consider_only_main_component(True)``,
+        the batch algorithms' ``redistribute_slack``): within their ``[min_p, max_p]``, so
+        they only move away from the limit they sit at, as OpenLoadFlow lets them. Never
+        read by the Newton solve. Needs OpenLoadFlow's default distributed slack
+        (``gen_slack_id`` and ``slack_bus_id`` left to ``None``). ``None`` (default) flags
+        nothing. An unknown id raises.
+    :type can_participate_slack: None or Iterable[str]
 
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
@@ -241,8 +274,14 @@ def init(net : pypo.network.Network,
         convert_dangling_lines, fuse_zero_impedance_branches, zero_impedance_threshold_pu,
     )
 
-    # generators
-    df_gen, gen_sub = _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
+    # generators (`can_be_pv` may also hold static var compensator ids, see _aux_add_svc)
+    # (and VSC converter station ids, see _aux_add_hvdc)
+    svc_ids = None
+    if can_be_pv is not None:
+        svc_ids = net.get_static_var_compensators(attributes=["connected"]).index.append(
+            net.get_vsc_converter_stations(attributes=["connected"]).index)
+    df_gen, gen_sub = _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+                                          can_be_pv=can_be_pv, can_be_pv_other_ids=svc_ids)
 
     # loads
     df_load, load_sub = _aux_add_loads(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, df_dl)
@@ -270,11 +309,13 @@ def init(net : pypo.network.Network,
     df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
 
     # SVCs
-    df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used)
+    df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used,
+                          can_be_pv=can_be_pv)
 
     # HVDC lines
     df_dc, hvdc_sub_from_id, hvdc_sub_to_id = _aux_add_hvdc(
         model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+        can_be_pv=can_be_pv,
     )
 
     # storage units
@@ -283,14 +324,17 @@ def init(net : pypo.network.Network,
     # slack bus(es)
     gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
                                        df_batt=df_batt,
-                                       battery_active_power_control=battery_active_power_control)
+                                       battery_active_power_control=battery_active_power_control,
+                                       can_participate_slack=can_participate_slack)
 
     # TODO checks
     # no 3windings trafo and other exotic stuff
 
     # and now deactivate all elements and nodes not in the main component
     if only_main_component:
-        model.consider_only_main_component()
+        # the set-points stay the file's: no redistribution of what is outside the main
+        # component (it was never solved by the file's own powerflow either)
+        model.consider_only_main_component(False)
     else:
         # automatically disconnect non connected buses
         # (this is automatically done by consider_only_main_component)

@@ -45,6 +45,12 @@ ATTR_GENS_INPUT = [
     # NaN compare equal here, so a grid without them is not reported as differing
     "min_p_mw",
     "max_p_mw",
+    # the PQ machines a caller flagged as pinned at a reactive limit (see
+    # LSGrid.set_gen_can_be_pv): False unless set
+    "can_be_pv",
+    # left out of the slack only because it sat at an active limit (see
+    # LSGrid.set_gen_can_participate_slack): 0 unless set
+    "can_participate_slack_weight",
 ]
 
 
@@ -69,6 +75,13 @@ ATTR_STORAGES_INPUT = [
     "target_q_mvar",
     "is_slack",
     "slack_weight",
+    # optional (NaN when the grid was never given any, see LSGrid.set_storage_p_limits),
+    # and in the generator convention unlike `target_p_mw`: two NaN compare equal here,
+    # so a grid without them is not reported as differing
+    "min_p_mw",
+    "max_p_mw",
+    # see LSGrid.set_storage_can_participate_slack: 0 unless set
+    "can_participate_slack_weight",
 ]
 
 
@@ -148,6 +161,13 @@ ATTR_SVC_INPUT = [
     "b_min",
     "b_max",
     "regulated_bus_id",
+    # the idle standby SVCs a caller flagged (see LSGrid.set_svc_standby): False / NaN
+    # unless set, and two NaN compare equal here
+    "standby",
+    "standby_low_vm_pu",
+    "standby_high_vm_pu",
+    # the SVCs a caller flagged as frozen at a reactive limit (see LSGrid.set_svc_can_be_pv)
+    "can_be_pv",
 ]
 
 
@@ -161,6 +181,8 @@ ATTR_STATION_INPUT = [
     "min_q_mvar",
     "max_q_mvar",
     "power_factor",
+    # a VSC station a caller flagged as frozen at a reactive limit (LSGrid.set_hvdc_can_be_pv)
+    "can_be_pv",
 ]
 
 

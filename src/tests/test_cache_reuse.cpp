@@ -72,6 +72,34 @@ CplxVect flat_start(const LSGrid & grid)
 CplxVect solve_ac(LSGrid & grid){ return grid.ac_pf(flat_start(grid), 30, 1e-10); }
 CplxVect solve_dc(LSGrid & grid){ return grid.dc_pf(flat_start(grid), 1, 1e-10); }
 
+// new physical parameters (pu) for every powerline / transformer of the grid, topology unchanged
+void update_all_powerlines(LSGrid & g)
+{
+    const int n = static_cast<int>(g.nb_powerline());
+    RealVect r(n), x(n);
+    CplxVect h1(n), h2(n);
+    for(int i = 0; i < n; ++i){
+        r(i) = 0.01 + 0.001 * i;
+        x(i) = 0.05 + 0.01 * i;
+        h1(i) = cplx_type(0.0005 * i, 0.002 * i);
+        h2(i) = cplx_type(0.0003 * i, 0.003 * i);  // asymmetric on purpose
+    }
+    g.update_powerlines_parameters(r, x, h1, h2);
+}
+
+void update_all_trafos(LSGrid & g)
+{
+    const int n = static_cast<int>(g.nb_trafo());
+    RealVect r(n), x(n);
+    CplxVect b(n);
+    for(int i = 0; i < n; ++i){
+        r(i) = 0.005 + 0.001 * i;
+        x(i) = 0.1 + 0.02 * i;
+        b(i) = cplx_type(0.0002 * i, 0.004 * i);
+    }
+    g.update_trafos_parameters(r, x, b);
+}
+
 // every mutating entry point of LSGrid that can move a number in the powerflow.
 // `apply` is run once, on a grid built by make_grid().
 struct NamedMutation {
@@ -121,6 +149,8 @@ std::vector<NamedMutation> all_mutations()
         // --- branch characteristics -----------------------------------------
         {"change_ratio_trafo",     [](LSGrid & g){ g.change_ratio_trafo(0, 1.05); }},
         {"change_shift_trafo_deg", [](LSGrid & g){ g.change_shift_trafo_deg(2, 4.); }},
+        {"update_powerlines_parameters", [](LSGrid & g){ update_all_powerlines(g); }},
+        {"update_trafos_parameters",     [](LSGrid & g){ update_all_trafos(g); }},
         // --- slack ----------------------------------------------------------
         {"add_gen_slackbus",       [](LSGrid & g){ g.add_gen_slackbus(1, 1.); }},
         {"add then remove a slack gen",
@@ -195,6 +225,79 @@ TEST_CASE("every grid modification survives cache reuse", "[LSGrid][cache_reuse]
             CHECK((v_cached - v_rebuilt).norm() < 1e-9);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// physical parameters: the values of Ybus are refreshed, the analysis is not redone
+// ---------------------------------------------------------------------------
+
+TEST_CASE("updating the physical parameters does not trigger a new symbolic analysis",
+          "[LSGrid][cache_reuse][update_parameters]")
+{
+    // Only the numbers of Ybus change (same buses, same statuses, same sparsity
+    // pattern): the linear solver must reuse its symbolic analysis and only
+    // refactorize. Counted with the linear solver statistics.
+    //
+    // This is decided by the solvers, not by the setters: NRAlgo::solve and
+    // BaseDCAlgo::solve take the numeric-refactorize path when Ybus was recomputed with
+    // the same sparsity pattern (a pattern change is flagged separately, see the control
+    // test below). Before that, any change flagged with tell_recompute_ybus() -- these
+    // setters, change_ratio_trafo, change_shift_trafo -- rebuilt everything, analysis
+    // included.
+    struct Family {
+        const char * name;
+        AlgorithmType algo;
+        bool ac;
+    };
+    for(const Family & fam : {Family{"ac", AlgorithmType::NR_SparseLU, true},
+                              Family{"dc", AlgorithmType::DC_SparseLU, false}}){
+        SECTION(std::string(fam.name) + ": lines and trafos"){
+            LSGrid grid = make_grid();
+            grid.change_algorithm(fam.algo);
+            const auto solve = [&](LSGrid & g){ return fam.ac ? solve_ac(g) : solve_dc(g); };
+            const auto stats = [&](const LSGrid & g){
+                return fam.ac ? g.get_algo().get_linear_solver_stats()
+                              : g.get_dc_algo().get_linear_solver_stats(); };
+
+            REQUIRE(solve(grid).size() == 14);
+            const auto before = stats(grid);
+            REQUIRE(before.nb_analyze >= 1);
+
+            update_all_powerlines(grid);
+            update_all_trafos(grid);
+            const CplxVect v = solve(grid);
+            REQUIRE(v.size() == 14);
+            const auto after = stats(grid);
+
+            // the analysis is NOT performed again ...
+            CHECK(after.nb_analyze == before.nb_analyze);
+            // ... but the new values were factorized
+            CHECK(after.nb_factorize + after.nb_refactorize > before.nb_factorize + before.nb_refactorize);
+
+            // and the answer is the one of a grid that never reused anything
+            LSGrid ref = make_grid();
+            ref.change_algorithm(fam.algo);
+            ref.allow_cache_reuse(false);
+            update_all_powerlines(ref);
+            update_all_trafos(ref);
+            CHECK((v - solve(ref)).norm() < 1e-9);
+        }
+    }
+}
+
+TEST_CASE("the linear solver statistics do count a new analysis",
+          "[LSGrid][cache_reuse][update_parameters]")
+{
+    // re-activating a line can add a coefficient to Ybus, so the solver is told the
+    // pattern changed. If this stopped counting, the test above would prove nothing.
+    LSGrid grid = make_grid();
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    grid.deactivate_powerline(4);
+    REQUIRE(solve_ac(grid).size() == 14);
+    const auto before = grid.get_algo().get_linear_solver_stats();
+    grid.reactivate_powerline(4);
+    REQUIRE(solve_ac(grid).size() == 14);
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze > before.nb_analyze);
 }
 
 TEST_CASE("a long run of modifications stays identical with and without reuse", "[LSGrid][cache_reuse]")

@@ -14,6 +14,14 @@
 
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
+// the physical-limit checks of the batch algorithms, run here on a single solve
+#include "batch_algorithm/BusQCheck.hpp"
+#include "batch_algorithm/GenPCheck.hpp"
+#include "batch_algorithm/GenPvReleaseCheck.hpp"
+#include "batch_algorithm/SvcStandbyCheck.hpp"
+#include "batch_algorithm/HvdcPCheck.hpp"
+// ... and the operational ones (LSGrid::get_violations)
+#include "batch_algorithm/OperationalCheck.hpp"
 
 #include <cmath>      // std::isfinite (check_positive_finite)
 #include <queue>
@@ -26,12 +34,17 @@ namespace ls2g {
 LSGrid::LSGrid(const LSGrid & other)
 {
     init_vm_pu_ = other.init_vm_pu_;
+    keep_vinit_group_controlled_ = other.keep_vinit_group_controlled_;
+    hold_frozen_regulators_ = other.hold_frozen_regulators_;
     sn_mva_ = other.sn_mva_;
     compute_results_ = other.compute_results_;
     ac_cache_.allow_reuse = other.ac_cache_.allow_reuse;
     dc_cache_.allow_reuse = other.dc_cache_.allow_reuse;
     init_kwargs_ = other.init_kwargs_;
     _bus_fusion_rep = other._bus_fusion_rep;
+    // a batch (ContingencyAnalysis...) works on its own copy of the grid and has to
+    // see the reference chosen for it, see set_reference_slack_bus
+    _forced_ref_slack_bus_id = other._forced_ref_slack_bus_id;
 
     // copy the powersystem representation
     // 1. bus
@@ -918,10 +931,11 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     data.clear();
     if(!ac) return;  // DC: no voltage control (no-op, SVC contributes nothing)
     VoltageControlPlan plan;
-    plan.build_groups(generators_, svcs_);
+    plan.build_groups(generators_, svcs_, true, hold_frozen_regulators_);
     plan.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                            ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
-                           ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq);
+                           ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq,
+                           hold_frozen_regulators_);
     data = plan.controllers();
 }
 
@@ -975,7 +989,7 @@ void LSGrid::_throw_if_voltage_control_needed() const
 std::set<int> LSGrid::get_group_controlled_buses() const
 {
     VoltageControlPlan plan;
-    plan.build_groups(generators_, svcs_);
+    plan.build_groups(generators_, svcs_, true, hold_frozen_regulators_);
     return plan.group_controlled_buses();
 }
 
@@ -985,7 +999,7 @@ std::set<int> LSGrid::get_free_vm_slack_solver_buses() const
     // here would make a query that cannot fail start throwing on a configuration
     // the bordered formulation cannot express.
     VoltageControlPlan plan;
-    plan.build_groups(generators_, svcs_);
+    plan.build_groups(generators_, svcs_, true, hold_frozen_regulators_);
     plan.build_free_vm_slack(generators_, storages_, ac_cache_.id_me_to_solver,
                              ac_cache_.id_solver_to_me, ac_cache_.slack_bus_id_solver);
     return plan.free_vm_slack_buses();
@@ -1232,27 +1246,6 @@ CplxVect LSGrid::_build_into_cache(
             solver_control.need_reset_solver() ||
             solver_control.has_dimension_changed();
 
-    if (redo_all || solver_control.has_slack_participate_changed()){
-        cache.slack_bus_id_me = _slack_bus_id_me();
-        // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
-        // conversion to solver ordering is done in init_slack_bus
-
-        // Optional forced angle reference: move the requested (gridmodel) bus to
-        // the front so the NR uses it as slack_ids[0] (the reference) without
-        // changing the slack set or weights. See LSGrid::set_reference_slack_bus.
-        if (_forced_ref_slack_bus_id >= 0){
-            std::vector<int> sids = cache.slack_bus_id_me.to_int_vector();
-            for (std::size_t i = 1; i < sids.size(); ++i){
-                if (sids[i] == _forced_ref_slack_bus_id){
-                    const int ref = sids[i];
-                    sids.erase(sids.begin() + static_cast<std::ptrdiff_t>(i));
-                    sids.insert(sids.begin(), ref);
-                    cache.slack_bus_id_me = GlobalBusIdVect(sids);
-                    break;
-                }
-            }
-        }
-    }
     // ---- the per-bus element counts ---------------------------------------------
     // Everything else this function builds is derived, here and now, from the
     // elements; the counts are the exception. They are maintained INCREMENTALLY --
@@ -1286,6 +1279,30 @@ CplxVect LSGrid::_build_into_cache(
         recompute_bus_element_counts();
     } else if (redo_all || solver_control.has_one_el_changed_bus()){
         init_bus_status();
+    }
+    // (before the slack bus list below: a slack bus that left the grid is dropped
+    // from it, which reads these counts -- see _slack_bus_id_me)
+
+    if (redo_all || solver_control.has_slack_participate_changed()){
+        cache.slack_bus_id_me = _slack_bus_id_me();
+        // this is the slack bus ids with the gridmodel ordering, not the solver ordering.
+        // conversion to solver ordering is done in init_slack_bus
+
+        // Optional forced angle reference: move the requested (gridmodel) bus to
+        // the front so the NR uses it as slack_ids[0] (the reference) without
+        // changing the slack set or weights. See LSGrid::set_reference_slack_bus.
+        if (_forced_ref_slack_bus_id >= 0){
+            std::vector<int> sids = cache.slack_bus_id_me.to_int_vector();
+            for (std::size_t i = 1; i < sids.size(); ++i){
+                if (sids[i] == _forced_ref_slack_bus_id){
+                    const int ref = sids[i];
+                    sids.erase(sids.begin() + static_cast<std::ptrdiff_t>(i));
+                    sids.insert(sids.begin(), ref);
+                    cache.slack_bus_id_me = GlobalBusIdVect(sids);
+                    break;
+                }
+            }
+        }
     }
 
     bool converter_changed = false;
@@ -1333,9 +1350,13 @@ CplxVect LSGrid::_build_into_cache(
     // this one's. Gating it on the AC algorithm's capability, which is what
     // `supports_voltage_control` carries, would have done exactly that by accident.
     const bool is_ac_family = SolverSideCache<MatScalar>::is_ac;
+    // Holding the frozen remote regulators (set_hold_frozen_regulators) is a matter of
+    // the AC bordered block only: the DC family never sees it.
+    const bool hold_frozen = is_ac_family && supports_voltage_control && hold_frozen_regulators_;
     if (rebuild_voltage_control){
         cache.voltage_control.build_groups(generators_, svcs_,
-                                           !is_ac_family || supports_voltage_control);
+                                           !is_ac_family || supports_voltage_control,
+                                           hold_frozen);
     }
     if (rebuild_split) {
         init_slack_bus(cache.id_me_to_solver, cache.id_solver_to_me, cache.slack_bus_id_me, cache.slack_bus_id_solver);
@@ -1349,7 +1370,8 @@ CplxVect LSGrid::_build_into_cache(
     if (rebuild_voltage_control && supports_voltage_control && is_ac_family){
         cache.voltage_control.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                                                 cache.id_me_to_solver, cache.id_solver_to_me,
-                                                cache.slack_bus_id_solver, cache.bus_pq);
+                                                cache.slack_bus_id_solver, cache.bus_pq,
+                                                hold_frozen);
     }
 
     // type-specific injection assembly (complex Sbus for AC, real Pbus for DC)
@@ -1388,11 +1410,17 @@ CplxVect LSGrid::_build_into_cache(
         // NR-initialization heuristic only: snaps regulated buses with no droop/slope
         // to their own target voltage magnitude. Skipped by check_solution, which must
         // evaluate the caller-supplied voltage as given (see the `init_pv_vm_targets`
-        // doc on `pre_process_solver`).
-        generators_.set_vm(V, cache.id_me_to_solver);
-        hvdc_lines_.set_vm(V, cache.id_me_to_solver);
-        svcs_.set_vm(V, cache.id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
-        storages_.set_vm(V, cache.id_me_to_solver);  // voltage-regulating storage units (local PV)
+        // doc on `pre_process_solver`). Opt-in: the buses a control group regulates
+        // keep the caller's magnitude (see set_keep_vinit_at_group_controlled_buses).
+        const std::vector<int> held = keep_vinit_group_controlled_
+                ? cache.voltage_control.group_controlled_solver_buses(cache.id_me_to_solver)
+                : std::vector<int>();
+        seed_vm_keeping(V, held, [this, &cache](CplxVect & V_seed){
+            generators_.set_vm(V_seed, cache.id_me_to_solver);
+            hvdc_lines_.set_vm(V_seed, cache.id_me_to_solver);
+            svcs_.set_vm(V_seed, cache.id_me_to_solver);  // VOLTAGE-mode SVCs (init quality at the regulated bus)
+            storages_.set_vm(V_seed, cache.id_me_to_solver);  // voltage-regulating storage units (local PV)
+        });
     }
 
     if(redo_all ||
@@ -2542,28 +2570,48 @@ GlobalBusIdVect LSGrid::_slack_bus_id_me() const{
     generators_.append_slack_bus_id(buses);
     storages_.append_slack_bus_id(buses);
     if(buses.empty()) throw std::runtime_error("LSGrid: no generator nor storage unit is tagged slack bus for this grid.");
-    return GlobalBusIdVect(buses);
+    // a slack bus no longer in the grid -- the island consider_only_main_component cut a
+    // slack unit off with -- is dropped: its units stay in the slack and come back with it.
+    // A slack bus still in the grid stays one even when its units are disconnected (it
+    // then holds the angle reference and the imbalance on its own, as before).
+    _ensure_bus_counts();
+    std::vector<int> kept;
+    kept.reserve(buses.size());
+    for(int bus : buses){
+        if(substations_.is_bus_connected(GridModelBusId(bus))) kept.push_back(bus);
+    }
+    if(kept.empty()) throw std::runtime_error("LSGrid: every bus with a generator or storage unit tagged slack bus is out of the grid.");
+    return GlobalBusIdVect(kept);
 }
 
 RealVect LSGrid::_raw_slack_weights_solver(size_t nb_bus_solver,
                                            const SolverBusIdVect & id_me_to_solver,
-                                           const std::vector<bool> * gen_off) const{
+                                           const std::vector<bool> * gen_off,
+                                           const std::vector<bool> * storage_off) const{
     RealVect res = RealVect::Zero(static_cast<Eigen::Index>(nb_bus_solver));
     generators_.accumulate_slack_weights_solver(res, id_me_to_solver, gen_off);
-    storages_.accumulate_slack_weights_solver(res, id_me_to_solver);
+    storages_.accumulate_slack_weights_solver(res, id_me_to_solver, storage_off);
     return res;
 }
 
 RealVect LSGrid::get_slack_weights_solver_without(size_t nb_bus_solver,
                                                   const SolverBusIdVect & id_me_to_solver,
-                                                  const std::vector<bool> & gen_off) const{
+                                                  const std::vector<bool> & gen_off,
+                                                  const std::vector<bool> & storage_off) const{
     if(gen_off.size() != static_cast<std::size_t>(generators_.nb())){
         std::ostringstream exc_;
         exc_ << "LSGrid::get_slack_weights_solver_without: 'gen_off' has " << gen_off.size()
              << " elements but this grid has " << generators_.nb() << " generators.";
         throw std::runtime_error(exc_.str());
     }
-    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_me_to_solver, &gen_off);
+    if(!storage_off.empty() && storage_off.size() != static_cast<std::size_t>(storages_.nb())){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::get_slack_weights_solver_without: 'storage_off' has " << storage_off.size()
+             << " elements but this grid has " << storages_.nb() << " storage units.";
+        throw std::runtime_error(exc_.str());
+    }
+    RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_me_to_solver, &gen_off,
+                                             storage_off.empty() ? nullptr : &storage_off);
     const real_type sum_res = res.sum();
     // no participant left: leave the vector at zero rather than dividing by it, and let
     // the caller decide (see BaseBatchSweep::_row_slack_weights)
@@ -2643,6 +2691,9 @@ void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynami
     // A is walked first (1 -> 0 -> 1) and not if B is (1 -> 2 -> 1). Both are
     // correct; keep the order stable so the flags a given action raises are too.
     // A new topology-participating container goes at the end of this list.
+    // the units this action reconnects may go back into the slack (see _rejoin_slack_if_reconnected)
+    const std::vector<bool> gen_status_before = generators_.get_status();
+    const std::vector<bool> storage_status_before = storages_.get_status();
     loads_.update_topo(has_changed, new_values, algo_controler_, substations_);
     generators_.update_topo(has_changed, new_values, algo_controler_, substations_);
     storages_.update_topo(has_changed, new_values, algo_controler_, substations_);
@@ -2650,6 +2701,19 @@ void LSGrid::update_topo(const Eigen::Ref<const Eigen::Array<bool, Eigen::Dynami
     // and same for trafo, obviously
     powerlines_.update_topo(has_changed, new_values, algo_controler_, substations_);
     trafos_.update_topo(has_changed, new_values, algo_controler_, substations_);
+    _rejoin_slack_if_reconnected(gen_status_before, storage_status_before);
+}
+
+void LSGrid::_rejoin_slack_if_reconnected(const std::vector<bool> & gen_status_before,
+                                          const std::vector<bool> & storage_status_before){
+    const std::vector<bool> & gen_status = generators_.get_status();
+    for(int gen_id = 0; gen_id < generators_.nb(); ++gen_id){
+        if(gen_status[gen_id] && !gen_status_before[gen_id]) generators_.rejoin_slackbus_if_able(gen_id, algo_controler_);
+    }
+    const std::vector<bool> & storage_status = storages_.get_status();
+    for(int storage_id = 0; storage_id < storages_.nb(); ++storage_id){
+        if(storage_status[storage_id] && !storage_status_before[storage_id]) storages_.rejoin_slackbus_if_able(storage_id, algo_controler_);
+    }
 }
 
 // for FDPF (implementation of the alg 2 method FDBX (FDXB will follow)  // TODO FDPF
@@ -2743,8 +2807,272 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     return res;
 }
 
+real_type LSGrid::_lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const{
+    // what leaves the solved grid with the islanded buses, in generator convention and
+    // from the SETPOINTS (the last results may be stale, or never computed): what a
+    // one-sided element injects is exactly what `disconnect_if_not_in_main_component`
+    // takes out below. An HVDC line keeps its in-main converter injecting, so only its
+    // stranded converter(s) count (a rectifier stranded with its island takes a
+    // consumption out of the balance, like a load); an SVC has no active power.
+    const auto bus_lost = [&bus_in_main_cc](int bus_me){ return !bus_in_main_cc[bus_me]; };
+    real_type lost = 0.;
+    lost += slack_redistribution::sum_hvdc_station_setpoints_if(hvdc_lines_, bus_lost);
+    lost += slack_redistribution::sum_setpoints_if(
+        generators_, 1., bus_lost, [this](int el_id){ return generators_.get_target_p()(el_id); });
+    lost += slack_redistribution::sum_setpoints_if(
+        sgens_, 1., bus_lost, [this](int el_id){ return sgens_.get_target_p()(el_id); });
+    lost += slack_redistribution::sum_setpoints_if(
+        loads_, -1., bus_lost, [this](int el_id){ return loads_.get_target_p()(el_id); });
+    lost += slack_redistribution::sum_setpoints_if(
+        storages_, -1., bus_lost, [this](int el_id){ return storages_.get_target_p()(el_id); });
+    lost += slack_redistribution::sum_setpoints_if(
+        shunts_, -1., bus_lost, [this](int el_id){ return shunts_.get_target_p()(el_id); });
+    return lost;
+}
+
+slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatch_mw){
+    using slack_redistribution::Participant;
+    using slack_redistribution::UnitKind;
+    const auto keep_all = [](int){ return true; };
+    const auto none_off = [](int){ return false; };
+    std::vector<Participant> units;
+    slack_redistribution::append_participants(
+        generators_, UnitKind::GENERATOR, 1., keep_all, none_off,
+        [this](int gen_id){ return generators_.get_target_p()(gen_id); }, units);
+    slack_redistribution::append_participants(
+        storages_, UnitKind::STORAGE, -1., keep_all, none_off,
+        [this](int storage_id){ return storages_.get_target_p()(storage_id); }, units);
+
+    std::vector<real_type> new_inj;
+    std::vector<char> saturated;
+    const slack_redistribution::Report report = slack_redistribution::distribute(
+        units, mismatch_mw, slack_redistribution::default_eps_mw, new_inj, saturated);
+
+    // the setpoints first, the slack second: a generator still flagged slack does not
+    // re-evaluate its PV status on a change of P (GeneratorContainer::_on_change_p), and
+    // leaving the slack triggers the re-evaluation the solver needs anyway
+    for(std::size_t k = 0; k < units.size(); ++k){
+        if(std::abs(new_inj[k] - units[k].injection_mw) <= BaseConstants::_tol_equal_float) continue;
+        if(units[k].kind == UnitKind::GENERATOR){
+            generators_.change_p_nothrow(units[k].el_id, new_inj[k], algo_controler_);
+        }else{
+            storages_.change_p_nothrow(units[k].el_id, -new_inj[k], algo_controler_);
+        }
+    }
+    for(std::size_t k = 0; k < units.size(); ++k){
+        // a unit only flagged "can participate in the slack" was never in it. A saturated
+        // one leaves it until it is moved off its limit (SlackParticipation::leave): the
+        // set-points written above go straight to the containers, so they do not count
+        // as that move -- the batch algorithms, which cannot change a row's slack set,
+        // land on the same slack as this.
+        if(!saturated[k] || !units[k].in_slack) continue;
+        if(units[k].kind == UnitKind::GENERATOR){
+            generators_.leave_slackbus(units[k].el_id, algo_controler_);
+        }else{
+            storages_.leave_slackbus(units[k].el_id, algo_controler_);
+        }
+    }
+    return report;
+}
+
+std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type tol_mva, real_type tol_vm_pu) const{
+    const char * fun_name = "LSGrid::get_physical_violations";
+    const SolverBusLayout & layout = ac ? static_cast<const SolverBusLayout &>(ac_cache_)
+                                        : static_cast<const SolverBusLayout &>(dc_cache_);
+    const AlgorithmSelector & algo = ac ? _algo : _dc_algo;
+    if(layout.id_solver_to_me.size() == 0){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": no " << (ac ? "AC" : "DC") << " powerflow has run on this grid yet.";
+        throw std::runtime_error(exc_.str());
+    }
+    if(algo.get_error() != ErrorType::NoError){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": the last " << (ac ? "AC" : "DC")
+             << " powerflow did not converge, there is no solution to check.";
+        throw std::runtime_error(exc_.str());
+    }
+    if(ac && !algo.fills_bus_mismatch()){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": needs an algorithm that publishes its per-bus mismatch (that "
+                "mismatch IS the reactive power the machines pinning each bus had to produce). "
+                "Every built-in AC algorithm does; the active one (" << algo.get_name()
+             << ") does not, so it is a plugin solver that has not opted in (see "
+                "BaseAlgo::fills_bus_mismatch). Pick a built-in AC algorithm (change_algorithm).";
+        throw std::runtime_error(exc_.str());
+    }
+    std::vector<LimitViolation> out;
+    // nothing is masked and nothing is disconnected "for this row": the grid IS the row
+    const std::vector<int> * no_mask = nullptr;
+    if(ac){
+        bus_q_check::BusQPlan plan;
+        bus_q_check::build_bus_q_plan(*this, layout.id_me_to_solver,
+                                      ac_cache_.voltage_control.controllers(), plan);
+        if(!plan.empty()){
+            const RealVect ctrl_q = plan.needs_controller_q ? algo.get_controller_q() : RealVect();
+            bus_q_check::check_bus_q_violations(
+                plan, *this, algo.get_bus_mismatch(), algo.get_V(), ctrl_q, sn_mva_, tol_mva,
+                no_mask, [](int){ return false; }, out);
+        }
+        // the PQ -> PV direction, on the machines the caller flagged (same order as the
+        // batch: bus Q, then this, then hvdc, then gen P)
+        gen_pv_release_check::GenPvReleasePlan release_plan;
+        gen_pv_release_check::build_gen_pv_release_plan(*this, layout.id_me_to_solver, release_plan);
+        if(!release_plan.empty()){
+            gen_pv_release_check::check_gen_pv_release_violations(
+                release_plan, algo.get_V(), tol_vm_pu, no_mask,
+                [this](int gen_id){ return generators_.get_target_vm_pu(gen_id); },
+                [](int){ return false; }, out);
+        }
+        // the idle standby SVCs the caller flagged, whose automaton would switch them on
+        svc_standby_check::SvcStandbyPlan standby_plan;
+        svc_standby_check::build_svc_standby_plan(*this, layout.id_me_to_solver, standby_plan);
+        if(!standby_plan.empty()){
+            svc_standby_check::check_svc_standby_violations(standby_plan, algo.get_V(), tol_vm_pu,
+                                                            no_mask, out);
+        }
+    }
+    hvdc_p_check::HvdcPPlan hvdc_plan;
+    hvdc_p_check::build_hvdc_p_plan(*this, layout.id_me_to_solver, hvdc_plan);
+    if(!hvdc_plan.empty()){
+        hvdc_p_check::check_hvdc_p_violations(hvdc_plan, algo.get_Va(), tol_mva, no_mask, out);
+    }
+    gen_p_check::GenPPlan gen_plan;
+    gen_p_check::build_gen_p_plan(*this, layout.id_me_to_solver, gen_plan);
+    if(!gen_plan.empty()){
+        gen_p_check::SlackShareInputs slack(algo.get_bus_mismatch(), layout.slack_weights, sn_mva_, ac);
+        if(ac) slack.slack_absorbed = algo.get_slack_absorbed();
+        else slack.dc_imbalance_mw = -dc_cache_.inj.sum() * sn_mva_;
+        // the grid's own targets, generator convention (a storage unit's is in load convention)
+        gen_p_check::check_gen_p_violations(
+            gen_plan, slack, tol_mva, no_mask,
+            [this](ViolationElementType el_type, int el_id){
+                return (el_type == ViolationElementType::GENERATOR)
+                       ? generators_.get_target_p()(el_id) : -storages_.get_target_p()(el_id); },
+            [](ViolationElementType, int){ return false; },
+            [](ViolationElementType, int){ return false; },
+            out);
+    }
+    return out;
+}
+
+std::vector<LimitViolation> LSGrid::cap_slack_at_active_limits(int max_iter, real_type tol,
+                                                               real_type tol_mw, int max_rounds){
+    const char * fun_name = "LSGrid::cap_slack_at_active_limits";
+    std::vector<LimitViolation> capped;
+    for(int round = 0; round < max_rounds; ++round){
+        // the slack units the last solve pushed past a limit
+        std::vector<LimitViolation> over;
+        for(const LimitViolation & v : get_physical_violations(true, tol_mw, 0.)){
+            const bool unit = v.element_type == ViolationElementType::GENERATOR
+                              || v.element_type == ViolationElementType::STORAGE;
+            const bool active = v.violation_type == LimitViolationType::HIGH_P
+                                || v.violation_type == LimitViolationType::LOW_P;
+            if(unit && active) over.push_back(v);
+        }
+        if(over.empty()) break;
+
+        const int nb_gen = generators_.nb();
+        const int nb_sto = storages_.nb();
+        std::vector<bool> gen_out(nb_gen, false), sto_out(nb_sto, false);
+        for(const LimitViolation & v : over){
+            if(v.element_type == ViolationElementType::GENERATOR) gen_out[v.element_id] = true;
+            else sto_out[v.element_id] = true;
+        }
+        // OpenLoadFlow keeps every unit in the slack when all of them saturate
+        int nb_left = 0;
+        const std::vector<bool> & gen_status = generators_.get_status();
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id)
+            if(!gen_out[gen_id] && gen_status[gen_id] && generators_.is_slack(gen_id)
+               && std::abs(generators_.get_slack_weight(gen_id)) >= BaseConstants::_tol_equal_float) ++nb_left;
+        const std::vector<bool> & sto_status = storages_.get_status();
+        for(int sto_id = 0; sto_id < nb_sto; ++sto_id)
+            if(!sto_out[sto_id] && sto_status[sto_id] && storages_.is_slack(sto_id)
+               && std::abs(storages_.get_slack_weight(sto_id)) >= BaseConstants::_tol_equal_float) ++nb_left;
+        if(nb_left == 0) break;
+
+        const CplxVect Vinit = get_V();
+        std::vector<bool> gen_flag(nb_gen), sto_flag(nb_sto);
+        RealVect gen_w(nb_gen), sto_w(nb_sto);
+        for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+            gen_flag[gen_id] = generators_.get_can_participate_slack(gen_id);
+            gen_w(gen_id) = generators_.get_can_participate_slack_weight(gen_id);
+        }
+        for(int sto_id = 0; sto_id < nb_sto; ++sto_id){
+            sto_flag[sto_id] = storages_.get_can_participate_slack(sto_id);
+            sto_w(sto_id) = storages_.get_can_participate_slack_weight(sto_id);
+        }
+        for(const LimitViolation & v : over){
+            const int el_id = v.element_id;
+            if(v.element_type == ViolationElementType::GENERATOR){
+                gen_flag[el_id] = true;
+                gen_w(el_id) = generators_.get_slack_weight(el_id);
+                remove_gen_slackbus(el_id);
+                change_p_gen(el_id, v.limit);
+            }else{
+                // the record is in the generator convention, the container in the load one
+                sto_flag[el_id] = true;
+                sto_w(el_id) = storages_.get_slack_weight(el_id);
+                remove_storage_slackbus(el_id);
+                change_p_storage(el_id, -v.limit);
+            }
+            capped.push_back(v);
+        }
+        if(nb_gen > 0) generators_.set_can_participate_slack(gen_flag, gen_w);
+        if(nb_sto > 0) storages_.set_can_participate_slack(sto_flag, sto_w);
+
+        const CplxVect V = ac_pf(Vinit, max_iter, tol);
+        if(V.size() == 0){
+            std::ostringstream exc_;
+            exc_ << fun_name << ": the grid does not converge once " << capped.size()
+                 << " unit(s) of the distributed slack are capped at their active limit.";
+            throw std::runtime_error(exc_.str());
+        }
+    }
+    return capped;
+}
+
+std::vector<LimitViolation> LSGrid::get_violations(real_type threshold, bool ac, real_type rel_tol) const{
+    const char * fun_name = "LSGrid::get_violations";
+    if(!(threshold > 0. && threshold <= 1.)){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": the threshold should be a real number in the range ]0., 1.] (got "
+             << threshold << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    batch_sweep_detail::check_violation_rel_tol(rel_tol, fun_name);
+    const SolverBusLayout & layout = ac ? static_cast<const SolverBusLayout &>(ac_cache_)
+                                        : static_cast<const SolverBusLayout &>(dc_cache_);
+    const AlgorithmSelector & algo = ac ? _algo : _dc_algo;
+    if(layout.id_solver_to_me.size() == 0){
+        std::ostringstream exc_;
+        exc_ << fun_name << ": no " << (ac ? "AC" : "DC") << " powerflow has run on this grid yet.";
+        throw std::runtime_error(exc_.str());
+    }
+    std::vector<LimitViolation> out;
+    if(algo.get_error() != ErrorType::NoError){
+        // the batch's own convention for a row that did not converge
+        out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::DIVERGENCE,
+                                     std::numeric_limits<real_type>::quiet_NaN(),
+                                     std::numeric_limits<real_type>::quiet_NaN()});
+        return out;
+    }
+    // the grid IS the row: nothing masked, nothing disconnected "by the contingency"
+    const std::vector<int> no_skip;
+    const Eigen::Ref<const CplxVect> V = algo.get_V();
+    batch_sweep_detail::check_bus_voltage_violations(
+        V, layout.id_me_to_solver, substations_.get_bus_vmin_kv(), substations_.get_bus_vmax_kv(),
+        substations_.get_bus_vn_kv(), substations_, threshold, rel_tol, nullptr, out);
+    batch_sweep_detail::check_current_violations(
+        powerlines_, ViolationElementType::LINE, V, layout.id_me_to_solver, substations_.get_bus_vn_kv(),
+        ac, sn_mva_, powerlines_.get_limit_a1_ka(), powerlines_.get_limit_a2_ka(), threshold, rel_tol, no_skip, out);
+    batch_sweep_detail::check_current_violations(
+        trafos_, ViolationElementType::TRAFO, V, layout.id_me_to_solver, substations_.get_bus_vn_kv(),
+        ac, sn_mva_, trafos_.get_limit_a1_ka(), trafos_.get_limit_a2_ka(), threshold, rel_tol, no_skip, out);
+    return out;
+}
+
 // TODO DC LINE: one side might be in the connected comp and not the other !
-void LSGrid::consider_only_main_component(){
+slack_redistribution::Report LSGrid::consider_only_main_component(bool redistribute_slack){
     const GlobalBusIdVect slack_buses_id = _slack_bus_id_me();
 
     // TODO DEBUG MODE
@@ -2824,6 +3152,22 @@ void LSGrid::consider_only_main_component(){
     for(size_t bus_id = 0; bus_id < nb_busbars; ++bus_id){
         if(conn_comp[bus_id] == main_cc_id) bus_in_main_cc[bus_id] = true;
     }
+    // what the islanding takes out, measured BEFORE anything is disconnected (see
+    // _lost_setpoints_mw): shared on the remaining slack units at the end, OLF-style,
+    // and reported either way (a few passes over the elements: nothing next to the BFS)
+    const real_type lost_mw = _lost_setpoints_mw(bus_in_main_cc);
+
+    // the generators / storage units of the distributed slack stranded outside the main
+    // component are deactivated below with the rest of their island, and a disconnected
+    // participant takes no share (as OLF, which only distributes on the main component).
+    // They stay in the slack, so that reconnecting one puts it back where it was; their
+    // buses, out of the grid, are no slack buses meanwhile (see _slack_bus_id_me). The
+    // main component always keeps at least one slack bus (it is grown from one).
+    if((_forced_ref_slack_bus_id >= 0) && !bus_in_main_cc[_forced_ref_slack_bus_id]){
+        // the forced angle reference is now in an island: back to the natural order
+        set_reference_slack_bus(-1);
+    }
+
     // disconnected elements not in main component
     // (svcs_ is in the list now; it used to be left out, which kept a bus whose only
     // element is an SVC in the solved system after its island was cut off)
@@ -2832,6 +3176,15 @@ void LSGrid::consider_only_main_component(){
     }
     // and finally deal with the buses
     init_bus_status();
+
+    // the lost power is shared on the slack units that remain (the stranded ones are
+    // out of the slack and off by now), with their bounds
+    slack_redistribution::Report report;
+    if(redistribute_slack && std::abs(lost_mw) > slack_redistribution::default_eps_mw){
+        report = redistribute_active_power(lost_mw);
+    }
+    report.mismatch_mw = lost_mw;
+    return report;
 }
 
 } // namespace ls2g

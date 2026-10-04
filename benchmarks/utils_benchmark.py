@@ -221,6 +221,14 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
+def _pkg_version(name):
+    """version of an installed package, even one installed from source without metadata"""
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return getattr(importlib.import_module(name), "__version__", "unknown")
+
+
 def print_configuration(
     pypowbk_error=True,
     pypowsybl_error=True
@@ -287,15 +295,15 @@ def print_configuration(
         pass
     if pypowbk_error is None:
         # print both pypowsybl and pypowsybl2grid info
-        tmp = (f"- pypowsybl version: {importlib.metadata.version('pypowsybl')}")
+        tmp = (f"- pypowsybl version: {_pkg_version('pypowsybl')}")
         res.append(tmp)
         print(tmp)
-        tmp = (f"- pypowsybl2grid version: {importlib.metadata.version('pypowsybl2grid')}")
+        tmp = (f"- pypowsybl2grid version: {_pkg_version('pypowsybl2grid')}")
         res.append(tmp)
         print(tmp)
     elif pypowsybl_error is None:
         # print only pypowsybl info
-        tmp = (f"- pypowsybl version: {importlib.metadata.version('pypowsybl')}")
+        tmp = (f"- pypowsybl version: {_pkg_version('pypowsybl')}")
         res.append(tmp)
         print(tmp)
     try:

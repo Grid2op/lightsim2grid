@@ -97,7 +97,25 @@ namespace ls2g {
 //     GeneratorContainer::StateRes carries its reactive sharing key.
 // v9: StorageContainer::StateRes carries the distributed-slack participation of a
 //     storage unit (flag and weight), like a generator's.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 9;
+// v10: StorageContainer::StateRes carries the OPTIONAL active power limits of a storage
+//     unit (`p_min_mw_` / `p_max_mw_`, empty when the grid was never given any -- see
+//     StorageContainer::set_p_limits), like a generator's since v7.
+// v11: GeneratorContainer::StateRes carries the per-generator `can_be_pv_` flag (the PQ
+//     machines a caller knows an outer loop pinned at a reactive limit -- see
+//     LSGrid::set_gen_can_be_pv; all false unless set). Appended.
+// v12: SvcContainer::StateRes carries the per-SVC standby automaton (`standby_` and its
+//     low / high voltage thresholds -- see LSGrid::set_svc_standby; none unless set).
+//     Appended.
+// v13: SvcContainer::StateRes carries the per-SVC `can_be_pv_` flag (an SVC an outer loop
+//     froze at a reactive limit -- see LSGrid::set_svc_can_be_pv; all false unless set).
+//     Appended.
+// v14: GeneratorContainer::StateRes and StorageContainer::StateRes carry each unit's
+//     "can participate in the slack" weight (the redistribution pre-pass only -- see
+//     LSGrid::set_gen_can_participate_slack; 0 unless set). Appended.
+// v15: ConverterStationContainer::StateRes carries the per-station `can_be_pv_` flag (a VSC
+//     station an outer loop froze at a reactive limit -- see LSGrid::set_hvdc_can_be_pv;
+//     all false unless set). Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 15;
 
 class LS2G_API BinaryArchive
 {

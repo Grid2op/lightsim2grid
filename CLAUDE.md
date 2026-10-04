@@ -64,6 +64,25 @@ python3 utils/pr_diff_stats.py origin/main    # against another base branch
 
 Run it against the PR's own base branch, and paste the table as the first thing in the body.
 
+## Comments and docstrings: no RTE, no measured numbers
+
+Two things must never reach a comment, a docstring or the documentation, wherever the
+work that produced them was done:
+
+- **No mention of RTE**, of an RTE grid, an RTE snapshot or an RTE asset. Say **"a real
+  grid snapshot"**, "real grid snapshots", "a large real grid". The repository is public
+  and vendor-neutral; the boilerplate copyright header is the one place the name belongs.
+- **No exact measured numbers** carried over from an investigation -- "30 generators",
+  "42 % of the raw key", "18.820306 MVAr", "1.34759 pu away from the reference". They are
+  a good note to oneself while debugging and a bad line of documentation: they date, they
+  cannot be checked by a reader, and they describe one snapshot rather than the behaviour.
+  Describe the **behaviour** instead: which units the rule keeps, that the difference is
+  large enough to matter, that the bus no longer balances.
+
+  A number that a reader can act on stays: a tolerance the code actually uses, a constant
+  mirrored from OpenLoadFlow, the values a test fixture sets. The rule is about
+  measurements, not about arithmetic.
+
 ## Build
 
 The vendored dependencies are git submodules and start empty — a build fails with

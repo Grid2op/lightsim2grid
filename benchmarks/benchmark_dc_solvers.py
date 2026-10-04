@@ -48,6 +48,13 @@ except ImportError:
 try:
     from pypowsybl2grid import PyPowSyBlBackend
     PyPowSyBlBackend.shunts_data_available = False
+    import pypowsybl as pypow
+    # OpenLoadFlow fails the powerflow by default when it cannot distribute the
+    # whole slack mismatch; keep it on the slack bus instead, as the other backends do
+    PYPOW_LF_PARAMS = pypow.loadflow.Parameters(
+        voltage_init_mode=pypow.loadflow.VoltageInitMode.DC_VALUES,
+        provider_parameters={"slackDistributionFailureBehavior": "LEAVE_ON_SLACK_BUS"},
+    )
     PYPOW_ERROR = None
 except ImportError as exc_:
     PYPOW_ERROR = exc_
@@ -196,18 +203,30 @@ def generate_narrative(env_name,
             f"average (row `contingency analysis`), a **~{speedup_sa:.0f}x** speed up compared to the fastest "
             f"grid2op DC backend."
         )
+    def _vs_best(ratio):
+        """'a ~Nx speed up' or '~Nx slower', against the fastest grid2op DC backend"""
+        if ratio >= 1.:
+            return f"a **~{ratio:.{0 if ratio >= 10. else 1}f}x** speed up compared to"
+        slowdown = 1. / ratio
+        return f"**~{slowdown:.{0 if slowdown >= 10. else 1}f}x** slower than"
+
     if ptdf_time:
         speedup_ptdf = best["runpf_ms"] / ptdf_time
+        if speedup_ptdf >= 1.:
+            intro = "Using the PTDF matrix directly (row `PTDF`) is even faster"
+        else:
+            intro = "Using the PTDF matrix directly (row `PTDF`) is not faster on this run"
         speed_paragraphs.append(
-            f"Using the PTDF matrix directly (row `PTDF`) is even faster: {ptdf_time:.3g} ms per powerflow, a "
-            f"**~{speedup_ptdf:.0f}x** speed up compared to the fastest grid2op DC backend."
+            f"{intro}: {ptdf_time:.3g} ms per powerflow, {_vs_best(speedup_ptdf)} the fastest grid2op DC backend."
         )
     if lodf_time:
         speedup_lodf = best["runpf_ms"] / lodf_time
+        if speedup_lodf >= 1.:
+            intro = "Using the LODF matrix (row `LODF`) to perform the contingency analysis is faster"
+        else:
+            intro = "Using the LODF matrix (row `LODF`) to perform the contingency analysis is not faster on this run"
         speed_paragraphs.append(
-            f"Likewise, using the LODF matrix (row `LODF`) to perform the contingency analysis takes "
-            f"{lodf_time:.3g} ms per contingency, a **~{speedup_lodf:.0f}x** speed up compared to the fastest "
-            f"grid2op DC backend."
+            f"{intro}: {lodf_time:.3g} ms per contingency, {_vs_best(speedup_lodf)} the fastest grid2op DC backend."
         )
 
     diff_paragraphs = []
@@ -250,7 +269,7 @@ def main(max_ts,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             if pypow_error is None:
                 try:
-                    bk = PyPowSyBlBackend()
+                    bk = PyPowSyBlBackend(lf_parameters=PYPOW_LF_PARAMS)
                     env_pypow = make(env_name_input, param=param, test=test,
                                     backend=bk,
                                     data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
@@ -268,7 +287,7 @@ def main(max_ts,
                                 grid_path=env_name_input)
             if pypow_error is None:
                 try:
-                    bk = PyPowSyBlBackend()
+                    bk = PyPowSyBlBackend(lf_parameters=PYPOW_LF_PARAMS)
                     env_pypow = make("blank", param=param, test=True,
                                     data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                                     grid_path=env_name_input,
@@ -286,7 +305,10 @@ def main(max_ts,
     
     if pypow_error is None:
         # also benchmark pypowsybl backend
-        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0,
+        # it needs its own agent: pypowsybl2grid maps grid2op substations to
+        # iidm voltage levels, so its action space does not match env_pp's
+        agent_pypow = DoNothingAgent(action_space=env_pypow.action_space)
+        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent_pypow, chron_id=0, env_seed=0,
                                                                                is_dc=True)
         pypow_comp_time = env_pypow.backend.comp_time
         pypow_time_pf = env_pypow._time_powerflow
@@ -363,7 +385,10 @@ def main(max_ts,
     Sbus[:, gen_bus] += prod_p
     T_Sbus = 1. * Sbus.T
     
-    PTDF_ = 1.0 * real_env_ls.backend._grid.get_ptdf()
+    PTDF_ = real_env_ls.backend._grid.get_ptdf().copy()
+    # untimed warm-up: the first matrix product can pay a one-off start-up cost
+    # (e.g. the BLAS thread pool) that would otherwise land in the PTDF row
+    np.dot(PTDF_[:100,:], T_Sbus)
     beg_ = time.perf_counter()
     flows = np.dot(PTDF_, T_Sbus).T  # noqa: F841
     end_ = time.perf_counter()

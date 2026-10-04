@@ -49,7 +49,11 @@ struct LS2G_API VoltageControlSolverData
     // pins that bus through the ordinary PV path, like a local generator.
     // STORAGE is never a controller of the plan (a storage unit only ever pins its
     // own bus, see StorageContainer); the tag exists for LSGrid's reactive-residual
-    // bookkeeping (QShare), which uses the same kind space.
+    // bookkeeping (QShare), which uses the same kind space. Not being a controller
+    // of the plan does NOT put it outside the reactive physical-violation check:
+    // `BusQCheck` builds its per-bus capability from the elements that hold the bus
+    // whatever path they hold it through, so a voltage-regulating storage unit's
+    // [min_q, max_q] counts towards its bus' the same way a local generator's does.
     enum Kind { GEN = 0, SVC = 1, HVDC_SIDE_1 = 2, HVDC_SIDE_2 = 3, STORAGE = 4 };
 
     // ---- per controller (flat, grouped contiguously) ------------------------
@@ -59,6 +63,15 @@ struct LS2G_API VoltageControlSolverData
     RealVect        slope;     // pu (0 except for a sloped SVC)
     RealVect        weight;    // sharing key w_i (= qmax_i - qmin_i, pu cancels)
     Eigen::VectorXi group;     // group index this controller belongs to
+    // 1 for a HELD controller (LSGrid::set_hold_frozen_regulators): a generator an
+    // outer loop froze at a reactive limit (can_be_pv, not regulating) that would
+    // regulate this group's bus if released. It keeps its seat in the group, its
+    // reactive injection pinned at the frozen value -- which its own Sbus entry
+    // already carries, so the bordered block offsets it out of the mismatch -- and
+    // the system it poses is the one without it. Held controllers come last in their
+    // group, so a group's first controller is held only when all of them are. Empty
+    // when there is none.
+    Eigen::VectorXi held;
 
     // ---- per group ----------------------------------------------------------
     Eigen::VectorXi reg_bus;   // regulated solver bus (must own a Vm unknown)
@@ -67,6 +80,7 @@ struct LS2G_API VoltageControlSolverData
     Eigen::VectorXi grp_count; // number of controllers of the group
 
     int n_controllers() const { return static_cast<int>(bus.size()); }
+    bool is_held(int c) const { return held.size() != 0 && held(c) != 0; }
     int n_groups()      const { return static_cast<int>(reg_bus.size()); }
 
     void clear() {
@@ -76,6 +90,7 @@ struct LS2G_API VoltageControlSolverData
         slope = RealVect();
         weight = RealVect();
         group = Eigen::VectorXi();
+        held = Eigen::VectorXi();
         reg_bus = Eigen::VectorXi();
         v_set = RealVect();
         grp_start = Eigen::VectorXi();

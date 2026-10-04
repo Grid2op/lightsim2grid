@@ -15,6 +15,28 @@
 using namespace ls2g;
 
 void bind_gridmodel(py::module_& m) {
+    py::class_<slack_redistribution::Report>(m, "SlackRedistributionReport",
+        "What LSGrid.redistribute_active_power / consider_only_main_component(redistribute_slack=True) did: "
+        "the imbalance shared (MW, > 0: the units inject more), how many units took part, how many reached "
+        "a bound (and left the distributed slack), how many rounds it took, what could not be placed, and "
+        "whether every unit of the distributed slack saturated (in which case none left it).")
+        .def_readonly("mismatch_mw", &slack_redistribution::Report::mismatch_mw)
+        .def_readonly("nb_participants", &slack_redistribution::Report::nb_participants)
+        .def_readonly("nb_saturated", &slack_redistribution::Report::nb_saturated)
+        .def_readonly("nb_rounds", &slack_redistribution::Report::nb_rounds)
+        .def_readonly("not_distributed_mw", &slack_redistribution::Report::not_distributed_mw)
+        .def_readonly("all_saturated", &slack_redistribution::Report::all_saturated)
+        .def("__repr__", [](const slack_redistribution::Report & r){
+            std::ostringstream ss;
+            ss << "SlackRedistributionReport(mismatch_mw=" << r.mismatch_mw
+               << ", nb_participants=" << r.nb_participants
+               << ", nb_saturated=" << r.nb_saturated
+               << ", nb_rounds=" << r.nb_rounds
+               << ", not_distributed_mw=" << r.not_distributed_mw
+               << ", all_saturated=" << (r.all_saturated ? "True" : "False") << ")";
+            return ss.str();
+        });
+
     auto lsgrid_cls = py::class_<LSGrid>(m, "LSGrid", DocLSGrid::LSGrid.c_str())
         .def(py::init<>())
         .def("copy", &LSGrid::copy, DocLSGrid::copy.c_str(), py::return_value_policy::take_ownership)
@@ -88,12 +110,29 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dc_solver_type", &LSGrid::get_dc_algo_type, "DEPRECATED: use 'get_dc_algo_type' instead")
         .def("get_solver", &LSGrid::get_algo, py::return_value_policy::reference_internal, "DEPRECATED: use 'get_algo' instead")
         .def("get_dc_solver", &LSGrid::get_dc_algo, py::return_value_policy::reference_internal, "DEPRECATED: use 'get_dc_algo' instead")
+        .def("get_physical_violations", &LSGrid::get_physical_violations,
+             py::arg("ac") = true, py::arg("tol_mva") = 1e-4, py::arg("tol_vm_pu") = 1e-4,
+             DocLSGrid::get_physical_violations.c_str())
+        .def("cap_slack_at_active_limits", &LSGrid::cap_slack_at_active_limits,
+             py::arg("max_iter") = 10, py::arg("tol") = 1e-8, py::arg("tol_mw") = 1e-6,
+             py::arg("max_rounds") = 10, DocLSGrid::cap_slack_at_active_limits.c_str())
+        .def("get_violations", &LSGrid::get_violations,
+             py::arg("threshold") = 1., py::arg("ac") = true,
+             py::arg("rel_tol") = DEFAULT_VIOLATION_REL_TOL, DocLSGrid::get_violations.c_str())
 
         // init the grid
         .def("init_bus", &LSGrid::init_bus, DocLSGrid::_internal_do_not_use.c_str())
         .def("init_bus_status", &LSGrid::init_bus_status, DocLSGrid::_internal_do_not_use.c_str())
         .def("set_init_vm_pu", &LSGrid::set_init_vm_pu, DocLSGrid::set_init_vm_pu.c_str())
         .def("get_init_vm_pu", &LSGrid::get_init_vm_pu, DocLSGrid::get_init_vm_pu.c_str())
+        .def("set_keep_vinit_at_group_controlled_buses", &LSGrid::set_keep_vinit_at_group_controlled_buses,
+             py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
+        .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
+             DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
+        .def("set_hold_frozen_regulators", &LSGrid::set_hold_frozen_regulators,
+             py::arg("hold"), DocLSGrid::set_hold_frozen_regulators.c_str())
+        .def("get_hold_frozen_regulators", &LSGrid::get_hold_frozen_regulators,
+             DocLSGrid::get_hold_frozen_regulators.c_str())
         .def("set_sn_mva", &LSGrid::set_sn_mva, DocLSGrid::set_sn_mva.c_str())
         .def("get_sn_mva", &LSGrid::get_sn_mva, DocLSGrid::get_sn_mva.c_str())
 
@@ -103,6 +142,8 @@ void bind_gridmodel(py::module_& m) {
         .def("init_shunt", &LSGrid::init_shunt, DocLSGrid::init_shunt.c_str())
         .def("init_trafo_pandapower", &LSGrid::init_trafo_pandapower, DocLSGrid::init_trafo_pandapower.c_str())
         .def("init_trafo", &LSGrid::init_trafo, DocLSGrid::init_trafo.c_str())
+        .def("update_powerlines_parameters", &LSGrid::update_powerlines_parameters, DocLSGrid::update_powerlines_parameters.c_str())
+        .def("update_trafos_parameters", &LSGrid::update_trafos_parameters, DocLSGrid::update_trafos_parameters.c_str())
         .def("init_generators", &LSGrid::init_generators, DocLSGrid::init_generators.c_str())
         .def("init_generators_full", &LSGrid::init_generators_full, DocLSGrid::init_generators_full.c_str())
         .def("init_loads", &LSGrid::init_loads, DocLSGrid::init_loads.c_str())
@@ -150,7 +191,10 @@ void bind_gridmodel(py::module_& m) {
         .def("assign_slack_to_most_connected", &LSGrid::assign_slack_to_most_connected, DocLSGrid::assign_slack_to_most_connected.c_str())
         .def("set_reference_slack_bus", &LSGrid::set_reference_slack_bus, DocLSGrid::set_reference_slack_bus.c_str())
         .def("get_reference_slack_bus", &LSGrid::get_reference_slack_bus, DocLSGrid::get_reference_slack_bus.c_str())
-        .def("consider_only_main_component", &LSGrid::consider_only_main_component, DocLSGrid::consider_only_main_component.c_str())
+        .def("consider_only_main_component", &LSGrid::consider_only_main_component,
+             py::arg("redistribute_slack") = true, DocLSGrid::consider_only_main_component.c_str())
+        .def("redistribute_active_power", &LSGrid::redistribute_active_power,
+             py::arg("mismatch_mw"), DocLSGrid::redistribute_active_power.c_str())
         .def("set_ignore_status_global", &LSGrid::set_ignore_status_global, DocLSGrid::set_ignore_status_global.c_str())
         .def("set_synch_status_both_side", &LSGrid::set_synch_status_both_side, DocLSGrid::set_synch_status_both_side.c_str())
         .def("get_ignore_status_global", &LSGrid::get_ignore_status_global, DocLSGrid::get_ignore_status_global.c_str())
@@ -178,6 +222,82 @@ void bind_gridmodel(py::module_& m) {
              "-- can land beyond what it can deliver. That is a physical violation, and these "
              "are what the batch algorithms' `compute_physical_violations` compares against "
              "(LOW_P / HIGH_P on the GENERATOR).")
+        .def("set_gen_can_be_pv", &LSGrid::set_gen_can_be_pv,
+             py::arg("can_be_pv"),
+             "Flag the generators an outer loop pinned at a reactive limit as PQ: one bool per "
+             "generator (`GenInfo.can_be_pv`, False by default), never enforced and never read "
+             "by a powerflow.\n\n"
+             "lightsim2grid never pins a machine itself, so it cannot tell such a machine from "
+             "one that was PQ to begin with: the caller says so (`init_from_pypowsybl(can_be_pv=...)` "
+             "passes the generators `bake_outer_loops` froze at a limit). What it is for: the "
+             "physical checks (`get_physical_violations`, the batch algorithms' "
+             "`compute_physical_violations`) only consider a flagged PQ machine when looking for "
+             "one whose regulated voltage would make an outer loop switch it back to PV.")
+.def("set_gen_can_participate_slack", &LSGrid::set_gen_can_participate_slack,
+             py::arg("flags"), py::arg("weights"),
+             "Flag the generators an outer loop left out of the distributed slack ONLY because "
+             "they sat at an active limit in the reference solve (OpenLoadFlow caps a unit at "
+             "max_p when the mismatch it distributes is positive, at min_p when negative), with "
+             "the weight each would have as a participant, on the same scale as the slack "
+             "weights (ignored where not flagged; `GenInfo.can_participate_slack` / "
+             "`can_participate_slack_weight`). The slack participants carry the flag on their own "
+             "and keep it whatever `flags` says. While out of the slack, a flagged unit is not "
+             "read by the Newton solve, whose distributed slack has no bounds: only the bounded "
+             "redistribution pre-pass (`consider_only_main_component(True)`, the batch algorithms' "
+             "`redistribute_slack`) counts it, within its [min_p, max_p], so it only moves away "
+             "from the limit it sits at. It goes back into the slack, with this weight, when it "
+             "is reconnected or its set-point is moved off its limits (`change_p_gen`). "
+             "`init_from_pypowsybl(can_participate_slack=...)` fills it from what "
+             "`bake_outer_loops(..., return_details=True)` capped.")
+        .def("set_storage_can_participate_slack", &LSGrid::set_storage_can_participate_slack,
+             py::arg("flags"), py::arg("weights"),
+             "The same as `set_gen_can_participate_slack`, for the storage units.")
+        .def("set_hvdc_can_be_pv", &LSGrid::set_hvdc_can_be_pv,
+             py::arg("side_1"), py::arg("side_2"),
+             "The generators' set_gen_can_be_pv, for the VSC converter stations of the hvdc lines: one "
+             "bool per line for its side 1 station, one for its side 2 (`ConverterStationInfo.can_be_pv`, "
+             "False by default), never enforced and never read by a powerflow. The physical checks "
+             "report a flagged fixed-Q station whose bus would make an outer loop switch it back to "
+             "voltage control (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the HVDC line, `side` the "
+             "station's end). `init_from_pypowsybl(can_be_pv=...)` fills it from what `bake_outer_loops` froze.")
+        .def("set_svc_can_be_pv", &LSGrid::set_svc_can_be_pv,
+             py::arg("can_be_pv"),
+             "The generators' set_gen_can_be_pv, for the SVCs: flag the SVCs an outer loop froze "
+             "at a reactive limit, one bool per SVC (`SvcInfo.can_be_pv`, False by default), never "
+             "enforced and never read by a powerflow.\n\n"
+             "lightsim2grid cannot tell such an SVC -- a fixed-Q one after `bake_outer_loops` -- "
+             "from one that was fixed-Q to begin with: the caller says so "
+             "(`init_from_pypowsybl(can_be_pv=...)` passes the SVCs `bake_outer_loops` froze at "
+             "a limit). What it is for: the physical checks report a flagged fixed-Q SVC whose "
+             "regulated voltage would make an outer loop switch it back to voltage control "
+             "(LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the SVC).")
+        .def("set_svc_standby", &LSGrid::set_svc_standby,
+             py::arg("standby"), py::arg("low_vm_pu"), py::arg("high_vm_pu"),
+             "Flag the SVCs an outer loop left idle under their standby automaton: one bool per "
+             "SVC (`SvcInfo.standby`, False by default), with that automaton's low / high voltage "
+             "thresholds in pu of the nominal voltage of the bus each SVC regulates (ignored "
+             "where not flagged; a flagged SVC needs finite thresholds with low < high). Never "
+             "enforced and never read by a powerflow.\n\n"
+             "lightsim2grid does not model the automaton, and cannot tell such an SVC -- a fixed-Q "
+             "one after `bake_outer_loops` -- from one that never regulates: the caller says so "
+             "(`init_from_pypowsybl(can_be_pv=...)` passes the SVCs `bake_outer_loops` left idle). "
+             "What it is for: the physical checks (`get_physical_violations`, the batch "
+             "algorithms' `compute_physical_violations`) report a flagged non-regulating SVC whose "
+             "regulated voltage is outside those thresholds, which OpenLoadFlow's "
+             "MonitoringVoltageOuterLoop would switch to voltage control "
+             "(LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY).")
+        .def("set_storage_p_limits", &LSGrid::set_storage_p_limits,
+             py::arg("p_min_mw"), py::arg("p_max_mw"),
+             "Active power limits (MW) of the storage units, OPTIONAL and never enforced -- "
+             "same shape and same purpose as `set_gen_p_limits`, because a storage unit takes "
+             "a share of the distributed slack under the same rule (`add_storage_slackbus`). "
+             "One entry per unit, NaN where a unit has none, two empty vectors to drop them "
+             "again (`StorageInfo.min_p_mw` / `max_p_mw` then read NaN).\n\n"
+             "/!\\ The limits are in the GENERATOR convention (`min_p <= max_p`, what the unit "
+             "can INJECT), like `StorageInfo.min_q_mvar` / `max_q_mvar` and like an IIDM "
+             "battery's own `min_p` / `max_p` -- and so the opposite of `target_p_mw` / "
+             "`res_p_mw`, which are in the load convention. A violation is reported the same "
+             "way round (LOW_P / HIGH_P on the STORAGE).")
         .def("set_gen_names", &LSGrid::set_gen_names, DocLSGrid::set_gen_names.c_str())
         .def("set_load_names", &LSGrid::set_load_names, DocLSGrid::set_load_names.c_str())
         .def("set_storage_names", &LSGrid::set_storage_names, DocLSGrid::set_storage_names.c_str())
@@ -315,6 +435,7 @@ void bind_gridmodel(py::module_& m) {
         .def("get_controller_q_solver", &LSGrid::get_controller_q_solver, py::return_value_policy::reference, DocLSGrid::get_controller_q_solver.c_str())
         .def("get_controller_kind_solver", &LSGrid::get_controller_kind_solver, py::return_value_policy::reference, DocLSGrid::get_controller_kind_solver.c_str())
         .def("get_controller_elem_id_solver", &LSGrid::get_controller_elem_id_solver, py::return_value_policy::reference, DocLSGrid::get_controller_elem_id_solver.c_str())
+        .def("get_controller_held_solver", &LSGrid::get_controller_held_solver, DocLSGrid::get_controller_held_solver.c_str())
         .def("get_controller_q_col_solver", &LSGrid::get_controller_q_col_solver, py::return_value_policy::reference, DocLSGrid::get_controller_q_col_solver.c_str())
 
         .def("get_p_buses_solver", &LSGrid::get_p_buses_solver, py::return_value_policy::reference, DocLSGrid::get_p_buses_solver.c_str())

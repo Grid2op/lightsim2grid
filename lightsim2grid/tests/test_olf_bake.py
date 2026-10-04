@@ -23,6 +23,7 @@ Two groups of tests:
 import unittest
 
 import numpy as np
+import pandas as pd
 
 try:
     import pypowsybl as pp
@@ -372,6 +373,88 @@ class TestOlfBake(unittest.TestCase):
         q_redo = n.get_generators(attributes=["q"])["q"]
         self.assertLess((q_redo - q_ref).abs().max(), 1e-2)
 
+    def test_bake_returns_the_pinned_generators_and_init_flags_them(self):
+        """`bake_outer_loops` returns the generators it froze AT A REACTIVE LIMIT (and
+        nothing on a second, idempotent bake); `init_from_pypowsybl(can_be_pv=...)` flags
+        exactly those, and the result network shows the flag."""
+        from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork
+        n = ieee14_forced_pv_pq()
+        lf.run_ac(n, _with_loops_params())
+        pinned = bake_outer_loops(n)
+        self.assertEqual(set(pinned), {"B3-G", "B6-G"})
+        self.assertEqual(len(bake_outer_loops(n)), 0)  # already baked: nothing left at a limit
+
+        grid = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                   can_be_pv=pinned)
+        flags = {g.name: g.can_be_pv for g in grid.get_generators()}
+        self.assertEqual(flags, {"B1-G": False, "B2-G": False, "B3-G": True, "B6-G": True,
+                                 "B8-G": False})
+        grid.ac_pf(np.full(grid.total_bus(), 1.06 + 0j), 20, 1e-10)
+        res = LightsimResultNetwork(grid, n).get_generators()
+        self.assertEqual(res.loc[["B3-G", "B6-G"], "can_be_pv"].tolist(), [True, True])
+        self.assertFalse(res.loc[["B1-G", "B2-G", "B8-G"], "can_be_pv"].any())
+        # the other ways of saying it
+        grid_b = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                     can_be_pv=pd.Series(True, index=["B6-G"]))
+        self.assertEqual([g.can_be_pv for g in grid_b.get_generators()],
+                         [g.name == "B6-G" for g in grid_b.get_generators()])
+        # nothing flagged by default, and an unknown id is refused
+        grid_c = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False)
+        self.assertFalse(any(g.can_be_pv for g in grid_c.get_generators()))
+        with self.assertRaises(ValueError):
+            init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                can_be_pv=["B3-G", "NOT-A-GEN"])
+
+    def test_pinned_generator_released_is_reported(self):
+        """The baked grid pins B3-G as PQ at its max_q. Drop the load on its bus: the
+        voltage rises above the target it would hold, which OLF's loop (on the raw grid)
+        answers by keeping the unit PV inside its range -- and which lightsim2grid, unable
+        to release it, reports as HIGH_VOLTAGE_AT_MAX_Q on that generator. B6-G, pinned at
+        its min_q with a voltage ABOVE its target, is released by neither."""
+        from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationElementType
+        n = ieee14_forced_pv_pq()
+        lf.run_ac(n, _with_loops_params())
+        pinned = bake_outer_loops(n)
+
+        # untouched: the baked grid is the reference solve, nothing to release
+        grid = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                   can_be_pv=pinned)
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.06 + 0j), 20, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        release = [v for v in grid.get_physical_violations()
+                   if v.violation_type in (LimitViolationType.LOW_VOLTAGE_AT_MIN_Q,
+                                           LimitViolationType.HIGH_VOLTAGE_AT_MAX_Q)]
+        self.assertEqual(release, [])
+
+        # the load on bus 3 gone
+        n.update_loads(id="B3-L", p0=0., q0=0.)
+        grid = init_from_pypowsybl(n, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                   can_be_pv=pinned)
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.06 + 0j), 20, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        release = [v for v in grid.get_physical_violations()
+                   if v.violation_type in (LimitViolationType.LOW_VOLTAGE_AT_MIN_Q,
+                                           LimitViolationType.HIGH_VOLTAGE_AT_MAX_Q)]
+        self.assertEqual([v.name for v in release], ["B3-G"])
+        viol = release[0]
+        self.assertEqual(viol.element_type, ViolationElementType.GENERATOR)
+        self.assertEqual(viol.violation_type, LimitViolationType.HIGH_VOLTAGE_AT_MAX_Q)
+        target_v = n.get_generators(attributes=["target_v"]).loc["B3-G", "target_v"]
+        self.assertAlmostEqual(viol.limit, target_v, places=6)
+        self.assertGreater(viol.value, viol.limit + 1.)  # kV, well above the target
+
+        # the reference, outer loops on, on the raw perturbed grid: B3-G regulates again,
+        # strictly inside its range, and its bus sits on target; B6-G stays at its limit
+        n_ref = ieee14_forced_pv_pq()
+        n_ref.update_loads(id="B3-L", p0=0., q0=0.)
+        lf.run_ac(n_ref, _with_loops_params())
+        g = n_ref.get_generators(attributes=["bus_id", "q", "target_v"])
+        v = n_ref.get_buses(attributes=["v_mag"])["v_mag"]
+        q_gen_b3 = -g.loc["B3-G", "q"]  # generator convention
+        self.assertLess(q_gen_b3, 20.08 - 0.5)
+        self.assertAlmostEqual(v[g.loc["B3-G", "bus_id"]], g.loc["B3-G", "target_v"], places=3)
+        self.assertAlmostEqual(-g.loc["B6-G", "q"], 18.0, places=3)
+
     def test_olf_ieee14_baked_inert(self):
         """WITH outer loops: they trigger nothing on the baked grid (robust
         check, no reporter)."""
@@ -496,8 +579,8 @@ class TestOlfBake(unittest.TestCase):
 
     def test_olf_switched_unit_baked_at_its_limit_not_reported_q(self):
         """A unit switched at its Q limit injects that limit, but OLF does not always
-        report it (on RTE snapshots it re-splits a bus' reactive target among the units
-        of the bus when writing results). The bake must write the limit: here the
+        report it (on real grid snapshots it re-splits a bus' reactive target among the
+        units of the bus when writing results). The bake must write the limit: here the
         reported q of one of two switched units is overwritten slightly inside its limit
         after the solve, standing for such a report."""
         n = pp.network.create_ieee14()
@@ -717,6 +800,29 @@ class TestOlfBake(unittest.TestCase):
             self.assertFalse(bool(apc.loc[gid, "participate"]), f"{gid} should not participate")
         self.assertNotIn("B2-G", apc.index)
 
+    def test_olf_active_power_round_off_snapped_on_bound(self):
+        """OLF writes a unit's p back with a round-off, so a unit dispatched at its max_p
+        can come back a hair above it (seen on real grid snapshots): written as is into
+        target_p, OLF's checkActivePowerControl then takes the unit out of the slack of
+        every solve of the baked network. The bake puts it back on the bound; a realized
+        p further off than the round-off tolerance is written as is."""
+        for p_over, expected in [(1e-11, 40.), (1., 41.)]:
+            n = pp.network.create_ieee14()
+            n.update_generators(id="B2-G", max_p=40.)  # dispatched at its max_p
+            lf.run_ac(n, _with_loops_params())
+            n.update_generators(id="B2-G", p=-(40. + p_over))
+            bake_outer_loops(n)
+            self.assertEqual(n.get_generators().loc["B2-G", "target_p"], expected)
+
+    def test_snap_realized_into_target_range(self):
+        from lightsim2grid.network.from_pypowsybl._olf_bake import _snap_realized_into_target_range
+        min_tp = np.array([10., 10., 10., 10., 10., 10.])
+        max_tp = np.array([40., 40., 40., 40., 40., 40.])
+        target_p = np.array([40., 10., 45., 25., 40., 40.])  # 3rd: outside before the bake
+        realized = np.array([40. + 1e-13, 10. - 1e-13, 45. + 1e-13, 25., 41., np.nan])
+        res = _snap_realized_into_target_range(realized, target_p, min_tp, max_tp)
+        np.testing.assert_array_equal(res, [40., 10., 45. + 1e-13, 25., 41., np.nan])
+
     def test_olf_active_power_control_participation_flag_off(self):
         """``bake_active_power_control_participation=False`` creates no
         activePowerControl extension at all."""
@@ -801,6 +907,25 @@ class TestOlfBake(unittest.TestCase):
             self.assertEqual(_copy_parameters(params).component_mode, mode)
             self.assertEqual(remove_outer_loops(params).component_mode, mode)
 
+
+    def test_svc_near_its_limit_follows_the_generator_rule(self):
+        """An SVC within the saturation tolerance of its limit, whose regulated bus the
+        reference solve held at its target, was regulating: left in VOLTAGE mode (frozen
+        only with ``bake_saturated_voltage_control``). One that could not hold its target
+        is frozen, as a generator."""
+        def _baked_mode(b_max_mvar, **kwargs):
+            n = four_substations()
+            # the SVC holds its bus at 400 kV producing a bit more than 12.5 MVAr
+            n.update_static_var_compensators(id="SVC", b_max=b_max_mvar / 400. ** 2)
+            lf.run_ac(n, _with_loops_params())
+            bake_outer_loops(n, **kwargs)
+            return n.get_static_var_compensators().loc["SVC", "regulation_mode"]
+
+        # a hair inside its limit, far within the relative tolerance, target held
+        self.assertEqual(_baked_mode(12.9), "VOLTAGE")
+        self.assertEqual(_baked_mode(12.9, bake_saturated_voltage_control=True), "REACTIVE_POWER")
+        # saturated for real: the target is not held
+        self.assertEqual(_baked_mode(10.), "REACTIVE_POWER")
 
 if __name__ == "__main__":
     unittest.main()

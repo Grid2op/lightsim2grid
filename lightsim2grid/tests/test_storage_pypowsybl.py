@@ -20,6 +20,9 @@ regression). Skipped when pypowsybl is unavailable.
 import unittest
 import numpy as np
 
+from lightsim2grid.lightsim2grid_cpp import (TimeSeriesCPP, ViolationElementType,
+                                             LimitViolationType)
+
 try:
     import pypowsybl as pp
     from lightsim2grid.network import init_from_pypowsybl
@@ -108,6 +111,72 @@ class TestStoragePypowsybl(unittest.TestCase):
         model, V = self._run_ls(n)
         self.assertEqual(len(model.get_storages()), 1)
         self.assertFalse(model.get_storages_status()[0])
+
+    def test_active_power_limits_are_threaded_through(self):
+        # `min_p` / `max_p` keep IIDM's own (generator) convention, unlike `target_p`
+        model, _ = self._run_ls(_build_net(target_p=50.0, target_q=10.0))
+        sto = model.get_storages()[0]
+        self.assertAlmostEqual(sto.min_p_mw, -1000.0, places=4)
+        self.assertAlmostEqual(sto.max_p_mw, 1000.0, places=4)
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestBatteryPhysicalViolations(unittest.TestCase):
+    """A battery pushed past `min_p` / `max_p` by the distributed slack is reported by
+    `compute_physical_violations`, exactly as a generator is -- in the generator
+    convention, the one its limits are given in."""
+
+    # `max_p` is left alone by every case here on purpose: it is OpenLoadFlow's
+    # participation KEY as well as a limit (`max_p / droop`, see `_aux_battery_apc.py`),
+    # and it bounds the target range a participant's `target_p` must lie in -- so moving it
+    # would move the very distribution the check is measured against. `min_p` is a limit and
+    # nothing else, which is what lets these cases pick it around the converged value.
+    def _model(self, min_p=-1000.0, max_p=60.0, target_p=50.0):
+        n = _build_net(target_p=target_p, target_q=0.0)
+        n.update_batteries(id="BATT", max_p=max_p, min_p=min_p)
+        # OpenLoadFlow's own default distributed slack: it lands on the generator and on
+        # the battery, which is what makes the battery's power move at all
+        n.per_unit = False
+        return init_from_pypowsybl(n, sort_index=True)
+
+    def _one_row(self, model):
+        ts = TimeSeriesCPP(model)
+        ts.compute_physical_violations = True
+        ts.physical_violation_tol_mva = 0.
+        ts.modify_gen_p(np.array([[gen.target_p_mw for gen in model.get_generators()]]))
+        ts.compute(np.ones(len(model.get_bus_status()), dtype=np.complex128), 30, 1e-10)
+        self.assertTrue(ts.converged_mask()[0])
+        return ts.get_physical_violations()[0]
+
+    def _converged_battery_p(self, model):
+        """what the battery ends up injecting (MW, generator convention: the negated
+        `res_p_mw`), from a single solve"""
+        model.ac_pf(np.ones(len(model.get_bus_status()), dtype=np.complex128), 30, 1e-10)
+        return -model.get_storages()[0].res_p_mw
+
+    def test_a_battery_outside_its_limits_is_reported(self):
+        ref = self._model()
+        self.assertTrue(ref.get_storages()[0].is_slack,
+                        "the fixture needs the battery in the distributed slack")
+        p_batt = self._converged_battery_p(ref)
+        self.assertGreater(abs(p_batt - 50.), 1.,
+                           "the slack must actually move the battery off its target")
+
+        model = self._model(min_p=p_batt + 1.)
+        self.assertAlmostEqual(self._converged_battery_p(model), p_batt, places=9,
+                               msg="`min_p` must not move the distribution")
+        viols = self._one_row(model)
+        storage_viols = [v for v in viols if v.element_type == ViolationElementType.STORAGE]
+        self.assertEqual(len(storage_viols), 1)
+        self.assertEqual(storage_viols[0].element_id, 0)
+        self.assertEqual(storage_viols[0].violation_type, LimitViolationType.LOW_P)
+        self.assertEqual(storage_viols[0].name, "BATT")
+        self.assertAlmostEqual(storage_viols[0].value, p_batt, places=5)
+        self.assertAlmostEqual(storage_viols[0].limit, p_batt + 1., places=5)
+
+    def test_wide_limits_report_nothing_on_the_battery(self):
+        viols = self._one_row(self._model())
+        self.assertEqual([v for v in viols if v.element_type == ViolationElementType.STORAGE], [])
 
 
 if __name__ == "__main__":

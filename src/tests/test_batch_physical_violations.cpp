@@ -75,6 +75,11 @@ struct GenSpec
     real_type min_q;
     real_type max_q;
     int regulated_bus = -1;  // -1: regulates its own bus (the classical PV path)
+    // a PQ machine (vreg false) injects `target_q` and holds nothing; `can_be_pv` is the
+    // caller's flag that an outer loop pinned it there (see GenPvReleaseCheck.hpp)
+    bool vreg = true;
+    real_type target_q = 0.;
+    bool can_be_pv = false;
 };
 
 // The 4-bus radial feeder 0-1-2-3 (r = 0.01, x = 0.1 pu, sn_mva = 100) shared by
@@ -111,16 +116,25 @@ LSGrid make_grid(const std::vector<GenSpec> & gens, bool meshed = false,
     grid.init_loads(load_p, load_q, load_bus);
 
     const int nb_gen = static_cast<int>(gens.size());
-    RealVect gen_p(nb_gen), gen_v(nb_gen), gen_min_q(nb_gen), gen_max_q(nb_gen);
+    RealVect gen_p(nb_gen), gen_v(nb_gen), gen_q(nb_gen), gen_min_q(nb_gen), gen_max_q(nb_gen);
     Eigen::VectorXi gen_bus(nb_gen);
+    std::vector<bool> gen_vreg(static_cast<std::size_t>(nb_gen), true);
+    std::vector<bool> gen_can_be_pv(static_cast<std::size_t>(nb_gen), false);
+    bool any_flag = false;
     for (int k = 0; k < nb_gen; ++k) {
         gen_p(k) = gens[k].p;
         gen_v(k) = gens[k].vset;
+        gen_q(k) = gens[k].target_q;
         gen_min_q(k) = gens[k].min_q;
         gen_max_q(k) = gens[k].max_q;
         gen_bus(k) = gens[k].bus;
+        gen_vreg[static_cast<std::size_t>(k)] = gens[k].vreg;
+        gen_can_be_pv[static_cast<std::size_t>(k)] = gens[k].can_be_pv;
+        any_flag = any_flag || gens[k].can_be_pv;
     }
-    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    // (identical to init_generators when every machine regulates with a zero setpoint)
+    grid.init_generators_full(gen_p, gen_v, gen_q, gen_vreg, gen_min_q, gen_max_q, gen_bus);
+    if (any_flag) grid.set_gen_can_be_pv(gen_can_be_pv);
     grid.add_gen_slackbus(0, 1.);
     for (int k = 0; k < nb_gen; ++k) {
         if (gens[k].regulated_bus >= 0) grid.set_gen_regulated_bus(k, gens[k].regulated_bus);
@@ -329,6 +343,66 @@ void set_gen_p_limits(LSGrid & grid, const std::vector<real_type> & p_min,
 
 const real_type NO_LIMIT = std::numeric_limits<real_type>::quiet_NaN();
 
+// ----- ... and of the storage units that carry it ---------------------------
+// The same feeder with the slack shared between the slack generator (bus 0) and a BATTERY
+// on GEN_BUS discharging `-target_p_mw` MW -- a storage unit takes a share under the same
+// rule (SlackParticipation), so it is pushed off its target in exactly the same way. The
+// two stand on different buses, so each bus' active residual belongs to one machine and
+// the reported value can be pinned on `ac_pf`.
+//
+// /!\ The container stores a storage unit's active power in the LOAD convention, while its
+// limits -- and the value reported -- are in the GENERATOR one, like its reactive range.
+LSGrid make_storage_slack_grid(real_type w_gen, real_type w_sto,
+                               real_type target_p_load_conv = -10.)
+{
+    LSGrid grid = make_grid(std::vector<GenSpec>{slack_gen()});
+    RealVect sto_p(1), sto_q(1), sto_vm(1), sto_min_q(1), sto_max_q(1);
+    Eigen::VectorXi sto_bus(1);
+    sto_p << target_p_load_conv;
+    sto_q << 0.;
+    sto_vm << V_SET;
+    sto_min_q << -WIDE_Q;
+    sto_max_q << WIDE_Q;
+    sto_bus << GEN_BUS;
+    grid.init_storages_full(sto_p, sto_q, std::vector<bool>{true}, sto_vm, sto_min_q,
+                            sto_max_q, sto_bus);
+    // make_grid already gave generator 0 the whole slack: re-weight it and share
+    grid.add_gen_slackbus(0, w_gen);
+    grid.add_storage_slackbus(0, w_sto);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+// the battery's converged active power in the GENERATOR convention, as a single-shot ac_pf
+// publishes it (StorageContainer::set_p_slack writes it in the load convention)
+real_type reference_storage_p(LSGrid & grid)
+{
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    grid.ac_pf(flat_start(grid), 30, 1e-11);
+    const RealVect res(std::get<0>(grid.get_storages_res()));
+    return -res(0);
+}
+
+void set_storage_p_limits(LSGrid & grid, real_type p_min, real_type p_max)
+{
+    RealVect lo(1), hi(1);
+    lo << p_min;
+    hi << p_max;
+    grid.set_storage_p_limits(lo, hi);
+}
+
+// the violation reported on the storage unit `storage_id`, or nullptr
+const LimitViolation * find_storage(const std::vector<LimitViolation> & viols, int storage_id)
+{
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        if (viols[k].element_type == ViolationElementType::STORAGE &&
+            viols[k].element_id == storage_id) {
+            return &viols[k];
+        }
+    }
+    return nullptr;
+}
+
 // the violation reported on `gen_id`, or nullptr
 const LimitViolation * find_gen(const std::vector<LimitViolation> & viols, int gen_id)
 {
@@ -381,6 +455,8 @@ TEST_CASE("every violation type says what kind of statement it is", "[batch][phy
     CHECK(violation_category(LimitViolationType::HIGH_Q) == ViolationCategory::PHYSICAL);
     CHECK(violation_category(LimitViolationType::LOW_P) == ViolationCategory::PHYSICAL);
     CHECK(violation_category(LimitViolationType::HIGH_P) == ViolationCategory::PHYSICAL);
+    CHECK(violation_category(LimitViolationType::LOW_VOLTAGE_AT_MIN_Q) == ViolationCategory::PHYSICAL);
+    CHECK(violation_category(LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q) == ViolationCategory::PHYSICAL);
     CHECK(violation_category(LimitViolationType::NOT_SIMULATED) == ViolationCategory::SOLVER);
     CHECK(violation_category(LimitViolationType::DIVERGENCE) == ViolationCategory::SOLVER);
     // and a violation carries its own, derived from its type
@@ -1427,4 +1503,733 @@ TEST_CASE("a DC batch checks the distributed slack too", "[batch][physical][slac
     CHECK(viols[0].element_id == 1);
     CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
     CHECK(viols[0].value == Approx(p_dc(1)).margin(1e-6));
+}
+
+// ----- the distributed slack on a STORAGE unit ------------------------------
+// A battery takes a share of the slack under the same rule as a generator, so the same
+// thing happens to it: its converged active power is `target + share` and nothing in the
+// solve knows what it can deliver. What is specific is the CONVENTION -- the container
+// holds its active power in the load convention, its limits and the reported value are in
+// the generator one.
+
+TEST_CASE("a storage unit the distributed slack pushes past its limits is reported",
+          "[batch][physical][slack][storage]")
+{
+    LSGrid ref = make_storage_slack_grid(1., 1.);
+    const real_type p_ref = reference_storage_p(ref);
+    // it targets 10 MW of discharge and ends up well above it, so the case is meaningful
+    REQUIRE(p_ref > 10.);
+
+    SECTION("within its limits: nothing reported")
+    {
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        set_storage_p_limits(grid, -WIDE_Q, p_ref + 5.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+
+    SECTION("above max_p_mw: HIGH_P, with the power ac_pf publishes and that unit's max")
+    {
+        const real_type pmax = p_ref - 5.;
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        set_storage_p_limits(grid, NO_LIMIT, pmax);
+        std::vector<std::string> names{"batt"};
+        grid.set_storage_names(names);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+        REQUIRE(viols.size() == 1);
+        CHECK(viols[0].element_type == ViolationElementType::STORAGE);
+        CHECK(viols[0].element_id == 0);
+        CHECK(viols[0].side == 0);
+        CHECK(viols[0].violation_type == LimitViolationType::HIGH_P);
+        CHECK(viols[0].category() == ViolationCategory::PHYSICAL);
+        CHECK(viols[0].value == Approx(p_ref).margin(1e-6));
+        CHECK(viols[0].limit == Approx(pmax));
+        CHECK(viols[0].name == "batt");
+        // the base ("n") case solves the same grid, so it reports the same thing
+        REQUIRE(ts.get_physical_violations_n().size() == 1);
+        CHECK(ts.get_physical_violations_n()[0].value == Approx(p_ref).margin(1e-6));
+    }
+
+    SECTION("below min_p_mw: LOW_P, the other way round")
+    {
+        const real_type pmin = p_ref + 5.;
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        set_storage_p_limits(grid, pmin, NO_LIMIT);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+
+        const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+        REQUIRE(viols.size() == 1);
+        CHECK(viols[0].violation_type == LimitViolationType::LOW_P);
+        CHECK(viols[0].value == Approx(p_ref).margin(1e-6));
+        CHECK(viols[0].limit == Approx(pmin));
+    }
+
+    SECTION("the limits are read in the GENERATOR convention")
+    {
+        // the load-convention power is the negated one: limits bracketing IT would put the
+        // unit far outside them, and this is the mistake the two conventions invite
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        set_storage_p_limits(grid, p_ref - 5., p_ref + 5.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+
+    SECTION("a unit that takes no share is never reported")
+    {
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        grid.remove_storage_slackbus(0);
+        set_storage_p_limits(grid, NO_LIMIT, 1.);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+
+    SECTION("a grid that was never given any reports nothing")
+    {
+        LSGrid grid = make_storage_slack_grid(1., 1.);
+        CHECK(std::isnan(grid.get_storages().get_min_p(0)));
+        CHECK(std::isnan(grid.get_storages().get_max_p(0)));
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(ts.get_physical_violations()[0].empty());
+    }
+}
+
+TEST_CASE("a generator sharing the slack with a battery keeps its own share",
+          "[batch][physical][slack][storage]")
+{
+    // The share a machine gets is a fraction of the RAW participation of its bus, and the
+    // per-bus weights the solver is given sum the two families together -- so the total the
+    // raw weight is recovered with has to count the battery as well. Leaving it out doubles
+    // what the generator is reported at here, which is what this pins down.
+    LSGrid ref = make_storage_slack_grid(1., 1.);
+    const real_type p_sto = reference_storage_p(ref);
+    const RealVect p_gen_vec(std::get<0>(ref.get_gen_res()));
+    const real_type p_gen = p_gen_vec(0);
+    REQUIRE(p_gen > 1.);
+
+    LSGrid grid = make_storage_slack_grid(1., 1.);
+    set_gen_p_limits(grid, {p_gen - 5.}, {NO_LIMIT});  // it ends up ABOVE this min: no report
+    set_storage_p_limits(grid, NO_LIMIT, p_sto - 5.);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    REQUIRE(viols.size() == 1);
+    const LimitViolation * sto = find_storage(viols, 0);
+    REQUIRE(sto != nullptr);
+    CHECK(sto->value == Approx(p_sto).margin(1e-6));
+    CHECK(find_gen(viols, 0) == nullptr);
+
+    // ... and the generator's own value, checked the same way
+    LSGrid grid2 = make_storage_slack_grid(1., 1.);
+    set_gen_p_limits(grid2, {NO_LIMIT}, {p_gen - 5.});
+    grid2.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts2(grid2);
+    setup_one_row(ts2);
+    ts2.compute(flat_start(grid2), 30, 1e-11);
+    REQUIRE(ts2.converged_mask()[0] == 1);
+    const LimitViolation * gen = find_gen(ts2.get_physical_violations()[0], 0);
+    REQUIRE(gen != nullptr);
+    CHECK(gen->value == Approx(p_gen).margin(1e-6));
+}
+
+TEST_CASE("the weights are what the split follows, battery included",
+          "[batch][physical][slack][storage]")
+{
+    LSGrid even = make_storage_slack_grid(1., 1.);
+    const real_type p_even = reference_storage_p(even);
+    LSGrid ref = make_storage_slack_grid(1., 3.);
+    const real_type p_ref = reference_storage_p(ref);
+    REQUIRE(std::abs(p_ref - p_even) > 1.);
+
+    LSGrid grid = make_storage_slack_grid(1., 3.);
+    set_storage_p_limits(grid, NO_LIMIT, p_ref - 1.);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & viols = ts.get_physical_violations()[0];
+    REQUIRE(viols.size() == 1);
+    CHECK(viols[0].value == Approx(p_ref).margin(1e-6));
+}
+
+// ===================== the PQ -> PV release of a pinned machine =====================
+// The other direction of OpenLoadFlow's ReactiveLimits loop (GenPvReleaseCheck.hpp): a PQ
+// machine a caller flagged as pinned at a reactive limit, whose regulated voltage sits on
+// the side that would make the loop switch it back to PV. lightsim2grid never pins anything
+// itself, so only the flag says which PQ machines are candidates; and the reactive limits
+// influence nothing, which lets every test measure the converged voltage first and put the
+// target on either side of it afterwards.
+
+namespace {
+
+const real_type VN_KV = 138.;
+
+// the converged voltage magnitude of `bus` (pu) as a single-shot ac_pf publishes it
+real_type reference_vm(const LSGrid & grid_in, int bus)
+{
+    LSGrid grid = grid_in.copy();
+    const CplxVect V = grid.ac_pf(flat_start(grid), 30, 1e-11);
+    REQUIRE(V.size() > 0);
+    return std::abs(V(bus));
+}
+
+// a PQ machine on GEN_BUS pinned at its minimum (`at_min`) or maximum reactive power,
+// flagged (or not) and asked to hold `target_vm` (on itself, or on `regulated_bus`)
+GenSpec pinned_gen(bool at_min, real_type target_vm, bool flagged = true, int regulated_bus = -1)
+{
+    // an absorption small enough for the weak feeder to converge, a production it copes with
+    const real_type min_q = -5., max_q = 20.;
+    GenSpec spec{GEN_BUS, target_vm, 10., min_q, max_q, regulated_bus};
+    spec.vreg = false;
+    spec.target_q = at_min ? min_q : max_q;
+    spec.can_be_pv = flagged;
+    return spec;
+}
+
+// the release violation reported on `gen_id`, or nullptr
+const LimitViolation * find_release(const std::vector<LimitViolation> & viols, int gen_id)
+{
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        if (viols[k].element_type == ViolationElementType::GENERATOR &&
+            viols[k].element_id == gen_id &&
+            (viols[k].violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q ||
+             viols[k].violation_type == LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q)) {
+            return &viols[k];
+        }
+    }
+    return nullptr;
+}
+
+void setup_one_row_release(TimeSeries & ts)
+{
+    setup_one_row(ts);
+    ts.set_physical_violation_tol_vm_pu(0.);
+}
+
+}  // namespace
+
+TEST_CASE("a flagged machine pinned at min_q below its target is released", "[batch][physical][pvrelease]")
+{
+    // the feeder sags well below 1.10 at bus 1: absorbing all it can, the machine leaves its
+    // bus below the target it would hold -- the loop would let it regulate again
+    std::vector<GenSpec> gens{slack_gen(), pinned_gen(/*at_min=*/true, 1.10)};
+    LSGrid grid = make_grid(gens);
+    grid.set_gen_names({"slack", "pinned"});
+    const real_type vm = reference_vm(grid, GEN_BUS);
+    REQUIRE(vm < 1.10);
+
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    const std::vector<LimitViolation> & row = ts.get_physical_violations()[0];
+    const LimitViolation * viol = find_release(row, 1);
+    REQUIRE(viol != nullptr);
+    CHECK(viol->violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q);
+    CHECK(viol->category() == ViolationCategory::PHYSICAL);
+    CHECK(viol->side == 0);
+    CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
+    CHECK(viol->limit == Approx(1.10 * VN_KV));
+    CHECK(viol->name == "pinned");
+    // the base case is the same row here
+    CHECK(find_release(ts.get_physical_violations_n(), 1) != nullptr);
+    // and the slack machine, which regulates, is nobody's candidate
+    CHECK(find_release(row, 0) == nullptr);
+}
+
+TEST_CASE("a flagged machine pinned at max_q above its target is released", "[batch][physical][pvrelease]")
+{
+    std::vector<GenSpec> gens{slack_gen(), pinned_gen(/*at_min=*/false, 0.80)};
+    LSGrid grid = make_grid(gens);
+    const real_type vm = reference_vm(grid, GEN_BUS);
+    REQUIRE(vm > 0.80);
+
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    const LimitViolation * viol = find_release(ts.get_physical_violations()[0], 1);
+    REQUIRE(viol != nullptr);
+    CHECK(viol->violation_type == LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q);
+    CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
+    CHECK(viol->limit == Approx(0.80 * VN_KV));
+}
+
+TEST_CASE("only a flagged machine, on the release side of its target, is a candidate", "[batch][physical][pvrelease]")
+{
+    SECTION("not flagged: the same PQ machine is an ordinary fixed-Q injection") {
+        std::vector<GenSpec> gens{slack_gen(), pinned_gen(true, 1.10, /*flagged=*/false)};
+        LSGrid grid = make_grid(gens);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(find_release(ts.get_physical_violations()[0], 1) == nullptr);
+    }
+    SECTION("the wrong side: at min_q with the voltage above the target, at max_q below it") {
+        for (bool at_min : {true, false}) {
+            std::vector<GenSpec> gens{slack_gen(), pinned_gen(at_min, at_min ? 0.80 : 1.10)};
+            LSGrid grid = make_grid(gens);
+            grid.change_algorithm(AlgorithmType::NR_SparseLU);
+            TimeSeries ts(grid);
+            setup_one_row_release(ts);
+            ts.compute(flat_start(grid), 30, 1e-11);
+            REQUIRE(ts.converged_mask()[0] == 1);
+            CHECK(find_release(ts.get_physical_violations()[0], 1) == nullptr);
+        }
+    }
+    SECTION("within the voltage tolerance: not reported, and reported again at zero") {
+        std::vector<GenSpec> probe{slack_gen(), pinned_gen(true, 1.10)};
+        const real_type vm = reference_vm(make_grid(probe), GEN_BUS);
+        std::vector<GenSpec> gens{slack_gen(), pinned_gen(true, vm + 5e-4)};
+        LSGrid grid = make_grid(gens);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row(ts);
+        ts.set_physical_violation_tol_vm_pu(1e-3);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(find_release(ts.get_physical_violations()[0], 1) == nullptr);
+        ts.set_physical_violation_tol_vm_pu(0.);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        CHECK(find_release(ts.get_physical_violations()[0], 1) != nullptr);
+    }
+    SECTION("a reactive range below the plausibility floor never regulates") {
+        GenSpec narrow = pinned_gen(true, 1.10);
+        narrow.min_q = -0.4;
+        narrow.max_q = 0.4;
+        narrow.target_q = -0.4;
+        std::vector<GenSpec> gens{slack_gen(), narrow};
+        LSGrid grid = make_grid(gens);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(find_release(ts.get_physical_violations()[0], 1) == nullptr);
+    }
+    SECTION("frozen a hair inside its limit (a bake keeps the output it had): still pinned there") {
+        GenSpec inside = pinned_gen(true, 1.10);
+        inside.target_q += 0.01;   // 0.01 MVAr inside min_q
+        std::vector<GenSpec> gens{slack_gen(), inside};
+        LSGrid grid = make_grid(gens);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_release(ts.get_physical_violations()[0], 1);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q);
+    }
+    SECTION("the nearer limit decides the side: near max_q, a voltage below the target is no release") {
+        GenSpec near_max = pinned_gen(false, 1.10);
+        near_max.target_q -= 0.01;   // 0.01 MVAr inside max_q
+        std::vector<GenSpec> gens{slack_gen(), near_max};
+        LSGrid grid = make_grid(gens);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        REQUIRE(reference_vm(grid, GEN_BUS) < 1.10);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        CHECK(find_release(ts.get_physical_violations()[0], 1) == nullptr);
+    }
+}
+
+TEST_CASE("a remotely regulating pinned machine is checked on the bus it would hold", "[batch][physical][pvrelease]")
+{
+    // the load bus, further down the feeder, is lower than the machine's own: the value
+    // reported is that bus' voltage, not the terminal's
+    std::vector<GenSpec> gens{slack_gen(), pinned_gen(true, 1.10, true, /*regulated_bus=*/NB_BUS - 1)};
+    LSGrid grid = make_grid(gens);
+    const real_type vm_load = reference_vm(grid, NB_BUS - 1);
+    const real_type vm_own = reference_vm(grid, GEN_BUS);
+    REQUIRE(vm_load < vm_own);
+
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    const LimitViolation * viol = find_release(ts.get_physical_violations()[0], 1);
+    REQUIRE(viol != nullptr);
+    CHECK(viol->value == Approx(vm_load * VN_KV).margin(1e-6));
+}
+
+TEST_CASE("a row whose regulated bus is cut off reports no release", "[batch][physical][contingency][pvrelease]")
+{
+    // the pinned machine on bus 1 holds the load bus; line 2 (bus2--bus3) takes that bus
+    // out with the load. The row still converges (the rest of the feeder is fine), and its
+    // regulated bus, masked, is nobody's voltage -- while the base case does report it.
+    std::vector<GenSpec> gens{slack_gen(), pinned_gen(true, 1.10, true, /*regulated_bus=*/NB_BUS - 1)};
+    LSGrid grid = make_grid(gens);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ContingencyAnalysis ca(grid);
+    ca.set_compute_physical_violations(true);
+    ca.set_physical_violation_tol_mva(0.);
+    ca.set_physical_violation_tol_vm_pu(0.);
+    ca.set_handle_disconnected_grid(true);
+    ca.add_n1(2);
+    ca.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ca.converged_mask()[0] == 1);
+    CHECK(find_release(ca.get_physical_violations_n(), 1) != nullptr);
+    CHECK(find_release(ca.get_physical_violations()[0], 1) == nullptr);
+}
+
+TEST_CASE("a row that disconnects the pinned machine has nothing to release", "[batch][physical][scenario_sweep][pvrelease]")
+{
+    std::vector<GenSpec> gens{slack_gen(), pinned_gen(true, 1.10)};
+    LSGrid grid = make_grid(gens);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    ScenarioSweep sweep(grid);
+    sweep.set_compute_physical_violations(true);
+    sweep.set_physical_violation_tol_mva(0.);
+    sweep.set_physical_violation_tol_vm_pu(0.);
+    RealMat load_p(2, 1);
+    load_p << LOAD_P, LOAD_P;
+    sweep.modify_load_p(load_p);
+    RealMat load_q(2, 1);
+    load_q << LOAD_Q, LOAD_Q;
+    sweep.modify_load_q(load_q);
+    BoolMat gen_off(2, 2);
+    gen_off << false, false,
+               false, true;  // row 1 disconnects the pinned machine
+    sweep.set_contingency_gens(gen_off);
+    sweep.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(sweep.converged_mask()[0] == 1);
+    REQUIRE(sweep.converged_mask()[1] == 1);
+    CHECK(find_release(sweep.get_physical_violations()[0], 1) != nullptr);
+    CHECK(find_release(sweep.get_physical_violations()[1], 1) == nullptr);
+}
+
+TEST_CASE("a row's own voltage target is what a pinned machine is checked against", "[batch][physical][pvrelease]")
+{
+    // modify_gen_v never reaches a PQ machine's solve; it is read as "the target it would
+    // hold if released": row 0 asks for 1.10 (above the feeder: released), row 1 for 0.80
+    std::vector<GenSpec> gens{slack_gen(), pinned_gen(true, 1.10)};
+    LSGrid grid = make_grid(gens);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    ts.set_compute_physical_violations(true);
+    ts.set_physical_violation_tol_mva(0.);
+    ts.set_physical_violation_tol_vm_pu(0.);
+    RealMat load_p(2, 1);
+    load_p << LOAD_P, LOAD_P;
+    ts.modify_load_p(load_p);
+    RealMat load_q(2, 1);
+    load_q << LOAD_Q, LOAD_Q;
+    ts.modify_load_q(load_q);
+    RealMat gen_v(2, 2);
+    gen_v << 1.02, 1.10,
+             1.02, 0.80;
+    ts.modify_gen_v(gen_v);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    REQUIRE(ts.converged_mask()[1] == 1);
+    const LimitViolation * row0 = find_release(ts.get_physical_violations()[0], 1);
+    REQUIRE(row0 != nullptr);
+    CHECK(row0->limit == Approx(1.10 * VN_KV));
+    CHECK(find_release(ts.get_physical_violations()[1], 1) == nullptr);
+}
+
+TEST_CASE("the batch and a single solve report the same release", "[batch][physical][pvrelease]")
+{
+    std::vector<GenSpec> gens{slack_gen(), pinned_gen(true, 1.10)};
+    LSGrid grid = make_grid(gens);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+
+    LSGrid single = grid.copy();
+    single.change_algorithm(AlgorithmType::NR_SparseLU);
+    single.ac_pf(flat_start(single), 30, 1e-11);
+    const std::vector<LimitViolation> one_off = single.get_physical_violations(true, 0., 0.);
+    const std::vector<LimitViolation> & row = ts.get_physical_violations()[0];
+    REQUIRE(one_off.size() == row.size());
+    for (std::size_t k = 0; k < row.size(); ++k) {
+        CHECK(one_off[k].element_type == row[k].element_type);
+        CHECK(one_off[k].element_id == row[k].element_id);
+        CHECK(one_off[k].violation_type == row[k].violation_type);
+        CHECK(one_off[k].value == Approx(row[k].value).margin(1e-6));
+        CHECK(one_off[k].limit == Approx(row[k].limit).margin(1e-9));
+    }
+    REQUIRE(find_release(one_off, 1) != nullptr);
+}
+
+TEST_CASE("a DC batch has no voltage magnitude to release anything", "[batch][physical][pvrelease]")
+{
+    std::vector<GenSpec> gens{slack_gen(), pinned_gen(true, 1.10)};
+    LSGrid grid = make_grid(gens);
+    TimeSeries ts(grid);
+    ts.change_algorithm(AlgorithmType::DC_SparseLU);  // the batch's own algorithm, not the grid's
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    CHECK(find_release(ts.get_physical_violations()[0], 1) == nullptr);
+    CHECK(find_release(ts.get_physical_violations_n(), 1) == nullptr);
+}
+
+namespace {
+
+// the feeder with one non-regulating SVC on the load bus (fixed Q = 0, or `mode`), flagged
+// (or not) as an idle standby SVC with thresholds [low_pu, high_pu] (see SvcStandbyCheck.hpp)
+LSGrid make_standby_svc_grid(real_type low_pu, real_type high_pu, bool flagged = true,
+                             int mode = SvcContainer::RegulationMode::REACTIVE_POWER)
+{
+    LSGrid grid = make_grid(std::vector<GenSpec>{slack_gen()});
+    std::vector<int> modes{mode};
+    RealVect target_vm(1), q_set(1), slope(1), b_min(1), b_max(1);
+    target_vm << V_SET;
+    q_set << 0.;
+    slope << 0.;
+    b_min << -1.;
+    b_max << 1.;
+    Eigen::VectorXi reg_bus(1), svc_bus(1);
+    reg_bus << SVC_BUS;
+    svc_bus << SVC_BUS;
+    grid.init_svcs(modes, target_vm, q_set, slope, b_min, b_max, reg_bus, svc_bus);
+    grid.set_svc_names({"standby"});
+    if (flagged) {
+        RealVect low(1), high(1);
+        low << low_pu;
+        high << high_pu;
+        grid.set_svc_standby(std::vector<bool>{true}, low, high);
+    }
+    grid.add_gen_slackbus(0, 1.);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+// the standby violation reported on `svc_id`, or nullptr
+const LimitViolation * find_standby(const std::vector<LimitViolation> & viols, int svc_id)
+{
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        if (viols[k].element_type == ViolationElementType::SVC &&
+            viols[k].element_id == svc_id &&
+            (viols[k].violation_type == LimitViolationType::LOW_VOLTAGE_SVC_STANDBY ||
+             viols[k].violation_type == LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY)) {
+            return &viols[k];
+        }
+    }
+    return nullptr;
+}
+
+// the voltage of the load bus with the idle SVC (Q = 0: the thresholds change nothing)
+real_type idle_svc_vm()
+{
+    return reference_vm(make_standby_svc_grid(0.5, 1.5, /*flagged=*/false), SVC_BUS);
+}
+
+}  // namespace
+
+TEST_CASE("an idle standby SVC whose regulated bus leaves its thresholds is reported", "[batch][physical][svcstandby]")
+{
+    const real_type vm = idle_svc_vm();
+    SECTION("above the high threshold") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_standby(ts.get_physical_violations()[0], 0);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY);
+        CHECK(viol->category() == ViolationCategory::PHYSICAL);
+        CHECK(viol->side == 0);
+        CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
+        CHECK(viol->limit == Approx((vm - 0.01) * VN_KV));
+        CHECK(viol->name == "standby");
+        CHECK(find_standby(ts.get_physical_violations_n(), 0) != nullptr);
+
+        // the single solve says the same
+        LSGrid one = grid.copy();
+        REQUIRE(one.ac_pf(flat_start(one), 30, 1e-11).size() > 0);
+        const std::vector<LimitViolation> single = one.get_physical_violations(true, 0., 0.);
+        const LimitViolation * viol_one = find_standby(single, 0);
+        REQUIRE(viol_one != nullptr);
+        CHECK(viol_one->value == Approx(viol->value).margin(1e-6));
+        CHECK(viol_one->limit == Approx(viol->limit));
+    }
+    SECTION("below the low threshold") {
+        LSGrid grid = make_standby_svc_grid(vm + 0.01, vm + 0.05);
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        const LimitViolation * viol = find_standby(ts.get_physical_violations()[0], 0);
+        REQUIRE(viol != nullptr);
+        CHECK(viol->violation_type == LimitViolationType::LOW_VOLTAGE_SVC_STANDBY);
+        CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
+        CHECK(viol->limit == Approx((vm + 0.01) * VN_KV));
+    }
+}
+
+TEST_CASE("only a flagged, idle SVC outside its thresholds is a candidate", "[batch][physical][svcstandby]")
+{
+    const real_type vm = idle_svc_vm();
+    auto one_row = [](LSGrid & grid, real_type tol_vm_pu){
+        grid.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts(grid);
+        setup_one_row_release(ts);
+        ts.set_physical_violation_tol_vm_pu(tol_vm_pu);
+        ts.compute(flat_start(grid), 30, 1e-11);
+        REQUIRE(ts.converged_mask()[0] == 1);
+        return find_standby(ts.get_physical_violations()[0], 0) != nullptr;
+    };
+    SECTION("inside the thresholds") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.01, vm + 0.01);
+        CHECK_FALSE(one_row(grid, 0.));
+    }
+    SECTION("not flagged") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01, /*flagged=*/false);
+        CHECK_FALSE(one_row(grid, 0.));
+    }
+    SECTION("within the tolerance") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01);
+        CHECK_FALSE(one_row(grid, 0.02));
+    }
+    SECTION("regulating voltage: already switched on") {
+        LSGrid grid = make_standby_svc_grid(vm + 0.5, vm + 0.6, true, SvcContainer::RegulationMode::VOLTAGE);
+        CHECK_FALSE(one_row(grid, 0.));
+    }
+    SECTION("thresholds refused unless finite with low < high") {
+        LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01, /*flagged=*/false);
+        RealVect low(1), high(1);
+        low << 1.1;
+        high << 1.0;
+        CHECK_THROWS_AS(grid.set_svc_standby(std::vector<bool>{true}, low, high), std::runtime_error);
+        CHECK_FALSE(grid.get_svcs().get_standby(0));
+    }
+}
+
+TEST_CASE("a DC batch has no voltage magnitude to switch a standby SVC on", "[batch][physical][svcstandby]")
+{
+    const real_type vm = idle_svc_vm();
+    LSGrid grid = make_standby_svc_grid(vm - 0.05, vm - 0.01);
+    TimeSeries ts(grid);
+    ts.change_algorithm(AlgorithmType::DC_SparseLU);
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    CHECK(find_standby(ts.get_physical_violations()[0], 0) == nullptr);
+}
+
+namespace {
+
+// the feeder with one fixed-Q SVC on the load bus frozen at the absorbing end of its range
+// [b_min, b_max] at `target_vm` (the output it had while holding that target), flagged (or
+// not) as frozen at a limit (LSGrid::set_svc_can_be_pv, see GenPvReleaseCheck.hpp)
+LSGrid make_frozen_svc_grid(real_type target_vm, bool flagged = true)
+{
+    const real_type b_min = -0.01, b_max = 0.5;  // a weak absorption: the load bus is close to collapse
+    LSGrid grid = make_grid(std::vector<GenSpec>{slack_gen()});
+    std::vector<int> modes{SvcContainer::RegulationMode::REACTIVE_POWER};
+    RealVect vm(1), q_set(1), slope(1), bmin(1), bmax(1);
+    vm << target_vm;
+    q_set << b_min * target_vm * target_vm * 100.;
+    slope << 0.;
+    bmin << b_min;
+    bmax << b_max;
+    Eigen::VectorXi reg_bus(1), svc_bus(1);
+    reg_bus << SVC_BUS;
+    svc_bus << SVC_BUS;
+    grid.init_svcs(modes, vm, q_set, slope, bmin, bmax, reg_bus, svc_bus);
+    grid.set_svc_names({"frozen"});
+    if (flagged) grid.set_svc_can_be_pv(std::vector<bool>{true});
+    grid.add_gen_slackbus(0, 1.);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+const LimitViolation * find_svc_release(const std::vector<LimitViolation> & viols)
+{
+    for (std::size_t k = 0; k < viols.size(); ++k) {
+        if (viols[k].element_type == ViolationElementType::SVC &&
+            (viols[k].violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q ||
+             viols[k].violation_type == LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q)) {
+            return &viols[k];
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+TEST_CASE("a flagged SVC frozen at its absorbing limit below its target is released", "[batch][physical][pvrelease][svc]")
+{
+    LSGrid grid = make_frozen_svc_grid(V_SET);
+    const real_type vm = reference_vm(grid, SVC_BUS);
+    REQUIRE(vm < V_SET);
+    grid.change_algorithm(AlgorithmType::NR_SparseLU);
+    TimeSeries ts(grid);
+    setup_one_row_release(ts);
+    ts.compute(flat_start(grid), 30, 1e-11);
+    REQUIRE(ts.converged_mask()[0] == 1);
+    const LimitViolation * viol = find_svc_release(ts.get_physical_violations()[0]);
+    REQUIRE(viol != nullptr);
+    CHECK(viol->element_id == 0);
+    CHECK(viol->violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q);
+    CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
+    CHECK(viol->limit == Approx(V_SET * VN_KV));
+    CHECK(viol->name == "frozen");
+    CHECK(find_svc_release(ts.get_physical_violations_n()) != nullptr);
+
+    SECTION("not flagged: an ordinary fixed-Q SVC") {
+        LSGrid other = make_frozen_svc_grid(V_SET, /*flagged=*/false);
+        other.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts2(other);
+        setup_one_row_release(ts2);
+        ts2.compute(flat_start(other), 30, 1e-11);
+        REQUIRE(ts2.converged_mask()[0] == 1);
+        CHECK(find_svc_release(ts2.get_physical_violations()[0]) == nullptr);
+    }
+    SECTION("voltage above the target: absorbing all it can is right") {
+        LSGrid other = make_frozen_svc_grid(0.5);
+        other.change_algorithm(AlgorithmType::NR_SparseLU);
+        TimeSeries ts2(other);
+        setup_one_row_release(ts2);
+        ts2.compute(flat_start(other), 30, 1e-11);
+        REQUIRE(ts2.converged_mask()[0] == 1);
+        CHECK(find_svc_release(ts2.get_physical_violations()[0]) == nullptr);
+    }
 }

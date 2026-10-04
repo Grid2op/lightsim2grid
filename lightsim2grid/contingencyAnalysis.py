@@ -44,7 +44,10 @@ class PreContingencyResult:
     limit_violations: List[LimitViolation]
     #: the PHYSICAL limits this case's solution leaves, when
     #: `ContingencyAnalysis.compute_physical_violations` is on (an empty list otherwise): a
-    #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), an angle-droop
+    #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), a PQ generator
+    #: flagged as pinned at a reactive limit that would regulate again (LOW_VOLTAGE_AT_MIN_Q /
+    #: HIGH_VOLTAGE_AT_MAX_Q), an idle SVC flagged as carrying a standby automaton that would
+    #: switch it on (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), an angle-droop
     #: hvdc line beyond what its converters can transmit (HIGH_P), or a generator the
     #: distributed slack pushed outside its active power limits (LOW_P / HIGH_P). Kept apart from
     #: `limit_violations` because it is a different KIND of statement: every entry here has
@@ -207,6 +210,24 @@ class ContingencyAnalysis(object):
         self.computer.init_from_n_powerflow = bool(val)
 
     @property
+    def keep_vinit_at_group_controlled_buses(self):
+        """Whether the buses a voltage-control group regulates (regulated from elsewhere, by
+        an SVC, or by several controllers at least one of which is remote) keep the magnitude
+        of the starting voltage instead of being set to their set-point before each solve.
+        The solution is the same; with ``MaxVoltageChange`` damping it can be reached in far
+        fewer iterations. Defaults to the grid's own setting (see
+        :func:`lightsim2grid.lightsim2grid_cpp.LSGrid.set_keep_vinit_at_group_controlled_buses`),
+        ``False`` unless set there.
+        """
+        return self.computer.keep_vinit_at_group_controlled_buses
+
+    @keep_vinit_at_group_controlled_buses.setter
+    def keep_vinit_at_group_controlled_buses(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `keep_vinit_at_group_controlled_buses` attribute must be a boolean.")
+        self.computer.keep_vinit_at_group_controlled_buses = bool(val)
+
+    @property
     def handle_disconnected_grid(self):
         """Whether a contingency that splits the grid into several connected components is
         simulated on its largest component instead of being skipped. Default: ``False``,
@@ -223,7 +244,36 @@ class ContingencyAnalysis(object):
     def handle_disconnected_grid(self, val: bool):
         if bool(val) != val:
             raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
-        self.computer.handle_disconnected_grid = bool(val)
+        val = bool(val)
+        if val != self.computer.handle_disconnected_grid:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.handle_disconnected_grid = val
+
+    @property
+    def redistribute_slack(self):
+        """Whether the active power a contingency loses (the elements of the island it cuts
+        off, simulated with :attr:`handle_disconnected_grid`) is first shared on the remaining
+        units of the distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does:
+        proportionally to their weight, each one clamped to its ``[min_p, max_p]`` and never
+        crossing 0 MW, a clamped unit leaving the pool (and that contingency's distributed
+        slack), the powerflow then
+        only sharing what is left (the change in the losses) on the units that can still move.
+        Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
+        clamp anything. Same as ``LSGrid.consider_only_main_component(redistribute_slack=True)``,
+        contingency by contingency.
+        """
+        return self.computer.redistribute_slack
+
+    @redistribute_slack.setter
+    def redistribute_slack(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `redistribute_slack` attribute must be a boolean.")
+        val = bool(val)
+        if val != self.computer.redistribute_slack:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.redistribute_slack = val
 
     @property
     def compute_limit_violations(self):
@@ -262,9 +312,9 @@ class ContingencyAnalysis(object):
         ==============  ========  =========  ===============================================
         check           anchor    limit      violates when
         ==============  ========  =========  ===============================================
-        CURRENT         0         limit_a    ``value >= threshold * limit_a``
-        LOW_VOLTAGE     vn_kv     vmin_kv    ``v <= threshold * vmin + (1 - threshold) * vn``
-        HIGH_VOLTAGE    vn_kv     vmax_kv    ``v >= threshold * vmax + (1 - threshold) * vn``
+        CURRENT         0         limit_a    ``value > threshold * limit_a``
+        LOW_VOLTAGE     vn_kv     vmin_kv    ``v < threshold * vmin + (1 - threshold) * vn``
+        HIGH_VOLTAGE    vn_kv     vmax_kv    ``v > threshold * vmax + (1 - threshold) * vn``
         ==============  ========  =========  ===============================================
 
         A line's usable range really is ``[0, limit_a]``, so its anchor is ``0`` and the rule
@@ -284,6 +334,10 @@ class ContingencyAnalysis(object):
         rather than being reported as an arbitrary one of the two types. The
         reported ``value`` / ``limit`` are never rescaled by the threshold; only the test
         deciding whether to report is shifted.
+
+        On top of the effective limit, a value must clear the relative margin
+        `violation_rel_tol` (default ``1e-9``) to be reported, so a value on its limit up to
+        rounding is not a violation.
 
         The default ``1.0`` reproduces the previous, threshold-less behaviour. Like
         `nb_thread` / `handle_disconnected_grid`, this is a plain runtime knob: it only
@@ -313,6 +367,45 @@ class ContingencyAnalysis(object):
         self.computer.violation_threshold = val
 
     @property
+    def violation_rel_tol(self):
+        """Relative tolerance (a ``float`` in ``[0., 1.[``, default ``1e-9``) of every
+        limit-violation check performed when `compute_limit_violations` is `True`: a value
+        is reported only when it is beyond its effective limit (see `violation_threshold`)
+        by more than this fraction of that limit::
+
+            CURRENT        value > threshold * limit_a * (1 + violation_rel_tol)
+            LOW_VOLTAGE    v     < low_eff  * (1 - violation_rel_tol)
+            HIGH_VOLTAGE   v     > high_eff * (1 + violation_rel_tol)
+
+        It is there for the values that sit ON their limit by construction, typically a bus
+        a generator regulates exactly at its ``vmax``: a solve leaves such a value a few ulps
+        on either side of the limit, and with a bare ``>`` the last bit of rounding decided
+        whether it was reported (the one-contingency-at-a-time solve, the batch and
+        gpusim2grid disagreed). ``1e-9`` is about 0.4 mV on a 400 kV bus. ``0.`` gives the
+        bare strict comparisons. The reported ``value`` / ``limit`` are unaffected.
+
+        Like `violation_threshold`, it only affects the next `run` / `run_ac` / `run_dc`;
+        changing it (either way) invalidates any already-computed results, the registered
+        contingencies being kept.
+        """
+        return self.computer.violation_rel_tol
+
+    @violation_rel_tol.setter
+    def violation_rel_tol(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `violation_rel_tol` attribute must be a real number.")
+        if not (0. <= val < 1.):
+            raise ValueError("The `violation_rel_tol` attribute must be in the range "
+                             f"[0., 1.[ (got {val}).")
+        if val != self.computer.violation_rel_tol:
+            # the c++ side clears its results on any change (a larger tolerance drops
+            # recorded violations as surely as a smaller one adds some)
+            self.clear(with_contlist=False)
+        self.computer.violation_rel_tol = val
+
+    @property
     def compute_physical_violations(self):
         """Whether every converged contingency reports the PHYSICAL limits its solution
         leaves -- a state the grid cannot reach at all, as opposed to the operational limits
@@ -320,9 +413,9 @@ class ContingencyAnalysis(object):
         does reach and should not sit in). Default: ``False``. See
         :func:`get_physical_violations` and `ContingencyResult.physical_violations`.
 
-        Three checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
-        enforced here (nothing is switched PV -> PQ, no droop is clamped, no machine leaves
-        the slack distribution, no contingency is re-solved):
+        Five checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        enforced here (nothing is switched PV -> PQ or back, no droop is clamped, no machine
+        leaves the slack distribution, no contingency is re-solved):
 
         * the **reactive capability** of every bus whose voltage is held by machines
           (``LOW_Q`` / ``HIGH_Q`` on the ``BUS``): did it need more reactive power than the
@@ -330,24 +423,44 @@ class ContingencyAnalysis(object):
           stations and voltage-mode SVCs can produce? Per bus, not per machine -- the split between the
           machines of one bus is a sharing convention rather than something the solver
           decides. OpenLoadFlow's ``ReactiveLimits``.
+        * the **release** of every PQ generator flagged as pinned at a reactive limit
+          (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q`` on the ``GENERATOR``, see
+          :func:`lightsim2grid.network.LSGrid.set_gen_can_be_pv`): does the bus it would
+          regulate sit below its target while the machine absorbs all it can (or above it
+          while it produces all it can)? The other direction, PQ -> PV, of the same
+          ``ReactiveLimits`` loop. ``value`` and ``limit`` in kV, compared with
+          :attr:`physical_violation_tol_vm_pu`. A grid with no flagged generator reports
+          nothing here.
+        * the **switch on** of every idle SVC flagged as carrying a standby automaton
+          (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the ``SVC``, see
+          :func:`lightsim2grid.network.LSGrid.set_svc_standby`): does the bus it regulates
+          sit outside the automaton's voltage thresholds? OpenLoadFlow's
+          ``MonitoringVoltageOuterLoop``. ``value`` and ``limit`` in kV, compared with
+          :attr:`physical_violation_tol_vm_pu`. A grid with no flagged SVC reports nothing
+          here.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? OpenLoadFlow's ``HvdcAcEmulationLimits``.
-        * the **active power** of every generator carrying the **distributed slack**
-          (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR``): the slack is solved inside the
+        * the **active power** of every generator and every storage unit carrying the
+          **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
+          ``STORAGE``): the slack is solved inside the
           Jacobian by fixed participation factors that know nothing about limits, so
           ``target_p + its share of the imbalance`` can land beyond ``min_p_mw`` /
           ``max_p_mw``. Per machine, unlike the reactive check: the active split is not a
           convention, it is the participation factors the caller chose. Needs those limits,
-          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits`); a grid
-          without them reports nothing here. OpenLoadFlow's ``DistributedSlack``.
+          which are optional (:func:`lightsim2grid.network.LSGrid.set_gen_p_limits` /
+          :func:`lightsim2grid.network.LSGrid.set_storage_p_limits`); a grid without them
+          reports nothing here. A storage unit's are read -- and its violation reported --
+          in the *generator* convention, unlike its ``target_p_mw``. OpenLoadFlow's
+          ``DistributedSlack``.
 
         Independent of `compute_limit_violations`: either can be on without the other (though
         `run` still requires `compute_limit_violations`, and fills `physical_violations` only
         when this one is on too). The two active-power checks work in DC; the reactive one
-        needs an AC algorithm that publishes its per-bus mismatch (every built-in AC algorithm
-        does) and `run` / `compute_V` raise for one that does not. Changing this flag invalidates any
-        computed result but keeps the registered contingencies.
+        and the release one need an AC algorithm that publishes its per-bus mismatch (every
+        built-in AC algorithm does) and `run` / `compute_V` raise for one that does not.
+        Changing this flag invalidates any computed result but keeps the registered
+        contingencies.
         """
         return self.computer.compute_physical_violations
 
@@ -391,6 +504,31 @@ class ContingencyAnalysis(object):
         self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
         self.clear(with_contlist=False)
 
+    @property
+    def physical_violation_tol_vm_pu(self):
+        """The same as :attr:`physical_violation_tol_mva`, in pu, for the comparisons
+        :attr:`compute_physical_violations` makes on a voltage: the PQ -> PV release check
+        reports a flagged PQ generator (``LSGrid.set_gen_can_be_pv``) whose regulated bus
+        is below (at ``min_q``) or above (at ``max_q``) its target by more than this
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
+        flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
+        automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
+        ``HIGH_VOLTAGE_SVC_STANDBY``). Default: ``1e-4``. Changing it invalidates any
+        previously-computed results.
+        """
+        return self.computer.physical_violation_tol_vm_pu
+
+    @physical_violation_tol_vm_pu.setter
+    def physical_violation_tol_vm_pu(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_vm_pu` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_vm_pu:
+            return
+        self.computer.physical_violation_tol_vm_pu = val  # validates, and drops base case + results
+        self.clear(with_contlist=False)
+
     def get_physical_violations(self):
         """Per contingency, in the C++-side order (`my_defaults()`): the list of
         :class:`LimitViolation` of the physical limits that contingency's solution leaves.
@@ -403,6 +541,23 @@ class ContingencyAnalysis(object):
         """Same as :func:`get_physical_violations`, for the pre-contingency ("n") case.
         Requires :attr:`compute_physical_violations` to be ``True`` (raises otherwise)."""
         return self.computer.get_physical_violations_n()
+
+    @property
+    def nb_thread(self):
+        """Number of OS threads used to solve the contingencies (default: 1).
+
+        With ``nb_thread == 1`` the behaviour is identical to the legacy
+        sequential computation. With ``nb_thread > 1`` the contingencies are
+        split across that many threads (each with its own solver and admittance
+        matrix copy); the results do not depend on the number of threads.
+        """
+        return self.computer.nb_thread
+
+    @nb_thread.setter
+    def nb_thread(self, val: int):
+        if int(val) != val:
+            raise ValueError("The `nb_thread` attribute must be an integer.")
+        self.computer.nb_thread = int(val)
 
     def clear(self, with_contlist=True):
         """

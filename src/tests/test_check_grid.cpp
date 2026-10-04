@@ -1158,3 +1158,34 @@ TEST_CASE("a corrupted solver name is escaped in the error message", "[check_gri
         CHECK(msg.find("\\xff") != std::string::npos);
     }
 }
+
+// --- the per-generator "can be PV" flag ---------------------------------------
+
+TEST_CASE("can_be_pv is false by default, set for every generator at once, and kept by the state", "[check_grid]")
+{
+    LSGrid grid = make_valid_grid();
+    const int nb_gen = grid.get_generators().nb();
+    REQUIRE(nb_gen >= 1);
+    for(int g = 0; g < nb_gen; ++g) CHECK_FALSE(grid.get_generators().get_can_be_pv(g));
+
+    std::vector<bool> flags(static_cast<std::size_t>(nb_gen), false);
+    flags[0] = true;
+    grid.set_gen_can_be_pv(flags);
+    CHECK(grid.get_generators().get_can_be_pv(0));
+    for(int g = 1; g < nb_gen; ++g) CHECK_FALSE(grid.get_generators().get_can_be_pv(g));
+    CHECK(ls2g::GenInfo(grid.get_generators(), 0).can_be_pv);
+
+    // the wrong number of entries is refused, and nothing changes
+    std::vector<bool> wrong(static_cast<std::size_t>(nb_gen) + 1, true);
+    CHECK_THROWS_AS(grid.set_gen_can_be_pv(wrong), std::runtime_error);
+    CHECK(grid.get_generators().get_can_be_pv(0));
+
+    // copy and state round trip
+    LSGrid copied = grid.copy();
+    CHECK(copied.get_generators().get_can_be_pv(0));
+    LSGrid::StateRes st = grid.get_state();
+    LSGrid restored;
+    REQUIRE_NOTHROW(restored.set_state(st));
+    CHECK(restored.get_generators().get_can_be_pv(0));
+    for(int g = 1; g < nb_gen; ++g) CHECK_FALSE(restored.get_generators().get_can_be_pv(g));
+}

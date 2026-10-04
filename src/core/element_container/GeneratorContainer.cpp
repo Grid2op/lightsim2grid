@@ -72,6 +72,13 @@ void GeneratorContainer::init_full(const Eigen::Ref<const RealVect> & generators
     regulated_bus_id_ = generators_bus_id;
     // no reactive sharing key: the reactive range decides (see has_reactive_key)
     reactive_key_ = RealVect::Constant(size, std::numeric_limits<real_type>::quiet_NaN());
+    // the active power limits are optional and belong to the machines this call replaces:
+    // a fresh container has none (see set_p_limits). Without this, re-initialising a grid
+    // with a different number of generators left limits sized for the previous ones.
+    p_min_mw_ = RealVect();
+    p_max_mw_ = RealVect();
+    // same for the "can be PV" hint: it describes the machines this call replaces
+    can_be_pv_ = std::vector<bool>(size, false);
     reset_results();
 }
 
@@ -96,7 +103,9 @@ GeneratorContainer::StateRes GeneratorContainer::get_state() const  // osc : one
                                       regulated_bus,
                                       p_min,
                                       p_max,
-                                      reactive_key);
+                                      reactive_key,
+                                      can_be_pv_,
+                                      slack_.can_participate_weights());
      return res;
 }
 
@@ -116,6 +125,8 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     std::vector<real_type> & p_min = std::get<StateResIdx::P_MIN_MW>(my_state);
     std::vector<real_type> & p_max = std::get<StateResIdx::P_MAX_MW>(my_state);
     std::vector<real_type> & reactive_key = std::get<StateResIdx::REACTIVE_KEY>(my_state);
+    std::vector<bool> & can_be_pv = std::get<StateResIdx::CAN_BE_PV>(my_state);
+    std::vector<real_type> & can_participate = std::get<StateResIdx::CAN_PARTICIPATE_SLACK>(my_state);
 
     // check sizes
     const auto size = nb();
@@ -134,6 +145,8 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
         check_size(p_max, size, "p_max_mw");
     }
     check_size(reactive_key, size, "reactive_key");
+    check_size(can_be_pv, size, "can_be_pv");
+    check_size(can_participate, size, "can_participate_slack");
 
     // assign data
     voltage_regulator_on_ = voltage_regulator_on;
@@ -141,10 +154,12 @@ void GeneratorContainer::set_state(GeneratorContainer::StateRes & my_state)
     min_q_ = RealVect::Map(min_q.data(), min_q.size());
     max_q_ = RealVect::Map(max_q.data(), max_q.size());
     slack_.set(slack_bus, slack_weight);
+    slack_.set_can_participate_weights(can_participate);
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     p_min_mw_ = p_min.empty() ? RealVect() : RealVect::Map(p_min.data(), p_min.size());
     p_max_mw_ = p_max.empty() ? RealVect() : RealVect::Map(p_max.data(), p_max.size());
     reactive_key_ = RealVect::Map(reactive_key.data(), reactive_key.size());
+    can_be_pv_ = can_be_pv;
     reset_results();
 }
 

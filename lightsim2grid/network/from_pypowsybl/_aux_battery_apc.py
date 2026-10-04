@@ -22,34 +22,36 @@ OpenLoadFlow distributes the slack on batteries with the same rule as on generat
   *charging* battery (``target_p < 0``) does participate;
 * its key is ``max_p / droop`` (``max_p`` itself, not ``max_target_p``).
 
-Measured against OpenLoadFlow on a real RTE snapshot, battery by battery (shares x12.4,
-x1, x0.144 and 0 for the ``droop = 0`` / ``participate = false`` ones).
+Checked battery by battery against OpenLoadFlow on real grid snapshots: the units this
+rule keeps are the ones whose active power OLF actually moved, with the same shares, and
+the ``droop = 0`` / ``participate = false`` ones take no part.
 
 pypowsybl up to 1.16.1 does not expose that extension on a battery
 (``get_extensions("activePowerControl")`` only lists generators; fixed by pypowsybl PR
 #1276, not released yet), so :func:`battery_active_power_control` can fall back to reading
-it off an XIIDM export of the network.
+it off an export of the network.
 """
 
 import io
-import xml.etree.ElementTree as ET
+import json
+import warnings
 
 import numpy as np
 from packaging import version
 
 from ._aux_common import PYPOWSYBL_VER
-# OpenLoadFlow's `POWER_EPSILON_SI` and default `plausibleActivePowerLimit`, the ones the
-# bake uses for the generators (_olf_bake imports this module lazily, for that reason)
-from ._olf_bake import _ZERO_P_TOL, _MAX_PLAUSIBLE_ACTIVE_POWER_MW
-
-# OpenLoadFlow's hardcoded fallback droop (`AbstractLfGenerator.DEFAULT_DROOP`, "why not"),
-# for a unit whose `activePowerControl` extension does not set its own
-_OLF_DEFAULT_DROOP = 4.0
+# OpenLoadFlow's own constants, shared with the rest of the OLF-mirroring code
+from ._olf_const import _ZERO_P_TOL, _MAX_PLAUSIBLE_ACTIVE_POWER_MW, _OLF_DEFAULT_DROOP
 
 # the last pypowsybl release whose `activePowerControl` extension ignores batteries
 _PYPOWSYBL_NO_BATTERY_APC = version.parse("1.16.1")
 
 BATTERY_APC_SOURCES = ("auto", "extension", "default")
+
+# only what _apc_from_jiidm reads: the rest of the extensions (current limits per season,
+# ...) and the indentation make up much of a large grid's export
+_APC_ONLY_EXPORT_PARAMS = {"iidm.export.xml.included.extensions": "activePowerControl",
+                           "iidm.export.xml.indent": "false"}
 
 
 def olf_participation_weight(target_p, min_p, max_p, participate, droop, min_target_p, max_target_p):
@@ -111,10 +113,60 @@ def _apc_from_extension(net, batt_ids):
     return res
 
 
-def _apc_from_xiidm(net, batt_ids):
-    """Same as :func:`_apc_from_extension`, read off an XIIDM export of ``net``: what a
+def _apc_from_export(net, batt_ids):
+    """Same as :func:`_apc_from_extension`, read off an export of ``net``: what a
     pypowsybl that does not expose the extension on batteries leaves as the only way.
-    The export is the size of the network file (~200 MB for a 7k-bus grid)."""
+    The export is a full serialization of the network, so this is the expensive path --
+    hence the ``"extension"`` / ``"default"`` sources of
+    :func:`battery_active_power_control`.
+
+    The JSON flavour of IIDM is used, restricted to that one extension and not indented:
+    on a large grid it exports several times faster than XIIDM, and ``json.loads`` is
+    much faster than walking the XML. XIIDM stays as the fallback."""
+    try:
+        return _apc_from_jiidm(net, batt_ids)
+    except Exception:  # noqa: BLE001 - no JSON exporter in this build, or an unexpected layout
+        return _apc_from_xiidm(net, batt_ids)
+
+
+def _apc_from_jiidm(net, batt_ids):
+    """:func:`_apc_from_export` off a JIIDM export: the extensions are listed, per
+    network, under ``"extensions"`` as ``{"id": ..., "activePowerControl": {...}}``, with
+    the XIIDM attribute names and an absent attribute left out."""
+    wanted = set(str(el) for el in batt_ids)
+    doc = json.loads(net.save_to_string("JIIDM", _APC_ONLY_EXPORT_PARAMS))
+    res = {}
+    todo = [doc]
+    while todo:
+        # a merged network nests its subnetworks, each carrying its own extensions
+        network = todo.pop()
+        todo.extend(network.get("subnetworks", ()))
+        for ext in network.get("extensions", ()):
+            el_id = ext.get("id")
+            apc = ext.get("activePowerControl")
+            if apc is None or el_id not in wanted:
+                continue
+            res[el_id] = (bool(apc.get("participate", True)),
+                          float(apc.get("droop", np.nan)),
+                          float(apc.get("minTargetP", np.nan)),
+                          float(apc.get("maxTargetP", np.nan)))
+    return res
+
+
+def _apc_from_xiidm(net, batt_ids):
+    """:func:`_apc_from_export` off an XIIDM export, the fallback.
+
+    ``xml.etree.ElementTree`` is imported here rather than at module level: it is only
+    needed on this fallback path, and a Python built without the ``_elementtree`` module
+    (some minimal / embedded builds) must still be able to import this module. Without
+    it, every battery simply gets OpenLoadFlow's defaults."""
+    try:
+        import xml.etree.ElementTree as ET
+    except ImportError:
+        warnings.warn("The `activePowerControl` extension of the batteries cannot be read: this "
+                      "pypowsybl does not expose it and `xml.etree.ElementTree` is not available "
+                      "to read it off an XIIDM export. OpenLoadFlow's defaults are used instead.")
+        return {}
     wanted = set(str(el) for el in batt_ids)
     res = {}
     xml_text = net.save_to_string("XIIDM")
@@ -147,7 +199,7 @@ def battery_active_power_control(net, df_batt, source="auto"):
     ``source``:
 
     * ``"auto"`` (default): the extension as pypowsybl lists it when it knows batteries do
-      carry one, else read off an XIIDM export of the network (pypowsybl <= 1.16.1);
+      carry one, else read off an export of the network (pypowsybl <= 1.16.1);
     * ``"extension"``: only what pypowsybl lists, never exporting the network (with
       pypowsybl <= 1.16.1 every battery then gets the defaults);
     * ``"default"``: OpenLoadFlow's defaults for every battery.
@@ -166,7 +218,7 @@ def battery_active_power_control(net, df_batt, source="auto"):
     if source == "extension" or _pypowsybl_exposes_battery_apc():
         rows = _apc_from_extension(net, df_batt.index)
     else:
-        rows = _apc_from_xiidm(net, df_batt.index)
+        rows = _apc_from_export(net, df_batt.index)
 
     for pos, batt_id in enumerate(df_batt.index):
         row = rows.get(batt_id, rows.get(str(batt_id)))

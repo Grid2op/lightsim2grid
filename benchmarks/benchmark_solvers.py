@@ -30,6 +30,13 @@ except ImportError:
 
 try:
     from pypowsybl2grid import PyPowSyBlBackend
+    import pypowsybl as pypow
+    # OpenLoadFlow fails the powerflow by default when it cannot distribute the
+    # whole slack mismatch; keep it on the slack bus instead, as the other backends do
+    PYPOW_LF_PARAMS = pypow.loadflow.Parameters(
+        voltage_init_mode=pypow.loadflow.VoltageInitMode.DC_VALUES,
+        provider_parameters={"slackDistributionFailureBehavior": "LEAVE_ON_SLACK_BUS"},
+    )
     pypowbk_error = None
 except ImportError as exc_:
     pypowbk_error = exc_
@@ -288,7 +295,7 @@ def main(max_ts,
                                 data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
             if pypowbk_error is None:
                 env_pypow = make(env_name_input, param=param, test=test,
-                                 backend=PyPowSyBlBackend(),
+                                 backend=PyPowSyBlBackend(lf_parameters=PYPOW_LF_PARAMS),
                                  data_feeding_kwargs={"gridvalueClass": GridStateFromFile})
         else:
             # I provided an environment path
@@ -311,7 +318,7 @@ def main(max_ts,
                 env_pypow = make("blank", param=param, test=True,
                                  data_feeding_kwargs={"gridvalueClass": ChangeNothing},
                                  grid_path=env_name_input,
-                                 backend=PyPowSyBlBackend())
+                                 backend=PyPowSyBlBackend(lf_parameters=PYPOW_LF_PARAMS))
             env_lightsim = make("blank", param=param, test=True,
                                 backend=LightSimBackend(loader_kwargs={"pp_orig_file": PP_ORIG_FILE}),
                                 data_feeding_kwargs={"gridvalueClass": ChangeNothing},
@@ -346,7 +353,10 @@ def main(max_ts,
 
     if pypowbk_error is None:
         # also benchmark pypowsybl backend
-        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent, chron_id=0, env_seed=0)
+        # it needs its own agent: pypowsybl2grid maps grid2op substations to
+        # iidm voltage levels, so its action space does not match env_pp's
+        agent_pypow = DoNothingAgent(action_space=env_pypow.action_space)
+        nb_ts_pypow, time_pypow, aor_pypow, gen_p_pypow, gen_q_pypow = run_env(env_pypow, max_ts, agent_pypow, chron_id=0, env_seed=0)
         pypow_comp_time = env_pypow.backend.comp_time
         pypow_time_pf = env_pypow._time_powerflow
         if hasattr(env_pypow, "_time_step"):

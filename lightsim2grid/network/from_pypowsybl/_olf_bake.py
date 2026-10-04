@@ -68,11 +68,12 @@ What gets baked
   generator whose target was NOT held was not controlling (switched, not
   started, discarded, merged, below OLF's ``generatorVoltageControlMinNominalVoltage``,
   ...) and is frozen to its realized Q in a final catch-all pass
-  (:func:`_bake_generator_voltage_control_not_held`). On a real 7k-bus RTE
-  snapshot this fixed 30 generators the rules alone froze although OLF held
-  their target (mostly a target-voltage check that used the generator's own
-  terminal nominal voltage instead of the regulated bus's) and ~100 they left
-  regulating although OLF did not. One opt-in exception:
+  (:func:`_bake_generator_voltage_control_not_held`). On real grid snapshots
+  this catch-all is what decides the bulk of the disagreements: it un-freezes
+  the generators the rules alone froze although OLF held their target (mostly a
+  target-voltage check that used the generator's own terminal nominal voltage
+  instead of the regulated bus's) and freezes the ones they left regulating
+  although OLF did not. One opt-in exception:
   ``bake_saturated_voltage_control=True`` also freezes a held unit whose Q sits
   at a limit, at that limit.
 * Generators OLF's own voltage-control consistency checks would discard for a
@@ -94,7 +95,10 @@ What gets baked
   into ``target_q`` (see :func:`_bake_generator_target_q_forced_in_limits`).
 * Active-power redistribution from distributed slack / area interchange: the
   realized P is written back into the target P of generators and batteries
-  (and optionally loads, if the slack was distributed on load).
+  (and optionally loads, if the slack was distributed on load). A unit whose
+  realized P comes back a round-off outside its active target range (a unit
+  dispatched at ``max_p``) is put back on that bound, so that OLF does not drop it
+  from the slack of the baked network (see :func:`_snap_realized_into_target_range`).
 * Generators OLF's own ``checkActivePowerControl`` would exclude from
   slack-distribution participation (dispatched at ~0 MW, an implausible
   ``max_p``, ``target_p`` outside ``[min_p, max_p]``, or a degenerate P range):
@@ -108,21 +112,26 @@ What gets baked
 * Static var compensators whose realized reactive output sits at (or beyond)
   their voltage-dependent susceptance envelope (``Q(V) = b * V^2``, ``b`` in
   ``b_min``..``b_max``, recomputed in MVAr at the SVC's own solved terminal
-  voltage) are frozen to fixed-Q (``REACTIVE_POWER`` mode), mirroring the
-  generator/VSC reactive-limit switch above. An SVC still comfortably inside
+  voltage) are frozen to fixed-Q (``REACTIVE_POWER`` mode), with the generator
+  rule: the tolerance only proposes a candidate, and an SVC whose regulated bus
+  the reference solve held at its target was regulating and is left so, unless
+  it sits exactly at its limit while another controller of that bus is still
+  inside its range, or ``bake_saturated_voltage_control`` is set. An SVC inside
   its envelope is left regulating (its target reproduces the OLF result
   exactly, since it isn't saturated).
-* Static var compensators carrying a "standby automaton" (``standby=True``):
-  OLF's own outer loop starts these as a fixed ``b0`` shunt (no voltage
-  control) and only switches them to active voltage control once their bus
-  voltage crosses a low/high threshold. The static ``regulating`` /
+* Voltage-regulating static var compensators carrying a "standby automaton"
+  (``standby=True``; OLF ignores the extension on any other SVC): OLF's own
+  outer loop starts these as a fixed ``b0`` shunt (no voltage control) and only
+  switches them to active voltage control once the voltage of the bus they
+  control crosses a low/high threshold. The static ``regulating`` /
   ``target_v`` attributes do *not* reflect this -- they read as if the SVC
   were always actively regulating. Resolved before the reactive-limit
   switch above: an SVC that stayed within its deadband is frozen to fixed-Q
-  (0 when, as commonly configured, ``b0 == 0``); one that crossed a
-  threshold is switched to ``VOLTAGE`` mode targeting the corresponding
-  ``low_voltage_setpoint`` / ``high_voltage_setpoint`` (then still eligible
-  for the ordinary saturation freeze).
+  (0 when, as commonly configured, ``b0 == 0``), and returned by
+  ``bake_outer_loops`` so that lightsim2grid can report a later switch; one
+  that crossed a threshold is switched to ``VOLTAGE`` mode targeting the
+  corresponding ``low_voltage_setpoint`` / ``high_voltage_setpoint`` (then
+  still eligible for the ordinary saturation freeze).
 
 Verified against pypowsybl 1.15.0. The OLF-internal round trip (solve with
 outer loops -> bake -> solve loop-free) reproduces bus voltages to ~2e-4 kV /
@@ -131,20 +140,24 @@ four-substations node-breaker network, which carries VSC and LCC HVDC, an SVC
 regulating voltage, a shunt, and ratio + phase tap changers.
 """
 
+from typing import NamedTuple
+
 import numpy as np
 import pandas as pd
 
-
-# Tolerance (MVAr) for deciding a reactive injection sits "at" its Q limit: the
-# larger of a small absolute floor (catches exact/near-exact hits, dominated by
-# float rounding) and a fraction of the unit's own Q range (catches OLF's discrete
-# reactive-limit outer loop settling a hair inside the limit -- e.g. because P kept
-# shifting slightly in later outer-loop iterations after the PV->PQ switch already
-# happened). A fixed absolute tolerance alone is either too tight for large-range
-# units (missing genuine saturation) or too loose for small-range ones (freezing
-# units that still have real headroom).
-_Q_LIMIT_TOL_ABS = 1e-3
-_Q_LIMIT_TOL_REL = 0.005  # 0.5% of (qmax - qmin)
+# every OLF-mirrored constant and reading-back tolerance lives in one module, see there
+from ._olf_const import (
+    _MAX_PLAUSIBLE_ACTIVE_POWER_MW,
+    _MAX_PLAUSIBLE_TARGET_V_PU,
+    _MIN_NOMINAL_V_FOR_TARGET_V_CHECK_KV,
+    _MIN_PLAUSIBLE_TARGET_V_PU,
+    _MIN_REACTIVE_RANGE_MVAR,
+    _Q_LIMIT_TOL_ABS,
+    _Q_LIMIT_TOL_REL,
+    _TARGET_Q_TOL_MVAR,
+    _TARGET_V_HELD_TOL_PU,
+    _ZERO_P_TOL,
+)
 
 
 def _q_limit_tol(qmin, qmax):
@@ -161,17 +174,28 @@ def _q_limit_tol(qmin, qmax):
     return np.maximum(_Q_LIMIT_TOL_ABS, _Q_LIMIT_TOL_REL * rng)
             
             
+def _get_buses(network):
+    """The bus frame every step of the bake reads (solved ``v_mag``, ``voltage_level_id``,
+    ``synchronous_component``, plus the ``nominal_v`` of its voltage level).
+
+    Fetched once per bake and handed down: baking rewrites input setpoints only, never
+    the solved state nor the topology, so the frame stays valid from the first step to
+    the last -- and each fetch is a full round trip to the Java network.
+    """
+    buses = network.get_buses(attributes=["v_mag", "voltage_level_id", "synchronous_component"])
+    nominal_v = network.get_voltage_levels(attributes=["nominal_v"])["nominal_v"]
+    buses["nominal_v"] = nominal_v.reindex(buses["voltage_level_id"].to_numpy()).to_numpy(float)
+    return buses
+
+
 def _keep_only_main_comp(df_el, df_bus):
     """
     keep only element (modeled in df_el) that are on the main component => bus_els["synchronous_component"] == 0
     
     This does not deactivate anything.
     """
-    mask_conn = df_el["connected"]
-    bus_els = df_bus.loc[df_el.loc[mask_conn, "bus_id"]]
-    mask_main = (bus_els["synchronous_component"] == 0).to_numpy()
-    df_el = df_el.loc[df_el.loc[mask_conn][mask_main].index]
-    return df_el
+    comp = df_el["bus_id"].map(df_bus["synchronous_component"])
+    return df_el[df_el["connected"].to_numpy(bool) & (comp == 0).to_numpy()]
 
 
 def _reactive_limits(df: pd.DataFrame):
@@ -211,9 +235,9 @@ def _hit_qlimit(df: pd.DataFrame, q_gen: pd.Series):
 
     A unit OLF switched at its limit injects exactly that limit, but the ``q`` it
     reports is not always it: OLF spreads the reactive target of a bus over the
-    generators of that bus again when writing the results (on an RTE snapshot, two
-    units of one bus at 1.22366 and 1.22242 MVAr reported 1.22304 and 1.22242, the
-    bus no longer balancing), so baking the reported value moves the injection."""
+    generators of that bus again when writing the results, so two units of one bus
+    can each be reported a hair away from what they injected, the bus no longer
+    balancing. Baking the reported value would then move the injection."""
     qmin, qmax = _reactive_limits(df)
     to_min = (q_gen - qmin).abs().fillna(np.inf)
     to_max = (qmax - q_gen).abs().fillna(np.inf)
@@ -225,12 +249,12 @@ def _baked_q_at_limit(df: pd.DataFrame, q_gen: pd.Series):
     (see :func:`_hit_qlimit`) when the reported ``q`` is within ``_Q_LIMIT_TOL_ABS`` of
     it, the reported ``q`` otherwise.
 
-    Only a report that close is the misreport of a limit injection (2.9e-4 and
-    6.2e-4 MVAr on RTE snapshots, where the bus balance is off by exactly that much).
-    The relative tolerance of :func:`_bound_at_qlimit` also catches units a visible
-    distance from their limit -- settled 0.18 MVAr inside it, or injecting a
-    ``target_q`` 0.11 MVAr beyond it -- and those inject what they report (their bus
-    balances): baking the limit moved them by that much."""
+    Only a report that close is the misreport of a limit injection: on real grid
+    snapshots the bus balance is off by exactly the reported discrepancy, which is
+    what identifies it. The relative tolerance of :func:`_bound_at_qlimit` also
+    catches units a visible distance from their limit -- settled inside it, or
+    injecting a ``target_q`` beyond it -- and those do inject what they report
+    (their bus balances), so the reported value is what must be baked for them."""
     limit = _hit_qlimit(df, q_gen)
     return limit.where((limit - q_gen).abs() <= _Q_LIMIT_TOL_ABS, q_gen)
 
@@ -248,6 +272,7 @@ def bake_outer_loops(
     keep_only_main_comp: bool=True,
     extrapolate_reactive_limits: bool = True,
     bake_saturated_voltage_control: bool = False,
+    return_details: bool = False,
 ):
     """Rewrite ``network`` input setpoints to the converged outer-loop state.
 
@@ -303,12 +328,50 @@ def bake_outer_loops(
         reads as a visible distance from its limit (see
         :func:`_extrapolate_curve_limits`).
     bake_saturated_voltage_control
-        Also freeze, at its limit, a generator whose reactive output sits at a Q
-        limit although the reference solve held its target voltage (a PV unit
-        exactly saturated). The base case is unchanged, but any change of the grid
+        Also freeze, at its limit, a generator (or a voltage-mode SVC) whose reactive
+        output sits at a Q limit although the reference solve held its target voltage
+        (a PV unit exactly saturated). The base case is unchanged, but any change of the grid
         asking it for more reactive power would make OLF switch it to PQ anyway;
         kept regulating, it reports a reactive-limit violation for almost every
         contingency. ``False`` (default) keeps it regulating, as OLF did.
+    return_details
+        Return a :class:`BakeResult` rather than the :class:`pandas.Index` described
+        below: ``can_be_pv`` is that same index, and ``can_participate_slack`` holds the
+        generators (and batteries) left out of the slack ONLY because OLF capped them at
+        an active limit (``max_p`` for a positive reference mismatch, ``min_p`` for a
+        negative one) -- the ones OLF lets take a share again of a mismatch of the other
+        sign. Hand it to ``init_from_pypowsybl(can_participate_slack=...)`` so that
+        lightsim2grid's redistribution pre-pass counts them, away from their limit. A unit
+        excluded for one of OLF's own ``checkActivePowerControl`` reasons is not in it.
+
+    Returns
+    -------
+    pandas.Index
+        The ids of the elements this bake froze out of voltage control that an outer loop
+        would switch (back) to it:
+
+        * the generators it froze as PQ *at a reactive limit* (the reactive-limit step,
+          the exactly saturated ones included when ``bake_saturated_voltage_control`` is
+          set): what OLF's ``ReactiveLimits`` loop pinned, and what it would release again
+          on a grid asking them for less;
+        * the VSC converter stations it froze as PQ at a reactive limit, by the generators'
+          rule (reported on their hvdc line, ``side`` the station's end);
+        * the voltage-mode static var compensators it froze to fixed-Q at the edge of their
+          susceptance range, by the same rule (see :func:`_bake_svc_saturation`);
+        * the static var compensators whose standby automaton it left idle (frozen to
+          fixed-Q, see :func:`_bake_svc_standby`): what OLF's
+          ``MonitoringVoltageOuterLoop`` would switch to voltage control, should the
+          voltage of their regulated bus leave the automaton's thresholds.
+
+        Hand it to ``init_from_pypowsybl(can_be_pv=...)`` so that lightsim2grid's physical
+        checks report such a switch (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``
+        on a generator or a frozen SVC, ``LOW_VOLTAGE_SVC_STANDBY`` /
+        ``HIGH_VOLTAGE_SVC_STANDBY`` on an idle standby SVC -- the one whose
+        ``standbyAutomaton`` still says ``standby``: the bake marks a standby SVC it
+        switched on as no longer standby, as OLF's automaton never goes back). IIDM ids are unique across element types, so the two never clash. The
+        generators switched off for another reason (not started, a reactive range too
+        small, an implausible target, a target not held) are not in it. Empty when
+        ``bake_reactive_limits`` is off, or on an already-baked network.
 
     Notes
     -----
@@ -316,28 +379,45 @@ def bake_outer_loops(
     voltage-regulation flag is *not* used as a switch signal: OLF does not flip
     it in IIDM, so PV->PQ is detected from the realized Q sitting at a limit.
     """
+    df_bus = _get_buses(network)
+    pinned = pd.Index([], dtype=object)
     if bake_taps:
-        _bake_taps_and_sections(network, keep_only_main_comp)
+        _bake_taps_and_sections(network, keep_only_main_comp, df_bus)
     if bake_reactive_limits:
-        _bake_reactive_limit_switches(
+        pinned = _bake_reactive_limit_switches(
             network, keep_only_main_comp, bake_generator_voltage_control_discards,
-            extrapolate_reactive_limits, bake_saturated_voltage_control
+            extrapolate_reactive_limits, bake_saturated_voltage_control, df_bus
         )
+    capped = pd.Index([], dtype=object)
     if bake_active_power:
-        _bake_active_power(
+        capped = _bake_active_power(
             network,
             balance_on_loads=balance_on_loads,
             load_power_factor_constant=load_power_factor_constant,
             keep_only_main_comp=keep_only_main_comp,
-            bake_active_power_control_participation=bake_active_power_control_participation
+            bake_active_power_control_participation=bake_active_power_control_participation,
+            df_bus=df_bus
         )
     if bake_remote_voltage_control:
-        _bake_remote_voltage_control(network, keep_only_main_comp)
+        _bake_remote_voltage_control(network, keep_only_main_comp, df_bus)
+    if return_details:
+        return BakeResult(can_be_pv=pinned, can_participate_slack=capped)
+    return pinned
 
 
-def _bake_taps_and_sections(network, keep_only_main_comp=True):
+class BakeResult(NamedTuple):
+    """What :func:`bake_outer_loops` returns with ``return_details=True``."""
+    #: the elements frozen out of voltage control that an outer loop would switch
+    #: (back) to it -- what ``bake_outer_loops`` returns by default
+    can_be_pv: pd.Index
+    #: the generators and batteries left out of the slack only because OLF capped them
+    #: at an active limit -- for ``init_from_pypowsybl(can_participate_slack=...)``
+    can_participate_slack: pd.Index
+
+
+def _bake_taps_and_sections(network, keep_only_main_comp=True, df_bus=None):
     # Ratio tap changers (transformer voltage control outer loop).
-    df_bus = network.get_buses(attributes=["synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     rtc = network.get_ratio_tap_changers(
         attributes=["tap", "solved_tap_position", "regulating"]
     )
@@ -386,43 +466,28 @@ def _bake_taps_and_sections(network, keep_only_main_comp=True):
             network.update_shunt_compensators(upd)
 
 
-# Tolerance (MW) for deciding a generator's target_p is "zero": mirrors OLF's own
-# POWER_EPSILON_SI = 1e-4 MW (AbstractLfGenerator.checkIfGeneratorStartedForVoltageControl).
-_ZERO_P_TOL = 1e-4
+def _resolve_regulated_bus(network, own_bus, regulated_element_id):
+    """Bus-view id of the bus each element regulates, as a ``pandas.Series`` indexed
+    like ``own_bus``: the element's own bus where it regulates locally, or where the
+    remote element cannot be resolved.
 
-# OLF's own PlausibleValues.MIN_REACTIVE_RANGE (1 MVar): with the default
-# reactiveRangeCheckMode ("MAX"), a generator whose widest reactive range across its
-# whole active-power range (or its fixed min_q/max_q box, for a MIN_MAX-kind generator)
-# falls below this is discarded from voltage control
-# (AbstractLfGenerator.checkIfReactiveRangesAreLargeEnoughForVoltageControl).
-_MIN_REACTIVE_RANGE_MVAR = 1.0
-
-# OLF's own defaults (LfNetworkParameters): a generator's targetV, expressed in per
-# unit of its (regulated bus) nominal voltage, is discarded from voltage control if
-# outside this range -- but only on buses above the nominal-voltage floor below (this
-# is minNominalVoltageTargetVoltageCheck, distinct from the *realistic-voltage-check*
-# floor that PARAMS_STANDARD sets to 180 kV; this one is left at its own OLF default).
-_MIN_PLAUSIBLE_TARGET_V_PU = 0.8
-_MAX_PLAUSIBLE_TARGET_V_PU = 1.2
-_MIN_NOMINAL_V_FOR_TARGET_V_CHECK_KV = 20.0
-
-# OLF's own plausibleActivePowerLimit default (MW): a generator whose maxP exceeds
-# this is discarded from active-power (slack) participation regardless of any other
-# parameter (AbstractLfGenerator.checkActivePowerControl).
-_MAX_PLAUSIBLE_ACTIVE_POWER_MW = 10000.0
-
-# Tolerance (pu of the regulated bus nominal voltage) under which the reference
-# solve is deemed to have HELD a generator's target voltage. OLF eliminates the
-# voltage-magnitude unknown of a PV bus (the magnitude *is* the target), so a
-# generator that actually took part in voltage control leaves |V - target_v| at
-# machine precision (~1e-16 pu measured on a 7k-bus RTE snapshot), whatever the
-# Newton-Raphson stopping tolerance; a generator OLF did NOT voltage-control --
-# switched to PQ at a reactive limit, "not started", discarded by a consistency
-# check, on a bus below ``generatorVoltageControlMinNominalVoltage``, sharing its
-# bus with a local controller, ... -- has a free magnitude that lands at least
-# ~1e-7 pu away from the target (same snapshot). 1e-8 sits in the middle of that
-# gap on a log scale.
-_TARGET_V_HELD_TOL_PU = 1e-8
+    Element-type agnostic (a generator's ``regulated_element_id`` column and a
+    battery's ``voltageRegulation`` extension say the same thing), so both go through
+    it -- see :func:`_generator_regulated_bus` and :func:`_bake_battery_voltage_control`.
+    """
+    rel = regulated_element_id.reindex(own_bus.index).fillna("").astype(str)
+    reg_bus = own_bus.copy()
+    remote = (rel != "") & (rel != rel.index.to_series())
+    if not remote.any():
+        return reg_bus
+    from ._aux_common import _aux_regulated_bus_view_ids
+    try:
+        resolved = _aux_regulated_bus_view_ids(network, rel[remote].to_numpy())
+    except RuntimeError:
+        return reg_bus
+    resolved = pd.Series(resolved, index=rel.index[remote])
+    reg_bus.loc[remote] = resolved.where(resolved != "", own_bus[remote])
+    return reg_bus
 
 
 def _generator_regulated_bus(network, gen):
@@ -433,62 +498,57 @@ def _generator_regulated_bus(network, gen):
     it (it resolves a ``regulated_element_id`` that is a busbar section, a
     transformer terminal, another generator, ...), else falls back to resolving
     ``regulated_element_id`` through the bus-connected elements
-    (:func:`_aux_regulated_bus_view_ids`), then to the generator's own bus.
+    (:func:`_resolve_regulated_bus`), then to the generator's own bus.
     """
     own = gen["bus_id"]
     try:
         rb = network.get_generators(attributes=["regulated_bus_id"])["regulated_bus_id"]
         rb = rb.reindex(gen.index)
-        rb = rb.where(rb.notna() & (rb != ""), own)
-        return rb
+        return rb.where(rb.notna() & (rb != ""), own)
     except Exception:
         pass
-    rel = gen["regulated_element_id"].fillna("") if "regulated_element_id" in gen.columns else pd.Series("", index=gen.index)
-    rb = own.copy()
-    remote = (rel != "") & (rel != gen.index.to_series())
-    if remote.any():
-        from ._aux_common import _aux_regulated_bus_view_ids
-        try:
-            resolved = _aux_regulated_bus_view_ids(network, rel[remote].to_numpy())
-        except RuntimeError:
-            return rb
-        resolved = pd.Series(resolved, index=rel.index[remote])
-        rb.loc[remote] = resolved.where(resolved != "", own[remote])
-    return rb
+    rel = gen["regulated_element_id"] if "regulated_element_id" in gen.columns else pd.Series("", index=gen.index)
+    return _resolve_regulated_bus(network, own, rel)
 
 
-def _generator_target_v_held(network, gen):
-    """Boolean ``pandas.Series`` (indexed like ``gen``): the reference solve held
-    this generator's ``target_v`` at its regulated bus -- the empirical signature
-    of a generator OLF actually voltage-controlled (see ``_TARGET_V_HELD_TOL_PU``).
-    ``False`` for a generator whose regulated bus has no solved voltage.
+def _target_v_held(network, reg_bus, target_v, df_bus=None):
+    """Boolean ``pandas.Series`` (indexed like ``reg_bus``): the reference solve held
+    ``target_v`` at the bus of ``reg_bus`` -- the empirical signature of a unit OLF
+    actually voltage-controlled (see ``_TARGET_V_HELD_TOL_PU``). ``False`` where the
+    regulated bus has no solved voltage.
 
-    ``gen`` must carry ``target_v``, ``bus_id`` and (for the fallback resolution)
-    ``regulated_element_id``.
+    The decision is about the regulated bus, not about the element holding it, so
+    generators and batteries share it (their regulation flag and target live in
+    different places, what to do with the answer is all that differs).
     """
-    reg_bus = _generator_regulated_bus(network, gen)
-    buses = network.get_buses(attributes=["v_mag", "voltage_level_id"])
-    nominal_v = network.get_voltage_levels(attributes=["nominal_v"])["nominal_v"]
-    v = buses["v_mag"].reindex(reg_bus.to_numpy()).to_numpy(float)
-    vl = buses["voltage_level_id"].reindex(reg_bus.to_numpy())
-    nom = nominal_v.reindex(vl.to_numpy()).to_numpy(float)
+    df_bus = _get_buses(network) if df_bus is None else df_bus
+    buses = df_bus.reindex(reg_bus.to_numpy())
+    v = buses["v_mag"].to_numpy(float)
+    nom = buses["nominal_v"].to_numpy(float)
     with np.errstate(invalid="ignore", divide="ignore"):
-        dv = np.abs(v - gen["target_v"].to_numpy(float)) / nom
-    held = np.isfinite(dv) & (dv < _TARGET_V_HELD_TOL_PU)
-    return pd.Series(held, index=gen.index)
+        dv = np.abs(v - np.asarray(target_v, dtype=float)) / nom
+    return pd.Series(np.isfinite(dv) & (dv < _TARGET_V_HELD_TOL_PU), index=reg_bus.index)
 
 
-def _generator_regulated_nominal_v(network, gen):
+def _generator_target_v_held(network, gen, df_bus=None, reg_bus=None):
+    """:func:`_target_v_held` for the generators of ``gen``, which must carry
+    ``target_v``, ``bus_id`` and (for the fallback resolution) ``regulated_element_id``.
+    ``reg_bus``, when given, is :func:`_generator_regulated_bus` already resolved."""
+    if reg_bus is None:
+        reg_bus = _generator_regulated_bus(network, gen)
+    return _target_v_held(network, reg_bus.reindex(gen.index), gen["target_v"], df_bus)
+
+
+def _generator_regulated_nominal_v(network, gen, df_bus=None, reg_bus=None):
     """Nominal voltage (kV) of the bus each generator in ``gen`` regulates, as a
     numpy array aligned with ``gen`` (NaN where unresolved)."""
-    reg_bus = _generator_regulated_bus(network, gen)
-    buses = network.get_buses(attributes=["voltage_level_id"])
-    nominal_v = network.get_voltage_levels(attributes=["nominal_v"])["nominal_v"]
-    vl = buses["voltage_level_id"].reindex(reg_bus.to_numpy())
-    return nominal_v.reindex(vl.to_numpy()).to_numpy(float)
+    if reg_bus is None:
+        reg_bus = _generator_regulated_bus(network, gen)
+    df_bus = _get_buses(network) if df_bus is None else df_bus
+    return df_bus["nominal_v"].reindex(reg_bus.reindex(gen.index).to_numpy()).to_numpy(float)
 
 
-def _bake_generator_not_started(network, keep_only_main_comp=True, held=None):
+def _bake_generator_not_started(network, keep_only_main_comp=True, held=None, df_bus=None):
     """Freeze a voltage-regulating generator dispatched at (approximately) 0 MW,
     with a strictly positive minimum active power, to fixed-Q (PQ) -- mirroring
     PowSyBl OpenLoadFlow's own generator setup rule (default-on parameter
@@ -518,7 +578,7 @@ def _bake_generator_not_started(network, keep_only_main_comp=True, held=None):
     never frozen here, whatever this rule says -- the result is the authority on
     what OLF did.
     """
-    df_bus = network.get_buses(attributes=["synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     gen = network.get_generators(
         attributes=["voltage_regulator_on", "target_p", "min_p", "q", "connected", "bus_id"]
     )
@@ -567,7 +627,8 @@ def _generator_max_reactive_range(network, gen_index):
     return rng
 
 
-def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, held=None):
+def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, held=None, df_bus=None,
+                                              reg_bus=None):
     """Freeze a voltage-regulating generator to fixed-Q when PowSyBl OLF's own
     consistency checks (``AbstractLfGenerator.checkVoltageControlConsistency``)
     would have discarded it from voltage control for a reason other than "not
@@ -596,7 +657,7 @@ def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, 
     ``held`` (optional, see :func:`_generator_target_v_held`): generators whose
     target the reference solve actually held are never frozen here.
     """
-    df_bus = network.get_buses(attributes=["synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     gen = network.get_generators(
         attributes=["voltage_regulator_on", "target_v", "q", "voltage_level_id", "connected", "bus_id",
                     "regulated_element_id"]
@@ -607,7 +668,7 @@ def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, 
     if not len(reg):
         return
 
-    reg_nominal_v = _generator_regulated_nominal_v(network, reg)
+    reg_nominal_v = _generator_regulated_nominal_v(network, reg, df_bus, reg_bus)
 
     max_range = _generator_max_reactive_range(network, reg.index).to_numpy()
     too_small_range = max_range < _MIN_REACTIVE_RANGE_MVAR
@@ -630,7 +691,7 @@ def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, 
     network.update_generators(upd)
 
 
-def _bake_remote_control_bus_conflicts(network, keep_only_main_comp=True, held=None):
+def _bake_remote_control_bus_conflicts(network, keep_only_main_comp=True, held=None, df_bus=None):
     """Freeze a *remotely*-regulating generator to fixed-Q when its OWN bus
     already hosts another connected, *locally* voltage-regulating generator.
 
@@ -667,7 +728,7 @@ def _bake_remote_control_bus_conflicts(network, keep_only_main_comp=True, held=N
     generator sharing its bus is correctly left alone once the true conflict is
     resolved.
     """
-    df_bus = network.get_buses(attributes=["synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     gen = network.get_generators(
         attributes=["voltage_regulator_on", "regulated_element_id", "q", "connected", "bus_id"]
     )
@@ -690,7 +751,7 @@ def _bake_remote_control_bus_conflicts(network, keep_only_main_comp=True, held=N
     network.update_generators(upd)
 
 
-def _bake_generator_voltage_control_not_held(network, keep_only_main_comp=True, held=None):
+def _bake_generator_voltage_control_not_held(network, keep_only_main_comp=True, held=None, df_bus=None):
     """Catch-all: freeze to fixed-Q (its realized reactive output) every
     voltage-regulating generator whose target voltage the reference solve did
     NOT hold (see :func:`_generator_target_v_held`), whatever the reason --
@@ -701,14 +762,14 @@ def _bake_generator_voltage_control_not_held(network, keep_only_main_comp=True, 
     exact; and a generator OLF *did* control keeps regulating. Only generators
     with a solved (finite) reactive output are touched.
     """
-    df_bus = network.get_buses(attributes=["synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     gen = network.get_generators(
         attributes=["voltage_regulator_on", "target_v", "q", "connected", "bus_id", "regulated_element_id"]
     )
     if keep_only_main_comp:
         gen = _keep_only_main_comp(gen, df_bus)
     if held is None:
-        held = _generator_target_v_held(network, gen)
+        held = _generator_target_v_held(network, gen, df_bus)
     mask = (gen["voltage_regulator_on"] & gen["q"].notna()
             & ~held.reindex(gen.index).fillna(False).astype(bool))
     if not mask.any():
@@ -719,26 +780,20 @@ def _bake_generator_voltage_control_not_held(network, keep_only_main_comp=True, 
     network.update_generators(upd)
 
 
-# Tolerance (MVAr) under which a non-regulating generator's realized reactive output is
-# deemed to be its target_q: a PQ injection is reproduced to the digit, whatever the
-# Newton-Raphson tolerance, and the clamped values seen on RTE snapshots go down to
-# ~3e-3 MVAr.
-_TARGET_Q_TOL_MVAR = 1e-6
-
-
-def _bake_generator_target_q_forced_in_limits(network, keep_only_main_comp=True):
+def _bake_generator_target_q_forced_in_limits(network, keep_only_main_comp=True, df_bus=None):
     """Write the realized reactive output into ``target_q`` for every connected,
     non-regulating generator whose reference solve did not inject its ``target_q``.
 
     OLF's default ``forceTargetQInReactiveLimits`` clamps a PQ generator's target into
-    its reactive capability at its active power (on RTE snapshots: units at 0 MW whose
-    curve starts above 0 MVAr, with ``target_q = 0``). The loop-free parameters turn the
-    reactive limits off, which turns the clamp off with them, and lightsim2grid never
-    clamps: without this both inject the raw target (7.6e-4 pu on the 6 kV side on one
-    snapshot). The realized value is what OLF injected, so the rewrite is exact, and it
-    also covers any other reason a PQ injection moved.
+    its reactive capability at its active power (the case seen on real grid snapshots:
+    a unit at 0 MW whose curve starts above 0 MVAr, with ``target_q = 0``). The loop-free
+    parameters turn the reactive limits off, which turns the clamp off with them, and
+    lightsim2grid never clamps: without this both inject the raw target, and the
+    voltages of the low-voltage side it feeds are visibly off. The realized value is what
+    OLF injected, so the rewrite is exact, and it also covers any other reason a PQ
+    injection moved.
     """
-    df_bus = network.get_buses(attributes=["synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     gen = network.get_generators(attributes=["voltage_regulator_on", "target_q", "q", "connected", "bus_id"])
     if keep_only_main_comp:
         gen = _keep_only_main_comp(gen, df_bus)
@@ -750,14 +805,20 @@ def _bake_generator_target_q_forced_in_limits(network, keep_only_main_comp=True)
     network.update_generators(pd.DataFrame({"target_q": q_gen[moved].to_numpy()}, index=gen.index[moved]))
 
 
-def _bake_battery_voltage_control(network, keep_only_main_comp=True):
-    """Same result-driven decision as for generators, for the batteries carrying
-    an IIDM ``voltageRegulation`` extension (OLF runs them as PV; the converter
-    models them as voltage-regulating storage units, see
-    ``_aux_add_storage._aux_battery_voltage_regulation``):
-    a battery whose target voltage the reference solve did not hold (switched at
-    a reactive limit, discarded, ...) gets the extension switched off and its
-    realized reactive output as fixed ``target_q``."""
+def _bake_battery_voltage_control(network, keep_only_main_comp=True, df_bus=None):
+    """:func:`_bake_generator_voltage_control_not_held`, for the batteries carrying an
+    IIDM ``voltageRegulation`` extension (OLF runs them as PV; the converter models them
+    as voltage-regulating storage units, see
+    ``_aux_add_storage._aux_battery_voltage_regulation``): a battery whose target voltage
+    the reference solve did not hold (switched at a reactive limit, discarded, ...) gets
+    the extension switched off and its realized reactive output as fixed ``target_q``.
+
+    The decision itself -- :func:`_target_v_held` on the regulated bus -- is the shared
+    one. What does not merge is the plumbing around it: a battery's regulation flag,
+    target voltage and regulated element live in an extension frame rather than in
+    columns of ``get_batteries()``, and switching it off is an ``update_extensions`` call
+    rather than an ``update_batteries`` one.
+    """
     try:
         vr = network.get_extensions("voltageRegulation")
     except Exception:
@@ -766,31 +827,17 @@ def _bake_battery_voltage_control(network, keep_only_main_comp=True):
         return
     bat = network.get_batteries(attributes=["q", "connected", "bus_id"])
     if keep_only_main_comp:
-        bat = _keep_only_main_comp(bat, network.get_buses(attributes=["synchronous_component"]))
+        df_bus = _get_buses(network) if df_bus is None else df_bus
+        bat = _keep_only_main_comp(bat, df_bus)
     vr = vr.reindex(bat.index)
     on = vr["voltage_regulator_on"].fillna(False).astype(bool)
     if not on.any():
         return
     ids = bat.index[on.to_numpy()]
-    reg = vr.loc[ids, "regulated_element_id"].fillna("").astype(str) if "regulated_element_id" in vr.columns \
+    reg = vr.loc[ids, "regulated_element_id"] if "regulated_element_id" in vr.columns \
         else pd.Series("", index=ids)
-    own = bat.loc[ids, "bus_id"]
-    reg_bus = own.copy()
-    remote = (reg != "") & (reg != pd.Series(ids, index=ids))
-    if remote.any():
-        from ._aux_common import _aux_regulated_bus_view_ids
-        try:
-            resolved = pd.Series(_aux_regulated_bus_view_ids(network, reg[remote].to_numpy()), index=ids[remote.to_numpy()])
-            reg_bus.loc[remote] = resolved.where(resolved != "", own[remote])
-        except RuntimeError:
-            pass
-    buses = network.get_buses(attributes=["v_mag", "voltage_level_id"])
-    nominal_v = network.get_voltage_levels(attributes=["nominal_v"])["nominal_v"]
-    v = buses["v_mag"].reindex(reg_bus.to_numpy()).to_numpy(float)
-    nom = nominal_v.reindex(buses["voltage_level_id"].reindex(reg_bus.to_numpy()).to_numpy()).to_numpy(float)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        dv = np.abs(v - vr.loc[ids, "target_v"].to_numpy(float)) / nom
-    held = np.isfinite(dv) & (dv < _TARGET_V_HELD_TOL_PU)
+    reg_bus = _resolve_regulated_bus(network, bat.loc[ids, "bus_id"], reg)
+    held = _target_v_held(network, reg_bus, vr.loc[ids, "target_v"], df_bus).to_numpy()
     freeze = ~held & bat.loc[ids, "q"].notna().to_numpy()
     if not freeze.any():
         return
@@ -799,7 +846,7 @@ def _bake_battery_voltage_control(network, keep_only_main_comp=True):
     network.update_batteries(pd.DataFrame({"target_q": -bat.loc[frozen, "q"].to_numpy()}, index=frozen))
 
 
-def _switched_group_members(network, gen, q_gen):
+def _switched_group_members(network, gen, q_gen, reg_bus=None):
     """Boolean ``pandas.Series`` (indexed like ``gen``): a voltage-regulating
     generator whose realized reactive output sits *exactly* at a limit (absolute
     tolerance only, a PQ unit injects its limit to the digit) while at least one
@@ -811,7 +858,9 @@ def _switched_group_members(network, gen, q_gen):
     exact = regulating & ((q_gen >= qmax - _Q_LIMIT_TOL_ABS) | (q_gen <= qmin + _Q_LIMIT_TOL_ABS))
     if not exact.any():
         return exact
-    reg_bus = _generator_regulated_bus(network, gen)
+    if reg_bus is None:
+        reg_bus = _generator_regulated_bus(network, gen)
+    reg_bus = reg_bus.reindex(gen.index)
     n_free = (regulating & ~exact).astype(int).groupby(reg_bus).transform("sum")
     return exact & (n_free > 0)
 
@@ -822,11 +871,11 @@ def _extrapolate_curve_limits(network, df: pd.DataFrame):
     curve, by the linear extrapolation of the curve's end segment on that side.
 
     That is what OLF evaluates with its default ``extrapolateReactiveLimits``, where
-    pypowsybl's columns clamp to the end point. On RTE snapshots, units running below
-    their curve (85.8 MW on a 217-947 MW curve, 2.3 MW on an 8.35-30 MW one) were
-    switched at the extrapolated limit (18.820306 / -13.686818 MVAr) and read 0.18 and
-    0.11 MVAr away from the clamped one, so the freeze baked the wrong value. Rows
-    inside their curve, without a curve, or with fewer than two points are untouched.
+    pypowsybl's columns clamp to the end point. On real grid snapshots, units running
+    below the P range of their curve are switched at the *extrapolated* limit, which sits
+    a visible distance from the clamped one -- far enough that the freeze below would
+    otherwise bake the wrong value. Rows inside their curve, without a curve, or with
+    fewer than two points are untouched.
     """
     if not len(df) or "p" not in df.columns or "min_q_at_p" not in df.columns:
         return df
@@ -837,27 +886,40 @@ def _extrapolate_curve_limits(network, df: pd.DataFrame):
     pts = pts.loc[pts.index.get_level_values(0).isin(df.index)]
     if not len(pts):
         return df
+    # one vectorised pass over every curve (a per-curve loop dominates the whole bake on
+    # a large grid): sort the points by (element, p), then read each curve's first two
+    # and last two points by position
+    ids = pts.index.get_level_values(0).to_numpy()
+    p_pt = pts["p"].to_numpy(float)
+    codes = pd.factorize(ids)[0]
+    order = np.lexsort((p_pt, codes))  # stable: points of equal p keep their curve order
+    ids, codes, p_pt = ids[order], codes[order], p_pt[order]
+    qmin_pt = pts["min_q"].to_numpy(float)[order]
+    qmax_pt = pts["max_q"].to_numpy(float)[order]
+    start = np.flatnonzero(np.r_[True, codes[1:] != codes[:-1]])
+    count = np.diff(np.r_[start, len(ids)])
+    start, count = start[count >= 2], count[count >= 2]
+    if not len(start):
+        return df
+    el_ids = ids[start]
+    # result column is load convention; curves are in generator convention
+    power = -df["p"].reindex(el_ids).to_numpy(float)
+    below = power < p_pt[start]
+    above = power > p_pt[start + count - 1]
+    # the end segment on the side the unit lies (NaN power is neither below nor above)
+    i1 = np.where(below, start, start + count - 2)
+    i2 = i1 + 1
+    p1, p2 = p_pt[i1], p_pt[i2]
+    keep = (below | above) & (p2 != p1)
+    if not keep.any():
+        return df
+    i1, i2, p1, p2, power = i1[keep], i2[keep], p1[keep], p2[keep], power[keep]
     df = df.copy()
-    p_gen = -df["p"]  # result column is load convention; curves are in generator convention
-    for el_id, curve in pts.groupby(level=0):
-        if len(curve) < 2:
-            continue
-        power = p_gen.get(el_id, np.nan)
-        if not np.isfinite(power):
-            continue
-        curve = curve.sort_values("p")
-        if power < curve["p"].iloc[0]:
-            seg = curve.iloc[:2]
-        elif power > curve["p"].iloc[-1]:
-            seg = curve.iloc[-2:]
-        else:
-            continue
-        p1, p2 = seg["p"].to_numpy(float)
-        if p2 == p1:
-            continue
-        for col, lim in (("min_q_at_p", "min_q"), ("max_q_at_p", "max_q")):
-            q1, q2 = seg[lim].to_numpy(float)
-            df.at[el_id, col] = q1 + (q2 - q1) * (power - p1) / (p2 - p1)
+    rows = df.index.get_indexer(el_ids[keep])
+    for col, q in (("min_q_at_p", qmin_pt), ("max_q_at_p", qmax_pt)):
+        vals = df[col].to_numpy(float, copy=True)
+        vals[rows] = q[i1] + (q[i2] - q[i1]) * (power - p1) / (p2 - p1)
+        df[col] = vals
     return df
 
 
@@ -866,26 +928,29 @@ def _bake_reactive_limit_switches(
     keep_only_main_comp=True,
     bake_generator_voltage_control_discards=True,
     extrapolate_reactive_limits=True,
-    bake_saturated_voltage_control=False):
+    bake_saturated_voltage_control=False,
+    df_bus=None):
     # What OLF actually did with each generator's voltage control, read off the
     # reference solve itself: every rule below defers to it (a generator whose
     # target was held is never frozen, one whose target was not is always frozen
     # in the end), the rules only document *why* OLF dropped a control.
-    df_bus = network.get_buses(attributes=["synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     gen0 = network.get_generators(
         attributes=["voltage_regulator_on", "target_v", "connected", "bus_id", "regulated_element_id"])
     if keep_only_main_comp:
         gen0 = _keep_only_main_comp(gen0, df_bus)
-    held = _generator_target_v_held(network, gen0) & gen0["voltage_regulator_on"]
+    # resolved once: which bus a generator regulates is not something the bake changes
+    reg_bus = _generator_regulated_bus(network, gen0)
+    held = _generator_target_v_held(network, gen0, df_bus, reg_bus) & gen0["voltage_regulator_on"]
 
     # first, while "not regulating" still means "PQ in the reference solve": the
     # freezes below turn regulation off on units whose reported q is not what they
     # inject (see _hit_qlimit), which this must not write back
-    _bake_generator_target_q_forced_in_limits(network, keep_only_main_comp)
-    _bake_generator_not_started(network, keep_only_main_comp, held)
+    _bake_generator_target_q_forced_in_limits(network, keep_only_main_comp, df_bus)
+    _bake_generator_not_started(network, keep_only_main_comp, held, df_bus)
     if bake_generator_voltage_control_discards:
-        _bake_generator_voltage_control_discards(network, keep_only_main_comp, held)
-    _bake_remote_control_bus_conflicts(network, keep_only_main_comp, held)
+        _bake_generator_voltage_control_discards(network, keep_only_main_comp, held, df_bus, reg_bus)
+    _bake_remote_control_bus_conflicts(network, keep_only_main_comp, held, df_bus)
     gen = network.get_generators(
         attributes=[
             "voltage_regulator_on", "q", "p",
@@ -906,20 +971,21 @@ def _bake_reactive_limit_switches(
     # members of a group sharing one: a member exactly at its limit while another
     # member is still inside its range was switched (OLF drops it from the group
     # and the others keep the target), and the split it leaves behind decides the
-    # voltages behind each unit's step-up transformer (2e-3 pu on an RTE snapshot).
+    # voltages behind each unit's step-up transformer.
     # bake_saturated_voltage_control freezes the exactly saturated ones too.
     if not bake_saturated_voltage_control:
-        mask &= ~held.reindex(gen.index).fillna(False).astype(bool) | _switched_group_members(network, gen, q_gen)
+        mask &= ~held.reindex(gen.index).fillna(False).astype(bool) | _switched_group_members(network, gen, q_gen, reg_bus)
+    pinned = gen.index[mask]
     if mask.any():
-        upd = pd.DataFrame(index=gen.index[mask])
+        upd = pd.DataFrame(index=pinned)
         # the limit it was switched at rather than a misreported q (see _baked_q_at_limit)
         upd["target_q"] = _baked_q_at_limit(gen, q_gen)[mask]
         upd["voltage_regulator_on"] = False
         network.update_generators(upd)
     if bake_generator_voltage_control_discards:
         # everything OLF dropped for a reason the rules above do not spell out
-        _bake_generator_voltage_control_not_held(network, keep_only_main_comp, held)
-    _bake_battery_voltage_control(network, keep_only_main_comp)
+        _bake_generator_voltage_control_not_held(network, keep_only_main_comp, held, df_bus)
+    _bake_battery_voltage_control(network, keep_only_main_comp, df_bus)
 
     vsc = network.get_vsc_converter_stations(
         attributes=[
@@ -932,6 +998,7 @@ def _bake_reactive_limit_switches(
         vsc = _keep_only_main_comp(vsc, df_bus)
     if extrapolate_reactive_limits:
         vsc = _extrapolate_curve_limits(network, vsc)
+    frozen_vsc = pd.Index([], dtype=object)
     if len(vsc):
         mask, q_gen = _bound_at_qlimit(vsc, vsc["voltage_regulator_on"])
         if mask.any():
@@ -939,60 +1006,96 @@ def _bake_reactive_limit_switches(
             upd["target_q"] = _baked_q_at_limit(vsc, q_gen)[mask]
             upd["voltage_regulator_on"] = False
             network.update_vsc_converter_stations(upd)
+            # like a generator frozen at a limit: what the loop would release again
+            frozen_vsc = pd.Index(vsc.index[mask], dtype=object)
 
-    _bake_svc_standby(network, keep_only_main_comp)
-    _bake_svc_saturation(network, keep_only_main_comp)
+    idle_svc = _bake_svc_standby(network, keep_only_main_comp, df_bus)
+    saturated_svc = _bake_svc_saturation(network, keep_only_main_comp, df_bus,
+                                         bake_saturated_voltage_control)
+    # the generators and the SVCs this step froze AT A REACTIVE LIMIT (not the ones the
+    # other rules switched off), and the standby SVCs it left idle: the ones an outer loop
+    # would switch (back) to voltage control, see `bake_outer_loops`
+    return pinned.append(frozen_vsc).append(saturated_svc).append(idle_svc)
 
 
-def _bake_svc_standby(network, keep_only_main_comp=True):
+def _bake_svc_standby(network, keep_only_main_comp=True, df_bus=None):
     """Resolve an SVC's "standby automaton" (PowSyBl OLF's ``MonitoringVoltageOuterLoop``)
     to the state the outer loop actually settled on.
 
-    A standby SVC (``standbyAutomaton`` extension, ``standby=True``) starts the outer loop
-    as a fixed-susceptance shunt (``b0``, no voltage control) rather than a normal
-    voltage-regulating device -- regardless of what its static ``regulating`` /
-    ``regulation_mode`` / ``target_v`` attributes say. It only switches to active PV control
-    -- targeting ``low_voltage_setpoint`` / ``high_voltage_setpoint`` -- once its own bus
-    voltage crosses ``low_voltage_threshold`` / ``high_voltage_threshold``. Inside the
-    deadband it stays a plain ``b0`` shunt: the realized ``q`` there already equals
-    ``b0 * v_mag_kv ** 2`` (0 when, as commonly configured, ``b0 == 0``), so freezing it to
-    that realized value -- like a saturated SVC -- reproduces the deadband state exactly.
+    OLF only builds the automaton for an SVC that regulates voltage (``regulating``, in
+    ``VOLTAGE`` mode) and whose ``standbyAutomaton`` extension says ``standby=True``;
+    any other SVC ignores the extension. Such an SVC starts the outer loop as a
+    fixed-susceptance shunt (``b0``, no voltage control) rather than as a voltage
+    controller, and only switches to active voltage control -- targeting
+    ``low_voltage_setpoint`` / ``high_voltage_setpoint`` -- once the voltage of the bus
+    it CONTROLS (its regulated bus, like OLF) crosses ``low_voltage_threshold`` /
+    ``high_voltage_threshold``. Inside the deadband it stays a plain ``b0`` shunt: the
+    realized ``q`` there equals ``b0 * v_mag_kv ** 2`` to the digit (0 when, as commonly
+    configured, ``b0 == 0``), so freezing it to that realized value -- like a saturated
+    SVC -- reproduces the deadband state exactly. That is also how a switched-on one is
+    told apart: its output is whatever holds its setpoint, while the voltage it holds
+    usually sits inside the thresholds and says nothing.
 
     Runs before ``_bake_svc_saturation``: an SVC resolved to VOLTAGE mode here (crossed a
     threshold) is still eligible for the ordinary saturation freeze; an SVC resolved to
     REACTIVE_POWER here is already frozen and the saturation check leaves it alone (it only
     looks at ``regulation_mode == "VOLTAGE"``).
+
+    Returns the ids of the SVCs left idle (frozen to REACTIVE_POWER): the ones OLF would
+    still switch on, should the voltage of their regulated bus leave the thresholds.
     """
+    idle_ids = pd.Index([], dtype=object)
     try:
         automaton = network.get_extensions("standbyAutomaton")
     except Exception:  # noqa: BLE001 - extension unsupported / absent on old pypowsybl
-        return
+        return idle_ids
     automaton = automaton[automaton["standby"]]
     if not len(automaton):
-        return
-    df_bus = network.get_buses(attributes=["v_mag", "synchronous_component"])
-    svc = network.get_static_var_compensators(attributes=["connected", "bus_id"])
+        return idle_ids
+    df_bus = _get_buses(network) if df_bus is None else df_bus
+    svc = network.get_static_var_compensators()
     svc = svc.loc[svc.index.intersection(automaton.index)]
     if keep_only_main_comp:
         svc = _keep_only_main_comp(svc, df_bus)
+    # OLF only arms the automaton of an SVC regulating voltage
+    voltage_mode = svc["regulation_mode"].astype(str) == "VOLTAGE"
+    if "regulating" in svc.columns:
+        voltage_mode &= svc["regulating"].astype(bool)
+    svc = svc[voltage_mode]
     automaton = automaton.loc[svc.index]
     if not len(automaton):
-        return
+        return idle_ids
 
-    v_kv = df_bus.loc[svc["bus_id"].values, "v_mag"].to_numpy()
-    above_high = v_kv > automaton["high_voltage_threshold"].to_numpy()
-    below_low = v_kv < automaton["low_voltage_threshold"].to_numpy()
+    rel = svc["regulated_element_id"] if "regulated_element_id" in svc.columns \
+        else pd.Series("", index=svc.index)
+    reg_bus = _resolve_regulated_bus(network, svc["bus_id"], rel)
+    v_kv = df_bus["v_mag"].reindex(reg_bus.to_numpy()).to_numpy(float)
+    # whether OLF switched it on is read off its output, not off the voltage: once on,
+    # it holds its bus at a SETPOINT, which usually sits inside the thresholds. Idle, it
+    # is a plain b0 shunt at its own bus and produces exactly that (receptor convention:
+    # q = -b0 * V^2), to the digit; switched on, whatever holds the setpoint.
+    v_own = df_bus["v_mag"].reindex(svc["bus_id"].to_numpy()).to_numpy(float)
+    q_idle = -automaton["b0"].to_numpy(float) * v_own ** 2
+    q = svc["q"].to_numpy(float)
+    active = np.isfinite(q) & (np.abs(q - q_idle) > _TARGET_Q_TOL_MVAR)
+    # a regulated bus without a solved voltage: nothing to check a later switch against,
+    # so an idle one is frozen but not returned
+    solved = np.isfinite(v_kv)
 
-    active = above_high | below_low
     if active.any():
         upd = pd.DataFrame(index=automaton.index[active])
-        upd["target_v"] = np.where(
-            above_high[active],
-            automaton["high_voltage_setpoint"].to_numpy()[active],
-            automaton["low_voltage_setpoint"].to_numpy()[active],
-        )
+        # the setpoint it holds: the nearer one (the low and the high one are often equal)
+        low_sp = automaton["low_voltage_setpoint"].to_numpy(float)[active]
+        high_sp = automaton["high_voltage_setpoint"].to_numpy(float)[active]
+        v_act = v_kv[active]
+        upd["target_v"] = np.where(np.abs(v_act - high_sp) < np.abs(v_act - low_sp), high_sp, low_sp)
         upd["regulation_mode"] = "VOLTAGE"
         network.update_static_var_compensators(upd)
+        # the automaton never goes back to standby: once switched on it is a plain voltage
+        # controller, and marking it so leaves "standby" meaning "idle" on the baked network
+        # (which is how `init_from_pypowsybl(can_be_pv=...)` tells the two kinds of SVC apart)
+        network.update_extensions("standbyAutomaton", pd.DataFrame(
+            {"standby": False}, index=pd.Index(automaton.index[active], name="id")))
 
     idle_ids = automaton.index[~active]
     if len(idle_ids):
@@ -1002,28 +1105,42 @@ def _bake_svc_standby(network, keep_only_main_comp=True):
         upd["target_q"] = svc_q
         upd["regulation_mode"] = "REACTIVE_POWER"
         network.update_static_var_compensators(upd)
+    return pd.Index(automaton.index[~active & solved], dtype=object)
 
 
-def _bake_svc_saturation(network, keep_only_main_comp=True):
+def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
+                         bake_saturated_voltage_control=False):
     """Freeze a VOLTAGE-mode SVC whose realized reactive output sits at (or beyond)
     its voltage-dependent susceptance envelope to fixed-Q (REACTIVE_POWER mode),
-    mirroring ``_bake_reactive_limit_switches`` for generators/VSC stations above.
+    with the same rule as ``_bake_reactive_limit_switches`` for generators.
 
     Unlike a generator's fixed Q box, an SVC's reactive range is
     ``Q(V) = b * V^2`` (``b`` in ``b_min``..``b_max``, in Siemens): recompute
     ``qmin``/``qmax`` in MVAr at the SVC's own solved terminal voltage before
-    comparing against the realized ``q``.
+    comparing against the realized ``q``, within ``_q_limit_tol``.
+
+    As for a generator, that tolerance only proposes a candidate: an SVC whose
+    regulated bus the reference solve held at its ``target_v`` (``_target_v_held``)
+    was voltage-controlled, sitting a hair inside its limit, and is left regulating
+    -- unless it sits exactly at its limit while another controller of the same
+    bus (a regulating generator or SVC) is still inside its range, the signature of
+    a unit OLF switched out of a shared group, or ``bake_saturated_voltage_control``
+    is set (freeze a held unit at its limit too).
+
+    Returns the ids of the SVCs frozen: like the generators frozen at a limit, the ones
+    OLF would switch back to voltage control on a grid asking them for less.
     """
-    df_bus = network.get_buses(attributes=["v_mag", "synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     svc = network.get_static_var_compensators(
-        attributes=["regulating", "regulation_mode", "q", "b_min", "b_max", "connected", "bus_id"]
+        attributes=["regulating", "regulation_mode", "q", "b_min", "b_max", "target_v",
+                    "regulated_element_id", "connected", "bus_id"]
     )
     if keep_only_main_comp:
         svc = _keep_only_main_comp(svc, df_bus)
     is_voltage = svc["regulating"] & (svc["regulation_mode"] == "VOLTAGE")
     svc = svc[is_voltage]
     if not len(svc):
-        return
+        return pd.Index([], dtype=object)
     v_kv = df_bus.loc[svc["bus_id"].values, "v_mag"].to_numpy()
     # SVC "q" (like generators') is the terminal/receptor-convention result: flip to
     # generator/injection convention to compare against the susceptance envelope.
@@ -1032,6 +1149,12 @@ def _bake_svc_saturation(network, keep_only_main_comp=True):
     qmin = svc["b_min"].to_numpy() * v_kv ** 2
     tol = _q_limit_tol(qmin, qmax)
     mask = (q_gen >= qmax - tol) | (q_gen <= qmin + tol)
+    if not bake_saturated_voltage_control and mask.any():
+        reg_bus = _resolve_regulated_bus(network, svc["bus_id"], svc["regulated_element_id"])
+        held = _target_v_held(network, reg_bus, svc["target_v"], df_bus).to_numpy(bool)
+        exact = (q_gen >= qmax - _Q_LIMIT_TOL_ABS) | (q_gen <= qmin + _Q_LIMIT_TOL_ABS)
+        switched = exact & (_n_free_controllers(network, reg_bus, exact, df_bus, keep_only_main_comp) > 0)
+        mask &= ~held | switched
     if mask.any():
         upd = pd.DataFrame(index=svc.index[mask])
         # unlike Generator.target_q (already generator convention), StaticVarCompensator
@@ -1040,9 +1163,34 @@ def _bake_svc_saturation(network, keep_only_main_comp=True):
         upd["target_q"] = svc["q"].to_numpy()[mask]
         upd["regulation_mode"] = "REACTIVE_POWER"
         network.update_static_var_compensators(upd)
+    return pd.Index(svc.index[mask], dtype=object)
 
 
-def _bake_remote_voltage_control(network, keep_only_main_comp=True):
+def _n_free_controllers(network, svc_reg_bus, svc_exact, df_bus, keep_only_main_comp=True):
+    """For each voltage-mode SVC (``svc_reg_bus``: the bus each regulates, ``svc_exact``:
+    whether it sits exactly at a limit), how many OTHER controllers of that same bus
+    are still inside their range: the regulating generators not exactly at a Q limit
+    (after the generator freezes of the bake), and the other SVCs not exactly at a
+    limit. See :func:`_switched_group_members`, the same test among generators."""
+    svc_free = pd.Series(~np.asarray(svc_exact, dtype=bool), index=svc_reg_bus.index).astype(int)
+    n_free = svc_free.groupby(svc_reg_bus.to_numpy()).transform("sum").to_numpy() - svc_free.to_numpy()
+    gen = network.get_generators(
+        attributes=["voltage_regulator_on", "q", "min_q", "max_q", "min_q_at_p", "max_q_at_p",
+                    "regulated_element_id", "connected", "bus_id"])
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
+    gen = gen[gen["voltage_regulator_on"].astype(bool)]
+    if len(gen):
+        gq = -gen["q"]
+        qmin, qmax = _reactive_limits(gen)
+        gen_free = ~((gq >= qmax - _Q_LIMIT_TOL_ABS) | (gq <= qmin + _Q_LIMIT_TOL_ABS))
+        gen_reg = _generator_regulated_bus(network, gen)
+        free_per_bus = gen_free.astype(int).groupby(gen_reg.reindex(gen.index).to_numpy()).sum()
+        n_free = n_free + free_per_bus.reindex(svc_reg_bus.to_numpy()).fillna(0).to_numpy(int)
+    return n_free
+
+
+def _bake_remote_voltage_control(network, keep_only_main_comp=True, df_bus=None):
     """Rewrite *remote* voltage control into *local* control at the solved terminal.
 
     A generator regulating a bus other than its own terminal (``regulated_element_id``
@@ -1069,7 +1217,7 @@ def _bake_remote_voltage_control(network, keep_only_main_comp=True):
 
     Operates in place; idempotent (an already-local generator is left untouched).
     """
-    df_bus = network.get_buses(attributes=["v_mag", "synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
     gen = network.get_generators(
         attributes=["voltage_regulator_on", "regulated_element_id", "connected", "bus_id"]
     )
@@ -1090,7 +1238,49 @@ def _bake_remote_voltage_control(network, keep_only_main_comp=True):
     network.update_generators(upd)
 
 
-def _bake_active_power_control_participation(network, gen, bat=None):
+def _gen_target_p_range(network, gen):
+    """``(min_target_p, max_target_p)`` of each generator of ``gen`` (aligned on it), as
+    OLF's ``ActivePowerControlHelper`` reads them: the ``activePowerControl`` extension's
+    bounds where it sets them, ``min_p`` / ``max_p`` otherwise."""
+    apc = network.get_extensions("activePowerControl")
+    min_target_p = gen["min_p"].to_numpy(dtype=float, copy=True)
+    max_target_p = gen["max_p"].to_numpy(dtype=float, copy=True)
+    if len(apc):
+        common = gen.index.intersection(apc.index)
+        if len(common):
+            pos = gen.index.get_indexer(common)
+            if "min_target_p" in apc.columns:
+                v = apc.loc[common, "min_target_p"].to_numpy()
+                ok = ~np.isnan(v)
+                min_target_p[pos[ok]] = v[ok]
+            if "max_target_p" in apc.columns:
+                v = apc.loc[common, "max_target_p"].to_numpy()
+                ok = ~np.isnan(v)
+                max_target_p[pos[ok]] = v[ok]
+    return min_target_p, max_target_p
+
+
+def _snap_realized_into_target_range(realized, target_p, min_target_p, max_target_p):
+    """The realized dispatch ``realized`` (generator convention) to write as the baked
+    ``target_p``. OLF writes a unit's ``p`` back with a round-off, so a unit dispatched at
+    one of its limits can come back a hair outside ``[min_target_p, max_target_p]``, even
+    without any slack share.
+    ``checkActivePowerControl`` then reads that ``target_p`` as outside the limits, and
+    every later OLF solve of the baked network leaves the unit out of the slack although
+    the reference solve had it in. A unit whose pre-bake ``target_p`` was inside the range
+    and whose realized dispatch is outside it by at most ``_ZERO_P_TOL`` is thus put back
+    on the bound it crossed; anything further off is written as is."""
+    realized = np.asarray(realized, dtype=float).copy()
+    target_p = np.asarray(target_p, dtype=float)
+    inside = (target_p >= min_target_p) & (target_p <= max_target_p)
+    snap_max = inside & (realized > max_target_p) & (realized <= max_target_p + _ZERO_P_TOL)
+    snap_min = inside & (realized < min_target_p) & (realized >= min_target_p - _ZERO_P_TOL)
+    realized[snap_max] = max_target_p[snap_max]
+    realized[snap_min] = min_target_p[snap_min]
+    return realized
+
+
+def _bake_active_power_control_participation(network, gen, bat=None, gen_range=None, bat_apc=None):
     """Zero out active-power (slack-distribution) participation for generators (and
     batteries, see below) that PowSyBl OLF's own
     ``AbstractLfGenerator.checkActivePowerControl`` would exclude:
@@ -1114,10 +1304,11 @@ def _bake_active_power_control_participation(network, gen, bat=None):
       sign of the reference mismatch -- the total realized minus dispatched
       generation -- is known here, so the generators OLF capped are excluded, and
       the static distribution lightsim2grid then derives from the flag is the one
-      OLF effectively used (on a real 7k-bus RTE snapshot the 41 units at their
-      ``max_p`` carried 42 % of the raw key). This only holds for a mismatch of
-      the same sign as the reference one -- the common case, a loss increase or
-      a load pick-up -- and is documented as such in ``_default_distributed_slack``.
+      OLF effectively used -- on real grid snapshots the units capped this way
+      carry a large enough share of the raw key that ignoring them visibly skews
+      the distribution. This only holds for a mismatch of the same sign as the
+      reference one -- the common case, a loss increase or a load pick-up -- and
+      is documented as such in ``_default_distributed_slack``.
 
     ``gen`` must be the pre-bake generator frame (``p``, ``target_p``, ``min_p``,
     ``max_p``), read *before* :func:`_bake_active_power` overwrites ``target_p``
@@ -1139,10 +1330,19 @@ def _bake_active_power_control_participation(network, gen, bat=None):
     0 by a positive mismatch (and a discharging one by a negative mismatch). The sign of
     the reference mismatch is taken over the generators and the batteries together.
 
-    Returns the batteries OLF capped that this pypowsybl cannot mark in their extension
-    (<= 1.16.1 rejects a battery id there): the caller pins their active range on their
-    realized dispatch (``min_p = max_p``), a degenerate range both OLF and lightsim2grid
-    exclude from the slack.
+    ``gen_range`` (the generators' :func:`_gen_target_p_range`) and ``bat_apc`` (the
+    batteries' :func:`~._aux_battery_apc.battery_active_power_control`) are read off the
+    network when not given.
+
+    Returns ``(pinned_batteries, capped)``: the batteries OLF capped that this pypowsybl
+    cannot mark in their extension (<= 1.16.1 rejects a battery id there) -- the caller
+    pins their active range on their realized dispatch (``min_p = max_p``), a degenerate
+    range both OLF and lightsim2grid exclude from the slack -- and the ids of the units
+    (generators, and batteries marked in their extension) excluded ONLY because OLF capped
+    them: the ones it would let take a share again of a mismatch of the other sign (see
+    ``bake_outer_loops(..., return_details=True)``). A unit excluded for one of OLF's own
+    ``checkActivePowerControl`` reasons is not in it, nor is a pinned battery (its range
+    is gone).
     """
     # not at the top: _aux_battery_apc reads its OLF constants from this module
     from ._aux_battery_apc import (
@@ -1152,20 +1352,9 @@ def _bake_active_power_control_participation(network, gen, bat=None):
         olf_target_p_range,
     )
     apc = network.get_extensions("activePowerControl")
-    min_target_p = gen["min_p"].to_numpy(copy=True)
-    max_target_p = gen["max_p"].to_numpy(copy=True)
-    if len(apc):
-        common = gen.index.intersection(apc.index)
-        if len(common):
-            pos = gen.index.get_indexer(common)
-            if "min_target_p" in apc.columns:
-                v = apc.loc[common, "min_target_p"].to_numpy()
-                ok = ~np.isnan(v)
-                min_target_p[pos[ok]] = v[ok]
-            if "max_target_p" in apc.columns:
-                v = apc.loc[common, "max_target_p"].to_numpy()
-                ok = ~np.isnan(v)
-                max_target_p[pos[ok]] = v[ok]
+    if gen_range is None:
+        gen_range = _gen_target_p_range(network, gen)
+    min_target_p, max_target_p = gen_range
 
     target_p = gen["target_p"].to_numpy()
     max_p = gen["max_p"].to_numpy()
@@ -1190,7 +1379,9 @@ def _bake_active_power_control_participation(network, gen, bat=None):
     # the side opposite their dispatch (OLF keeps the sign of a unit when it caps it)
     has_bat = bat is not None and len(bat) > 0
     if has_bat:
-        b_participate, b_droop, b_min_tp, b_max_tp = battery_active_power_control(network, bat)
+        if bat_apc is None:
+            bat_apc = battery_active_power_control(network, bat)
+        b_participate, b_droop, b_min_tp, b_max_tp = bat_apc
         b_target_p = bat["target_p"].to_numpy(float)
         b_min_p = bat["min_p"].to_numpy(float)
         b_max_p = bat["max_p"].to_numpy(float)
@@ -1207,20 +1398,24 @@ def _bake_active_power_control_participation(network, gen, bat=None):
     mismatch = float(np.sum((realized - target_p)[cand]))
     if has_bat:
         mismatch += float(np.sum((b_realized - b_target_p)[b_cand]))
+    capped = np.zeros(len(gen), dtype=bool)
     if mismatch > _ZERO_P_TOL:
-        excluded |= cand & (realized >= max_target_p - _ZERO_P_TOL)
+        capped = cand & (realized >= max_target_p - _ZERO_P_TOL)
         if has_bat:
             b_capped = b_cand & (b_realized >= b_max_tp - _ZERO_P_TOL)
     elif mismatch < -_ZERO_P_TOL:
-        excluded |= cand & (realized <= min_target_p + _ZERO_P_TOL)
+        capped = cand & (realized <= min_target_p + _ZERO_P_TOL)
         if has_bat:
             b_capped = b_cand & (b_realized <= b_min_tp + _ZERO_P_TOL)
+    excluded |= capped
 
     excluded_ids = gen.index[excluded]
+    capped_ids = gen.index[capped]
     pinned_batteries = bat.index[b_capped] if has_bat else gen.index[:0]
     if has_bat and _pypowsybl_exposes_battery_apc():
         # this pypowsybl writes the extension on a battery as on a generator
         excluded_ids = excluded_ids.append(pinned_batteries)
+        capped_ids = capped_ids.append(pinned_batteries)
         pinned_batteries = pinned_batteries[:0]
 
     if len(excluded_ids):
@@ -1234,7 +1429,7 @@ def _bake_active_power_control_participation(network, gen, bat=None):
             network.create_extensions(
                 "activePowerControl", pd.DataFrame({"participate": False}, index=new_apc)
             )
-    return pinned_batteries
+    return pinned_batteries, pd.Index(capped_ids, dtype=object)
 
 
 def _bake_active_power(
@@ -1242,9 +1437,10 @@ def _bake_active_power(
     balance_on_loads,
     load_power_factor_constant,
     keep_only_main_comp=True,
-    bake_active_power_control_participation=True
+    bake_active_power_control_participation=True,
+    df_bus=None
 ):
-    df_bus = network.get_buses(attributes=["synchronous_component"])
+    df_bus = _get_buses(network) if df_bus is None else df_bus
 
     gen = network.get_generators(attributes=["p", "target_p", "min_p", "max_p", "connected", "bus_id"])
     if keep_only_main_comp:
@@ -1254,25 +1450,43 @@ def _bake_active_power(
     bat = network.get_batteries(attributes=["p", "target_p", "min_p", "max_p", "connected", "bus_id"])
     if keep_only_main_comp:
         bat = _keep_only_main_comp(bat, df_bus)
+    # the active target ranges OLF checks, read before the participation bake writes
+    # into the activePowerControl extension (it only writes `participate` there)
+    gen_range = _gen_target_p_range(network, gen) if len(gen) else None
+    bat_apc = None
+    if len(bat):
+        # not at the top: _aux_battery_apc reads its OLF constants from this module
+        from ._aux_battery_apc import battery_active_power_control, olf_target_p_range
+        bat_apc = battery_active_power_control(network, bat)
     pinned_batteries = bat.index[:0]
+    capped = pd.Index([], dtype=object)
     if bake_active_power_control_participation and (len(gen) or len(bat)):
-        pinned_batteries = _bake_active_power_control_participation(network, gen, bat)
+        pinned_batteries, capped = _bake_active_power_control_participation(network, gen, bat,
+                                                                            gen_range, bat_apc)
 
     if len(gen):
         # result p is load convention; target_p is generator convention
+        gen_target_p = _snap_realized_into_target_range(-gen["p"].to_numpy(), gen["target_p"].to_numpy(),
+                                                        *gen_range)
         network.update_generators(
-            pd.DataFrame({"target_p": -gen["p"]}, index=gen.index)
+            pd.DataFrame({"target_p": gen_target_p}, index=gen.index)
         )
 
     if len(bat):
+        _, _, b_min_tp, b_max_tp = bat_apc
+        b_min_tp, b_max_tp = olf_target_p_range(bat["min_p"], bat["max_p"], b_min_tp, b_max_tp)
+        bat_target_p = pd.Series(
+            _snap_realized_into_target_range(-bat["p"].to_numpy(), bat["target_p"].to_numpy(),
+                                             b_min_tp, b_max_tp),
+            index=bat.index)
         network.update_batteries(
-            pd.DataFrame({"target_p": -bat["p"]}, index=bat.index)
+            pd.DataFrame({"target_p": bat_target_p}, index=bat.index)
         )
         if len(pinned_batteries):
             # a battery OLF capped, on a pypowsybl that cannot mark its extension: a
             # degenerate active range at its realized dispatch takes it out of the slack,
             # in OLF (checkActivePowerControl) and in lightsim2grid alike
-            realized = -bat.loc[pinned_batteries, "p"]
+            realized = bat_target_p.loc[pinned_batteries]
             network.update_batteries(
                 pd.DataFrame({"min_p": realized, "max_p": realized}, index=pinned_batteries)
             )
@@ -1287,3 +1501,5 @@ def _bake_active_power(
             if load_power_factor_constant:
                 upd["q0"] = load["q"]
             network.update_loads(upd)
+    # the units excluded from the slack only because OLF capped them (see the caller)
+    return capped
