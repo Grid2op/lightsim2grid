@@ -278,7 +278,9 @@ class LS2G_API LSGrid final
          * shared again on the others. Writes the new setpoints and takes the saturated
          * units out of the distributed slack, so the next solve only shares what is
          * left (the change in the losses) on the units that can still move. If EVERY
-         * unit saturates, all of them stay in the slack (see the report).
+         * unit saturates, all of them stay in the slack (see the report). A unit out of
+         * the slack afterwards keeps the overshoot this shift leaves it with (see
+         * slack_redistribution::distribute), so that two calls add up.
          */
         slack_redistribution::Report redistribute_active_power(real_type mismatch_mw);
         /**

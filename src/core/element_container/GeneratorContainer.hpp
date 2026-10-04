@@ -337,6 +337,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             slack_.set_can_participate_overshoot(overshoot_mw, "GeneratorContainer::set_can_participate_slack_overshoot");
         }
         real_type get_can_participate_slack_overshoot(int gen_id) const {return slack_.can_participate_overshoot(gen_id);}
+        /// see SlackParticipation::set_can_participate_overshoot_of (LSGrid::redistribute_active_power)
+        void set_can_participate_slack_overshoot_of(int gen_id, real_type overshoot_mw){
+            slack_.set_can_participate_overshoot_of(gen_id, overshoot_mw);
+        }
         bool is_slack(int gen_id) const {return slack_.is_slack(gen_id);}
 
         /**

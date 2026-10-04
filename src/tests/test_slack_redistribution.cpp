@@ -188,6 +188,38 @@ TEST_CASE("distribute: no weight to share on, the whole mismatch is not distribu
     }
 }
 
+TEST_CASE("distribute: the overshoot left makes two distributions add up", "[slack_redistribution]"){
+    // a unit capped by a distribution sits beyond its bound by what the common shift would
+    // still have given it; carried into the next distribution, sharing d1 then d2 ends where
+    // sharing d1 + d2 at once does
+    std::vector<real_type> new_inj, left;
+    std::vector<char> sat;
+    std::vector<Participant> units = {unit(0, 30., 1., 0., 500.), unit(1, 30., 1., 0., 40.)};
+    SECTION("round-based: the shift goes on after a unit is capped"){
+        // +30: 15 each, unit 1 capped at 40, the 5 left go to unit 0: the shift per weight is 20
+        distribute(units, 30., default_eps_mw, new_inj, sat, &left);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(50., 1e-12));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(left[0], Catch::Matchers::WithinAbs(0., 1e-12));
+        CHECK_THAT(left[1], Catch::Matchers::WithinAbs(10., 1e-12));
+    }
+    SECTION("chained then at once, both signs"){
+        for(const real_type d2 : {-10., -25., 15.}){
+            std::vector<Participant> chained = units;
+            distribute(chained, 30., default_eps_mw, new_inj, sat, &left);
+            for(std::size_t k = 0; k < chained.size(); ++k){
+                chained[k].injection_mw = new_inj[k];
+                chained[k].overshoot_mw = left[k];
+            }
+            distribute(chained, d2, default_eps_mw, new_inj, sat, &left);
+            const std::vector<real_type> chained_inj = new_inj;
+            distribute(units, 30. + d2, default_eps_mw, new_inj, sat, &left);
+            CHECK_THAT(chained_inj[0], Catch::Matchers::WithinAbs(new_inj[0], 1e-6));
+            CHECK_THAT(chained_inj[1], Catch::Matchers::WithinAbs(new_inj[1], 1e-6));
+        }
+    }
+}
+
 TEST_CASE("distribute with an overshoot: a drawing unit capped at 0 MW keeps its side", "[slack_redistribution]"){
     // a charging storage unit (range [-50, 50]) a positive mismatch pushed up to 0 MW, 5 MW
     // beyond it: the overshoot is above 0 MW (> 0), and 0 MW stays its UPPER bound

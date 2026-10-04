@@ -2828,8 +2828,9 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
 
     std::vector<real_type> new_inj;
     std::vector<char> saturated;
+    std::vector<real_type> overshoot_left;
     const slack_redistribution::Report report = slack_redistribution::distribute(
-        units, mismatch_mw, slack_redistribution::default_eps_mw, new_inj, saturated);
+        units, mismatch_mw, slack_redistribution::default_eps_mw, new_inj, saturated, &overshoot_left);
 
     // the setpoints first, the slack second: a generator still flagged slack does not
     // re-evaluate its PV status on a change of P (GeneratorContainer::_on_change_p), and
@@ -2853,6 +2854,17 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
             generators_.leave_slackbus(units[k].el_id, algo_controler_);
         }else{
             storages_.leave_slackbus(units[k].el_id, algo_controler_);
+        }
+    }
+    // a unit out of the slack after this (flagged only, or just saturated) keeps what is left
+    // of its overshoot -- used up by this shift, or made by it: the next redistribution starts
+    // from there, so that two in a row land where their sum shared at once would
+    for(std::size_t k = 0; k < units.size(); ++k){
+        if(units[k].in_slack && !saturated[k]) continue;
+        if(units[k].kind == UnitKind::GENERATOR){
+            generators_.set_can_participate_slack_overshoot_of(units[k].el_id, overshoot_left[k]);
+        }else{
+            storages_.set_can_participate_slack_overshoot_of(units[k].el_id, overshoot_left[k]);
         }
     }
     return report;

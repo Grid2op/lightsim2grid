@@ -165,6 +165,11 @@ class SlackParticipation
         void set_can_participate_overshoots(const std::vector<real_type> & overshoot_mw){
             can_participate_overshoot_mw_ = overshoot_mw;
         }
+        /// what is left of `el_id`'s overshoot once a redistribution moved it (see
+        /// LSGrid::redistribute_active_power and slack_redistribution::distribute)
+        void set_can_participate_overshoot_of(int el_id, real_type overshoot_mw){
+            can_participate_overshoot_mw_[el_id] = overshoot_mw;
+        }
 
         [[nodiscard]] bool is_slack(int el_id) const {return slackbus_[el_id];}
         [[nodiscard]] real_type weight(int el_id) const {return weight_[el_id];}
@@ -214,11 +219,14 @@ class SlackParticipation
             }
             // it can be in the slack: it can come back to it (see leave / rejoin_if_able)
             can_participate_weight_[el_id] = weight;
+            // in the slack it is no longer capped: whatever overshoot it had is gone
+            can_participate_overshoot_mw_[el_id] = 0.;
         }
         /// take `el_id` out of the slack for good: it can no longer participate either
         void remove(int el_id, DualAlgoControl & solver_control){
             _take_out(el_id, solver_control);
             can_participate_weight_[el_id] = 0.;
+            can_participate_overshoot_mw_[el_id] = 0.;
         }
         /**
          * Take `el_id` out of the slack while it sits at the active limit it saturated
