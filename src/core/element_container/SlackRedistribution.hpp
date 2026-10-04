@@ -94,12 +94,13 @@ constexpr real_type default_eps_mw = 1e-6;
  * unit only flagged "can participate" still has room: it takes the rest of the
  * mismatch here, but the solve cannot distribute on it.
  *
- * `overshoot_left_mw`, when given, receives (resized to `units.size()`) how far beyond
- * the bound it ends at each unit would sit without that bound, given the common shift
- * of this distribution: > 0 above its upper bound, < 0 below its lower one, 0 for a unit
- * inside its range. It is the overshoot a unit carries into the next distribution
- * (Participant::overshoot_mw), so that sharing two mismatches one after the other ends
- * where sharing their sum at once would, as OpenLoadFlow does from the raw set-points.
+ * `overshoot_left_mw`, when given, receives (resized to `units.size()`) what is left of
+ * each unit's overshoot (Participant::overshoot_mw) once the common shift of this
+ * distribution has used it up: same sign, 0 once used up. It is the overshoot the unit
+ * carries into the next distribution, so that sharing two mismatches one after the other
+ * ends where sharing their sum at once would for a unit the reference solve capped. A
+ * distribution never makes one: a unit it saturates leaves that bound at once next time,
+ * as a unit OpenLoadFlow's distribution step capped does.
  */
 inline Report distribute_with_overshoot(const std::vector<Participant> & units,
                                         real_type mismatch_mw,
@@ -147,9 +148,6 @@ inline Report distribute(const std::vector<Participant> & units,
 
     real_type remaining = mismatch_mw;
     std::size_t nb_active = nb;
-    // the common shift, per unit of weight: where a unit would be without its bounds is
-    // its injection plus this times its weight (see `overshoot_left_mw`)
-    real_type shift_per_weight = 0.;
     // each round either ends the loop or removes at least one unit: nb + 1 rounds is
     // a hard cap, never reached in practice
     while(nb_active > 0 && std::abs(remaining) > eps_mw && report.nb_rounds <= static_cast<int>(nb) + 1){
@@ -157,7 +155,6 @@ inline Report distribute(const std::vector<Participant> & units,
         real_type factor_sum = 0.;
         for(std::size_t k = 0; k < nb; ++k) if(active[k]) factor_sum += units[k].weight;
         if(factor_sum <= 0.) break;
-        shift_per_weight += remaining / factor_sum;
         real_type done = 0.;
         for(std::size_t k = 0; k < nb; ++k){
             if(!active[k]) continue;
@@ -182,13 +179,6 @@ inline Report distribute(const std::vector<Participant> & units,
     }
     report.not_distributed_mw = remaining;
     for(std::size_t k = 0; k < nb; ++k) if(saturated[k]) ++report.nb_saturated;
-    if(overshoot_left_mw != nullptr){
-        for(std::size_t k = 0; k < nb; ++k){
-            if(!saturated[k]) continue;
-            (*overshoot_left_mw)[k] = units[k].injection_mw + shift_per_weight * units[k].weight
-                                      - new_injection_mw[k];
-        }
-    }
     // what is left of the solve's slack: the units still active that are in it (a unit only
     // flagged "can participate" is not, so it cannot keep the slack from being emptied)
     bool any_in_slack = false;
@@ -245,7 +235,7 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
     if(nb == 0 || std::abs(mismatch_mw) <= eps_mw) return report;
 
     const real_type inf = std::numeric_limits<real_type>::infinity();
-    std::vector<real_type> lo(nb), hi(nb), virt(nb), share(nb);
+    std::vector<real_type> lo(nb), hi(nb), virt(nb), share(nb), offset_of(nb, 0.);
     real_type weight_sum = 0.;
     for(std::size_t k = 0; k < nb; ++k) weight_sum += units[k].weight;
     if(weight_sum <= 0.){
@@ -269,9 +259,17 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
         else if(over < 0. && std::isfinite(l) && inj <= l + eps_mw) offset = over;
         lo[k] = std::min(l, inj);
         hi[k] = std::max(h, inj);
+        offset_of[k] = offset;
         virt[k] = inj + offset;
         share[k] = units[k].weight / weight_sum;
     }
+    // what is left of a unit's own overshoot once the unit sits at `p` for a shift that
+    // would take it to `target`: never more than it came with, never of the other sign
+    auto left_of = [&](std::size_t k, real_type target, real_type p){
+        if(offset_of[k] > 0.) return std::min(offset_of[k], std::max(target - p, real_type(0.)));
+        if(offset_of[k] < 0.) return std::max(offset_of[k], std::min(target - p, real_type(0.)));
+        return real_type(0.);
+    };
     auto taken = [&](real_type delta){
         real_type res = 0.;
         for(std::size_t k = 0; k < nb; ++k){
@@ -306,9 +304,7 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
                 delta_sat = (mismatch_mw > 0.) ? std::max(delta_sat, d) : std::min(delta_sat, d);
             }
             for(std::size_t k = 0; k < nb; ++k){
-                const real_type beyond = virt[k] + delta_sat * share[k] - new_injection_mw[k];
-                (*overshoot_left_mw)[k] = (mismatch_mw > 0.) ? std::max(beyond, real_type(0.))
-                                                             : std::min(beyond, real_type(0.));
+                (*overshoot_left_mw)[k] = left_of(k, virt[k] + delta_sat * share[k], new_injection_mw[k]);
             }
         }
         return report;
@@ -330,7 +326,7 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
         const real_type target = virt[k] + delta * share[k];
         const real_type p = std::min(hi[k], std::max(lo[k], target));
         new_injection_mw[k] = p;
-        if(overshoot_left_mw != nullptr) (*overshoot_left_mw)[k] = target - p;
+        if(overshoot_left_mw != nullptr) (*overshoot_left_mw)[k] = left_of(k, target, p);
         done += p - units[k].injection_mw;
         if((mismatch_mw > 0. && target >= hi[k]) || (mismatch_mw < 0. && target <= lo[k])){
             saturated[k] = 1;

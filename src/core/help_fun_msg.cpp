@@ -4324,10 +4324,11 @@ const std::string DocLSGrid::redistribute_active_power = R"mydelimiter(
     FIRST slack generator leaves the slack, the angle reference moves to the next one (a constant
     angle shift, the magnitudes are unchanged).
 
-    A unit left out of the slack (flagged only, or just saturated) keeps, as its
-    ``can_participate_slack_overshoot_mw``, how far beyond its bound the shift of this call
-    would have taken it: the next call starts from there, so that two calls in a row end where
-    one call sharing their sum would. A unit back in the slack has none.
+    A unit flagged with an overshoot (``can_participate_slack_overshoot_mw``, what the reference
+    solve left it beyond its limit) keeps what this call did not use up of it: the next call
+    starts from there, so that two calls in a row end where one call sharing their sum would. A
+    call never makes an overshoot: a unit it saturates leaves its limit at once on a mismatch
+    of the other sign. A unit back in the slack has none.
 
     Returns a :class:`SlackRedistributionReport` (``mismatch_mw``, ``nb_participants``,
     ``nb_saturated``, ``nb_rounds``, ``not_distributed_mw``, ``all_saturated``).

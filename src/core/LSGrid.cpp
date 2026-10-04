@@ -2863,9 +2863,10 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
             storages_.leave_slackbus(units[k].el_id, algo_controler_);
         }
     }
-    // a unit out of the slack after this (flagged only, or just saturated) keeps what is left
-    // of its overshoot -- used up by this shift, or made by it: the next redistribution starts
-    // from there, so that two in a row land where their sum shared at once would
+    // a unit out of the slack after this (flagged only, or just saturated) keeps what this
+    // shift left of its overshoot -- never a new one: the next redistribution starts from
+    // there, so that for a unit the reference solve capped two in a row land where their sum
+    // shared at once would
     for(std::size_t k = 0; k < units.size(); ++k){
         if(units[k].in_slack && !saturated[k]) continue;
         if(units[k].kind == UnitKind::GENERATOR){

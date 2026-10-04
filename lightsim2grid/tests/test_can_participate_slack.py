@@ -161,24 +161,21 @@ class TestPrepass(unittest.TestCase):
 
     def test_overshoot_does_not_outlive_the_cap(self):
         # moved off its limit, the unit is back in the slack: the reference solve's overshoot
-        # is gone. Saturated again by a redistribution, it carries what THAT one left beyond
-        # its max_p, not the old overshoot
+        # is gone. Saturated again by a redistribution, it carries no overshoot (a
+        # redistribution never makes one, as OLF's distribution step), so it leaves its max_p
+        # at once on a mismatch of the other sign
         grid = _grid(flagged=True, overshoot_mw=25.)
         grid.change_p_gen(CAPPED, 30.)
         self.assertTrue(grid.get_generators()[CAPPED].is_slack)
         self.assertEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 0.)
-        # +30 MW, equal weights: the unit at 30 is capped at 40 and the slack one takes the
-        # rest; the common shift ends at +40, so the capped unit sits 10 MW beyond its max_p
+        # +30 MW, equal weights: the unit at 30 is capped at 40, the slack one takes the rest
         grid.redistribute_active_power(30.)
         np.testing.assert_allclose(_target_p(grid), [50., 40.], atol=1e-6)
         self.assertFalse(grid.get_generators()[CAPPED].is_slack)
-        self.assertAlmostEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 10., places=6)
-        # -10 MW: the 10 MW beyond its max_p first (shift -20), so the slack unit gives it all
+        self.assertEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 0.)
+        # -10 MW: 5 MW each, the old 25 MW overshoot would have kept it at 40
         grid.redistribute_active_power(-10.)
-        np.testing.assert_allclose(_target_p(grid), [40., 40.], atol=1e-6)
-        # -10 MW more: now it moves at once
-        grid.redistribute_active_power(-10.)
-        np.testing.assert_allclose(_target_p(grid), [35., 35.], atol=1e-6)
+        np.testing.assert_allclose(_target_p(grid), [45., 35.], atol=1e-6)
 
     def test_overshoot_batch_matches_the_single_solve(self):
         ref = _grid(flagged=True, overshoot_mw=15.)
