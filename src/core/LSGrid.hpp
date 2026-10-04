@@ -1282,11 +1282,13 @@ class LS2G_API LSGrid final
         }
         /**
          * For the generators flagged "can participate in the slack": how far BEYOND the
-         * limit it sits at each one was in the reference solve, in MW (>= 0, one value per
-         * generator, 0 by default). OpenLoadFlow shares the slack from the raw set-points,
-         * so a unit it capped at max_p had raw + lambda * weight above max_p by that much,
-         * and an imbalance of the other sign only moves it once the shift of the
-         * distribution has used that up. Only the bounded redistribution pre-pass reads it.
+         * limit it sits at each one was in the reference solve, in MW, signed (> 0 above its
+         * upper limit, < 0 below its lower one; one value per generator, 0 by default). The
+         * sign is what tells, for a unit at 0 MW, which side of 0 it was capped from.
+         * OpenLoadFlow shares the slack from the raw set-points, so a unit it capped at
+         * max_p had raw + lambda * weight above max_p by that much, and an imbalance of the
+         * other sign only moves it once the shift of the distribution has used that up.
+         * Only the bounded redistribution pre-pass reads it.
          * See SlackParticipation::set_can_participate_overshoot.
          */
         void set_gen_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
