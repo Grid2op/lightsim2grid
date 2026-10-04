@@ -3,21 +3,10 @@ Change Log
 
 [TODO]
 --------
-- actions in batch computation (``ScenarioSweep.set_topo_actions``): what this version refuses,
-  each a value-level extension of the fixed solver layout still to be written:
-
-  * a row naming an element both in a ``set_contingency_*`` mask and in its action is refused
-    rather than merged.
-  * moving a slack generator (or one with a slack weight) to another busbar or reactivating one,
-    reactivating a generator on a slack bus, and moving or reactivating a generator that
-    regulates a remote bus or whose bus a control group holds: the per-row slack set / control
-    plan would move. Disconnecting them (``set_bus -1``) is supported through the
-    generator-contingency path.
-  * the DC algorithm: a row carrying a topological action is refused on it, the coefficient
-    edits are the same as AC but the masking / connectivity path is not wired for ``Bbus``.
-  * ``keep_jacobian`` combined with a generator reactivation or move: the ``gen_v`` gradient
-    (``get_gen_v_target_bus`` / ``gen_v_indirect_grad``) maps every generator to the bus it
-    holds in the base grid, once for the batch, where it should follow the row.
+- ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
+  element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
+  slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
+  them works); the DC algorithm; ``keep_jacobian`` with a generator moved or reactivated.
 - OpenLoadFlow-style outer loops (reactive limits, slack limits, hvdc saturation) as a
   non-default ``NROuter_*`` algorithm, keeping one ``analyze`` per solve or batch: assessed in
   ``docs/dev_notes/outer_loops_fixed_sparsity.md``, nothing implemented.
@@ -225,35 +214,20 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
-- [ADDED] documentation page for the light environment (``docs/light_env.rst``) and a
-  benchmark against grid2op on ``l2rpn_case14_sandbox`` (``benchmarks/light_env.py``).
-- [FIXED] light environment: the ``Protections`` setters refused float32 (grid2op's thermal
-  limits) and read-only arrays; they now take any numeric array.
-- [ADDED] ``ScenarioSweep.set_topo_actions``: one topological action per row (a grid2op action
-  or a ``TopoAction``: ``set_bus`` / ``set_line_status``), checked against the grid and played
-  on top of the row's injections and masks -- disconnections, reconnections and elements moved
-  between busbars (a bus created or merged), the whole sweep still running on ONE symbolic
-  analysis: the solver labelling is built for the union of the buses the rows use, the
-  admittance entries a row writes are reserved as stored zeros, and a row is value edits
-  (coefficients, injections, PV pinning, masking of the buses it leaves empty). See the TODO
-  section for what is refused. ``compute_physical_violations`` follows the row: a generator the
-  row moves or reactivates is checked on the bus the row gives it.
-- [ADDED] light environment: ``LightEnv.init_actions`` registers the actions the agent can take,
-  given as grid2op actions (``set_bus`` / ``set_line_status``) or ``TopoAction``; every action is
-  checked against the grid (element and busbar exist, no contradiction) and an invalid one is
-  refused. ``step(act_id)`` now applies the action, with grid2op-like cooldowns
-  (``nb_timestep_cooldown_sub``, ``nb_timestep_cooldown_line``, ``nb_timestep_reconnection``)
-  and ``info["is_illegal"]``; ``reset`` restores the initial topology.
-- [FIXED] light environment: the protections looped for ever once a line had been disconnected
-  for overflow, and never reset the overflow counter of a line back in its limits.
-- [ADDED] light environment: ``LightEnvObservation``, returned by ``reset`` / ``step`` instead of
-  a copy of ``rho``: flows (p, q, a, both sides), ``topo_vect``, cooldowns, ``load_p``, ``gen_p``
-  and ``rho``, as read-only numpy views on the env's memory (no copy).
-- [ADDED] light environment: ``LightEnv`` can be copied (``env.copy()``, ``copy.copy``,
-  ``copy.deepcopy``): an independent env at the same step. The initial grid, the time series and
-  the actions are shared read-only, so a copy stays cheap. In C++ it is also (noexcept) movable.
-- [FIXED] light environment: the reward and ``info["survival_time"]`` are the fraction of the
-  episode survived; they were an integer division (by ``max_iter`` for the reward).
+- [ADDED] a documentation page for the light environment (``docs/light_env.rst``) and a
+  benchmark against grid2op (``benchmarks/light_env.py``).
+- [FIXED] light environment: the ``Protections`` setters accept float32 and read-only arrays.
+- [ADDED] ``ScenarioSweep.set_topo_actions``: one topological action per row (disconnections,
+  reconnections, a bus split or merged), still on one symbolic analysis. Refusals under [TODO].
+- [ADDED] light environment: ``LightEnv.init_actions`` registers checked topological actions,
+  which ``step(act_id)`` plays with grid2op-like cooldowns.
+- [FIXED] light environment: the protections looped for ever after an overflow disconnection,
+  and never reset the overflow counter of a line back in its limits.
+- [ADDED] light environment: ``LightEnvObservation``, read-only views on the env's state with no
+  copy, returned by ``reset`` / ``step``.
+- [ADDED] light environment: ``LightEnv`` can be copied cheaply (``copy`` / ``deepcopy``), and
+  moved in C++.
+- [FIXED] light environment: the reward and ``info["survival_time"]`` were integer divisions.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 18: ``SvcContainer`` serializes the standby automaton
   and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
   in the slack" weight and overshoot, the converter stations their ``can_be_pv`` flag, the hvdc
