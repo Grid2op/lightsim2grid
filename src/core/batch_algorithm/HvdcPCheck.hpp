@@ -17,6 +17,9 @@
 #include <string>
 #include <vector>
 
+// HvdcPEntry::frozen_dir and the HVDC_AC_EMULATION_RELEASE report exist
+#define LS2G_HAS_HVDC_AC_EMULATION_FROZEN 1
+
 namespace ls2g {
 
 /**
@@ -58,8 +61,13 @@ namespace ls2g {
  * the line in service) AND still in the LINEAR regime (`status_droop == 0`). A line the
  * caller has already saturated is skipped: its flow is pinned at the very limit this
  * would compare against, so there is nothing left to detect -- the outer loop, in effect,
- * already fired. (Whether a saturated line should be *released* -- the other half of that
- * loop -- is a question about a flow this row never computed, and is not answered here.)
+ * already fired. A line the CALLER says an outer loop froze at its limit
+ * (LSGrid::set_hvdc_ac_emulation_frozen: droop off, set-point at the limit, droop parameters
+ * kept) is checked for the other half of that loop instead: the flow its droop would ask for
+ * from this row's angles, below that limit by more than the tolerance, says the loop would
+ * have left it in AC emulation -- reported as HVDC_AC_EMULATION_RELEASE, `side` the direction
+ * it is frozen in. (The same test as the PQ -> PV release of GenPvReleaseCheck.hpp: the
+ * frozen state's own angles, not the ones the released line would lead to.)
  */
 namespace hvdc_p_check {
 
@@ -75,6 +83,10 @@ struct HvdcPEntry
     real_type k_mw_per_rad = 0.;     ///< ... and its slope
     real_type pmax_1to2_mw = 0.;
     real_type pmax_2to1_mw = 0.;
+    /// 0: a line in its linear regime (the check above); +1 / -1: a line an outer loop froze
+    /// at its limit in the direction 1 -> 2 / 2 -> 1 (LSGrid::set_hvdc_ac_emulation_frozen),
+    /// checked for its release instead
+    int frozen_dir = 0;
     std::string name;                ///< LSGrid::set_dcline_names, empty if never set
 };
 
@@ -103,9 +115,19 @@ inline void build_hvdc_p_plan(const LSGrid & grid_model,
     if(nb_hvdc == 0) return;
     const std::vector<std::string> & names = hvdcs.get_names();  // empty if never set
 
+    const std::vector<bool> & status_global = hvdcs.get_status_global();
+    const std::vector<bool> & frozen = hvdcs.get_ac_emulation_frozen();
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
-        if(!hvdcs.is_droop_active(hvdc_id)) continue;        // no droop, or out of service
-        if(hvdcs.get_status_droop(hvdc_id) != 0) continue;   // already saturated by the caller
+        // a line an outer loop froze at its limit (droop off, set-point there): its release
+        int frozen_dir = 0;
+        if(static_cast<std::size_t>(hvdc_id) < frozen.size() && frozen[hvdc_id] &&
+           !hvdcs.is_droop_active(hvdc_id) && status_global[hvdc_id]){
+            frozen_dir = (hvdcs.get_converters_mode(hvdc_id) == HvdcLineContainer::ConvertersMode::SIDE_1_RECTIFIER)
+                         ? 1 : -1;
+        } else {
+            if(!hvdcs.is_droop_active(hvdc_id)) continue;        // no droop, or out of service
+            if(hvdcs.get_status_droop(hvdc_id) != 0) continue;   // already saturated by the caller
+        }
         // A droop-active line always has both converters connected (LSGrid opens one only
         // through deactivate_dcline_sideX / disconnect_if_not_in_main_component, both of
         // which disable_droop, and fill_hvdc_droop_solver_data throws otherwise). Checked
@@ -131,6 +153,7 @@ inline void build_hvdc_p_plan(const LSGrid & grid_model,
         entry.k_mw_per_rad = hvdcs.get_droop_k_mw_per_rad(hvdc_id);
         entry.pmax_1to2_mw = hvdcs.get_pmax_1to2_mw(hvdc_id);
         entry.pmax_2to1_mw = hvdcs.get_pmax_2to1_mw(hvdc_id);
+        entry.frozen_dir = frozen_dir;
         if(static_cast<std::size_t>(hvdc_id) < names.size()){
             entry.name = names[static_cast<std::size_t>(hvdc_id)];
         }
@@ -177,6 +200,18 @@ inline void check_hvdc_p_violations(const HvdcPPlan & plan,
                                (Va(entry.bus1_solver) - Va(entry.bus2_solver));
         if(!std::isfinite(p_mw)) continue;
 
+        if(entry.frozen_dir != 0){
+            // frozen at its limit in that direction: released when its droop asks for less
+            const int side = entry.frozen_dir > 0 ? 1 : 2;
+            const real_type flow = entry.frozen_dir > 0 ? p_mw : -p_mw;
+            const real_type limit = entry.frozen_dir > 0 ? entry.pmax_1to2_mw : entry.pmax_2to1_mw;
+            if(std::isfinite(limit) && (flow < limit - tol_mw)){
+                out.push_back(LimitViolation{ViolationElementType::HVDC, entry.hvdc_id, side,
+                                             LimitViolationType::HVDC_AC_EMULATION_RELEASE, flow,
+                                             limit, entry.name});
+            }
+            continue;
+        }
         if(std::isfinite(entry.pmax_1to2_mw) && (p_mw > entry.pmax_1to2_mw + tol_mw)){
             out.push_back(LimitViolation{ViolationElementType::HVDC, entry.hvdc_id, 1,
                                          LimitViolationType::HIGH_P, p_mw,

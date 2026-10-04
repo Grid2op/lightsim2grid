@@ -9,14 +9,47 @@
 import copy
 
 import numpy as np
+import pandas as pd
 
-from ._aux_common import _aux_get_bus, _aux_regulated_bus_view_ids
+from ._aux_common import _aux_get_bus, _aux_reactive_limits_at_target_p, _aux_regulated_bus_view_ids
 
 
-def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl):
+def _aux_can_be_pv_flags(can_be_pv, gen_index, other_ids=None):
+    """The ``can_be_pv`` argument of `init` as a boolean array aligned on ``gen_index``
+    (the generators in lightsim2grid order), or ``None`` when nothing is flagged. Accepts
+    an iterable of generator ids (what `bake_outer_loops` returns), a boolean Series
+    indexed by generator id, or a boolean array already in that order. ``other_ids`` are
+    the ids of the other elements `init` accepts in it (the static var compensators, see
+    `_aux_svc_can_be_pv_flags`): skipped here, where any other unknown id raises."""
+    if can_be_pv is None:
+        return None
+    if isinstance(can_be_pv, pd.Series):
+        flags = can_be_pv.reindex(gen_index).fillna(False).astype(bool).to_numpy()
+    elif isinstance(can_be_pv, np.ndarray) and can_be_pv.dtype == bool:
+        if can_be_pv.shape != (len(gen_index),):
+            raise ValueError(f"`can_be_pv`: a boolean array must have one entry per generator "
+                             f"({len(gen_index)}), got shape {can_be_pv.shape}.")
+        flags = can_be_pv.copy()
+    else:
+        ids = pd.Index([str(el) for el in can_be_pv])
+        unknown = ids.difference(gen_index)
+        if other_ids is not None:
+            unknown = unknown.difference(other_ids)
+        if len(unknown):
+            raise ValueError(f"`can_be_pv`: unknown generator / static var compensator id(s) "
+                             f"{list(unknown)[:10]}.")
+        flags = gen_index.isin(ids)
+    return np.asarray(flags, dtype=bool)
+
+
+def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+                        can_be_pv=None, can_be_pv_other_ids=None):
     """Add every generator of ``net`` to ``model``. Returns ``(df_gen, gen_sub)``:
     ``df_gen`` is reused by the slack-assignment phase (`_aux_add_slack.py`),
-    ``gen_sub`` by the final substation-id bookkeeping in `initLSGrid.py`."""
+    ``gen_sub`` by the final substation-id bookkeeping in `initLSGrid.py`.
+    ``can_be_pv`` flags the generators an outer loop pinned at a reactive limit (see
+    `_aux_can_be_pv_flags` for what it accepts, ``can_be_pv_other_ids`` being its
+    ``other_ids``)."""
     gen_attrs = [
         "connected", "min_p", "max_p", "target_p", "target_v", "target_q", "p",
         "voltage_regulator_on", "regulated_element_id", "voltage_level_id", "bus_id",
@@ -30,27 +63,8 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
     # to handle encoding in 32 bits and overflow when "splitting" the Q values among
     min_float_value = np.finfo(np.float32).min * 1e-4 + 1.
     max_float_value = np.finfo(np.float32).max * 1e-4 + 1.
-    # "min_q"/"max_q" (the flat MIN_MAX box) are NaN for a generator whose
-    # reactive_limits_kind is CURVE -- pypowsybl only populates those through
-    # "min_q_at_target_p"/"max_q_at_target_p" (the capability curve evaluated at the
-    # generator's own target P, available even before any loadflow has been run,
-    # unlike "min_q_at_p" which depends on a solved "p"). Without this, every
-    # CURVE-kind generator silently got the "no limit" float32 sentinel below
-    # regardless of its real reactive range.
-    min_q_src = df_gen["min_q_at_target_p"].where(df_gen["min_q_at_target_p"].notna(), df_gen["min_q"])
-    max_q_src = df_gen["max_q_at_target_p"].where(df_gen["max_q_at_target_p"].notna(), df_gen["max_q"])
-    min_q_aux = 1. * min_q_src.values
-    max_q_aux = 1. * max_q_src.values
-    # malformed source curve data (eg a reactive capability curve point entered with
-    # min_q/max_q swapped) can make the "at target p" interpolation yield min_q > max_q.
-    # OpenLoadFlow tolerates this silently; lightsim2grid's GeneratorContainer::init
-    # hard-rejects it (real case found on a real grid snapshot). Restore a valid
-    # interval by sorting the pair instead of crashing -- this only ever affects the
-    # (already tiny) width of the interval, never which generators get a reactive
-    # constraint at all.
-    swapped = min_q_aux > max_q_aux
-    if swapped.any():
-        min_q_aux[swapped], max_q_aux[swapped] = max_q_aux[swapped], min_q_aux[swapped].copy()
+    # the curve at the target P for a CURVE-kind generator, inverted pairs sorted
+    min_q_aux, max_q_aux = _aux_reactive_limits_at_target_p(df_gen)
     too_small = min_q_aux < min_float_value
     min_q_aux[too_small] = min_float_value
     min_q = min_q_aux.astype(np.float32)
@@ -117,6 +131,13 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
     max_p_mw[~np.isfinite(max_p_mw)] = np.nan
     if np.any(np.isfinite(min_p_mw)) or np.any(np.isfinite(max_p_mw)):
         model.set_gen_p_limits(min_p_mw, max_p_mw)
+
+    # the PQ generators an outer loop pinned at a reactive limit (what `bake_outer_loops`
+    # returns): nothing in the powerflow reads the flag, it only opens them to the physical
+    # check of their PQ -> PV release
+    flags = _aux_can_be_pv_flags(can_be_pv, df_gen.index, can_be_pv_other_ids)
+    if flags is not None and flags.any():
+        model.set_gen_can_be_pv(flags)
 
     # thread the regulated bus to the C++ generator container. Local generators keep
     # their own bus (already the C++ default), so a grid without any remote control

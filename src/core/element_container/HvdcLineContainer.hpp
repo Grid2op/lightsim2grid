@@ -49,6 +49,9 @@ class LS2G_API HvdcLineInfo final : public TwoSidesContainer<ConverterStationCon
         real_type pmax_1to2_mw;
         real_type pmax_2to1_mw;
         int status_droop;          // 0 linear, +1 saturated 1->2, -1 saturated 2->1
+        // an outer loop froze this angle-droop line at its active power limit (droop off,
+        // set-point at the limit): see LSGrid::set_hvdc_ac_emulation_frozen
+        bool ac_emulation_frozen;
 
         ConverterStationInfo station_side_1;
         ConverterStationInfo station_side_2;
@@ -128,7 +131,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
                 std::vector<real_type>, // k_mw_per_rad_
                 std::vector<real_type>, // pmax_1to2_mw_
                 std::vector<real_type>, // pmax_2to1_mw_
-                std::vector<int>        // status_droop_
+                std::vector<int>,       // status_droop_
+                std::vector<bool>       // ac_emulation_frozen_ (appended; all false by default)
                 >;
         enum StateResIdx {
             TSC_STATE = 0,
@@ -144,6 +148,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             PMAX_1TO2_MW,
             PMAX_2TO1_MW,
             STATUS_DROOP,
+            AC_EMULATION_FROZEN,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -427,6 +432,31 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
 
         const ConverterStationContainer & get_stations_side_1() const {return side_1_;}
         const ConverterStationContainer & get_stations_side_2() const {return side_2_;}
+        /**
+         * The angle-droop ("AC emulation") lines a caller knows an outer loop froze at their
+         * active power limit -- `bake_outer_loops` turns them into a fixed set-point at that
+         * limit, droop off, as OpenLoadFlow's AcHvdcAcEmulationLimits loop saturated them.
+         * Their droop parameters (p0, slope) are kept. Never read by a powerflow: it only opens
+         * them to the physical check of their release (HvdcPCheck.hpp), the flow their droop
+         * would ask for falling back below that limit. `change_p` moving a flagged line's
+         * set-point clears its flag: it no longer sits at the limit it was frozen at.
+         */
+        void set_ac_emulation_frozen(const std::vector<bool> & frozen){
+            check_size(frozen, nb(), "HvdcLineContainer::set_ac_emulation_frozen");
+            ac_emulation_frozen_ = frozen;
+        }
+        bool get_ac_emulation_frozen(int hvdc_id) const {return ac_emulation_frozen_[hvdc_id];}
+        const std::vector<bool> & get_ac_emulation_frozen() const {return ac_emulation_frozen_;}
+        int get_converters_mode(int hvdc_id) const {return converters_mode_(hvdc_id);}
+
+        /// see ConverterStationContainer::set_can_be_pv (LSGrid::set_hvdc_can_be_pv)
+        void set_stations_can_be_pv(const std::vector<bool> & side_1, const std::vector<bool> & side_2){
+            // both sizes first: a wrong side 2 must not leave side 1 already written
+            check_size(side_1, nb(), "HvdcLineContainer::set_stations_can_be_pv (side 1)");
+            check_size(side_2, nb(), "HvdcLineContainer::set_stations_can_be_pv (side 2)");
+            side_1_.set_can_be_pv(side_1);
+            side_2_.set_can_be_pv(side_2);
+        }
 
     private:
         /**
@@ -455,6 +485,9 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
 
         // angle-droop (AC emulation)
         std::vector<bool> droop_enabled_;
+        // frozen at its active power limit by an outer loop (see set_ac_emulation_frozen):
+        // never read by a powerflow
+        std::vector<bool> ac_emulation_frozen_;
         RealVect p0_mw_;
         RealVect k_mw_per_rad_;
         RealVect pmax_1to2_mw_;
@@ -480,6 +513,7 @@ inline HvdcLineInfo::HvdcLineInfo(const HvdcLineContainer & r_data_hvdc, int my_
     pmax_1to2_mw(0.),
     pmax_2to1_mw(0.),
     status_droop(0),
+    ac_emulation_frozen(false),
     station_side_1(r_data_hvdc.side_1_, my_id),
     station_side_2(r_data_hvdc.side_2_, my_id)
 {
@@ -505,6 +539,7 @@ inline HvdcLineInfo::HvdcLineInfo(const HvdcLineContainer & r_data_hvdc, int my_
     pmax_1to2_mw = r_data_hvdc.pmax_1to2_mw_(my_id);
     pmax_2to1_mw = r_data_hvdc.pmax_2to1_mw_(my_id);
     status_droop = r_data_hvdc.status_droop_(my_id);
+    ac_emulation_frozen = r_data_hvdc.ac_emulation_frozen_[my_id];
 }
 
 } // namespace ls2g

@@ -15,6 +15,8 @@
 #include "Eigen/SparseCore"
 #include "Eigen/SparseLU"
 
+#include <limits>
+
 #include "Utils.hpp"
 #include "SlackParticipation.hpp"
 #include "VoltageSourceContainer.hpp"
@@ -30,9 +32,20 @@ class LS2G_API StorageInfo : public OneSideContainer_PQ::OneSidePQInfo
         real_type target_vm_pu;
         real_type min_q_mvar;
         real_type max_q_mvar;
+        // active power limits (MW, GENERATOR convention, NaN when the grid was never
+        // given any) -- see StorageContainer::set_p_limits
+        real_type min_p_mw;
+        real_type max_p_mw;
         int regulated_bus_id;   // grid bus id whose voltage is regulated (== bus_id: local control, the only kind supported)
         bool is_slack;
         real_type slack_weight;
+        // left out of the slack only because it sat at an active limit: takes part in the
+        // redistribution pre-pass with this weight (see LSGrid::set_storage_can_participate_slack)
+        bool can_participate_slack;
+        real_type can_participate_slack_weight;
+        // ... and how far beyond that limit it was in the reference solve, MW (see
+        // LSGrid::set_storage_can_participate_slack_overshoot)
+        real_type can_participate_slack_overshoot_mw;
 
         inline StorageInfo(const StorageContainer & r_data_storage, int my_id) noexcept;
 };
@@ -89,7 +102,11 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
            std::vector<real_type>,         // max_q_
            std::vector<int>,               // regulated_bus_id_ (== own bus)
            std::vector<bool>,              // slack participation flag
-           std::vector<real_type>          // slack weight
+           std::vector<real_type>,         // slack weight
+           std::vector<real_type>,         // p_min_mw_ (appended, optional: empty if unset)
+           std::vector<real_type>,         // p_max_mw_ (appended, optional: empty if unset)
+           std::vector<real_type>,         // can_participate_slack weight (appended; 0: not flagged)
+           std::vector<real_type>          // can_participate_slack overshoot, MW (appended; 0 by default)
            > ;
         enum StateResIdx {
             OSC_PQ_STATE = 0,
@@ -100,6 +117,10 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
             REGULATED_BUS_ID,
             SLACKBUS,
             SLACK_WEIGHT,
+            P_MIN_MW,
+            P_MAX_MW,
+            CAN_PARTICIPATE_SLACK,
+            CAN_PARTICIPATE_SLACK_OVERSHOOT,
             NB_ELEM
         };
         static_assert(std::tuple_size<StateRes>::value == StateResIdx::NB_ELEM,
@@ -139,6 +160,48 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         real_type get_min_q(int storage_id) const {return min_q_.coeff(storage_id);}
         real_type get_max_q(int storage_id) const {return max_q_.coeff(storage_id);}
 
+        /**
+         * Active power limits (MW, **generator convention**: `min_p <= max_p`, what the
+         * unit can INJECT -- the same convention as `min_q_` / `max_q_` above and as an
+         * IIDM battery's own `min_p` / `max_p`, and the opposite of the `target_p_mw`
+         * this container stores). OPTIONAL, exactly like a generator's
+         * (GeneratorContainer::set_p_limits): nothing in the powerflow reads them, and a
+         * grid that was never given any simply has none -- the two vectors stay empty
+         * and `get_min_p` / `get_max_p` answer NaN.
+         *
+         * They matter for the same reason: a storage unit can take part in the
+         * distributed slack, which is solved INSIDE the Newton system with fixed
+         * participation factors and no notion of a limit, so its converged active power
+         * is `target + its share of the imbalance` and can land anywhere. See
+         * batch_algorithm/GenPCheck.hpp.
+         *
+         * Pass two empty vectors to drop them again.
+         */
+        void set_p_limits(const Eigen::Ref<const RealVect> & p_min_mw,
+                          const Eigen::Ref<const RealVect> & p_max_mw){
+            if((p_min_mw.size() == 0) && (p_max_mw.size() == 0)){
+                p_min_mw_ = RealVect();
+                p_max_mw_ = RealVect();
+                return;
+            }
+            check_size(p_min_mw, nb(), "StorageContainer::set_p_limits (p_min_mw)");
+            check_size(p_max_mw, nb(), "StorageContainer::set_p_limits (p_max_mw)");
+            p_min_mw_ = p_min_mw;
+            p_max_mw_ = p_max_mw;
+        }
+        Eigen::Ref<const RealVect> get_p_min_mw() const {return p_min_mw_;}
+        Eigen::Ref<const RealVect> get_p_max_mw() const {return p_max_mw_;}
+        /// NaN where no limit was given -- for the whole grid (never set) or for that one
+        /// unit (a NaN in the vector handed to set_p_limits)
+        real_type get_min_p(int storage_id) const {
+            return p_min_mw_.size() > 0 ? p_min_mw_.coeff(storage_id)
+                                        : std::numeric_limits<real_type>::quiet_NaN();
+        }
+        real_type get_max_p(int storage_id) const {
+            return p_max_mw_.size() > 0 ? p_max_mw_.coeff(storage_id)
+                                        : std::numeric_limits<real_type>::quiet_NaN();
+        }
+
         /// the reactive output (MVAr, GENERATOR convention, what the split hands every
         /// machine) of a regulating unit, stored in this container's load convention.
         /// Hides VoltageSourceContainer's, which LSGrid reaches statically.
@@ -151,13 +214,43 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         void remove_slackbus(int storage_id, DualAlgoControl & solver_control){
             slack_.remove(storage_id, solver_control);
         }
+        /// out of the slack while it sits at the limit it saturated at, still able to come back (see SlackParticipation::leave)
+        void leave_slackbus(int storage_id, DualAlgoControl & solver_control){
+            slack_.leave(storage_id, solver_control);
+        }
+        /// back into the slack if it can participate and is connected off its limits (see
+        /// SlackParticipation::rejoin_if_able); the limits are in generator convention, the target is not
+        bool rejoin_slackbus_if_able(int storage_id, DualAlgoControl & solver_control){
+            const bool connected = status_[storage_id] && bus_id_(storage_id).cast_int() != _deactivated_bus_id;
+            return slack_.rejoin_if_able(storage_id, connected, -target_p_mw_(storage_id),
+                                         get_min_p(storage_id), get_max_p(storage_id),
+                                         solver_control, "StorageContainer::rejoin_slackbus_if_able");
+        }
         void remove_all_slackbus(){ slack_.remove_all(); }
         bool is_slack(int storage_id) const {return slack_.is_slack(storage_id);}
         /// the unit's own (un-normalised) share of the distributed slack
         real_type get_slack_weight(int storage_id) const {return slack_.weight(storage_id);}
-        /// add every participating unit's raw weight to its solver bus
-        void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res, const SolverBusIdVect & id_grid_to_solver) const {
-            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, nullptr, _element_name());
+        /// see SlackParticipation::set_can_participate (LSGrid::set_storage_can_participate_slack)
+        void set_can_participate_slack(const std::vector<bool> & flags, const Eigen::Ref<const RealVect> & weights){
+            slack_.set_can_participate(flags, weights, "StorageContainer::set_can_participate_slack");
+        }
+        bool get_can_participate_slack(int storage_id) const {return slack_.can_participate(storage_id);}
+        real_type get_can_participate_slack_weight(int storage_id) const {return slack_.can_participate_weight(storage_id);}
+        /// see SlackParticipation::set_can_participate_overshoot (LSGrid::set_storage_can_participate_slack_overshoot)
+        void set_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
+            slack_.set_can_participate_overshoot(overshoot_mw, "StorageContainer::set_can_participate_slack_overshoot");
+        }
+        real_type get_can_participate_slack_overshoot(int storage_id) const {return slack_.can_participate_overshoot(storage_id);}
+        /// see SlackParticipation::set_can_participate_overshoot_of (LSGrid::redistribute_active_power)
+        void set_can_participate_slack_overshoot_of(int storage_id, real_type overshoot_mw){
+            slack_.set_can_participate_overshoot_of(storage_id, overshoot_mw);
+        }
+        /// add every participating unit's raw weight to its solver bus (`storage_off`,
+        /// when non-null, is a nb()-sized mask of units to leave out on top: a batch row
+        /// whose slack pre-pass saturated them, see LSGrid::get_slack_weights_solver_without)
+        void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res, const SolverBusIdVect & id_grid_to_solver,
+                                             const std::vector<bool> * storage_off = nullptr) const {
+            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, storage_off, _element_name());
         }
         void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
         void slack_summary(bool & any_flagged, bool & any_connected) const {slack_.summary(status_, any_flagged, any_connected);}
@@ -200,6 +293,10 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         RealVect min_q_;
         RealVect max_q_;
 
+        // active range (MW, generator convention), OPTIONAL: empty when unset, see set_p_limits
+        RealVect p_min_mw_;
+        RealVect p_max_mw_;
+
         // distributed slack participation
         SlackParticipation slack_;
 };
@@ -210,9 +307,14 @@ inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_
         target_vm_pu(0.),
         min_q_mvar(0.),
         max_q_mvar(0.),
+        min_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
+        max_p_mw(std::numeric_limits<real_type>::quiet_NaN()),
         regulated_bus_id(-1),
         is_slack(false),
-        slack_weight(-1.0)
+        slack_weight(-1.0),
+        can_participate_slack(false),
+        can_participate_slack_weight(0.),
+        can_participate_slack_overshoot_mw(0.)
 {
     if((my_id >= 0) && (my_id < r_data_storage.nb()))
     {
@@ -220,8 +322,13 @@ inline StorageInfo::StorageInfo(const StorageContainer & r_data_storage, int my_
         target_vm_pu = r_data_storage.target_vm_pu_.coeff(my_id);
         min_q_mvar = r_data_storage.min_q_.coeff(my_id);
         max_q_mvar = r_data_storage.max_q_.coeff(my_id);
+        min_p_mw = r_data_storage.get_min_p(my_id);
+        max_p_mw = r_data_storage.get_max_p(my_id);
         regulated_bus_id = r_data_storage.regulated_bus_id_(my_id);
         is_slack = r_data_storage.slack_.is_slack(my_id);
+        can_participate_slack = r_data_storage.slack_.can_participate(my_id);
+        can_participate_slack_weight = r_data_storage.slack_.can_participate_weight(my_id);
+        can_participate_slack_overshoot_mw = r_data_storage.slack_.can_participate_overshoot(my_id);
         slack_weight = r_data_storage.slack_.weight(my_id);
     }
 }

@@ -28,7 +28,7 @@
 // Include Solvers.hpp (not powerflow_algorithm/NRAlgo.hpp directly): it pulls
 // in SparseLULinearSolver/KLULinearSolver plus, when LS2G_BUILDING_CORE is
 // NOT defined (true for any out-of-tree plugin build), `extern template`
-// declarations for NRAlgo<SparseLULinearSolver/KLULinearSolver,
+// declarations for NRAlgo<LinearSolverPolicy<SparseLULinearSolver/KLULinearSolver>,
 // SingleSlackNRSystem> -- so `inner_` below links against the symbols
 // already compiled into the main lightsim2grid_cpp library instead of being
 // re-instantiated (and re-emitted) inside this plugin's .so.
@@ -80,7 +80,7 @@ public:
     int       get_slack_col()      const override { return -1; }
     real_type get_slack_absorbed() const override { return slack_absorbed_accum_; }
 
-    // The inner NRAlgo<LinearSolver, SingleSlackNRSystem> includes both the
+    // The inner NRAlgo<LinearSolverPolicy<LinearSolver>, SingleSlackNRSystem> includes both the
     // Hvdc and VoltageControl extensions (see NRAlgo.hpp), forwarded to
     // unconditionally on every outer round -- so this wrapper genuinely
     // supports both, unlike a generic plugin (BaseAlgo's conservative
@@ -204,7 +204,9 @@ public:
     }
 
 private:
-    NRAlgo<LinearSolver, SingleSlackNRSystem> inner_;
+    // wrapped in LinearSolverPolicy like every built-in solver (see Solvers.hpp):
+    // NRAlgo needs the policy's refactor-fallback switch
+    NRAlgo<LinearSolverPolicy<LinearSolver>, SingleSlackNRSystem> inner_;
     real_type slack_absorbed_accum_;
     int outer_iter_;
     int max_outer_iter_;

@@ -166,16 +166,16 @@ root of the lightsim2grid repository:
 
 Results, made with:
 
-- date: 2026-08-28 16:57  CEST
+- date: 2026-09-21 11:22  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
 - python version: 3.12.8.final.0 (64 bit)
-- numpy version: 2.3.5
+- numpy version: 2.4.6
 - pandas version: 2.3.3
-- pandapower version: 3.4.0
+- pandapower version: 3.5.4
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0
+- lightsim2grid version: 1.1.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -187,14 +187,14 @@ Results, made with:
 ===========  ===========  ===========  ========  ======================
   nb_thread    nb solved    time (ms)    pf / s  speed-up vs 1 thread
 ===========  ===========  ===========  ========  ======================
-          1          703      4144.41       170  1.00x
-          2          703      2307.1        305  1.80x
-          3          703      1759.85       399  2.35x
-          4          703      1425.17       493  2.91x
-          5          703      1235.88       569  3.35x
-          6          703      1103.81       637  3.75x
-          7          703      1183.16       594  3.50x
-          8          703      1065.82       660  3.89x
+          1          703      3585.64       196  1.00x
+          2          703      2071.7        339  1.73x
+          3          703      1639.31       429  2.19x
+          4          703      1345.77       522  2.66x
+          5          703      1199.29       586  2.99x
+          6          703      1071.66       656  3.35x
+          7          703      1107.51       635  3.24x
+          8          703      1082.07       650  3.31x
 ===========  ===========  ===========  ========  ======================
 
 As documented above, speed-up is sub-linear (the per-thread set-up cost, plus the
@@ -318,7 +318,9 @@ the voltage checks.
 Adjusting the violation threshold
 ++++++++++++++++++++++++++++++++++
 
-By default a violation is reported exactly at the configured limit. The
+By default a violation is reported beyond the configured limit, by more than a relative
+tolerance ``violation_rel_tol`` (see :ref:`sa_violation_rel_tol`): a value on its limit up to
+rounding, e.g. a bus a regulator holds at its ``vmax``, is not a violation. The
 ``violation_threshold`` attribute (available both on ``ContingencyAnalysis`` and on the
 lower-level ``ContingencyAnalysisCPP``) lets you tighten that margin, so that situations
 approaching a limit are reported before they actually breach it. It is a ``float`` in
@@ -346,9 +348,9 @@ linear interpolation, identical for all three:
 =================  =========  ===========  ================================================
 check              anchor     limit        violates when
 =================  =========  ===========  ================================================
-``CURRENT``        ``0``      ``limit_a``  ``value >= threshold * limit_a``
-``LOW_VOLTAGE``    ``vn_kv``  ``vmin_kv``  ``v <= threshold * vmin + (1 - threshold) * vn``
-``HIGH_VOLTAGE``   ``vn_kv``  ``vmax_kv``  ``v >= threshold * vmax + (1 - threshold) * vn``
+``CURRENT``        ``0``      ``limit_a``  ``value > threshold * limit_a``
+``LOW_VOLTAGE``    ``vn_kv``  ``vmin_kv``  ``v < threshold * vmin + (1 - threshold) * vn``
+``HIGH_VOLTAGE``   ``vn_kv``  ``vmax_kv``  ``v > threshold * vmax + (1 - threshold) * vn``
 =================  =========  ===========  ================================================
 
 A line's usable range really *is* ``[0, limit_a]``, so its anchor is ``0`` and the rule
@@ -415,6 +417,30 @@ test deciding whether a violation is reported at all is shifted.
         security_analysis.violation_threshold = 0.9  # drops the results above ...
         res = security_analysis.run()                # ... no need to re-add anything
 
+.. _sa_violation_rel_tol:
+
+Values sitting on their limit: ``violation_rel_tol``
++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Some values sit *on* their limit by construction -- typically a bus a generator regulates
+exactly at its ``vmax``. A solve leaves such a value a few ulps on either side of the limit,
+so with a bare ``>`` the last bit of rounding would decide whether it is reported, and two
+solvers (the one-contingency-at-a-time solve, the batch, gpusim2grid) would disagree. Every
+check therefore asks the value to clear its effective limit by a relative margin,
+``violation_rel_tol`` (a ``float`` in ``[0., 1.[``, default ``1e-9`` -- about 0.4 mV on a
+400 kV bus), on both ``ContingencyAnalysis`` / ``ScenarioSweep`` and their ``*CPP`` classes:
+
+.. code-block:: text
+
+    CURRENT        value > threshold * limit_a * (1 + violation_rel_tol)
+    LOW_VOLTAGE    v     < low_eff  * (1 - violation_rel_tol)
+    HIGH_VOLTAGE   v     > high_eff * (1 + violation_rel_tol)
+
+``0.`` gives the bare strict comparisons. The reported ``value`` / ``limit`` are unaffected.
+Changing it, in either direction, discards the already-computed results (the registered
+contingencies are kept). ``LSGrid.get_violations(threshold, ac, rel_tol)`` takes the same
+tolerance.
+
 .. _sa_benchmarks:
 
 Benchmarks (Contingency Analysis)
@@ -453,19 +479,19 @@ For this setting the outputs are:
 .. code-block:: bash
 
     For environment: l2rpn_neurips_2020_track2_small (177 n-1 simulated)
-    Total time spent in "computer" to solve everything: 11.4ms (15514 pf / s), 0.06 ms / pf)
-        - time to compute the coefficients to simulate line disconnection: 0.35ms
-        - time to pre process Ybus: 0.32ms
-        - time to perform powerflows: 10.68ms (16567 pf / s, 0.06 ms / pf)
-    In addition, it took 0.43 ms to retrieve the current from the complex voltages (in total 14949.6 pf /s, 0.07 ms / pf)
+    Total time spent in "computer" to solve everything: 8.4ms (21151 pf / s), 0.05 ms / pf)
+        - time to compute the coefficients to simulate line disconnection: 0.31ms
+        - time to pre process Ybus: 0.03ms
+        - time to perform powerflows: 7.99ms (22144 pf / s, 0.05 ms / pf)
+    In addition, it took 0.44 ms to retrieve the current from the complex voltages (in total 20101.6 pf /s, 0.05 ms / pf)
 
     Comparison with raw grid2op timings
-    It took grid2op (with lightsim2grid, using obs.simulate): 0.36s to perform the same computation
-        This is a 30.7 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
-    It took grid2op (with pandapower, using obs.simulate): 11.12s to perform the same computation
-        This is a 939.3 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
+    It took grid2op (with lightsim2grid, using obs.simulate): 0.27s to perform the same computation
+        This is a 30.5 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
+    It took grid2op (with pandapower, using obs.simulate): 11.32s to perform the same computation
+        This is a 1286.1 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
 
-    In this case then, the `ContingencyAnalysis` module is 31 times faster than raw grid2op (with obs.simulate and lightsim2grid) and 939 times faster than raw grid2op (with obs.simulate and pandapower)
+    In this case then, the `ContingencyAnalysis` module is 31 times faster than raw grid2op (with obs.simulate and lightsim2grid) and 1286 times faster than raw grid2op (with obs.simulate and pandapower)
     All results match !
 
 

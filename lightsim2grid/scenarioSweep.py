@@ -151,6 +151,24 @@ class ScenarioSweep:
         self.computer.init_from_n_powerflow = bool(val)
 
     @property
+    def keep_vinit_at_group_controlled_buses(self):
+        """Whether the buses a voltage-control group regulates (regulated from elsewhere, by
+        an SVC, or by several controllers at least one of which is remote) keep the magnitude
+        of the starting voltage instead of being set to their set-point before each solve.
+        The solution is the same; with ``MaxVoltageChange`` damping it can be reached in far
+        fewer iterations. Defaults to the grid's own setting (see
+        :func:`lightsim2grid.lightsim2grid_cpp.LSGrid.set_keep_vinit_at_group_controlled_buses`),
+        ``False`` unless set there.
+        """
+        return self.computer.keep_vinit_at_group_controlled_buses
+
+    @keep_vinit_at_group_controlled_buses.setter
+    def keep_vinit_at_group_controlled_buses(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `keep_vinit_at_group_controlled_buses` attribute must be a boolean.")
+        self.computer.keep_vinit_at_group_controlled_buses = bool(val)
+
+    @property
     def handle_disconnected_grid(self):
         """Whether a row whose contingency splits the grid into several connected
         components is simulated on its largest component instead of being skipped.
@@ -169,6 +187,31 @@ class ScenarioSweep:
         if bool(val) != val:
             raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
         self.computer.handle_disconnected_grid = bool(val)
+
+    @property
+    def redistribute_slack(self):
+        """Whether the active power a row loses (the generators its generator contingency
+        disconnects, the elements of an island cut off with
+        :attr:`handle_disconnected_grid`, and the imbalance its own :func:`modify_gen_p` /
+        :func:`modify_sgen_p` / :func:`modify_load_p` create against the grid's targets) is
+        first shared on the remaining units of the
+        distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does:
+        proportionally to their weight, each one clamped to its ``[min_p, max_p]`` and never
+        crossing 0 MW, a clamped unit leaving the pool (and that row's distributed slack), the
+        powerflow then only sharing what is left (the change in the losses) on the units that
+        can still move. A line / trafo contingency that leaves the grid connected loses no
+        injection: the change in the losses it causes is left to the powerflow.
+        Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
+        clamp anything. Same name/semantics as
+        :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
+        """
+        return self.computer.redistribute_slack
+
+    @redistribute_slack.setter
+    def redistribute_slack(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `redistribute_slack` attribute must be a boolean.")
+        self.computer.redistribute_slack = bool(val)
 
     @property
     def compute_limit_violations(self):
@@ -231,6 +274,33 @@ class ScenarioSweep:
         self.computer.violation_threshold = val
 
     @property
+    def violation_rel_tol(self):
+        """Relative tolerance (a ``float`` in ``[0., 1.[``, default ``1e-9``) of every
+        limit-violation check performed when :attr:`compute_limit_violations` is ``True``:
+        a value is reported only when it is beyond its effective limit by more than this
+        fraction of it, so a value on its limit up to rounding (a bus a generator holds at
+        its ``vmax``) is not a violation. Same meaning as
+        :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.violation_rel_tol`
+        -- see that docstring for the formulas. ``0.`` gives the bare strict comparisons.
+        Changing it invalidates any already-computed results.
+        """
+        return self.computer.violation_rel_tol
+
+    @violation_rel_tol.setter
+    def violation_rel_tol(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `violation_rel_tol` attribute must be a real number.")
+        if not (0. <= val < 1.):
+            raise ValueError("The `violation_rel_tol` attribute must be in the range "
+                             f"[0., 1.[ (got {val}).")
+        if val != self.computer.violation_rel_tol:
+            # mirrors the C++ side, which clears its results on any change
+            self.__computed = False
+        self.computer.violation_rel_tol = val
+
+    @property
     def compute_physical_violations(self):
         """Whether every converged row reports the PHYSICAL limits its solution leaves -- a
         state the grid cannot reach at all (``ViolationCategory.PHYSICAL``), as opposed to
@@ -238,10 +308,13 @@ class ScenarioSweep:
         thermal rating: states the grid does reach and should not sit in). Default:
         ``False``. Same meaning as
         :attr:`lightsim2grid.timeSerie.TimeSerie.compute_physical_violations`, which
-        documents the two checks (the reactive capability of a bus, and the active power of
-        an angle-droop hvdc line) in full.
+        documents the checks (the reactive capability of a bus, the release of a PQ
+        generator flagged as pinned at a reactive limit, the switch on of an idle SVC flagged
+        as carrying a standby automaton, the own bus of a remote voltage controller, the
+        active power of an angle-droop hvdc line, the release of one flagged as frozen at its
+        limit, and the active power of a machine carrying the distributed slack) in full.
 
-        Detection only: nothing is switched PV -> PQ, no droop is clamped, no row is
+        Detection only: nothing is switched PV -> PQ or back, no droop is clamped, no row is
         re-solved. Unlike :attr:`compute_limit_violations`, changing this flag keeps the
         registered injections and contingency masks -- only the results go.
         """
@@ -265,7 +338,7 @@ class ScenarioSweep:
     def physical_violation_tol_mva(self):
         """Absolute slack (MVA) on every comparison :attr:`compute_physical_violations`
         makes: a violation needs ``value > limit + tol`` (or ``value < limit - tol`` for
-        ``LOW_Q``). Default: ``1e-4``. Changing it invalidates any previously-computed
+        ``LOW_Q`` and ``HVDC_AC_EMULATION_RELEASE``). Default: ``1e-4``. Changing it invalidates any previously-computed
         results."""
         return self.computer.physical_violation_tol_mva
 
@@ -278,6 +351,33 @@ class ScenarioSweep:
         if val == self.computer.physical_violation_tol_mva:
             return
         self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
+        self.__computed = False
+
+    @property
+    def physical_violation_tol_vm_pu(self):
+        """The same as :attr:`physical_violation_tol_mva`, in pu, for the comparisons
+        :attr:`compute_physical_violations` makes on a voltage: the PQ -> PV release check
+        reports a flagged PQ generator (``LSGrid.set_gen_can_be_pv``) whose regulated bus
+        is below (at ``min_q``) or above (at ``max_q``) its target by more than this
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
+        flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
+        automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
+        ``HIGH_VOLTAGE_SVC_STANDBY``), and the remote voltage control check a remote
+        controller whose own bus is outside the realistic range by more than this
+        (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``). Default: ``1e-4``. Changing it invalidates any
+        previously-computed results.
+        """
+        return self.computer.physical_violation_tol_vm_pu
+
+    @physical_violation_tol_vm_pu.setter
+    def physical_violation_tol_vm_pu(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_vm_pu` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_vm_pu:
+            return
+        self.computer.physical_violation_tol_vm_pu = val  # validates, and drops base case + results
         self.__computed = False
 
     def _check_2d(self, arr, name):
@@ -527,10 +627,20 @@ class ScenarioSweep:
     def get_physical_violations(self):
         """Per row: the list of :class:`LimitViolation` of the physical limits that row's
         solution leaves -- ``element_type`` ``BUS`` with ``violation_type`` ``LOW_Q`` /
-        ``HIGH_Q`` (the reactive capability of the machines holding that bus), or
-        ``element_type`` ``HVDC`` with ``HIGH_P`` and ``side`` naming the direction (the
-        active power of an angle-droop hvdc line). Every entry has ``category ==
-        ViolationCategory.PHYSICAL``.
+        ``HIGH_Q`` (the reactive capability of the machines holding that bus),
+        ``element_type`` ``GENERATOR`` with ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``
+        (a flagged PQ generator that would regulate again, ``value`` / ``limit`` in kV),
+        ``element_type`` ``SVC`` with ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY``
+        (a flagged idle standby SVC its automaton would switch on, ``value`` / ``limit`` in
+        kV), ``element_type`` ``GENERATOR`` with ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+        ``HIGH_VOLTAGE_REMOTE_CONTROL`` (a remote voltage controller whose own bus leaves the
+        realistic range, ``value`` / ``limit`` in kV), ``element_type`` ``HVDC`` with
+        ``HIGH_P`` and ``side`` naming the direction (the active power of an angle-droop hvdc
+        line), ``element_type`` ``HVDC`` with ``HVDC_AC_EMULATION_RELEASE`` and ``side`` the
+        direction it is frozen in (a flagged frozen line whose droop would ask for less than
+        its limit, ``value`` / ``limit`` in MW), or ``element_type`` ``GENERATOR`` /
+        ``STORAGE`` with ``LOW_P`` / ``HIGH_P`` (the distributed slack). Every entry has
+        ``category == ViolationCategory.PHYSICAL``.
 
         A row that did not converge has an **empty** entry, not a sentinel (unlike
         :func:`get_violations`) -- use ``self.computer.converged_mask()`` to tell that from

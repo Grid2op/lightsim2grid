@@ -9,6 +9,7 @@
 #ifndef VOLTAGE_CONTROL_PLAN_H
 #define VOLTAGE_CONTROL_PLAN_H
 
+#include <map>
 #include <set>
 #include <utility>
 #include <vector>
@@ -141,6 +142,10 @@ class LS2G_API VoltageControlPlan
          * bus it stands on), so it can never be the remote controller that CREATES a
          * group -- only a member of one somebody else created. See the body.
          *
+         * `hold_frozen` (LSGrid::set_hold_frozen_regulators) also counts the bus each
+         * frozen remote regulator would regulate (GeneratorContainer::
+         * is_frozen_remote_regulator): the group it is kept in, held, needs it.
+         *
          * `supports_voltage_control` false (a fast-decoupled or Gauss-Seidel solve)
          * leaves the set EMPTY, which is what makes layer 2 produce the classical
          * split. It is not a shortcut past a real configuration: `LSGrid::ac_pf`
@@ -148,7 +153,8 @@ class LS2G_API VoltageControlPlan
          */
         void build_groups(const GeneratorContainer & generators,
                           const SvcContainer & svcs,
-                          bool supports_voltage_control = true);
+                          bool supports_voltage_control = true,
+                          bool hold_frozen = false);
 
         // ---- layer 2 -------------------------------------------------------------
         /**
@@ -203,13 +209,24 @@ class LS2G_API VoltageControlPlan
          * configuration deserves, on what the v1 bordered formulation cannot express:
          * a controller whose own bus owns no Q equation, a regulated bus with no Vm
          * unknown, conflicting setpoints inside one group, an SVC sharing its group.
+         *
+         * `hold_frozen` (LSGrid::set_hold_frozen_regulators) then enrols every frozen
+         * remote regulator as a HELD controller of the group regulating its bus
+         * (VoltageControlSolverData::held), after every active one so that it is never
+         * the reference of a group that has an active controller. It NEVER throws for
+         * one: a held controller the formulation cannot express (its own bus without a
+         * Q equation, its regulated bus without a Vm unknown, a set-point other than its
+         * group's, a group holding an SVC) is simply left out, PQ as before.
          */
         void build_controllers(const GeneratorContainer & generators,
+                               const StorageContainer & storages,
                                const SvcContainer & svcs,
                                const HvdcLineContainer & hvdc_lines,
                                const SolverBusIdVect & id_me_to_solver,
                                const GlobalBusIdVect & id_solver_to_me,
-                               const SolverBusIdVect & bus_pq);
+                               const SolverBusIdVect & bus_pq,
+                               real_type sn_mva,
+                               bool hold_frozen = false);
 
         // ---- layers 3 and 4, which is what an AC solve wants ----------------------
         /**
@@ -224,7 +241,9 @@ class LS2G_API VoltageControlPlan
                                const SolverBusIdVect & id_me_to_solver,
                                const GlobalBusIdVect & id_solver_to_me,
                                const SolverBusIdVect & slack_bus_id_solver,
-                               const SolverBusIdVect & bus_pq);
+                               const SolverBusIdVect & bus_pq,
+                               real_type sn_mva,
+                               bool hold_frozen = false);
 
         // ---- the guard an algorithm without the bordered block needs ---------------
         /**
@@ -255,6 +274,15 @@ class LS2G_API VoltageControlPlan
             return group_reg_buses_;
         }
         /**
+         * Layer 1 expressed in one solver labelling: the SOLVER ids of
+         * `group_controlled_buses()`, skipping the ones this labelling leaves out.
+         * Unlike a PV bus, whose magnitude is fixed, each of these keeps a Vm unknown
+         * that a group's voltage row brings to its set-point -- so writing that
+         * set-point into the starting voltage is a choice of starting point, not part
+         * of the system (see LSGrid::set_keep_vinit_at_group_controlled_buses).
+         */
+        [[nodiscard]] std::vector<int> group_controlled_solver_buses(const SolverBusIdVect & id_me_to_solver) const;
+        /**
          * Solver-bus ids of the slack buses that need a free Vm unknown and a Q
          * equation (added by the Base block of the NR system), i.e. every slack bus
          * whose magnitude is NOT pinned by a local voltage-regulating generator.
@@ -282,6 +310,7 @@ class LS2G_API VoltageControlPlan
             int kind;         ///< VoltageControlSolverData::Kind
             int elem_id;
             real_type key;    ///< explicit reactive sharing key (> 0), NaN when there is none
+            bool held;        ///< a held controller (see build_controllers)
         };
 
         /// the three per-container passes that fill `raws`
@@ -300,8 +329,31 @@ class LS2G_API VoltageControlPlan
                                           const std::vector<bool> & is_pq,
                                           const std::vector<bool> & has_free_q,
                                           std::vector<Raw> & raws) const;
+        /// the held ones (hold_frozen), appended LAST: never throws, skips what cannot be held
+        void _collect_held_gen_controllers(const GeneratorContainer & generators,
+                                           const SolverBusIdVect & id_me_to_solver,
+                                           const std::vector<bool> & is_pq,
+                                           const std::vector<bool> & has_free_q,
+                                           std::vector<Raw> & raws) const;
+        /// what the connected units of a controller bus that control nothing add to that
+        /// bus' share of its group (OpenLoadFlow counts every generator of the bus, the
+        /// batteries, VSC stations and SVCs included)
+        struct PassiveBus {
+            real_type keys = 0.;   ///< sum of their reactive keys
+            real_type range = 0.;  ///< sum of their reactive ranges
+            bool keyed = true;     ///< all of them have a key
+        };
+        /// the PassiveBus of each controller solver bus in `raws` that has any (`sn_mva`
+        /// turns an SVC's susceptance range into MVAr)
+        std::map<int, PassiveBus> _collect_passive_gens(const GeneratorContainer & generators,
+                                                        const StorageContainer & storages,
+                                                        const SvcContainer & svcs,
+                                                        const HvdcLineContainer & hvdc_lines,
+                                                        const SolverBusIdVect & id_me_to_solver,
+                                                        const std::vector<Raw> & raws,
+                                                        real_type sn_mva) const;
         /// group by regulated bus, check the setpoints agree, emit `controllers_`
-        void _group_and_emit(const std::vector<Raw> & raws);
+        void _group_and_emit(const std::vector<Raw> & raws, const std::map<int, PassiveBus> & passive);
 
         std::set<int> group_reg_buses_;      ///< layer 1, GRID bus ids
         std::set<int> free_vm_slack_buses_;  ///< layer 3, SOLVER bus ids
@@ -310,6 +362,25 @@ class LS2G_API VoltageControlPlan
         // cache (SolverBusLayout::bus_pv / bus_pq), where everything downstream
         // already reads it. This class owns the rule, not a second copy of the answer.
 };
+
+/**
+ * Runs `seed` -- whatever writes voltage-magnitude set-points into the starting
+ * voltage `V`, typically the containers' `set_vm` -- then gives the `held` solver
+ * buses back the value they had before it ran. With `held` empty this is exactly
+ * `seed(V)`, which is what keeps the default path free of any extra work.
+ */
+template<class Vect, class Seed>
+void seed_vm_keeping(Vect & V, const std::vector<int> & held, Seed && seed)
+{
+    if(held.empty()){
+        seed(V);
+        return;
+    }
+    CplxVect kept(static_cast<Eigen::Index>(held.size()));
+    for(std::size_t k = 0; k < held.size(); ++k) kept(static_cast<Eigen::Index>(k)) = V(held[k]);
+    seed(V);
+    for(std::size_t k = 0; k < held.size(); ++k) V(held[k]) = kept(static_cast<Eigen::Index>(k));
+}
 
 } // namespace ls2g
 
