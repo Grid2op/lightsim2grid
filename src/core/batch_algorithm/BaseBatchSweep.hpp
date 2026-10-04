@@ -2408,11 +2408,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _voltage_control_may_mask_wired_ = true;
             }
             if(!_algo.supports_bus_masking()){
+                // name what asked for the masking: topological actions turn it on without
+                // handle_disconnected_grid (see _mask_mode)
                 std::ostringstream exc_;
-                exc_ << algo_name() << ": the `handle_disconnected_grid` mode requires a "
-                        "Newton-Raphson algorithm (AC) or the DC solver (the active algorithm "
-                        "does not support bus masking). Use `change_algorithm` to select an NR "
-                        "solver (e.g. NR_KLU / NR_SLU) or the DC solver.";
+                if(_handle_disconnected_grid){
+                    exc_ << algo_name() << ": the `handle_disconnected_grid` mode requires a "
+                            "Newton-Raphson algorithm (AC) or the DC solver (the active algorithm "
+                            "does not support bus masking). Use `change_algorithm` to select an NR "
+                            "solver (e.g. NR_KLU / NR_SLU) or the DC solver.";
+                } else {
+                    exc_ << algo_name() << "::set_topo_actions: topological actions require a "
+                            "Newton-Raphson algorithm (the active one, " << _algo.get_name()
+                         << ", cannot mask the buses a row leaves unused). Use `change_algorithm` "
+                            "to select an NR solver (e.g. NR_KLU / NR_SLU).";
+                }
                 throw std::runtime_error(exc_.str());
             }
             _select_ref_slack_and_masks(true);

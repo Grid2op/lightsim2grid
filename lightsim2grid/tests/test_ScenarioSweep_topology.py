@@ -260,6 +260,19 @@ class TestScenarioSweepTopology(_TopoSweepBase):
         sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
         self.assertEqual(sweep.get_status(), 1)
 
+    def test_algorithm_without_bus_masking_refused(self):
+        """Gauss-Seidel cannot mask a bus: the error is about the topological actions, not
+        about handle_disconnected_grid, which nobody turned on"""
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(AlgorithmType.GaussSeidel)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_topo_actions(self._topo([self._act(), self._act({"set_line_status": [(3, -1)]})]))
+        self.assertFalse(sweep.handle_disconnected_grid)
+        with self.assertRaises(RuntimeError) as cm:
+            sweep.compute(1.0 * self.Vinit, 10000, self.tol)
+        self.assertIn("set_topo_actions", str(cm.exception))
+        self.assertNotIn("handle_disconnected_grid", str(cm.exception))
+
     def test_do_nothing_rows_are_bit_identical(self):
         actions = [self._act() for _ in range(self.nb_steps)]
         with_actions = self._sweep(actions)
