@@ -167,6 +167,27 @@ TEST_CASE("distribute with an overshoot: every slack unit saturated keeps them i
     }
 }
 
+TEST_CASE("distribute: no weight to share on, the whole mismatch is not distributed", "[slack_redistribution]"){
+    // both paths agree: nothing moved, so nothing was distributed
+    std::vector<Participant> units = {unit(0, 30., 0., 0., 100.), unit(1, 40., 0., 0., 40.)};
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    SECTION("round-based path"){
+        const Report rep = distribute(units, -10., default_eps_mw, new_inj, sat);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(30., 1e-12));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(-10., 1e-12));
+    }
+    SECTION("overshoot path"){
+        units[1].in_slack = false;
+        units[1].overshoot_mw = 5.;
+        const Report rep = distribute(units, -10., default_eps_mw, new_inj, sat);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(30., 1e-12));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(-10., 1e-12));
+    }
+}
+
 TEST_CASE("distribute with an overshoot: a drawing unit capped at 0 MW keeps its side", "[slack_redistribution]"){
     // a charging storage unit (range [-50, 50]) a positive mismatch pushed up to 0 MW, 5 MW
     // beyond it: the overshoot is above 0 MW (> 0), and 0 MW stays its UPPER bound

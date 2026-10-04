@@ -220,7 +220,11 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
     std::vector<real_type> lo(nb), hi(nb), virt(nb), share(nb);
     real_type weight_sum = 0.;
     for(std::size_t k = 0; k < nb; ++k) weight_sum += units[k].weight;
-    if(weight_sum <= 0.) return report;
+    if(weight_sum <= 0.){
+        // nothing to share on: nothing moved (as `distribute`, whose rounds stop at once)
+        report.not_distributed_mw = mismatch_mw;
+        return report;
+    }
     for(std::size_t k = 0; k < nb; ++k){
         const real_type inj = units[k].injection_mw;
         const real_type over = units[k].overshoot_mw;
