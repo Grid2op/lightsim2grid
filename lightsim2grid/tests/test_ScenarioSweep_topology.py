@@ -273,6 +273,21 @@ class TestScenarioSweepTopology(_TopoSweepBase):
         self.assertIn("set_topo_actions", str(cm.exception))
         self.assertNotIn("handle_disconnected_grid", str(cm.exception))
 
+    def test_do_nothing_rows_without_bus_masking(self):
+        """a do-nothing action is a plain row on an algorithm that cannot mask a bus too
+        (as on the DC one, see test_dc_refused): nothing is ever masked"""
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(AlgorithmType.GaussSeidel)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_topo_actions(self._topo([self._act(), self._act()]))
+        sweep.compute(1.0 * self.Vinit, 10000, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+        plain = ScenarioSweepCPP(self.grid)
+        plain.change_algorithm(AlgorithmType.GaussSeidel)
+        plain.modify_load_p(self.load_p[:2])
+        plain.compute(1.0 * self.Vinit, 10000, self.tol)
+        np.testing.assert_array_equal(sweep.get_voltages(), plain.get_voltages())
+
     def test_do_nothing_rows_are_bit_identical(self):
         actions = [self._act() for _ in range(self.nb_steps)]
         with_actions = self._sweep(actions)

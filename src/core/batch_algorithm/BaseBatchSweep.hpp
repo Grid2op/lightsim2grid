@@ -2711,9 +2711,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
         }
 
-        // the masked row loop runs where handle_disconnected_grid says so, and where
-        // topological actions are registered (their extra buses are masked when unused)
-        bool _mask_mode() const { return _handle_disconnected_grid || !topo_actions_.empty(); }
+        // the masked row loop runs where handle_disconnected_grid says so, and where a
+        // row's topological action does something (its extra buses are masked when
+        // unused). Actions that all change nothing leave plain rows, on any algorithm.
+        // Read from _maybe_resolve_topology on, which is what settles _topology_active_
+        // (every caller runs after it: the connectivity, the masks, the row loops).
+        bool _mask_mode() const { return _handle_disconnected_grid || _topology_active_; }
 
         [[noreturn]] void _throw_topo_overlap(size_t row, const char * el_kind, int el_id, const char * setter) const {
             std::ostringstream exc_;
