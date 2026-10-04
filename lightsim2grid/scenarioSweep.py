@@ -202,7 +202,8 @@ class ScenarioSweep:
         can still move. A line / trafo contingency that leaves the grid connected loses no
         injection: the change in the losses it causes is left to the powerflow.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
-        clamp anything. Same name/semantics as
+        clamp anything. Needs an algorithm with a distributed slack: ``compute`` refuses it
+        with a single-slack one (``NRSing_*``, Gauss-Seidel). Same name/semantics as
         :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
         """
         return self.computer.redistribute_slack

@@ -38,6 +38,8 @@ class BaseFDPFAlgo final: public BaseAlgo
         // this family carries a distributed-slack unknown of its own; hand it back so
         // a consumer of mis_bus_ can subtract its contribution (see slack_absorbed_)
         real_type get_slack_absorbed() const override { return slack_absorbed_; }
+        static constexpr bool DISTRIBUTES_SLACK = true;
+        bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
 
         bool compute_pf(const EigenRefConstCplxSpMat     & Ybus,
                         const Eigen::Ref<const CplxVect> & V,

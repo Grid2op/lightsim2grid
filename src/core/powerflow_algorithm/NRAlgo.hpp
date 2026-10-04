@@ -74,6 +74,10 @@ public:
     static constexpr bool FILLS_BUS_MISMATCH = true;
     bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
 
+    // MultiSlackNRSystem distributes the slack, SingleSlackNRSystem (NRSing_*) does not
+    static constexpr bool DISTRIBUTES_SLACK = NRSystem::HAS_MULTI_SLACK;
+    bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
+
     // ----- Jacobian accessor ---------------------------------------------------
 
     Eigen::Ref<const Eigen::SparseMatrix<real_type>> get_J() const override {

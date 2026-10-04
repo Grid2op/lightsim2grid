@@ -477,6 +477,59 @@ class TestScenarioSweepInjectionChange(_Base):
         self._check_rows(sweep, gen_p, load_p, self.solved, gen_off=self.non_slack, island=True)
 
 
+class TestRedistributeSlackNeedsADistributedSlack(_Base):
+    """A single-slack algorithm (NRSing_*, Gauss-Seidel) ignores the slack weights: every
+    imbalance lands on the reference bus. The pre-pass would still write its bounded
+    set-points and saturations, which the solve then does not use -- the voltages come
+    out exactly as without the option while compute_physical_violations reads the
+    pre-pass targets, so a unit pushed past its limit is no longer reported. The batch
+    refuses the combination instead of answering for a state it did not solve."""
+    def setUp(self):
+        super().setUp()
+        self._limits_two_clamped()
+
+    # Gauss-Seidel needs far more iterations than the Newton-Raphson to converge
+    _SINGLE_SLACK = ((AlgorithmType.NRSing_SparseLU, _MAX_IT), (AlgorithmType.GaussSeidel, 10000))
+
+    def _check_refused(self, computer, max_iter):
+        computer.redistribute_slack = True
+        with self.assertRaises(RuntimeError) as cm:
+            computer.compute(1. * self.V0, max_iter, _TOL)
+        self.assertIn("redistribute_slack", str(cm.exception))
+        self.assertIn("distributed slack", str(cm.exception))
+        # without the option, the same algorithm runs as before
+        computer.redistribute_slack = False
+        computer.compute(1. * self.V0, max_iter, _TOL)
+
+    def _sweep(self, algo):
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(algo)
+        load_p = np.tile([l.target_p_mw for l in self.grid.get_loads()], (2, 1))
+        load_p[1, 1] += 15.
+        sweep.modify_load_p(load_p)
+        return sweep
+
+    def test_contingency_analysis(self):
+        for algo, max_iter in self._SINGLE_SLACK:
+            with self.subTest(algo=algo):
+                ca = ContingencyAnalysisCPP(self.grid)
+                ca.change_algorithm(algo)
+                ca.add_n1(self.leaf_branch)
+                self._check_refused(ca, max_iter)
+
+    def test_scenario_sweep(self):
+        for algo, max_iter in self._SINGLE_SLACK:
+            with self.subTest(algo=algo):
+                self._check_refused(self._sweep(algo), max_iter)
+
+    def test_distributed_slack_algorithms_accepted(self):
+        for algo in (AlgorithmType.NR_SparseLU, AlgorithmType.DC_SparseLU):
+            with self.subTest(algo=algo):
+                sweep = self._sweep(algo)
+                sweep.redistribute_slack = True
+                sweep.compute(1. * self.V0, _MAX_IT, _TOL)
+
+
 class TestContingencyAnalysisPythonToggle(unittest.TestCase):
     """The python ``ContingencyAnalysis`` keeps the results of its last computation: an
     option changed after it must not hand them back unchanged. l2rpn_case14_sandbox: the

@@ -929,7 +929,8 @@ void bind_batch(py::module_& m) {
                       "(proportionally to their weight, each one clamped to its [min_p, max_p], a "
                       "clamped unit leaving the pool and the slack), the solve then only sharing "
                       "what is left (the change in the losses) on the units that can still move. "
-                      "Off by default. Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
+                      "Off by default; compute() refuses it with a single-slack algorithm "
+                      "(NRSing_*, Gauss-Seidel). Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
                       "clamp anything: without limits the converged state is unchanged. Same as "
                       "LSGrid.redistribute_active_power, row by row.")
         .def_property("handle_disconnected_grid",
@@ -1071,7 +1072,8 @@ void bind_batch(py::module_& m) {
                       "DistributedSlack outer loop does (proportionally to their weight, each one "
                       "clamped to its [min_p, max_p], a clamped unit leaving the pool and the "
                       "slack), the solve then only sharing what is left (the change in the losses) "
-                      "on the units that can still move. Off by default. Needs "
+                      "on the units that can still move. Off by default; compute() refuses it with "
+                      "a single-slack algorithm (NRSing_*, Gauss-Seidel). Needs "
                       "LSGrid.set_gen_p_limits / set_storage_p_limits to clamp anything: without "
                       "limits the converged state is unchanged. Same as "
                       "LSGrid.consider_only_main_component(redistribute_slack=True), contingency "

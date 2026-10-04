@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstring>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 #include <set>
 #include <stdexcept>
@@ -1141,10 +1142,20 @@ class LS2G_API VoltageControl
  * contributions may resolve to the same J position, so fill_J zeroes J then
  * accumulates (+=).
  */
+// whether T is one of Ts (a recursive trait: the core stays C++14)
+template <class T, class... Ts>
+struct nr_is_one_of : std::false_type {};
+template <class T, class U, class... Ts>
+struct nr_is_one_of<T, U, Ts...>
+    : std::conditional<std::is_same<T, U>::value, std::true_type, nr_is_one_of<T, Ts...> >::type {};
+
 template <typename... Rest>
 class NRSystem<Base, Rest...>
 {
 public:
+    // whether the slack is distributed (the MultiSlack extension is in Rest...)
+    static constexpr bool HAS_MULTI_SLACK = nr_is_one_of<MultiSlack, Rest...>::value;
+
     NRSystem() noexcept:
         timer_dSbus_(0.),
         timer_fillJ_(0.),

@@ -89,6 +89,9 @@ public:
     bool supports_hvdc_droop() const noexcept override { return SUPPORTS_HVDC_DROOP; }
     static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = true;
     bool supports_remote_voltage_control() const noexcept override { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
+    // ... and the outer loop is a distributed slack (by the weights it is handed)
+    static constexpr bool DISTRIBUTES_SLACK = true;
+    bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
 
     // Number of outer redistribution rounds performed by the last compute_pf call.
     int get_outer_iter() const { return outer_iter_; }

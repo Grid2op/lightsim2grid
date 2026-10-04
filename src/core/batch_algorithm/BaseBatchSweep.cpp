@@ -465,6 +465,18 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _algo.ac_solver_used();
 
+    // the slack pre-pass moves set-points by the slack weights and takes the units it
+    // saturates out of them: a single-slack algorithm ignores both, and the physical
+    // checks would read targets the solve never used
+    if(_redistribute_slack_ && !_algo.distributes_slack()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::compute: `redistribute_slack` needs an algorithm with a distributed "
+                "slack (a Newton-Raphson NR_*, the DC or the fast-decoupled one): the active one, "
+             << _algo.get_name() << ", puts the whole imbalance on the reference bus. Use "
+                "`change_algorithm`, or turn `redistribute_slack` off.";
+        throw std::runtime_error(exc_.str());
+    }
+
     const size_t nb_steps = _nb_steps();
 
     // ---- what of the three levels this call may keep ------------------------------

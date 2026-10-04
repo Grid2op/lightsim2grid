@@ -142,6 +142,9 @@ class LS2G_API AlgorithmSelector final
         bool supports_remote_voltage_control() const {
             return get_prt_solver("supports_remote_voltage_control", false)->supports_remote_voltage_control();
         }
+        bool distributes_slack() const {
+            return get_prt_solver("distributes_slack", false)->distributes_slack();
+        }
         // The no-argument form of is_fdpf(AlgorithmType) above. The type-keyed one
         // cannot answer for a solver selected BY NAME -- an FDPF built-in reached
         // through the registry, or a plugin implementing the method -- because their
