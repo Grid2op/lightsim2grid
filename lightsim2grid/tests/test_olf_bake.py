@@ -1033,6 +1033,52 @@ class TestOlfBake(unittest.TestCase):
             bake_outer_loops(n, bake_saturated_voltage_control=saturated)
             self.assertTrue(n.get_generators().loc["GB2", "voltage_regulator_on"], f"saturated={saturated}")
 
+    def test_svc_clamped_inside_a_regulating_bus_not_frozen(self):
+        """The SVC shares bus B with GB, both holding the remote load bus: OLF splits the
+        bus' reactive power among them by reactive range and clamps the SVC at its small
+        limit, the bus (the SVC too) still regulating. As for a generator, neither freezing
+        rule freezes it."""
+        def build():
+            n = pp.network.create_empty()
+            n.create_substations(id=["S"])
+            n.create_voltage_levels(id=["VR", "VA", "VB", "VS"], substation_id=["S"] * 4,
+                                    topology_kind=["BUS_BREAKER"] * 4, nominal_v=[225., 20., 20., 225.])
+            n.create_buses(id=["R", "A", "B", "SB"], voltage_level_id=["VR", "VA", "VB", "VS"])
+            n.create_lines(id="LSR", voltage_level1_id="VS", voltage_level2_id="VR", bus1_id="SB", bus2_id="R",
+                           r=1., x=10., g1=0., b1=0., g2=0., b2=0.)
+            for t, vl, b in (("TA", "VA", "A"), ("TB", "VB", "B")):
+                n.create_2_windings_transformers(id=t, voltage_level1_id="VR", bus1_id="R", voltage_level2_id=vl,
+                                                 bus2_id=b, rated_u1=225., rated_u2=20., r=0.5, x=3., g=0., b=0.)
+            n.create_generators(id="GS", voltage_level_id="VS", bus_id="SB", target_p=0., target_q=0.,
+                                target_v=230., voltage_regulator_on=True, min_p=0., max_p=1000.)
+            for gid, vl, b in (("GA", "VA", "A"), ("GB", "VB", "B")):
+                n.create_generators(id=gid, voltage_level_id=vl, bus_id=b, target_p=20., target_q=0.,
+                                    target_v=232., voltage_regulator_on=True, min_p=0., max_p=50.)
+            n.create_minmax_reactive_limits(id=["GA", "GB"], min_q=[-100., -100.], max_q=[100., 100.])
+            # a small range, mostly on the absorbing side: by range, it is asked beyond its max
+            n.create_static_var_compensators(id="SVC", voltage_level_id="VB", bus_id="B",
+                                             b_min=-30. / 20. ** 2, b_max=2. / 20. ** 2,
+                                             regulation_mode="VOLTAGE", target_v=232., target_q=0.,
+                                             regulating=True)
+            n.create_loads(id="LR", voltage_level_id="VR", bus_id="R", p0=60., q0=40.)
+            n.update_generators(id=["GA", "GB"], regulated_element_id=["LR"] * 2)
+            n.update_static_var_compensators(id="SVC", regulated_element_id="LR")
+            return n
+        params = lf.Parameters(distributed_slack=False)
+        n = build()
+        self.assertEqual(lf.run_ac(n, params)[0].status, lf.ComponentStatus.CONVERGED)
+        svc = n.get_static_var_compensators().loc["SVC"]
+        v_kv = n.get_buses().loc[svc["bus_id"], "v_mag"]
+        self.assertAlmostEqual(-svc["q"], svc["b_max"] * v_kv ** 2, places=6)  # clamped at its limit
+        q_gb = -n.get_generators().loc["GB", "q"]
+        self.assertTrue(-100. + 1. < q_gb < 100. - 1.)  # GB, on the same bus, has room
+        for saturated in (False, True):
+            n = build()
+            lf.run_ac(n, params)
+            bake_outer_loops(n, bake_saturated_voltage_control=saturated)
+            self.assertEqual(n.get_static_var_compensators().loc["SVC", "regulation_mode"], "VOLTAGE",
+                             f"saturated={saturated}")
+
     def test_olf_hvdc_saturated_at_its_limit_baked(self):
         """An angle-droop hvdc line OLF saturated at its operator range is baked as a fixed
         setpoint at that limit, in the direction it flowed: the loop-free re-solve then

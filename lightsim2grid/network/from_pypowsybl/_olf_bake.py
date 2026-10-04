@@ -1260,7 +1260,8 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
     bus (a regulating generator or SVC) is still inside its range, the signature of
     a unit OLF switched out of a shared group, or ``bake_saturated_voltage_control``
     is set and it sits at its limit to ``_Q_SATURATED_HELD_TOL_MVAR`` (freeze a held
-    unit at its limit too).
+    unit at its limit too). Neither applies to an SVC whose own bus still has another
+    controller inside its range: OLF only clamped it there, the bus still regulating.
 
     Returns the ids of the SVCs frozen: like the generators frozen at a limit, the ones
     OLF would switch back to voltage control on a grid asking them for less.
@@ -1291,11 +1292,17 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
         reg_bus = _resolve_regulated_bus(network, svc["bus_id"], svc["regulated_element_id"])
         held = _target_v_held(network, reg_bus, svc["target_v"], df_bus).to_numpy(bool)
         exact = (q_gen >= qmax - _Q_LIMIT_TOL_ABS) | (q_gen <= qmin + _Q_LIMIT_TOL_ABS)
-        switched = exact & (_n_free_controllers(network, reg_bus, exact, df_bus, keep_only_main_comp) > 0)
+        # as for a generator, OLF switches a whole bus: an SVC clamped at its limit while its
+        # own bus still regulates was only clamped by the split of the bus' reactive power
+        exact_free = exact & ~_svc_bus_still_regulating(network, svc, exact, _Q_LIMIT_TOL_ABS,
+                                                         df_bus, keep_only_main_comp)
+        switched = exact_free & (_n_free_controllers(network, reg_bus, exact, df_bus, keep_only_main_comp) > 0)
         if bake_saturated_voltage_control:
             # as for a generator: a held SVC is frozen only when saturated, not with headroom left
             saturated = ((q_gen >= qmax - _Q_SATURATED_HELD_TOL_MVAR)
                          | (q_gen <= qmin + _Q_SATURATED_HELD_TOL_MVAR))
+            saturated &= ~_svc_bus_still_regulating(network, svc, saturated, _Q_SATURATED_HELD_TOL_MVAR,
+                                                    df_bus, keep_only_main_comp)
             mask &= ~held | saturated | switched
         else:
             mask &= ~held | switched
@@ -1308,6 +1315,31 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
         upd["regulation_mode"] = "REACTIVE_POWER"
         network.update_static_var_compensators(upd)
     return pd.Index(svc.index[mask], dtype=object)
+
+
+def _svc_bus_still_regulating(network, svc, svc_at_limit, tol_mvar, df_bus, keep_only_main_comp=True):
+    """Boolean array (aligned on the voltage-mode SVCs ``svc``): another voltage controller of
+    the SVC's OWN bus -- a regulating generator (after the generator freezes of the bake) or
+    another of these SVCs -- is not at a limit, to ``tol_mvar`` for a generator and as
+    ``svc_at_limit`` says for an SVC. The SVC counterpart of :func:`_bus_still_regulating`:
+    OLF switches a bus, not one of its units."""
+    at_limit = np.asarray(svc_at_limit, dtype=bool)
+    own_bus = svc["bus_id"].to_numpy()
+    svc_free = pd.Series((~at_limit).astype(int), index=svc.index)
+    n_free = svc_free.groupby(own_bus).transform("sum").to_numpy() - svc_free.to_numpy()
+    gen = network.get_generators(
+        attributes=["voltage_regulator_on", "q", "min_q", "max_q", "min_q_at_p", "max_q_at_p",
+                    "connected", "bus_id"])
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
+    gen = gen[gen["voltage_regulator_on"].astype(bool)]
+    if len(gen):
+        gq = -gen["q"]
+        qmin, qmax = _reactive_limits(gen)
+        gen_free = ~((gq >= qmax - tol_mvar) | (gq <= qmin + tol_mvar))
+        free_per_bus = gen_free.astype(int).groupby(gen["bus_id"].to_numpy()).sum()
+        n_free = n_free + free_per_bus.reindex(own_bus).fillna(0).to_numpy(int)
+    return n_free > 0
 
 
 def _n_free_controllers(network, svc_reg_bus, svc_exact, df_bus, keep_only_main_comp=True):
