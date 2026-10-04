@@ -40,7 +40,8 @@ def _svc_standby_b0(net, svc_index):
     PLUS the SVC itself -- in standby or not -- and holds the SVC's own susceptance in
     ``[b_min, b_max]``: its ``ReactiveLimits`` loop compares what the SVC part produces with
     those limits. The SVC's total output, the one pypowsybl reports and the one
-    lightsim2grid models, can therefore only range over ``[b_min + b0, b_max + b0]``."""
+    lightsim2grid models, can therefore only range over ``[b_min + b0, b_max + b0]``. It
+    reads it for an SVC regulating voltage only: the caller keeps the others at 0."""
     b0 = np.zeros(len(svc_index))
     try:
         automaton = net.get_extensions("standbyAutomaton")
@@ -162,8 +163,15 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
         # would silently reintroduce this exact bug.
         # An SVC carrying a standby automaton: OpenLoadFlow holds the SVC part apart from
         # the automaton's fixed b0, so the total output lightsim2grid models ranges over the
-        # shifted interval (see `_svc_standby_b0`).
+        # shifted interval (see `_svc_standby_b0`). It only reads b0 for an SVC regulating
+        # voltage: a REACTIVE_POWER or OFF one keeps its own range -- unless an outer loop
+        # froze it out of voltage control (`can_be_pv`), which is the range it gets back.
         b0 = _svc_standby_b0(net, df_svc.index)
+        regulates_v = svc_mode == VOLTAGE_MODE
+        flagged = _aux_svc_can_be_pv_flags(can_be_pv, df_svc.index)
+        if flagged is not None:
+            regulates_v = regulates_v | flagged
+        b0 = np.where(regulates_v, b0, 0.)
         b_min = (df_svc["b_min"].values.astype(float) + b0) * (svc_reg_vn ** 2) / sn_mva_used
         b_max = (df_svc["b_max"].values.astype(float) + b0) * (svc_reg_vn ** 2) / sn_mva_used
     else:
