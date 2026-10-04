@@ -354,6 +354,39 @@ inline Report distribute_with_overshoot(const std::vector<Participant> & units,
 }
 
 /**
+ * Append unit `el_id` of `container` to `out` as standing on bus `bus_me` with
+ * `injection_mw` (generator convention), if it takes part in the redistribution: flagged
+ * slack with a positive weight, or flagged "can participate in the slack" (see
+ * append_participants). Whether it is connected, and where, is the caller's business:
+ * this is what lets a batch row place a unit somewhere else than the grid does.
+ */
+template<class Container>
+inline void append_participant(const Container & container,
+                               UnitKind kind,
+                               int el_id,
+                               int bus_me,
+                               real_type injection_mw,
+                               std::vector<Participant> & out)
+{
+    const bool in_slack = container.is_slack(el_id)
+                          && container.get_slack_weight(el_id) > BaseConstants::_tol_equal_float;
+    const real_type weight = in_slack ? container.get_slack_weight(el_id)
+                                      : container.get_can_participate_slack_weight(el_id);
+    if(weight <= BaseConstants::_tol_equal_float) return;
+    Participant part;
+    part.kind = kind;
+    part.el_id = el_id;
+    part.bus = bus_me;
+    part.injection_mw = injection_mw;
+    part.weight = weight;
+    part.min_p_mw = container.get_min_p(el_id);
+    part.max_p_mw = container.get_max_p(el_id);
+    part.in_slack = in_slack;
+    part.overshoot_mw = in_slack ? 0. : container.get_can_participate_slack_overshoot(el_id);
+    out.push_back(part);
+}
+
+/**
  * Append the participating units of one family (a GeneratorContainer or a
  * StorageContainer) to `out`: connected, flagged slack with a positive weight -- or
  * flagged "can participate in the slack" (an outer loop only left it out because it sat
@@ -377,26 +410,11 @@ inline void append_participants(const Container & container,
     const GlobalBusIdVect & buses = container.get_bus_id();
     for(int el_id = 0; el_id < nb_el; ++el_id){
         if(!status[el_id]) continue;
-        const bool in_slack = container.is_slack(el_id)
-                              && container.get_slack_weight(el_id) > BaseConstants::_tol_equal_float;
-        const real_type weight = in_slack ? container.get_slack_weight(el_id)
-                                          : container.get_can_participate_slack_weight(el_id);
-        if(weight <= BaseConstants::_tol_equal_float) continue;
         const int bus_me = buses(el_id).cast_int();
         if(bus_me == BaseConstants::_deactivated_bus_id) continue;
         if(!keep_bus(bus_me)) continue;
         if(is_off(el_id)) continue;
-        Participant part;
-        part.kind = kind;
-        part.el_id = el_id;
-        part.bus = bus_me;
-        part.injection_mw = target_sign * injection_of(el_id);
-        part.weight = weight;
-        part.min_p_mw = container.get_min_p(el_id);
-        part.max_p_mw = container.get_max_p(el_id);
-        part.in_slack = in_slack;
-        part.overshoot_mw = in_slack ? 0. : container.get_can_participate_slack_overshoot(el_id);
-        out.push_back(part);
+        append_participant(container, kind, el_id, bus_me, target_sign * injection_of(el_id), out);
     }
 }
 

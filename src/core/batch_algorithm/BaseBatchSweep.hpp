@@ -1966,6 +1966,126 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         std::vector<std::pair<int, int> > _row_gens_placed(size_t) const { return std::vector<std::pair<int, int> >(); }
 
+        // ---- row i's topological action, as the slack pre-pass reads it (see
+        // _prepare_slack_redistribution; nothing outside ScenarioSweep) ----------------
+        // whether the action places that generator on a bus (moved, or reactivated)
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _gen_placed_in_row(size_t i, int gen_id) const {
+            if(i >= sbus_policy_.topo_gens_on.size()) return false;
+            for(const auto & gen_on : sbus_policy_.topo_gens_on[i]) if(gen_on.gen_id == gen_id) return true;
+            return false;
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _gen_placed_in_row(size_t, int) const { return false; }
+        // whether the action takes that load / storage unit off the bus it holds in the
+        // base grid (disconnected, or moved)
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _load_leaves_base_bus(size_t i, int load_id) const {
+            if(i >= sbus_policy_.topo_loads_off.size()) return false;
+            const std::vector<int> & off = sbus_policy_.topo_loads_off[i];
+            return std::find(off.begin(), off.end(), load_id) != off.end();
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _load_leaves_base_bus(size_t, int) const { return false; }
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _storage_leaves_base_bus(size_t i, int storage_id) const {
+            if(i >= sbus_policy_.topo_storages_off.size()) return false;
+            const std::vector<int> & off = sbus_policy_.topo_storages_off[i];
+            return std::find(off.begin(), off.end(), storage_id) != off.end();
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _storage_leaves_base_bus(size_t, int) const { return false; }
+
+        // What the action changes in the active balance, generator convention, as power
+        // LOST (what the remaining units make up): for each generator, load or storage
+        // unit it places, disconnects or reactivates, what the base balance counted for
+        // it minus what the row's main component gets from it. A unit moved inside the
+        // main component nets out; one disconnected, or put on a bus the row masks, is
+        // lost; one reactivated is a gain. `in_island(bus_solver)`: the row masks that bus.
+        template<class InIsland, class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        real_type _row_topo_lost_mw(size_t i, const InIsland & in_island) const {
+            real_type lost = 0.;
+            const auto & generators = _grid_model.get_generators();
+            const std::vector<bool> & gen_status = generators.get_status();
+            const GlobalBusIdVect & gen_bus = generators.get_bus_id();
+            if(i < sbus_policy_.topo_gens_on.size()){
+                for(const auto & gen_on : sbus_policy_.topo_gens_on[i]){
+                    const int gen_id = gen_on.gen_id;
+                    const real_type p = _gen_target_p_in_row(i, gen_id);
+                    const bool base_on = gen_status[gen_id] &&
+                                         gen_bus(gen_id).cast_int() != BaseConstants::_deactivated_bus_id;
+                    if(base_on) lost += p;
+                    if(!in_island(gen_on.bus_solver)) lost -= p;
+                }
+            }
+            // a load / storage unit leaving its base bus was connected in the base grid
+            // (see _maybe_resolve_topology): its consumption leaves the balance, and comes
+            // back where the row places it in the main component
+            if(i < sbus_policy_.topo_loads_off.size()){
+                for(int load_id : sbus_policy_.topo_loads_off[i]) lost -= _load_target_p_in_row(i, load_id);
+            }
+            if(i < sbus_policy_.topo_loads_on.size()){
+                for(const auto & load_bus : sbus_policy_.topo_loads_on[i]){
+                    if(!in_island(load_bus.second)) lost += _load_target_p_in_row(i, load_bus.first);
+                }
+            }
+            const Eigen::Ref<const RealVect> storage_p = _grid_model.get_storages().get_target_p();
+            if(i < sbus_policy_.topo_storages_off.size()){
+                for(int storage_id : sbus_policy_.topo_storages_off[i]) lost -= storage_p(storage_id);
+            }
+            if(i < sbus_policy_.topo_storages_on.size()){
+                for(const auto & storage_bus : sbus_policy_.topo_storages_on[i]){
+                    if(!in_island(storage_bus.second)) lost += storage_p(storage_bus.first);
+                }
+            }
+            return lost;
+        }
+        template<class InIsland, class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        real_type _row_topo_lost_mw(size_t, const InIsland &) const { return 0.; }
+
+        // The participating units the action places in the main component, on the bus it
+        // gives them (the ones it moves are left out of their base bus by the caller).
+        // The list is re-sorted (family, then id) when one is added: each family's
+        // per-row list of moved set-points has to come out sorted, see _row_target_p.
+        template<class InIsland, class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _append_topo_gen_participants(size_t i, const InIsland & in_island,
+                                           std::vector<slack_redistribution::Participant> & units) const {
+            if(i >= sbus_policy_.topo_gens_on.size() || sbus_policy_.topo_gens_on[i].empty()) return;
+            const size_t before = units.size();
+            for(const auto & gen_on : sbus_policy_.topo_gens_on[i]){
+                if(in_island(gen_on.bus_solver)) continue;
+                slack_redistribution::append_participant(
+                    _grid_model.get_generators(), slack_redistribution::UnitKind::GENERATOR, gen_on.gen_id,
+                    gen_on.bus_me, _gen_target_p_in_row(i, gen_on.gen_id), units);
+            }
+            if(units.size() != before) _sort_participants(units);
+        }
+        template<class InIsland, class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _append_topo_gen_participants(size_t, const InIsland &, std::vector<slack_redistribution::Participant> &) const {}
+        template<class InIsland, class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _append_topo_storage_participants(size_t i, const InIsland & in_island,
+                                               std::vector<slack_redistribution::Participant> & units) const {
+            if(i >= sbus_policy_.topo_storages_on.size() || sbus_policy_.topo_storages_on[i].empty()) return;
+            const auto & storages = _grid_model.get_storages();
+            const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
+            const size_t before = units.size();
+            for(const auto & storage_bus : sbus_policy_.topo_storages_on[i]){
+                if(in_island(storage_bus.second)) continue;
+                slack_redistribution::append_participant(
+                    storages, slack_redistribution::UnitKind::STORAGE, storage_bus.first,
+                    solver_to_me[storage_bus.second], -storages.get_target_p()(storage_bus.first), units);
+            }
+            if(units.size() != before) _sort_participants(units);
+        }
+        template<class InIsland, class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _append_topo_storage_participants(size_t, const InIsland &, std::vector<slack_redistribution::Participant> &) const {}
+        static void _sort_participants(std::vector<slack_redistribution::Participant> & units){
+            std::stable_sort(units.begin(), units.end(),
+                             [](const slack_redistribution::Participant & a, const slack_redistribution::Participant & b){
+                                 if(a.kind != b.kind) return a.kind < b.kind;
+                                 return a.el_id < b.el_id; });
+        }
+
         // the reactive-capability plan of a row that places generators: the batch's plan
         // with each placed generator taken off the bus it holds in the base grid and put
         // on the bus the row gives it -- an entry of its own where no controller of the
@@ -3119,13 +3239,19 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //       modify_load_p): sum(target - row) over the generators and static
         //       generators minus the same over the loads, every element of the solved
         //       system counted -- those (a) and (b) then take out included, at their
-        //       row value, so nothing is counted twice.
+        //       row value, so nothing is counted twice, plus
+        //   (d) what the row's topological action changes (set_topo_actions, see
+        //       _row_topo_lost_mw): every unit it touches is counted where the ROW puts
+        //       it, so (a) and (b) leave out a generator it moves and a load / storage
+        //       unit it takes off its base bus. A unit moved inside the main component
+        //       loses nothing, nor does a bus the row leaves empty: what stood there
+        //       stands elsewhere.
         // A line or transformer that leaves the grid connected loses no injection:
         // the change in the losses it causes stays with the solve's distributed slack.
         // The participants are the slack units left in the main component and not
         // disconnected by the row, and the units flagged "can participate in the slack"
-        // (see SlackParticipation::set_can_participate); slack_redistribution::distribute
-        // does the rest.
+        // (see SlackParticipation::set_can_participate), each on the bus the row gives
+        // it; slack_redistribution::distribute does the rest.
         void _prepare_slack_redistribution(size_t nb_steps){
             _clear_slack_redistribution();
             if(!_redistribute_slack_) return;
@@ -3156,21 +3282,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(size_t i = 0; i < nb_steps; ++i){
                 if(i < _skip_mask.size() && _skip_mask[i]) continue;
                 const std::vector<int> * masked = _row_masked_ids(i);
-                const auto in_island = [&](int bus_me){
-                    if(masked == nullptr) return false;
-                    const int bus_solver = id2s[bus_me].cast_int();
-                    if(bus_solver < 0) return false;
+                const auto in_island_solver = [masked](int bus_solver){
+                    if(masked == nullptr || bus_solver < 0) return false;
                     return std::binary_search(masked->begin(), masked->end(), bus_solver);
                 };
+                const auto in_island = [&](int bus_me){ return in_island_solver(id2s[bus_me].cast_int()); };
                 const auto gen_off = [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); };
                 const auto gen_p_row = [this, i](int gen_id){ return this->_gen_target_p_in_row(i, gen_id); };
 
-                // (a) the generators this row disconnects
+                // (a) the generators this row disconnects (one its action moves is off its
+                // base bus too, and counted in (d) where it lands)
                 real_type lost_mw = 0.;
                 for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
                     if(!gen_status[gen_id]) continue;
                     if(gen_bus(gen_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
                     if(!gen_off(gen_id)) continue;
+                    if(_gen_placed_in_row(i, gen_id)) continue;
                     lost_mw += gen_p_row(gen_id);
                 }
                 // (b) the elements stranded on the masked buses
@@ -3181,9 +3308,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     lost_mw += slack_redistribution::sum_setpoints_if(
                         sgens, 1., in_island, [this, i](int sgen_id){ return this->_sgen_target_p_in_row(i, sgen_id); });
                     lost_mw += slack_redistribution::sum_setpoints_if(
-                        loads, -1., in_island, [this, i](int load_id){ return this->_load_target_p_in_row(i, load_id); });
+                        loads, -1., in_island, [this, i](int load_id){
+                            return this->_load_leaves_base_bus(i, load_id) ? 0. : this->_load_target_p_in_row(i, load_id); });
                     lost_mw += slack_redistribution::sum_setpoints_if(
-                        storages, -1., in_island, [&storages](int storage_id){ return storages.get_target_p()(storage_id); });
+                        storages, -1., in_island, [this, i, &storages](int storage_id){
+                            return this->_storage_leaves_base_bus(i, storage_id) ? 0. : storages.get_target_p()(storage_id); });
                     lost_mw += slack_redistribution::sum_setpoints_if(
                         shunts, -1., in_island, [&shunts](int shunt_id){ return shunts.get_target_p()(shunt_id); });
                     lost_mw += slack_redistribution::sum_hvdc_station_setpoints_if(
@@ -3191,15 +3320,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
                 // (c) the row's own injection change
                 lost_mw += _row_injection_change_lost_mw(i);
+                // (d) what the row's topological action moves, disconnects or reactivates
+                lost_mw += _row_topo_lost_mw(i, in_island_solver);
                 if(std::abs(lost_mw) <= eps_mw) continue;
 
                 units.clear();
                 const auto keep_bus = [&in_island](int bus_me){ return !in_island(bus_me); };
                 slack_redistribution::append_participants(
                     generators, UnitKind::GENERATOR, 1., keep_bus, gen_off, gen_p_row, units);
+                _append_topo_gen_participants(i, in_island_solver, units);
                 slack_redistribution::append_participants(
-                    storages, UnitKind::STORAGE, -1., keep_bus, [](int){ return false; },
+                    storages, UnitKind::STORAGE, -1., keep_bus,
+                    [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); },
                     [&storages](int storage_id){ return storages.get_target_p()(storage_id); }, units);
+                _append_topo_storage_participants(i, in_island_solver, units);
                 if(units.empty()) continue;  // the row's own fallback stays (see _row_slack_weights)
 
                 const slack_redistribution::Report report = slack_redistribution::distribute(
