@@ -4247,13 +4247,19 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the ``GENERATOR``, ``value`` its own bus voltage and
       ``limit`` the bound, in kV; AC only);
     - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
+    - an angle-droop hvdc line flagged with :func:`set_hvdc_ac_emulation_frozen` (one an outer
+      loop froze at its active power limit) whose droop would now ask for less than that limit
+      by more than ``tol_mva``: OpenLoadFlow's ``AcHvdcAcEmulationLimits`` loop would leave it in
+      AC emulation (``HVDC_AC_EMULATION_RELEASE`` on the ``HVDC``, ``side`` the direction it is
+      frozen in, ``value`` the flow its droop asks for in that direction and ``limit`` the
+      limit, in MW; AC and DC);
     - a generator or storage unit of the distributed slack whose share of the imbalance lands it
       past its ``[min_p, max_p]`` (:func:`set_gen_p_limits` / :func:`set_storage_p_limits`;
       ``LOW_P`` / ``HIGH_P``).
 
     Nothing is enforced: the solution is what it is, this only reports it. ``tol_mva`` is the
     absolute slack (MW / MVAr) on every power comparison, ``tol_vm_pu`` the one (pu) on the
-    voltage comparisons of the PQ -> PV and the standby SVC checks. Returns a list of ``LimitViolation``
+    voltage comparisons of the PQ -> PV, the standby SVC and the remote voltage control checks. Returns a list of ``LimitViolation``
     (``element_type``, ``element_id``, ``violation_type``, ``value``, ``limit``, ``name``), empty
     when every limit holds.
 
@@ -7939,8 +7945,9 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
     element-level violation; ``NOT_SIMULATED`` or ``DIVERGENCE`` for a contingency-level one (see
     :class:`ViolationElementType`'s ``GRID``); ``LOW_Q`` / ``HIGH_Q``, ``LOW_P`` / ``HIGH_P`` and
     ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``, ``LOW_VOLTAGE_SVC_STANDBY`` /
-    ``HIGH_VOLTAGE_SVC_STANDBY`` and ``LOW_VOLTAGE_REMOTE_CONTROL`` /
-    ``HIGH_VOLTAGE_REMOTE_CONTROL`` for the physical checks of ``compute_physical_violations`` (see
+    ``HIGH_VOLTAGE_SVC_STANDBY``, ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+    ``HIGH_VOLTAGE_REMOTE_CONTROL`` and ``HVDC_AC_EMULATION_RELEASE`` for the physical checks of
+    ``compute_physical_violations`` (see
     each value's own documentation):
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
@@ -7973,7 +7980,8 @@ const std::string DocContingencyAnalysis::element_id = R"mydelimiter(
 
 const std::string DocContingencyAnalysis::side = R"mydelimiter(
     ``1`` or ``2`` for a ``LINE`` / ``TRAFO`` violation (which side's current limit was
-    violated); unused (``0``) for ``BUS`` / ``GRID``.
+    violated) and for an ``HVDC`` one (the direction: ``1`` for a flow from side 1 to side 2);
+    unused (``0``) for ``BUS`` / ``GRID``.
 
 )mydelimiter";
 
@@ -7988,7 +7996,8 @@ const std::string DocContingencyAnalysis::value = R"mydelimiter(
     in kV, of the bus the pinned generator would regulate; for ``LOW_VOLTAGE_SVC_STANDBY`` /
     ``HIGH_VOLTAGE_SVC_STANDBY`` the voltage, in kV, of the bus the standby SVC regulates; for
     ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` the voltage, in kV, of the
-    remote controller's own bus); unused (``NaN``) for
+    remote controller's own bus; for ``HVDC_AC_EMULATION_RELEASE`` the flow, in MW, the frozen
+    line's droop asks for in the direction ``side`` names); unused (``NaN``) for
     ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";
@@ -7998,7 +8007,8 @@ const std::string DocContingencyAnalysis::limit = R"mydelimiter(
     generator's target voltage, for ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY``
     the standby automaton's threshold, both in kV of the regulated bus; for
     ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` the realistic bound, in kV
-    of the controller's own bus); unused (``NaN``) for
+    of the controller's own bus; for ``HVDC_AC_EMULATION_RELEASE`` the limit the line is frozen
+    at, in MW); unused (``NaN``) for
     ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";

@@ -307,10 +307,11 @@ class ScenarioSweep:
         thermal rating: states the grid does reach and should not sit in). Default:
         ``False``. Same meaning as
         :attr:`lightsim2grid.timeSerie.TimeSerie.compute_physical_violations`, which
-        documents the five checks (the reactive capability of a bus, the release of a PQ
+        documents the checks (the reactive capability of a bus, the release of a PQ
         generator flagged as pinned at a reactive limit, the switch on of an idle SVC flagged
-        as carrying a standby automaton, the active power of an angle-droop hvdc line, and the
-        active power of a machine carrying the distributed slack) in full.
+        as carrying a standby automaton, the own bus of a remote voltage controller, the
+        active power of an angle-droop hvdc line, the release of one flagged as frozen at its
+        limit, and the active power of a machine carrying the distributed slack) in full.
 
         Detection only: nothing is switched PV -> PQ or back, no droop is clamped, no row is
         re-solved. Unlike :attr:`compute_limit_violations`, changing this flag keeps the
@@ -336,7 +337,7 @@ class ScenarioSweep:
     def physical_violation_tol_mva(self):
         """Absolute slack (MVA) on every comparison :attr:`compute_physical_violations`
         makes: a violation needs ``value > limit + tol`` (or ``value < limit - tol`` for
-        ``LOW_Q``). Default: ``1e-4``. Changing it invalidates any previously-computed
+        ``LOW_Q`` and ``HVDC_AC_EMULATION_RELEASE``). Default: ``1e-4``. Changing it invalidates any previously-computed
         results."""
         return self.computer.physical_violation_tol_mva
 
@@ -360,7 +361,9 @@ class ScenarioSweep:
         (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
         flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
         automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
-        ``HIGH_VOLTAGE_SVC_STANDBY``). Default: ``1e-4``. Changing it invalidates any
+        ``HIGH_VOLTAGE_SVC_STANDBY``), and the remote voltage control check a remote
+        controller whose own bus is outside the realistic range by more than this
+        (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``). Default: ``1e-4``. Changing it invalidates any
         previously-computed results.
         """
         return self.computer.physical_violation_tol_vm_pu
@@ -577,8 +580,13 @@ class ScenarioSweep:
         (a flagged PQ generator that would regulate again, ``value`` / ``limit`` in kV),
         ``element_type`` ``SVC`` with ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY``
         (a flagged idle standby SVC its automaton would switch on, ``value`` / ``limit`` in
-        kV), ``element_type`` ``HVDC`` with ``HIGH_P`` and ``side`` naming the direction (the
-        active power of an angle-droop hvdc line), or ``element_type`` ``GENERATOR`` /
+        kV), ``element_type`` ``GENERATOR`` with ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+        ``HIGH_VOLTAGE_REMOTE_CONTROL`` (a remote voltage controller whose own bus leaves the
+        realistic range, ``value`` / ``limit`` in kV), ``element_type`` ``HVDC`` with
+        ``HIGH_P`` and ``side`` naming the direction (the active power of an angle-droop hvdc
+        line), ``element_type`` ``HVDC`` with ``HVDC_AC_EMULATION_RELEASE`` and ``side`` the
+        direction it is frozen in (a flagged frozen line whose droop would ask for less than
+        its limit, ``value`` / ``limit`` in MW), or ``element_type`` ``GENERATOR`` /
         ``STORAGE`` with ``LOW_P`` / ``HIGH_P`` (the distributed slack). Every entry has
         ``category == ViolationCategory.PHYSICAL``.
 

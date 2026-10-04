@@ -202,7 +202,8 @@ struct LS2G_API LimitViolation {
     // generator / storage / svc id otherwise ; unused (-1) for GRID
     int element_id;
     // 1 or 2 for LINE / TRAFO (the terminal) and for HVDC (the direction: 1 means the flow
-    // leaves side 1, ie 1 -> 2) ; unused (0) for BUS / GENERATOR / STORAGE / SVC / GRID
+    // leaves side 1, ie 1 -> 2; for HVDC_AC_EMULATION_RELEASE the direction the line is
+    // frozen in) ; unused (0) for BUS / GENERATOR / STORAGE / SVC / GRID
     int side;
     LimitViolationType violation_type;
     // value reached: MVAr for LOW_Q / HIGH_Q (what the machines holding that bus had to
@@ -212,7 +213,8 @@ struct LS2G_API LimitViolation {
     // of the bus the pinned generator would regulate) and for LOW_VOLTAGE_SVC_STANDBY /
     // HIGH_VOLTAGE_SVC_STANDBY (the voltage of the bus the standby SVC regulates) and for
     // LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL (the voltage of the remote
-    // controller's own bus) ; unused
+    // controller's own bus), MW for HVDC_AC_EMULATION_RELEASE (the flow the frozen line's
+    // droop asks for in the direction `side` names) ; unused
     // (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type value;
     // limit that was violated. For LOW_Q / HIGH_Q the SUMMED capability of the machines
@@ -223,7 +225,8 @@ struct LS2G_API LimitViolation {
     // the generator's target voltage, in kV of the regulated bus; for LOW_VOLTAGE_SVC_STANDBY
     // / HIGH_VOLTAGE_SVC_STANDBY the automaton's low / high threshold, in kV of the
     // regulated bus; for LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL the realistic
-    // voltage bound, in kV of the controller's own bus. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // voltage bound, in kV of the controller's own bus; for HVDC_AC_EMULATION_RELEASE the pmax
+    // of the direction the line is frozen in. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type limit;
     // element name: LINE / TRAFO / HVDC / GENERATOR / STORAGE / SVC (from
     // LSGrid::set_line_names / set_trafo_names / set_dcline_names / set_gen_names /
