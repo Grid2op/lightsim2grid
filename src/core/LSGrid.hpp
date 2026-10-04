@@ -111,7 +111,11 @@ class LS2G_API LSGrid final
                 std::vector<std::string>,  // init_kwargs values
                 // fused-bus representative lookup (appended; old pickles/binary
                 // formats are version-gated). See get_bus_fusion_rep().
-                std::vector<int>  // bus_fusion_rep
+                std::vector<int>,  // bus_fusion_rep
+                // the remote voltage control range of the physical checks (appended; NaN
+                // when unset). See set_remote_voltage_control_vm_range().
+                real_type,  // remote_vc_min_vm_pu
+                real_type   // remote_vc_max_vm_pu
                 >;
 
         // named indices into the StateRes tuple above (get_state()/set_state()
@@ -140,6 +144,8 @@ class LS2G_API LSGrid final
         static const std::size_t INIT_KWARGS_KEYS_ID = 20;
         static const std::size_t INIT_KWARGS_VALUES_ID = 21;
         static const std::size_t BUS_FUSION_REP_ID = 22;
+        static const std::size_t REMOTE_VC_MIN_VM_PU_ID = 23;
+        static const std::size_t REMOTE_VC_MAX_VM_PU_ID = 24;
 
         LSGrid():
           timer_last_ac_pf_(0.),
@@ -278,7 +284,9 @@ class LS2G_API LSGrid final
          * shared again on the others. Writes the new setpoints and takes the saturated
          * units out of the distributed slack, so the next solve only shares what is
          * left (the change in the losses) on the units that can still move. If EVERY
-         * unit saturates, all of them stay in the slack (see the report).
+         * unit saturates, all of them stay in the slack (see the report). A unit out of
+         * the slack afterwards keeps what this shift left of its overshoot, never a new one
+         * (see slack_redistribution::distribute).
          */
         slack_redistribution::Report redistribute_active_power(real_type mismatch_mw);
         /**
@@ -460,7 +468,8 @@ class LS2G_API LSGrid final
          *
          * Never read by a powerflow. NaN (the default) on both sides: no check. A NaN on one
          * side only checks the other. Copied with the grid, so a batch algorithm built from
-         * this grid inherits it; not part of `get_state` / the binary format.
+         * this grid inherits it, and part of `get_state` / the binary format: a grid pickled
+         * or saved keeps checking its remote controllers.
          */
         void set_remote_voltage_control_vm_range(real_type min_vm_pu, real_type max_vm_pu);
         [[nodiscard]] real_type get_remote_voltage_control_min_vm_pu() const noexcept {return remote_vc_min_vm_pu_;}
@@ -1273,11 +1282,13 @@ class LS2G_API LSGrid final
         }
         /**
          * For the generators flagged "can participate in the slack": how far BEYOND the
-         * limit it sits at each one was in the reference solve, in MW (>= 0, one value per
-         * generator, 0 by default). OpenLoadFlow shares the slack from the raw set-points,
-         * so a unit it capped at max_p had raw + lambda * weight above max_p by that much,
-         * and an imbalance of the other sign only moves it once the shift of the
-         * distribution has used that up. Only the bounded redistribution pre-pass reads it.
+         * limit it sits at each one was in the reference solve, in MW, signed (> 0 above its
+         * upper limit, < 0 below its lower one; one value per generator, 0 by default). The
+         * sign is what tells, for a unit at 0 MW, which side of 0 it was capped from.
+         * OpenLoadFlow shares the slack from the raw set-points, so a unit it capped at
+         * max_p had raw + lambda * weight above max_p by that much, and an imbalance of the
+         * other sign only moves it once the shift of the distribution has used that up.
+         * Only the bounded redistribution pre-pass reads it.
          * See SlackParticipation::set_can_participate_overshoot.
          */
         void set_gen_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){

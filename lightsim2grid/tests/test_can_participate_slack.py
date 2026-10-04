@@ -143,6 +143,40 @@ class TestPrepass(unittest.TestCase):
         grid.consider_only_main_component(True)
         np.testing.assert_allclose(_target_p(grid), [10., 40.], atol=1e-6)
 
+    def test_overshoot_used_up_across_redistributions(self):
+        # 25 MW beyond its max_p. A first -20 MW: shift -40, the slack unit gives 20, the capped
+        # one stays, 5 MW of its overshoot left. A second -10 MW starts from those 5 MW, as
+        # OLF sharing -30 MW at once would: shift -15, the slack unit gives 7.5, the capped 2.5
+        grid = _grid(flagged=True, overshoot_mw=25.)
+        grid.redistribute_active_power(-20.)
+        np.testing.assert_allclose(_target_p(grid), [10., 40.], atol=1e-6)
+        self.assertAlmostEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 5., places=6)
+        grid.redistribute_active_power(-10.)
+        np.testing.assert_allclose(_target_p(grid), [2.5, 37.5], atol=1e-6)
+        self.assertEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 0.)
+        # the same as one -30 MW redistribution from the start
+        once = _grid(flagged=True, overshoot_mw=25.)
+        once.redistribute_active_power(-30.)
+        np.testing.assert_allclose(_target_p(once), _target_p(grid), atol=1e-6)
+
+    def test_overshoot_does_not_outlive_the_cap(self):
+        # moved off its limit, the unit is back in the slack: the reference solve's overshoot
+        # is gone. Saturated again by a redistribution, it carries no overshoot (a
+        # redistribution never makes one, as OLF's distribution step), so it leaves its max_p
+        # at once on a mismatch of the other sign
+        grid = _grid(flagged=True, overshoot_mw=25.)
+        grid.change_p_gen(CAPPED, 30.)
+        self.assertTrue(grid.get_generators()[CAPPED].is_slack)
+        self.assertEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 0.)
+        # +30 MW, equal weights: the unit at 30 is capped at 40, the slack one takes the rest
+        grid.redistribute_active_power(30.)
+        np.testing.assert_allclose(_target_p(grid), [50., 40.], atol=1e-6)
+        self.assertFalse(grid.get_generators()[CAPPED].is_slack)
+        self.assertEqual(grid.get_generators()[CAPPED].can_participate_slack_overshoot_mw, 0.)
+        # -10 MW: 5 MW each, the old 25 MW overshoot would have kept it at 40
+        grid.redistribute_active_power(-10.)
+        np.testing.assert_allclose(_target_p(grid), [45., 35.], atol=1e-6)
+
     def test_overshoot_batch_matches_the_single_solve(self):
         ref = _grid(flagged=True, overshoot_mw=15.)
         ref.deactivate_powerline(LEAF_LINE)

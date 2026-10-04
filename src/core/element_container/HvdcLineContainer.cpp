@@ -337,7 +337,17 @@ void HvdcLineContainer::change_p(int hvdc_id, real_type new_p, DualAlgoControl &
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
+    const int old_mode = converters_mode_(hvdc_id);
+    const real_type old_setpoint = p_setpoint_mw_(hvdc_id);
     update_targets_from_p1(hvdc_id, new_p, solver_control);
+    // a line an outer loop froze at its limit is no longer there once its set-point moves:
+    // its release (HvdcPCheck.hpp) means nothing any more, and its direction would be read
+    // off the new set-point. The same set-point written again keeps it.
+    if(ac_emulation_frozen_[hvdc_id] &&
+       (converters_mode_(hvdc_id) != old_mode ||
+        std::abs(p_setpoint_mw_(hvdc_id) - old_setpoint) > BaseConstants::_tol_equal_float)){
+        ac_emulation_frozen_[hvdc_id] = false;
+    }
 }
 
 void HvdcLineContainer::set_status_droop(int hvdc_id, int status, DualAlgoControl & solver_control)

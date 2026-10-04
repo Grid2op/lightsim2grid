@@ -153,7 +153,9 @@ LSGrid::StateRes LSGrid::get_state() const
                             res_dc_algo_cfg,
                             init_kwargs_keys,
                             init_kwargs_values,
-                            bus_fusion_rep
+                            bus_fusion_rep,
+                            remote_vc_min_vm_pu_,
+                            remote_vc_max_vm_pu_
                             );
     return res;
 };
@@ -290,6 +292,11 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // fused-bus representative lookup -- must run after substations_ is restored
     // above, same reasoning as set_ls_to_orig() (validates against total_bus()).
     set_bus_fusion_rep(IntVect::Map(bus_fusion_rep.data(), bus_fusion_rep.size()));
+
+    // the remote voltage control range of the physical checks: through the setter, which
+    // refuses what a crafted file could hold (an empty or non-positive range)
+    set_remote_voltage_control_vm_range(std::get<REMOTE_VC_MIN_VM_PU_ID>(my_state),
+                                        std::get<REMOTE_VC_MAX_VM_PU_ID>(my_state));
 
     // Now that every container has been restored, validate the whole grid: a
     // pickle or binary file is only length-checked while being read, so an
@@ -938,7 +945,7 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     plan.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                            ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
                            ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq,
-                           hold_frozen_regulators_);
+                           sn_mva_, hold_frozen_regulators_);
     data = plan.controllers();
 }
 
@@ -1373,7 +1380,7 @@ CplxVect LSGrid::_build_into_cache(
         cache.voltage_control.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                                                 cache.id_me_to_solver, cache.id_solver_to_me,
                                                 cache.slack_bus_id_solver, cache.bus_pq,
-                                                hold_frozen);
+                                                sn_mva_, hold_frozen);
     }
 
     // type-specific injection assembly (complex Sbus for AC, real Pbus for DC)
@@ -2828,8 +2835,9 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
 
     std::vector<real_type> new_inj;
     std::vector<char> saturated;
+    std::vector<real_type> overshoot_left;
     const slack_redistribution::Report report = slack_redistribution::distribute(
-        units, mismatch_mw, slack_redistribution::default_eps_mw, new_inj, saturated);
+        units, mismatch_mw, slack_redistribution::default_eps_mw, new_inj, saturated, &overshoot_left);
 
     // the setpoints first, the slack second: a generator still flagged slack does not
     // re-evaluate its PV status on a change of P (GeneratorContainer::_on_change_p), and
@@ -2853,6 +2861,18 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
             generators_.leave_slackbus(units[k].el_id, algo_controler_);
         }else{
             storages_.leave_slackbus(units[k].el_id, algo_controler_);
+        }
+    }
+    // a unit out of the slack after this (flagged only, or just saturated) keeps what this
+    // shift left of its overshoot -- never a new one: the next redistribution starts from
+    // there, so that for a unit the reference solve capped two in a row land where their sum
+    // shared at once would
+    for(std::size_t k = 0; k < units.size(); ++k){
+        if(units[k].in_slack && !saturated[k]) continue;
+        if(units[k].kind == UnitKind::GENERATOR){
+            generators_.set_can_participate_slack_overshoot_of(units[k].el_id, overshoot_left[k]);
+        }else{
+            storages_.set_can_participate_slack_overshoot_of(units[k].el_id, overshoot_left[k]);
         }
     }
     return report;

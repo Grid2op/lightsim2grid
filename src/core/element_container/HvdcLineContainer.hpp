@@ -438,7 +438,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * limit, droop off, as OpenLoadFlow's AcHvdcAcEmulationLimits loop saturated them.
          * Their droop parameters (p0, slope) are kept. Never read by a powerflow: it only opens
          * them to the physical check of their release (HvdcPCheck.hpp), the flow their droop
-         * would ask for falling back below that limit.
+         * would ask for falling back below that limit. `change_p` moving a flagged line's
+         * set-point clears its flag: it no longer sits at the limit it was frozen at.
          */
         void set_ac_emulation_frozen(const std::vector<bool> & frozen){
             check_size(frozen, nb(), "HvdcLineContainer::set_ac_emulation_frozen");

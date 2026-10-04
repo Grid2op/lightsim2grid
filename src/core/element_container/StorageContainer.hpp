@@ -241,6 +241,10 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
             slack_.set_can_participate_overshoot(overshoot_mw, "StorageContainer::set_can_participate_slack_overshoot");
         }
         real_type get_can_participate_slack_overshoot(int storage_id) const {return slack_.can_participate_overshoot(storage_id);}
+        /// see SlackParticipation::set_can_participate_overshoot_of (LSGrid::redistribute_active_power)
+        void set_can_participate_slack_overshoot_of(int storage_id, real_type overshoot_mw){
+            slack_.set_can_participate_overshoot_of(storage_id, overshoot_mw);
+        }
         /// add every participating unit's raw weight to its solver bus (`storage_off`,
         /// when non-null, is a nb()-sized mask of units to leave out on top: a batch row
         /// whose slack pre-pass saturated them, see LSGrid::get_slack_weights_solver_without)
