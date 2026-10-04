@@ -9,6 +9,7 @@
 #include "VoltageControlPlan.hpp"
 
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 
@@ -191,10 +192,12 @@ void VoltageControlPlan::build_solver_side(const GeneratorContainer & generators
                                            const GlobalBusIdVect & id_solver_to_me,
                                            const SolverBusIdVect & slack_bus_id_solver,
                                            const SolverBusIdVect & bus_pq,
+                                           real_type sn_mva,
                                            bool hold_frozen)
 {
     build_free_vm_slack(generators, storages, id_me_to_solver, id_solver_to_me, slack_bus_id_solver);
-    build_controllers(generators, svcs, hvdc_lines, id_me_to_solver, id_solver_to_me, bus_pq, hold_frozen);
+    build_controllers(generators, storages, svcs, hvdc_lines, id_me_to_solver, id_solver_to_me, bus_pq,
+                      sn_mva, hold_frozen);
 }
 
 std::vector<int> VoltageControlPlan::group_controlled_solver_buses(const SolverBusIdVect & id_me_to_solver) const
@@ -274,11 +277,13 @@ void VoltageControlPlan::build_free_vm_slack(const GeneratorContainer & generato
 }
 
 void VoltageControlPlan::build_controllers(const GeneratorContainer & generators,
+                                           const StorageContainer & storages,
                                            const SvcContainer & svcs,
                                            const HvdcLineContainer & hvdc_lines,
                                            const SolverBusIdVect & id_me_to_solver,
                                            const GlobalBusIdVect & id_solver_to_me,
                                            const SolverBusIdVect & bus_pq,
+                                           real_type sn_mva,
                                            bool hold_frozen)
 {
     controllers_.clear();
@@ -317,33 +322,85 @@ void VoltageControlPlan::build_controllers(const GeneratorContainer & generators
     if(hold_frozen) _collect_held_gen_controllers(generators, id_me_to_solver, is_pq, has_free_q, raws);
     if(raws.empty()) return;
 
-    _group_and_emit(raws, _collect_passive_gens(generators, id_me_to_solver, raws));
+    _group_and_emit(raws, _collect_passive_gens(generators, storages, svcs, hvdc_lines,
+                                                id_me_to_solver, raws, sn_mva));
 }
 
 std::map<int, VoltageControlPlan::PassiveBus> VoltageControlPlan::_collect_passive_gens(
     const GeneratorContainer & generators,
+    const StorageContainer & storages,
+    const SvcContainer & svcs,
+    const HvdcLineContainer & hvdc_lines,
     const SolverBusIdVect & id_me_to_solver,
-    const std::vector<Raw> & raws) const
+    const std::vector<Raw> & raws,
+    real_type sn_mva) const
 {
+    // OpenLoadFlow counts every LfGenerator of a controller bus: the generators, but also
+    // the batteries, the VSC converter stations and the SVCs (an LCC station is a load
+    // there). Only a generator can carry a reactive key, so any other unit makes its bus
+    // unkeyed -- and the whole group falls back on the reactive ranges.
     std::map<int, PassiveBus> out;
-    std::set<int> ctrl_buses, ctrl_gens;
+    std::set<int> ctrl_buses;
+    std::set<std::pair<int, int> > ctrl_units;  // (kind, elem_id) of the controllers
     for(const Raw & r : raws){
         ctrl_buses.insert(r.bus);
-        if(r.kind == VoltageControlSolverData::GEN) ctrl_gens.insert(r.elem_id);
+        ctrl_units.insert(std::make_pair(r.kind, r.elem_id));
     }
+    const int nb_bus_solver = static_cast<int>(id_me_to_solver.size());
+    // the controller bus a connected unit sits on, -1 if none
+    const auto ctrl_bus_of = [&](int bus_me){
+        if(bus_me < 0 || bus_me >= nb_bus_solver) return -1;
+        const int bus = id_me_to_solver[bus_me].cast_int();
+        return ctrl_buses.count(bus) ? bus : -1;
+    };
+    // a range nothing can share on (unset limits) adds nothing, but still unkeys the bus
+    const auto add = [&](int bus, real_type range, real_type key){
+        PassiveBus & p = out[bus];
+        if(std::isfinite(range)) p.range += range;
+        if(std::isfinite(key) && key > 0.) p.keys += key; else p.keyed = false;
+    };
+    const real_type no_key = std::numeric_limits<real_type>::quiet_NaN();
+
     const int nb_gen = static_cast<int>(generators.nb());
     const GlobalBusIdVect & gen_buses = generators.get_bus_id();
-    const int nb_bus_solver = static_cast<int>(id_me_to_solver.size());
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(!generators.get_status(gen_id) || ctrl_gens.count(gen_id)) continue;
-        const int bus_me = gen_buses(gen_id).cast_int();
-        if(bus_me < 0 || bus_me >= nb_bus_solver) continue;
-        const int bus = id_me_to_solver[bus_me].cast_int();
-        if(!ctrl_buses.count(bus)) continue;
-        PassiveBus & p = out[bus];
-        p.range += generators.get_max_q(gen_id) - generators.get_min_q(gen_id);
-        const real_type key = generators.get_reactive_key(gen_id);
-        if(std::isfinite(key) && key > 0.) p.keys += key; else p.keyed = false;
+        if(!generators.get_status(gen_id)) continue;
+        if(ctrl_units.count(std::make_pair(static_cast<int>(VoltageControlSolverData::GEN), gen_id))) continue;
+        const int bus = ctrl_bus_of(gen_buses(gen_id).cast_int());
+        if(bus < 0) continue;
+        add(bus, generators.get_max_q(gen_id) - generators.get_min_q(gen_id), generators.get_reactive_key(gen_id));
+    }
+    const int nb_storage = static_cast<int>(storages.nb());
+    const GlobalBusIdVect & storage_buses = storages.get_bus_id();
+    for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
+        if(!storages.get_status(storage_id)) continue;
+        const int bus = ctrl_bus_of(storage_buses(storage_id).cast_int());
+        if(bus < 0) continue;
+        add(bus, storages.get_max_q(storage_id) - storages.get_min_q(storage_id), no_key);
+    }
+    const int nb_svc = static_cast<int>(svcs.nb());
+    const GlobalBusIdVect & svc_buses = svcs.get_bus_id();
+    for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
+        if(!svcs.get_status(svc_id)) continue;
+        if(ctrl_units.count(std::make_pair(static_cast<int>(VoltageControlSolverData::SVC), svc_id))) continue;
+        const int bus = ctrl_bus_of(svc_buses(svc_id).cast_int());
+        if(bus < 0) continue;
+        // its susceptance range (pu) at 1 pu, in MVAr like the others
+        add(bus, (svcs.get_b_max(svc_id) - svcs.get_b_min(svc_id)) * sn_mva, no_key);
+    }
+    const int nb_hvdc = static_cast<int>(hvdc_lines.nb());
+    for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
+        for(int side = 1; side <= 2; ++side){
+            const ConverterStationContainer & stations = (side == 1) ? hvdc_lines.get_stations_side_1()
+                                                                     : hvdc_lines.get_stations_side_2();
+            if(stations.is_lcc(hvdc_id) || !stations.get_status(hvdc_id)) continue;
+            const int kind = (side == 1) ? VoltageControlSolverData::HVDC_SIDE_1
+                                         : VoltageControlSolverData::HVDC_SIDE_2;
+            if(ctrl_units.count(std::make_pair(kind, hvdc_id))) continue;
+            const int bus = ctrl_bus_of(hvdc_lines.get_station_bus(hvdc_id, side).cast_int());
+            if(bus < 0) continue;
+            add(bus, hvdc_lines.get_station_q_range_mvar(hvdc_id, side), no_key);
+        }
     }
     return out;
 }
@@ -614,8 +671,9 @@ void VoltageControlPlan::_group_and_emit(const std::vector<Raw> & raws,
     data.grp_count = Eigen::VectorXi(ng);
     // The sharing key, OpenLoadFlow's rule, which works bus by bus. The buses of the
     // group share by the sum of the keys of ALL their generators (a connected one that
-    // controls nothing, or is held, counts too: `passive`) when every one of them has
-    // a key, by the sum of their reactive ranges otherwise. Inside one controller bus
+    // controls nothing, or is held, counts too, and so do the batteries, VSC stations and
+    // SVCs there, which have no key: `passive`) when every one of them has a key, by the
+    // sum of their reactive ranges otherwise. Inside one controller bus
     // the controllers share that by their keys when they all have one, by their
     // reactive ranges otherwise. The sharing rows hold Q_i / w_i equal across the
     // group, so w_i = (share of its bus) * (its share inside the bus).

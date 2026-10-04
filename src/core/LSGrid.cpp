@@ -945,7 +945,7 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     plan.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                            ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
                            ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq,
-                           hold_frozen_regulators_);
+                           sn_mva_, hold_frozen_regulators_);
     data = plan.controllers();
 }
 
@@ -1380,7 +1380,7 @@ CplxVect LSGrid::_build_into_cache(
         cache.voltage_control.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                                                 cache.id_me_to_solver, cache.id_solver_to_me,
                                                 cache.slack_bus_id_solver, cache.bus_pq,
-                                                hold_frozen);
+                                                sn_mva_, hold_frozen);
     }
 
     // type-specific injection assembly (complex Sbus for AC, real Pbus for DC)

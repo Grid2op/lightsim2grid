@@ -252,6 +252,17 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         self._keyed_shares({}, {"G1": 2. / 7., "G2": 5. / 7.},
                            extra_gen_on_b1=True, extra_gen_regulating=False)
 
+    def test_remote_gen_share_counts_a_battery_of_the_bus(self):
+        # OLF counts every LfGenerator of a controller bus, a battery included, and a battery
+        # carries no reactive key: B1 is no longer keyed, so the whole group falls back on
+        # the ranges (100 + 20 for the battery, against 300), not on the keys 30 / 40
+        n = self._star_keyed({"G1": 30.0, "G2": 40.0})
+        n.create_batteries(id="BAT", voltage_level_id="VL1", bus_id="B1", target_p=0.0, target_q=0.0,
+                           min_p=-50.0, max_p=50.0)
+        n.create_minmax_reactive_limits(id="BAT", min_q=-10.0, max_q=10.0)
+        model = self._compare(n, "VL0", "G0", "remote-gen-keys-battery")
+        self._assert_shares(model, {"G1": 2. / 7., "G2": 5. / 7.}, "remote-gen-keys-battery")
+
     def test_gen_reactive_key_setter(self):
         n = self._star_keyed({"G1": 60.0, "G2": 40.0})
         model, _ = self._run_ls(n, "G0")
