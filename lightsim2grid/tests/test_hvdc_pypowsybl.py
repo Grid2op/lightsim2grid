@@ -220,6 +220,37 @@ class TestHvdcPypowsybl(unittest.TestCase):
                 self.assertEqual(el.limit, 12.0)
                 self.assertLess(el.value, 12.0)
 
+    def test_frozen_flag_follows_the_setpoint(self):
+        # the flag says "frozen at its limit by an outer loop": once the caller moves the line's
+        # set-point away from that limit it no longer holds, and its release is not checked
+        # (against the limit of whatever direction the new set-point points to)
+        from lightsim2grid.network import bake_outer_loops
+        n = add_operator_range(_build_net(max_p=300.0), 12.0, 8.0)
+        n.update_loads(id="LD", p0=100.)
+        pp.loadflow.run_ac(n)
+        res = bake_outer_loops(n, return_details=True)
+        n.per_unit = False
+
+        def release(model):
+            V = model.ac_pf(np.ones(len(model.get_bus_status()), dtype=np.complex128), 30, 1e-10)
+            self.assertGreater(V.shape[0], 0)
+            return [el for el in model.get_physical_violations(True, 0., 0.)
+                    if el.violation_type == LimitViolationType.HVDC_AC_EMULATION_RELEASE]
+
+        model = init_from_pypowsybl(n, gen_slack_id="G", sort_index=True,
+                                    hvdc_ac_emulation_frozen=res.hvdc_ac_emulation_frozen)
+        model.change_p_load(0, 5.)
+        self.assertEqual(len(release(model)), 1)
+        # the same set-point again (as a caller re-applying its targets does): still frozen
+        model.change_p_dcline(0, model.get_dclines()[0].target_p1_mw)
+        self.assertTrue(model.get_dclines()[0].ac_emulation_frozen)
+        self.assertEqual(len(release(model)), 1)
+        for new_p1 in (-6., 5.):  # off its limit, then reversed
+            other = model.copy()
+            other.change_p_dcline(0, new_p1)
+            self.assertFalse(other.get_dclines()[0].ac_emulation_frozen, f"p1 {new_p1}")
+            self.assertEqual(len(release(other)), 0, f"p1 {new_p1}")
+
     def test_beyond_operator_range_is_reported(self):
         # in its linear regime the line transmits more than its operator range (but less
         # than max_p): a physical violation against the operator range
