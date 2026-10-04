@@ -75,7 +75,9 @@ What gets baked
   instead of the regulated bus's) and freezes the ones they left regulating
   although OLF did not. One opt-in exception:
   ``bake_saturated_voltage_control=True`` also freezes a held unit whose Q sits
-  at a limit, at that limit.
+  at a limit (to ``_Q_SATURATED_HELD_TOL_MVAR``, not to the relative tolerance: a
+  held unit with headroom left is still regulating, as is one whose bus still has a
+  regulating unit with headroom: OLF switches buses, not units), at that limit.
 * Generators OLF's own voltage-control consistency checks would discard for a
   reason other than "not started": too small a reactive range (default
   ``reactiveRangeCheckMode``, widest ``max_q - min_q`` below 1 MVar) or an
@@ -111,14 +113,22 @@ What gets baked
   a static distribution that gives them one is wrong by exactly that share.
 * Static var compensators whose realized reactive output sits at (or beyond)
   their voltage-dependent susceptance envelope (``Q(V) = b * V^2``, ``b`` in
-  ``b_min``..``b_max``, recomputed in MVAr at the SVC's own solved terminal
+  ``b_min``..``b_max``, shifted by the ``b0`` of its standby automaton when it carries
+  one, recomputed in MVAr at the SVC's own solved terminal
   voltage) are frozen to fixed-Q (``REACTIVE_POWER`` mode), with the generator
   rule: the tolerance only proposes a candidate, and an SVC whose regulated bus
   the reference solve held at its target was regulating and is left so, unless
   it sits exactly at its limit while another controller of that bus is still
-  inside its range, or ``bake_saturated_voltage_control`` is set. An SVC inside
+  inside its range, or ``bake_saturated_voltage_control`` is set and it sits at
+  its limit to ``_Q_SATURATED_HELD_TOL_MVAR``. An SVC inside
   its envelope is left regulating (its target reproduces the OLF result
   exactly, since it isn't saturated).
+* Angle-droop ("AC emulation") hvdc lines OLF's ``AcHvdcAcEmulationLimits`` outer
+  loop saturated: the sending converter's realized active power sits at the line's
+  limit in that direction (``hvdcOperatorActivePowerRange`` when present, ``max_p``
+  otherwise). The droop is switched off and the line becomes a fixed setpoint at
+  that limit, in that direction (see :func:`_bake_hvdc_ac_emulation_limits`). A
+  line still in its linear regime keeps its droop.
 * Voltage-regulating static var compensators carrying a "standby automaton"
   (``standby=True``; OLF ignores the extension on any other SVC): OLF's own
   outer loop starts these as a fixed ``b0`` shunt (no voltage control) and only
@@ -157,7 +167,11 @@ from ._olf_const import (
     _TARGET_Q_TOL_MVAR,
     _TARGET_V_HELD_TOL_PU,
     _ZERO_P_TOL,
+    _HVDC_P_LIMIT_TOL_MW,
+    _Q_SATURATED_HELD_TOL_MVAR,
 )
+from ._aux_add_hvdc import _hvdc_pmax_per_direction
+from ._aux_add_svc import _svc_standby_b0
 
 
 def _q_limit_tol(qmin, qmax):
@@ -272,6 +286,7 @@ def bake_outer_loops(
     keep_only_main_comp: bool=True,
     extrapolate_reactive_limits: bool = True,
     bake_saturated_voltage_control: bool = False,
+    bake_hvdc_ac_emulation_limits: bool = True,
     return_details: bool = False,
 ):
     """Rewrite ``network`` input setpoints to the converged outer-loop state.
@@ -330,10 +345,16 @@ def bake_outer_loops(
     bake_saturated_voltage_control
         Also freeze, at its limit, a generator (or a voltage-mode SVC) whose reactive
         output sits at a Q limit although the reference solve held its target voltage
-        (a PV unit exactly saturated). The base case is unchanged, but any change of the grid
-        asking it for more reactive power would make OLF switch it to PQ anyway;
-        kept regulating, it reports a reactive-limit violation for almost every
-        contingency. ``False`` (default) keeps it regulating, as OLF did.
+        (a PV unit exactly saturated, to ``_Q_SATURATED_HELD_TOL_MVAR``). The base case is
+        unchanged, but any change of the grid asking it for more reactive power would make
+        OLF switch it to PQ anyway; kept regulating, it reports a reactive-limit violation
+        for almost every contingency. A held unit with more headroom than that is still
+        regulating and stays so. ``False`` (default) keeps every held unit regulating, as
+        OLF did.
+    bake_hvdc_ac_emulation_limits
+        Turn an angle-droop hvdc line OLF saturated at its active power limit into a
+        fixed setpoint at that limit (see :func:`_bake_hvdc_ac_emulation_limits`).
+        Left in AC emulation, a loop-free solve lets it transmit beyond its limit.
     return_details
         Return a :class:`BakeResult` rather than the :class:`pandas.Index` described
         below: ``can_be_pv`` is that same index, and ``can_participate_slack`` holds the
@@ -343,6 +364,10 @@ def bake_outer_loops(
         sign. Hand it to ``init_from_pypowsybl(can_participate_slack=...)`` so that
         lightsim2grid's redistribution pre-pass counts them, away from their limit. A unit
         excluded for one of OLF's own ``checkActivePowerControl`` reasons is not in it.
+        ``can_participate_slack_overshoot`` says how far beyond its limit each of them was
+        (``init_from_pypowsybl(can_participate_slack_overshoot=...)``), and
+        ``hvdc_ac_emulation_frozen`` holds the angle-droop hvdc lines frozen at their limit
+        (``init_from_pypowsybl(hvdc_ac_emulation_frozen=...)``, for the check of their release).
 
     Returns
     -------
@@ -383,14 +408,18 @@ def bake_outer_loops(
     pinned = pd.Index([], dtype=object)
     if bake_taps:
         _bake_taps_and_sections(network, keep_only_main_comp, df_bus)
+    hvdc_frozen = pd.Index([], dtype=object)
+    if bake_hvdc_ac_emulation_limits:
+        hvdc_frozen = _bake_hvdc_ac_emulation_limits(network, keep_only_main_comp, df_bus)
     if bake_reactive_limits:
         pinned = _bake_reactive_limit_switches(
             network, keep_only_main_comp, bake_generator_voltage_control_discards,
             extrapolate_reactive_limits, bake_saturated_voltage_control, df_bus
         )
     capped = pd.Index([], dtype=object)
+    overshoot = pd.Series(dtype=float)
     if bake_active_power:
-        capped = _bake_active_power(
+        capped, overshoot = _bake_active_power(
             network,
             balance_on_loads=balance_on_loads,
             load_power_factor_constant=load_power_factor_constant,
@@ -401,7 +430,9 @@ def bake_outer_loops(
     if bake_remote_voltage_control:
         _bake_remote_voltage_control(network, keep_only_main_comp, df_bus)
     if return_details:
-        return BakeResult(can_be_pv=pinned, can_participate_slack=capped)
+        return BakeResult(can_be_pv=pinned, can_participate_slack=capped,
+                          can_participate_slack_overshoot=overshoot,
+                          hvdc_ac_emulation_frozen=hvdc_frozen)
     return pinned
 
 
@@ -413,6 +444,16 @@ class BakeResult(NamedTuple):
     #: the generators and batteries left out of the slack only because OLF capped them
     #: at an active limit -- for ``init_from_pypowsybl(can_participate_slack=...)``
     can_participate_slack: pd.Index
+    #: how far beyond that limit each of them was in the reference distribution, MW (> 0 above
+    #: an upper limit, < 0 below a lower one, indexed
+    #: like ``can_participate_slack``) -- for
+    #: ``init_from_pypowsybl(can_participate_slack_overshoot=...)``
+    can_participate_slack_overshoot: pd.Series = None
+    #: the angle-droop hvdc lines this bake froze at their active power limit (see
+    #: ``_bake_hvdc_ac_emulation_limits``) -- for
+    #: ``init_from_pypowsybl(hvdc_ac_emulation_frozen=...)``, which opens them to the check
+    #: of their release
+    hvdc_ac_emulation_frozen: pd.Index = None
 
 
 def _bake_taps_and_sections(network, keep_only_main_comp=True, df_bus=None):
@@ -464,6 +505,68 @@ def _bake_taps_and_sections(network, keep_only_main_comp=True, df_bus=None):
             upd["section_count"] = sh["solved_section_count"][keep].astype(int)
             upd["voltage_regulation_on"] = False
             network.update_shunt_compensators(upd)
+
+
+def _bake_hvdc_ac_emulation_limits(network, keep_only_main_comp=True, df_bus=None):
+    """Turn every angle-droop ("AC emulation") hvdc line OLF saturated into a fixed
+    setpoint at its limit.
+
+    OLF's ``AcHvdcAcEmulationLimits`` outer loop caps the active power the sending
+    converter takes from the AC grid at the line's limit in that direction: the
+    ``hvdcOperatorActivePowerRange`` extension when the line carries it, ``max_p``
+    otherwise (see ``_hvdc_pmax_per_direction``). The loop-free parameters drop that
+    loop, so the line goes back to ``p0 + k . (theta_1 - theta_2)`` and transmits
+    beyond its limit; lightsim2grid does the same.
+
+    A line is saturated when its sending converter (the station taking power from the
+    grid, ``p > 0`` in the receptor convention) realized its limit within
+    ``_HVDC_P_LIMIT_TOL_MW``. It is then baked as OLF solved it: droop switched off,
+    ``target_p`` at the limit, ``converters_mode`` with the sending side as rectifier
+    (a fixed-setpoint line's ``target_p`` is what its rectifier takes from the grid).
+
+    Returns the ids of the hvdc lines baked.
+    """
+    df_bus = _get_buses(network) if df_bus is None else df_bus
+    try:
+        droop = network.get_extensions("hvdcAngleDroopActivePowerControl")
+    except Exception:
+        # extension tables may be unavailable on (very) old pypowsybl versions
+        return pd.Index([], dtype=object)
+    if not len(droop):
+        return pd.Index([], dtype=object)
+    hvdc = network.get_hvdc_lines(attributes=["converter_station1_id", "converter_station2_id", "max_p"])
+    hvdc = hvdc[hvdc.index.isin(droop.index[droop["enabled"].astype(bool)])]
+    if not len(hvdc):
+        return pd.Index([], dtype=object)
+    stations = pd.concat([
+        network.get_vsc_converter_stations(attributes=["p", "connected", "bus_id"]),
+        network.get_lcc_converter_stations(attributes=["p", "connected", "bus_id"]),
+    ])
+    if keep_only_main_comp:
+        stations_in = stations.index.isin(_keep_only_main_comp(stations, df_bus).index)
+    else:
+        stations_in = stations["connected"].to_numpy(bool)
+    stations_in = pd.Series(stations_in, index=stations.index)
+    st1 = stations.loc[hvdc["converter_station1_id"].to_numpy()]
+    st2 = stations.loc[hvdc["converter_station2_id"].to_numpy()]
+    in_service = stations_in.loc[st1.index].to_numpy() & stations_in.loc[st2.index].to_numpy()
+    max_p = hvdc["max_p"].to_numpy(float)
+    pmax_1to2, pmax_2to1 = _hvdc_pmax_per_direction(network, hvdc.index, np.where(np.isfinite(max_p), max_p, np.inf))
+    p1 = st1["p"].to_numpy(float)
+    p2 = st2["p"].to_numpy(float)
+    from_1 = p1 > 0.  # side 1 takes the power from the grid: the flow goes 1 -> 2
+    sent = np.where(from_1, p1, p2)
+    limit = np.where(from_1, pmax_1to2, pmax_2to1)
+    mask = in_service & np.isfinite(sent) & np.isfinite(limit) & (sent >= limit - _HVDC_P_LIMIT_TOL_MW)
+    if mask.any():
+        ids = hvdc.index[mask]
+        upd = pd.DataFrame(index=ids)
+        upd["target_p"] = limit[mask]
+        upd["converters_mode"] = np.where(from_1[mask], "SIDE_1_RECTIFIER_SIDE_2_INVERTER",
+                                          "SIDE_1_INVERTER_SIDE_2_RECTIFIER")
+        network.update_hvdc_lines(upd)
+        network.update_extensions("hvdcAngleDroopActivePowerControl", id=list(ids), enabled=[False] * len(ids))
+    return pd.Index(hvdc.index[mask], dtype=object)
 
 
 def _resolve_regulated_bus(network, own_bus, regulated_element_id):
@@ -682,7 +785,16 @@ def _bake_generator_voltage_control_discards(network, keep_only_main_comp=True, 
 
     mask = too_small_range | implausible_v
     if held is not None:
-        mask &= ~held.reindex(reg.index).fillna(False).to_numpy(bool)
+        held_reg = held.reindex(reg.index).fillna(False).to_numpy(bool)
+        # "held" is a property of the regulated bus: a unit with too small a range
+        # sharing it with a controller OLF keeps (a large enough range) reads as held
+        # although that other unit is the one holding it -- OLF discarded this one
+        # all the same (and with it the reactive capability it would add to the bus)
+        reg_bus_of = (_generator_regulated_bus(network, reg) if reg_bus is None
+                      else reg_bus.reindex(reg.index)).to_numpy()
+        kept_buses = set(reg_bus_of[~too_small_range & ~implausible_v])
+        shares_with_kept = np.array([b in kept_buses for b in reg_bus_of], dtype=bool)
+        mask &= ~held_reg | (too_small_range & shares_with_kept)
     if not mask.any():
         return
     upd = pd.DataFrame(index=reg.index[mask])
@@ -846,16 +958,28 @@ def _bake_battery_voltage_control(network, keep_only_main_comp=True, df_bus=None
     network.update_batteries(pd.DataFrame({"target_q": -bat.loc[frozen, "q"].to_numpy()}, index=frozen))
 
 
+def _bus_still_regulating(gen, at_limit):
+    """Boolean ``pandas.Series`` (indexed like ``gen``): another voltage-regulating
+    generator of the same bus is not ``at_limit``. OLF switches a whole bus, not one of
+    its units: such a unit at its limit was only clamped when OLF split the bus' reactive
+    power among its units, the bus (and the unit) still regulating."""
+    regulating = gen["voltage_regulator_on"].astype(bool)
+    n_free = (regulating & ~at_limit).astype(int).groupby(gen["bus_id"]).transform("sum")
+    return n_free > 0
+
+
 def _switched_group_members(network, gen, q_gen, reg_bus=None):
     """Boolean ``pandas.Series`` (indexed like ``gen``): a voltage-regulating
     generator whose realized reactive output sits *exactly* at a limit (absolute
     tolerance only, a PQ unit injects its limit to the digit) while at least one
     other generator regulating the same bus is still inside its range -- the
     signature of a unit OLF switched out of a shared control group, whose regulated
-    bus nevertheless reads as held."""
+    bus nevertheless reads as held. Not one whose own bus still regulates (see
+    `_bus_still_regulating`)."""
     regulating = gen["voltage_regulator_on"].astype(bool)
     qmin, qmax = _reactive_limits(gen)
     exact = regulating & ((q_gen >= qmax - _Q_LIMIT_TOL_ABS) | (q_gen <= qmin + _Q_LIMIT_TOL_ABS))
+    exact &= ~_bus_still_regulating(gen, exact)
     if not exact.any():
         return exact
     if reg_bus is None:
@@ -972,9 +1096,18 @@ def _bake_reactive_limit_switches(
     # member is still inside its range was switched (OLF drops it from the group
     # and the others keep the target), and the split it leaves behind decides the
     # voltages behind each unit's step-up transformer.
-    # bake_saturated_voltage_control freezes the exactly saturated ones too.
-    if not bake_saturated_voltage_control:
-        mask &= ~held.reindex(gen.index).fillna(False).astype(bool) | _switched_group_members(network, gen, q_gen, reg_bus)
+    # bake_saturated_voltage_control freezes the saturated ones too: at their limit to
+    # _Q_SATURATED_HELD_TOL_MVAR, not to the relative tolerance (a held unit with some
+    # headroom left is still regulating).
+    not_held = ~held.reindex(gen.index).fillna(False).astype(bool)
+    switched = _switched_group_members(network, gen, q_gen, reg_bus)
+    if bake_saturated_voltage_control:
+        qmin, qmax = _reactive_limits(gen)
+        saturated = (q_gen >= qmax - _Q_SATURATED_HELD_TOL_MVAR) | (q_gen <= qmin + _Q_SATURATED_HELD_TOL_MVAR)
+        saturated &= ~_bus_still_regulating(gen, saturated)
+        mask &= not_held | saturated | switched
+    else:
+        mask &= not_held | switched
     pinned = gen.index[mask]
     if mask.any():
         upd = pd.DataFrame(index=pinned)
@@ -1115,7 +1248,8 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
     with the same rule as ``_bake_reactive_limit_switches`` for generators.
 
     Unlike a generator's fixed Q box, an SVC's reactive range is
-    ``Q(V) = b * V^2`` (``b`` in ``b_min``..``b_max``, in Siemens): recompute
+    ``Q(V) = b * V^2`` (``b`` in ``b_min``..``b_max``, in Siemens, shifted by the ``b0`` of
+    its standby automaton when it carries one, see ``_svc_standby_b0``): recompute
     ``qmin``/``qmax`` in MVAr at the SVC's own solved terminal voltage before
     comparing against the realized ``q``, within ``_q_limit_tol``.
 
@@ -1125,7 +1259,9 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
     -- unless it sits exactly at its limit while another controller of the same
     bus (a regulating generator or SVC) is still inside its range, the signature of
     a unit OLF switched out of a shared group, or ``bake_saturated_voltage_control``
-    is set (freeze a held unit at its limit too).
+    is set and it sits at its limit to ``_Q_SATURATED_HELD_TOL_MVAR`` (freeze a held
+    unit at its limit too). Neither applies to an SVC whose own bus still has another
+    controller inside its range: OLF only clamped it there, the bus still regulating.
 
     Returns the ids of the SVCs frozen: like the generators frozen at a limit, the ones
     OLF would switch back to voltage control on a grid asking them for less.
@@ -1145,16 +1281,31 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
     # SVC "q" (like generators') is the terminal/receptor-convention result: flip to
     # generator/injection convention to compare against the susceptance envelope.
     q_gen = -svc["q"].to_numpy()
-    qmax = svc["b_max"].to_numpy() * v_kv ** 2  # Q[MVAr] = B[S] * V[kV]^2
-    qmin = svc["b_min"].to_numpy() * v_kv ** 2
+    # an SVC carrying a standby automaton: OLF holds the SVC part, apart from the fixed b0,
+    # in [b_min, b_max], so its total output ranges over the shifted interval
+    b0 = _svc_standby_b0(network, svc.index)
+    qmax = (svc["b_max"].to_numpy() + b0) * v_kv ** 2  # Q[MVAr] = B[S] * V[kV]^2
+    qmin = (svc["b_min"].to_numpy() + b0) * v_kv ** 2
     tol = _q_limit_tol(qmin, qmax)
     mask = (q_gen >= qmax - tol) | (q_gen <= qmin + tol)
-    if not bake_saturated_voltage_control and mask.any():
+    if mask.any():
         reg_bus = _resolve_regulated_bus(network, svc["bus_id"], svc["regulated_element_id"])
         held = _target_v_held(network, reg_bus, svc["target_v"], df_bus).to_numpy(bool)
         exact = (q_gen >= qmax - _Q_LIMIT_TOL_ABS) | (q_gen <= qmin + _Q_LIMIT_TOL_ABS)
-        switched = exact & (_n_free_controllers(network, reg_bus, exact, df_bus, keep_only_main_comp) > 0)
-        mask &= ~held | switched
+        # as for a generator, OLF switches a whole bus: an SVC clamped at its limit while its
+        # own bus still regulates was only clamped by the split of the bus' reactive power
+        exact_free = exact & ~_svc_bus_still_regulating(network, svc, exact, _Q_LIMIT_TOL_ABS,
+                                                         df_bus, keep_only_main_comp)
+        switched = exact_free & (_n_free_controllers(network, reg_bus, exact, df_bus, keep_only_main_comp) > 0)
+        if bake_saturated_voltage_control:
+            # as for a generator: a held SVC is frozen only when saturated, not with headroom left
+            saturated = ((q_gen >= qmax - _Q_SATURATED_HELD_TOL_MVAR)
+                         | (q_gen <= qmin + _Q_SATURATED_HELD_TOL_MVAR))
+            saturated &= ~_svc_bus_still_regulating(network, svc, saturated, _Q_SATURATED_HELD_TOL_MVAR,
+                                                    df_bus, keep_only_main_comp)
+            mask &= ~held | saturated | switched
+        else:
+            mask &= ~held | switched
     if mask.any():
         upd = pd.DataFrame(index=svc.index[mask])
         # unlike Generator.target_q (already generator convention), StaticVarCompensator
@@ -1164,6 +1315,31 @@ def _bake_svc_saturation(network, keep_only_main_comp=True, df_bus=None,
         upd["regulation_mode"] = "REACTIVE_POWER"
         network.update_static_var_compensators(upd)
     return pd.Index(svc.index[mask], dtype=object)
+
+
+def _svc_bus_still_regulating(network, svc, svc_at_limit, tol_mvar, df_bus, keep_only_main_comp=True):
+    """Boolean array (aligned on the voltage-mode SVCs ``svc``): another voltage controller of
+    the SVC's OWN bus -- a regulating generator (after the generator freezes of the bake) or
+    another of these SVCs -- is not at a limit, to ``tol_mvar`` for a generator and as
+    ``svc_at_limit`` says for an SVC. The SVC counterpart of :func:`_bus_still_regulating`:
+    OLF switches a bus, not one of its units."""
+    at_limit = np.asarray(svc_at_limit, dtype=bool)
+    own_bus = svc["bus_id"].to_numpy()
+    svc_free = pd.Series((~at_limit).astype(int), index=svc.index)
+    n_free = svc_free.groupby(own_bus).transform("sum").to_numpy() - svc_free.to_numpy()
+    gen = network.get_generators(
+        attributes=["voltage_regulator_on", "q", "min_q", "max_q", "min_q_at_p", "max_q_at_p",
+                    "connected", "bus_id"])
+    if keep_only_main_comp:
+        gen = _keep_only_main_comp(gen, df_bus)
+    gen = gen[gen["voltage_regulator_on"].astype(bool)]
+    if len(gen):
+        gq = -gen["q"]
+        qmin, qmax = _reactive_limits(gen)
+        gen_free = ~((gq >= qmax - tol_mvar) | (gq <= qmin + tol_mvar))
+        free_per_bus = gen_free.astype(int).groupby(gen["bus_id"].to_numpy()).sum()
+        n_free = n_free + free_per_bus.reindex(own_bus).fillna(0).to_numpy(int)
+    return n_free > 0
 
 
 def _n_free_controllers(network, svc_reg_bus, svc_exact, df_bus, keep_only_main_comp=True):
@@ -1334,7 +1510,7 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     batteries' :func:`~._aux_battery_apc.battery_active_power_control`) are read off the
     network when not given.
 
-    Returns ``(pinned_batteries, capped)``: the batteries OLF capped that this pypowsybl
+    Returns ``(pinned_batteries, capped, overshoot)``: the batteries OLF capped that this pypowsybl
     cannot mark in their extension (<= 1.16.1 rejects a battery id there) -- the caller
     pins their active range on their realized dispatch (``min_p = max_p``), a degenerate
     range both OLF and lightsim2grid exclude from the slack -- and the ids of the units
@@ -1342,7 +1518,10 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
     them: the ones it would let take a share again of a mismatch of the other sign (see
     ``bake_outer_loops(..., return_details=True)``). A unit excluded for one of OLF's own
     ``checkActivePowerControl`` reasons is not in it, nor is a pinned battery (its range
-    is gone).
+    is gone). ``overshoot`` (MW, indexed like ``capped``) is how far beyond its limit each
+    capped unit was: ``target_p + lambda * weight`` minus that limit (> 0 above an upper
+    limit, < 0 below a lower one), lambda the common factor of OLF's distribution read off
+    the units it neither excluded nor capped (0 when there is none).
     """
     # not at the top: _aux_battery_apc reads its OLF constants from this module
     from ._aux_battery_apc import (
@@ -1407,15 +1586,53 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
         capped = cand & (realized <= min_target_p + _ZERO_P_TOL)
         if has_bat:
             b_capped = b_cand & (b_realized <= b_min_tp + _ZERO_P_TOL)
+
+    # How far beyond its limit each capped unit was. OLF shares the slack from the raw
+    # set-points, p = clamp(target_p + lambda * weight): lambda is read off the units it
+    # neither excluded nor capped (strictly inside their range), and a capped unit sat at
+    # target_p + lambda * weight beyond its limit -- the room a later mismatch of the other
+    # sign has to use up before OLF lets it move (see set_gen_can_participate_slack_overshoot).
+    gen_w = np.zeros(len(gen))
+    if len(apc) and "droop" in apc.columns:
+        droop = apc["droop"].reindex(gen.index).to_numpy(float)
+    else:
+        droop = np.full(len(gen), np.nan)
+    if len(gen):
+        gen_w = olf_participation_weight(target_p, gen["min_p"].to_numpy(float), max_p, participate,
+                                         droop, min_target_p, max_target_p)
+    free = (cand & ~capped & (gen_w > 0.) & (realized > min_target_p + _ZERO_P_TOL)
+            & (realized < max_target_p - _ZERO_P_TOL))
+    lam_samples = [(realized - target_p)[free] / gen_w[free]]
+    if has_bat:
+        b_free = (b_cand & ~b_capped & (b_realized > b_min_tp + _ZERO_P_TOL)
+                  & (b_realized < b_max_tp - _ZERO_P_TOL))
+        lam_samples.append((b_realized - b_target_p)[b_free] / b_weight[b_free])
+    lam_samples = np.concatenate(lam_samples)
+    lam = float(np.median(lam_samples)) if lam_samples.size else np.nan
+
+    def _overshoot(raw, weight, low, high):
+        # signed: > 0 above the upper limit, < 0 below the lower one -- for a unit capped at
+        # 0 MW, the only thing that tells which side of 0 it came from
+        if not np.isfinite(lam):
+            return np.zeros(len(raw))
+        unclamped = raw + lam * weight
+        beyond = unclamped - high if mismatch > 0. else low - unclamped
+        beyond = np.maximum(np.where(np.isfinite(beyond), beyond, 0.), 0.)
+        return beyond if mismatch > 0. else -beyond
+
     excluded |= capped
 
     excluded_ids = gen.index[excluded]
     capped_ids = gen.index[capped]
+    overshoot = pd.Series(_overshoot(target_p, gen_w, min_target_p, max_target_p)[capped],
+                          index=capped_ids, dtype=float)
     pinned_batteries = bat.index[b_capped] if has_bat else gen.index[:0]
     if has_bat and _pypowsybl_exposes_battery_apc():
         # this pypowsybl writes the extension on a battery as on a generator
         excluded_ids = excluded_ids.append(pinned_batteries)
         capped_ids = capped_ids.append(pinned_batteries)
+        overshoot = pd.concat([overshoot, pd.Series(
+            _overshoot(b_target_p, b_weight, b_min_tp, b_max_tp)[b_capped], index=pinned_batteries, dtype=float)])
         pinned_batteries = pinned_batteries[:0]
 
     if len(excluded_ids):
@@ -1429,7 +1646,7 @@ def _bake_active_power_control_participation(network, gen, bat=None, gen_range=N
             network.create_extensions(
                 "activePowerControl", pd.DataFrame({"participate": False}, index=new_apc)
             )
-    return pinned_batteries, pd.Index(capped_ids, dtype=object)
+    return pinned_batteries, pd.Index(capped_ids, dtype=object), overshoot
 
 
 def _bake_active_power(
@@ -1460,9 +1677,10 @@ def _bake_active_power(
         bat_apc = battery_active_power_control(network, bat)
     pinned_batteries = bat.index[:0]
     capped = pd.Index([], dtype=object)
+    overshoot = pd.Series(dtype=float)
     if bake_active_power_control_participation and (len(gen) or len(bat)):
-        pinned_batteries, capped = _bake_active_power_control_participation(network, gen, bat,
-                                                                            gen_range, bat_apc)
+        pinned_batteries, capped, overshoot = _bake_active_power_control_participation(
+            network, gen, bat, gen_range, bat_apc)
 
     if len(gen):
         # result p is load convention; target_p is generator convention
@@ -1501,5 +1719,6 @@ def _bake_active_power(
             if load_power_factor_constant:
                 upd["q0"] = load["q"]
             network.update_loads(upd)
-    # the units excluded from the slack only because OLF capped them (see the caller)
-    return capped
+    # the units excluded from the slack only because OLF capped them, and how far beyond
+    # their limit each was (see the caller)
+    return capped, overshoot

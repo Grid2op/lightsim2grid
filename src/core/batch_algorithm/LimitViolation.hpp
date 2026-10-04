@@ -26,7 +26,9 @@ enum class LS2G_API ViolationElementType : int {
     HVDC = 4,
     // a generator, by its own id. Its ACTIVE power (LOW_P / HIGH_P) and, for a PQ machine
     // pinned at a reactive limit, the voltage of the bus it would regulate
-    // (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q). A REGULATING machine's reactive
+    // (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q), and, for a machine regulating a REMOTE
+    // bus, the voltage of its own bus (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL,
+    // see RemoteVoltageControlCheck.hpp). A REGULATING machine's reactive
     // violation is reported on the BUS instead, because how a bus' reactive power is
     // divided between its machines is a convention, while the active one is divided by the
     // participation factors the caller chose. See BusQCheck.hpp / GenPCheck.hpp /
@@ -104,7 +106,27 @@ enum class LS2G_API LimitViolationType : int {
     // SvcStandbyCheck.hpp.
     LOW_VOLTAGE_SVC_STANDBY = 11,
     // ... and the mirror: regulated bus ABOVE the high voltage threshold (value above limit).
-    HIGH_VOLTAGE_SVC_STANDBY = 12
+    HIGH_VOLTAGE_SVC_STANDBY = 12,
+    // A GENERATOR regulating a REMOTE bus whose OWN bus sits BELOW the lowest voltage the
+    // caller deems realistic for a controller (LSGrid::set_remote_voltage_control_vm_range):
+    // OpenLoadFlow's ReactiveLimits loop, in its "robust" remote voltage control mode,
+    // switches such a controller to PQ at its target reactive power rather than let it hold
+    // the remote target at that price. Physical for the same reason as LOW_VOLTAGE_AT_MIN_Q:
+    // the converged solution assumes a control the loop would not leave in place. `value`
+    // the generator's own bus voltage and `limit` the threshold, both in kV of that bus
+    // (value below limit). See RemoteVoltageControlCheck.hpp.
+    LOW_VOLTAGE_REMOTE_CONTROL = 13,
+    // ... and the mirror: own bus ABOVE the highest realistic voltage (value above limit).
+    HIGH_VOLTAGE_REMOTE_CONTROL = 14,
+    // An angle-droop ("AC emulation") HVDC line an outer loop froze at its active power
+    // limit (flagged by the caller, see LSGrid::set_hvdc_ac_emulation_frozen) whose droop
+    // would now ask for LESS than that limit: OpenLoadFlow's AcHvdcAcEmulationLimits loop
+    // would not saturate it, the line would follow its droop. Physical for the same reason
+    // as LOW_VOLTAGE_AT_MIN_Q: the converged solution assumes a control the loop would not
+    // leave in place. `side` the direction it is frozen in (1: 1 -> 2), `value` the flow its
+    // droop asks for in that direction and `limit` the limit, both in MW (value below limit).
+    // See HvdcPCheck.hpp.
+    HVDC_AC_EMULATION_RELEASE = 15
 };
 
 /**
@@ -128,7 +150,8 @@ enum class LS2G_API ViolationCategory : int {
     /// distributed slack asking a machine for power it does not have) cannot happen. It is a
     /// statement about the model's assumptions, not about how the grid is being operated.
     /// LOW_Q, HIGH_Q, LOW_P, HIGH_P, LOW_VOLTAGE_AT_MIN_Q, HIGH_VOLTAGE_AT_MAX_Q,
-    /// LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY.
+    /// LOW_VOLTAGE_SVC_STANDBY, HIGH_VOLTAGE_SVC_STANDBY, LOW_VOLTAGE_REMOTE_CONTROL,
+    /// HIGH_VOLTAGE_REMOTE_CONTROL, HVDC_AC_EMULATION_RELEASE.
     PHYSICAL = 1,
     /// Not a limit at all: what the solver did. A divergence in particular says nothing
     /// about the grid -- the state may be perfectly feasible and the algorithm simply
@@ -153,6 +176,9 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q:
         case LimitViolationType::LOW_VOLTAGE_SVC_STANDBY:
         case LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY:
+        case LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL:
+        case LimitViolationType::HIGH_VOLTAGE_REMOTE_CONTROL:
+        case LimitViolationType::HVDC_AC_EMULATION_RELEASE:
             return ViolationCategory::PHYSICAL;
         default:  // NOT_SIMULATED, DIVERGENCE
             return ViolationCategory::SOLVER;
@@ -176,7 +202,8 @@ struct LS2G_API LimitViolation {
     // generator / storage / svc id otherwise ; unused (-1) for GRID
     int element_id;
     // 1 or 2 for LINE / TRAFO (the terminal) and for HVDC (the direction: 1 means the flow
-    // leaves side 1, ie 1 -> 2) ; unused (0) for BUS / GENERATOR / STORAGE / SVC / GRID
+    // leaves side 1, ie 1 -> 2; for HVDC_AC_EMULATION_RELEASE the direction the line is
+    // frozen in) ; unused (0) for BUS / GENERATOR / STORAGE / SVC / GRID
     int side;
     LimitViolationType violation_type;
     // value reached: MVAr for LOW_Q / HIGH_Q (what the machines holding that bus had to
@@ -184,7 +211,10 @@ struct LS2G_API LimitViolation {
     // a generator's or a storage unit's own converged active power, signed and in the
     // generator convention), kV for LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q (the voltage
     // of the bus the pinned generator would regulate) and for LOW_VOLTAGE_SVC_STANDBY /
-    // HIGH_VOLTAGE_SVC_STANDBY (the voltage of the bus the standby SVC regulates) ; unused
+    // HIGH_VOLTAGE_SVC_STANDBY (the voltage of the bus the standby SVC regulates) and for
+    // LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL (the voltage of the remote
+    // controller's own bus), MW for HVDC_AC_EMULATION_RELEASE (the flow the frozen line's
+    // droop asks for in the direction `side` names) ; unused
     // (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type value;
     // limit that was violated. For LOW_Q / HIGH_Q the SUMMED capability of the machines
@@ -194,7 +224,9 @@ struct LS2G_API LimitViolation {
     // unit's max_p_mw; for LOW_P its min_p_mw. For LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q
     // the generator's target voltage, in kV of the regulated bus; for LOW_VOLTAGE_SVC_STANDBY
     // / HIGH_VOLTAGE_SVC_STANDBY the automaton's low / high threshold, in kV of the
-    // regulated bus. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // regulated bus; for LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL the realistic
+    // voltage bound, in kV of the controller's own bus; for HVDC_AC_EMULATION_RELEASE the pmax
+    // of the direction the line is frozen in. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type limit;
     // element name: LINE / TRAFO / HVDC / GENERATOR / STORAGE / SVC (from
     // LSGrid::set_line_names / set_trafo_names / set_dcline_names / set_gen_names /

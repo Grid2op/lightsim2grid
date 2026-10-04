@@ -156,7 +156,7 @@ class TimeSerie:
         (``ViolationCategory.PHYSICAL``). Default: ``False``. See
         :func:`get_physical_violations`.
 
-        Five checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        Each check is a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
         enforced here (nothing is switched PV -> PQ or back, nothing is clamped, no machine
         leaves the slack distribution, no step is re-solved):
 
@@ -184,11 +184,23 @@ class TimeSerie:
           ``MonitoringVoltageOuterLoop``. ``value`` and ``limit`` in kV, compared with
           :attr:`physical_violation_tol_vm_pu`. A grid with no flagged SVC reports nothing
           here.
+        * the **own bus** of every generator regulating a remote bus, when a realistic range
+          is set (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the
+          ``GENERATOR``, see
+          :func:`lightsim2grid.network.LSGrid.set_remote_voltage_control_vm_range`): does
+          holding the remote target take it outside that range? OpenLoadFlow's
+          ``ReactiveLimits``, in its robust remote voltage control mode. ``value`` and
+          ``limit`` in kV, compared with :attr:`physical_violation_tol_vm_pu`.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
           so nothing saturates the droop on its own. OpenLoadFlow's
           ``HvdcAcEmulationLimits``.
+        * the **release** of every angle-droop hvdc line flagged as frozen at its active
+          power limit (``HVDC_AC_EMULATION_RELEASE`` on the ``HVDC``, see
+          :func:`lightsim2grid.network.LSGrid.set_hvdc_ac_emulation_frozen`): would its droop
+          ask for less than that limit? The other half of the same ``HvdcAcEmulationLimits``
+          loop. ``side`` the direction it is frozen in, ``value`` and ``limit`` in MW.
         * the **active power** of every generator and every storage unit carrying the
           **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
           ``STORAGE``): the slack is solved inside the
@@ -203,11 +215,11 @@ class TimeSerie:
           ``DistributedSlack``.
 
         The hvdc and active-power checks need only the bus angles and the slack the step
-        distributed, so they work in DC too; the reactive one and the release one need an AC
+        distributed, so they work in DC too; the reactive one and the voltage ones need an AC
         algorithm that publishes its per-bus mismatch (every built-in AC algorithm does) and
-        ``compute`` raises for one that does not. A DC batch reports the two active-power
-        checks alone -- a DC powerflow has no reactive power at all, and no voltage magnitude
-        for the release check, so nothing is hidden by that.
+        ``compute`` raises for one that does not. A DC batch reports the active-power checks
+        alone -- a DC powerflow has no reactive power at all, and no voltage magnitude for the
+        release, standby SVC and remote voltage control checks, so nothing is hidden by that.
 
         Changing this flag invalidates any previously-computed results, but not the
         injections already given to ``modify_*``.
@@ -230,7 +242,8 @@ class TimeSerie:
     def physical_violation_tol_mva(self):
         """Absolute slack on every comparison :attr:`compute_physical_violations` makes, so
         that an element resting exactly on its limit is not reported over solver noise: a
-        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q``).
+        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q`` and
+        ``HVDC_AC_EMULATION_RELEASE``).
         Default: ``1e-4``. In MVA -- one noise floor for both halves, MW and MVAr being the
         same scale. Changing it invalidates any previously-computed results.
         """
@@ -256,7 +269,9 @@ class TimeSerie:
         (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
         flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
         automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
-        ``HIGH_VOLTAGE_SVC_STANDBY``). Default: ``1e-4``. Changing it invalidates any
+        ``HIGH_VOLTAGE_SVC_STANDBY``), and the remote voltage control check a remote
+        controller whose own bus is outside the realistic range by more than this
+        (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``). Default: ``1e-4``. Changing it invalidates any
         previously-computed results.
         """
         return self.computer.physical_violation_tol_vm_pu
@@ -275,7 +290,7 @@ class TimeSerie:
     def get_physical_violations(self):
         """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation``
         of the physical limits that step's solution leaves. Every entry has ``category ==
-        ViolationCategory.PHYSICAL`` and one of five shapes:
+        ViolationCategory.PHYSICAL`` and one of these shapes:
 
         * ``element_type`` ``BUS``, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``,
           ``element_id`` the grid bus id, ``value`` the reactive power the machines holding
@@ -287,9 +302,16 @@ class TimeSerie:
           ``HIGH_VOLTAGE_SVC_STANDBY``, ``element_id`` the svc id, ``value`` the voltage of
           the bus that flagged idle standby SVC regulates and ``limit`` the automaton's
           threshold, in kV;
+        * ``element_type`` ``GENERATOR``, ``violation_type`` ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+          ``HIGH_VOLTAGE_REMOTE_CONTROL``, ``element_id`` the generator id, ``value`` the
+          voltage of that remote controller's own bus and ``limit`` the realistic bound, in kV;
         * ``element_type`` ``HVDC``, ``violation_type`` ``HIGH_P``, ``element_id`` the hvdc
           line id, ``side`` the direction (1 for 1 -> 2), ``value`` the active power leaving
           that side (MW, positive) and ``limit`` that direction's ``pmax``;
+        * ``element_type`` ``HVDC``, ``violation_type`` ``HVDC_AC_EMULATION_RELEASE``,
+          ``element_id`` the hvdc line id, ``side`` the direction it is frozen in, ``value``
+          the flow its droop asks for in that direction and ``limit`` the limit it is frozen
+          at, in MW;
         * ``element_type`` ``GENERATOR`` / ``STORAGE``, ``violation_type`` ``LOW_P`` /
           ``HIGH_P``, ``value`` the machine's converged active power (MW, generator
           convention) and ``limit`` its ``min_p_mw`` / ``max_p_mw``.

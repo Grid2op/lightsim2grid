@@ -18,6 +18,7 @@
 #include "GenPCheck.hpp"
 #include "GenPvReleaseCheck.hpp"
 #include "SvcStandbyCheck.hpp"
+#include "RemoteVoltageControlCheck.hpp"
 #include "HvdcPCheck.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
@@ -561,7 +562,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Opt in to the checks whose violation says the converged row is not a state the
         // grid can reach at all -- ViolationCategory::PHYSICAL, as opposed to the
         // operational limits `compute_limit_violations` reports (a voltage band, a thermal
-        // rating: states the grid does reach and should not sit in). Four today, each a
+        // rating: states the grid does reach and should not sit in). Each one a
         // condition an OpenLoadFlow outer loop acts on, and none enforced here -- no bus is
         // switched PV -> PQ or back, no droop is clamped, no machine leaves the slack
         // distribution, no row is re-solved:
@@ -581,10 +582,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //     SvcStandbyCheck.hpp and LSGrid::set_svc_standby): does the bus it regulates
         //     sit outside the automaton's voltage thresholds? OpenLoadFlow's
         //     `MonitoringVoltageOuterLoop`;
+        //   * the OWN BUS of each generator regulating a remote bus, when the caller set a
+        //     realistic range (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the
+        //     GENERATOR, see RemoteVoltageControlCheck.hpp and
+        //     LSGrid::set_remote_voltage_control_vm_range): does holding the remote target take
+        //     it outside that range? OpenLoadFlow's `ReactiveLimits`, in its robust remote
+        //     voltage control mode;
         //   * the ACTIVE POWER of each angle-droop ("AC emulation") hvdc line still in the
         //     linear regime (HIGH_P on the HVDC, see HvdcPCheck.hpp): did it transmit more
         //     than `pmax_1to2_mw` / `pmax_2to1_mw` allow in that direction? OpenLoadFlow's
         //     `HvdcAcEmulationLimits`;
+        //   * the RELEASE of each angle-droop hvdc line the caller flagged as frozen at its
+        //     active power limit (HVDC_AC_EMULATION_RELEASE on the HVDC, see HvdcPCheck.hpp and
+        //     LSGrid::set_hvdc_ac_emulation_frozen): would its droop ask for less than that
+        //     limit? The other half of the same `HvdcAcEmulationLimits` loop;
         //   * the ACTIVE POWER of each generator and each storage unit carrying the
         //     DISTRIBUTED SLACK (LOW_P / HIGH_P on the GENERATOR / STORAGE, see
         //     GenPCheck.hpp): the slack is solved inside the Jacobian by participation
@@ -597,17 +608,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // ask a bus for reactive power it does not have, or a machine for active power it
         // cannot deliver, as a contingency is.
         //
-        // WHAT EACH CHECK NEEDS. The hvdc one needs only the bus angles and the active-power
+        // WHAT EACH CHECK NEEDS. The hvdc ones need only the bus angles and the active-power
         // one only the slack the row distributed -- both of which every algorithm leaves
         // behind, AC and DC alike. The reactive one needs an AC algorithm that publishes
         // its per-bus mismatch (BaseAlgo::fills_bus_mismatch -- every built-in AC family
         // does; a plugin solver has to opt in), and compute() raises for one that does not
         // rather than reporting nothing. In DC it is simply not applicable: a DC powerflow
-        // has no reactive power at all, so a DC batch reports the two active-power checks
+        // has no reactive power at all, so a DC batch reports the active-power checks
         // and nothing is hidden by it. The release check needs a voltage magnitude, so it
         // is AC only too, and the flags themselves (LSGrid::set_gen_can_be_pv): a grid with
         // none reports nothing there. Same for the standby SVC check (voltage magnitudes,
-        // LSGrid::set_svc_standby). The active-power check also needs the limits
+        // LSGrid::set_svc_standby) and the remote voltage control one (voltage magnitudes,
+        // LSGrid::set_remote_voltage_control_vm_range). The active-power check also needs the limits
         // themselves, which are optional (LSGrid::set_gen_p_limits /
         // set_storage_p_limits): a grid that has none simply reports nothing there.
         //
@@ -666,7 +678,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * Per row: the physical limits this row's solution leaves. A row that did not
          * converge (or that was never simulated) has an EMPTY entry rather than a sentinel
          * -- ask converged_mask() to tell that apart from "converged, no violation". Every
-         * entry has category PHYSICAL, and one of five shapes:
+         * entry has category PHYSICAL, and one of these shapes:
          *
          *   - element_type BUS, element_id the grid bus id, violation_type LOW_Q / HIGH_Q,
          *     `value` the reactive power the machines holding that bus had to produce
@@ -678,9 +690,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *     LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY, `value` the voltage of the
          *     bus that flagged idle standby SVC regulates and `limit` the automaton's
          *     threshold, both in kV;
+         *   - element_type GENERATOR, element_id the generator id, violation_type
+         *     LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL, `value` the voltage of
+         *     that remote controller's own bus and `limit` the realistic bound, both in kV;
          *   - element_type HVDC, element_id the hvdc line id, violation_type HIGH_P, `side`
          *     the direction (1 for 1 -> 2), `value` the active power leaving that side (MW,
          *     positive) and `limit` that direction's pmax;
+         *   - element_type HVDC, element_id the hvdc line id, violation_type
+         *     HVDC_AC_EMULATION_RELEASE, `side` the direction it is frozen in, `value` the
+         *     flow its droop asks for in that direction and `limit` the limit it is frozen
+         *     at, both in MW;
          *   - element_type GENERATOR, element_id the generator id, violation_type LOW_P /
          *     HIGH_P, `value` its converged active power (MW, target plus its share of the
          *     distributed slack) and `limit` its min_p_mw / max_p_mw.
@@ -1869,6 +1888,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _svc_standby_plan_, V_solver, _physical_tol_vm_pu_, masked,
                     _physical_violations_[i]);
             }
+            if(_gen_pv_release_check_on_ && !_remote_vc_plan_.empty()){
+                remote_voltage_control_check::check_remote_voltage_control_violations(
+                    _remote_vc_plan_, V_solver, _physical_tol_vm_pu_, masked,
+                    [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
+                    _physical_violations_[i]);
+            }
             if(!_hvdc_p_plan_.empty()){
                 hvdc_p_check::check_hvdc_p_violations(_hvdc_p_plan_, algo.get_Va(),
                                                       _physical_tol_mva_, masked,
@@ -1952,6 +1977,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _bus_q_plan_.clear();
             _gen_pv_release_plan_.clear();
             _svc_standby_plan_.clear();
+            _remote_vc_plan_.clear();
             _hvdc_p_plan_.clear();
             _gen_p_plan_.clear();
             _physical_violations_.clear();
@@ -1999,6 +2025,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _grid_model, active_layout().id_me_to_solver, _gen_pv_release_plan_);
                 svc_standby_check::build_svc_standby_plan(
                     _grid_model, active_layout().id_me_to_solver, _svc_standby_plan_);
+                remote_voltage_control_check::build_remote_voltage_control_plan(
+                    _grid_model, active_layout().id_me_to_solver,
+                    active_layout().voltage_control.controllers(), _remote_vc_plan_);
             }
             hvdc_p_check::build_hvdc_p_plan(_grid_model, active_layout().id_me_to_solver,
                                             _hvdc_p_plan_);
@@ -2035,6 +2064,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(_gen_pv_release_check_on_ && !_svc_standby_plan_.empty()){
                 svc_standby_check::check_svc_standby_violations(
                     _svc_standby_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
+                    _physical_violations_n_);
+            }
+            if(_gen_pv_release_check_on_ && !_remote_vc_plan_.empty()){
+                remote_voltage_control_check::check_remote_voltage_control_violations(
+                    _remote_vc_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
+                    [](int){ return false; },  // the base case disconnects no generator
                     _physical_violations_n_);
             }
             if(!_hvdc_p_plan_.empty()){
@@ -2936,12 +2971,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         real_type _physical_tol_mva_ = 1e-4;
         real_type _physical_tol_vm_pu_ = 1e-4;
         bool _bus_q_check_on_ = false;
-        // `_gen_pv_release_check_on_`: same idea for the PQ -> PV release check and the
-        // standby SVC check, which compare voltage magnitudes (AC only)
+        // `_gen_pv_release_check_on_`: same idea for the PQ -> PV release check, the
+        // standby SVC check and the remote voltage control one, which compare voltage
+        // magnitudes (AC only)
         bool _gen_pv_release_check_on_ = false;
         bus_q_check::BusQPlan _bus_q_plan_;
         gen_pv_release_check::GenPvReleasePlan _gen_pv_release_plan_;
         svc_standby_check::SvcStandbyPlan _svc_standby_plan_;
+        remote_voltage_control_check::RemoteVoltageControlPlan _remote_vc_plan_;
         hvdc_p_check::HvdcPPlan _hvdc_p_plan_;
         gen_p_check::GenPPlan _gen_p_plan_;
         std::vector<std::vector<LimitViolation> > _physical_violations_;

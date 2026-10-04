@@ -115,7 +115,15 @@ namespace ls2g {
 // v15: ConverterStationContainer::StateRes carries the per-station `can_be_pv_` flag (a VSC
 //     station an outer loop froze at a reactive limit -- see LSGrid::set_hvdc_can_be_pv;
 //     all false unless set). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 15;
+// v16: GeneratorContainer::StateRes and StorageContainer::StateRes carry each unit's
+//     "can participate in the slack" overshoot (how far beyond its limit the reference solve
+//     had it -- see LSGrid::set_gen_can_participate_slack_overshoot; 0 unless set). Appended.
+// v17: HvdcLineContainer::StateRes carries the per-line `ac_emulation_frozen_` flag (an
+//     angle-droop line an outer loop froze at its active power limit -- see
+//     LSGrid::set_hvdc_ac_emulation_frozen; all false unless set). Appended.
+// v18: LSGrid::StateRes carries the remote voltage control range of the physical checks
+//     (see LSGrid::set_remote_voltage_control_vm_range; NaN unless set). Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 18;
 
 class LS2G_API BinaryArchive
 {

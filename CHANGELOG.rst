@@ -210,15 +210,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
-- [ADDED] ``LSGrid.cap_slack_at_active_limits``: OpenLoadFlow's slack rule on a solved grid -- a unit
-  the solve pushes past an active limit leaves the slack there, and the grid is re-solved.
-- [ADDED] ``LSGrid.set_hold_frozen_regulators``: a frozen (``can_be_pv``) remote regulator keeps
-  its seat in its voltage-control group, held at its frozen output -- same solution, releasable by
-  value.
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 15: ``SvcContainer`` serializes the standby automaton
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 18: ``SvcContainer`` serializes the standby automaton
   and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
-  in the slack" weight, the converter stations their ``can_be_pv`` flag. Files of format 11 no
-  longer load.
+  in the slack" weight and overshoot, the converter stations their ``can_be_pv`` flag, the hvdc
+  lines their AC-emulation frozen flag, the grid its remote voltage control range. Files of
+  format 11 no longer load.
 - [BREAKING] Operational limit checks ignore a value on its limit up to ``violation_rel_tol``
   (new, default ``1e-9``; ``rel_tol`` of ``LSGrid.get_violations``). They used ``>=`` /
   ``<=``, so the last bit of rounding decided.
@@ -228,6 +224,24 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid2op backend and ``init_from_pypowsybl`` do.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
   ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
+- [FIXED] ``LSGrid`` pickling converts its state one element at a time: the single huge tuple cast
+  overflowed MSVC (C1067) and OOM-killed gcc 8 on ``binding_lsgrid.cpp``.
+- [FIXED] ``bake_outer_loops`` no longer freezes a unit at its reactive limit whose bus still has a
+  regulating unit with headroom (OpenLoadFlow switches buses, not units).
+- [FIXED] The controllers holding a remote bus share it with the other generators of their bus counted
+  in that bus' key, as OpenLoadFlow does.
+- [FIXED] A unit OpenLoadFlow capped well beyond its active limit stays there in the slack pre-pass
+  until the shift has used that up (``set_gen_can_participate_slack_overshoot``, from the bake).
+- [FIXED] An SVC carrying a standby automaton has its susceptance range shifted by the automaton's
+  ``b0`` (``init_from_pypowsybl`` and ``bake_outer_loops``), as OpenLoadFlow holds that ``b0`` apart.
+- [FIXED] ``bake_outer_loops`` freezes a generator with too small a reactive range sharing its
+  regulated bus with a controller OpenLoadFlow keeps; it was left regulating.
+- [FIXED] ``init_from_pypowsybl`` reads an hvdc line's ``hvdcOperatorActivePowerRange`` as its
+  active power limit per direction, like OpenLoadFlow, instead of ``max_p``.
+- [FIXED] ``init_from_pypowsybl`` reads the reactive limits of a VSC converter station with a
+  capability curve at its target P; it was left unlimited.
+- [FIXED] ``bake_saturated_voltage_control`` no longer freezes a unit OpenLoadFlow still regulates
+  with some reactive headroom left, only one at its limit.
 - [FIXED] ``bake_outer_loops`` applied the standby automaton to non-regulating SVCs and checked the
   SVC's own bus: OpenLoadFlow arms it on voltage-mode SVCs only and monitors their regulated bus.
 - [FIXED] ``bake_outer_loops`` froze a voltage-mode SVC within the saturation tolerance of its limit
@@ -293,6 +307,19 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   that stays in the main component keeps injecting, as before).
 - [FIXED] ``ContingencyAnalysis``: changing ``handle_disconnected_grid`` or
   ``redistribute_slack`` after a computation returned the previous results.
+- [ADDED] ``LSGrid.set_hvdc_ac_emulation_frozen``: an hvdc line frozen at its AC-emulation limit is
+  reported (``HVDC_AC_EMULATION_RELEASE``) when its droop asks for less (from the bake).
+- [ADDED] ``LSGrid.set_remote_voltage_control_vm_range``: a generator holding a remote bus from an
+  unrealistic own-bus voltage is reported (``LOW_VOLTAGE_REMOTE_CONTROL`` /
+  ``HIGH_VOLTAGE_REMOTE_CONTROL``), as OpenLoadFlow's robust remote voltage control switches it to
+  PQ; ``init_from_pypowsybl`` sets the range of the installed OpenLoadFlow (it differs by version).
+- [ADDED] ``bake_outer_loops(bake_hvdc_ac_emulation_limits=True)`` freezes an AC-emulation hvdc line
+  OpenLoadFlow saturated to a fixed setpoint at its limit.
+- [ADDED] ``LSGrid.cap_slack_at_active_limits``: OpenLoadFlow's slack rule on a solved grid -- a unit
+  the solve pushes past an active limit leaves the slack there, and the grid is re-solved.
+- [ADDED] ``LSGrid.set_hold_frozen_regulators``: a frozen (``can_be_pv``) remote regulator keeps
+  its seat in its voltage-control group, held at its frozen output -- same solution, releasable by
+  value.
 - [ADDED] Physical check of the idle SVCs under a standby automaton (``LSGrid.set_svc_standby``):
   a regulated bus outside the automaton's thresholds, which OpenLoadFlow's
   ``MonitoringVoltageOuterLoop`` answers by switching the SVC on, is reported as

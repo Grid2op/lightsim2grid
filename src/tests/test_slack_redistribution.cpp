@@ -143,6 +143,120 @@ TEST_CASE("distribute: every slack unit saturated keeps them in the slack, a fla
     }
 }
 
+TEST_CASE("distribute with an overshoot: every slack unit saturated keeps them in the slack", "[slack_redistribution]"){
+    // the same as above, but the flagged unit carries an overshoot (it sat at its min_p,
+    // 5 MW below it): the bisection path has to keep the slack from being emptied too
+    std::vector<Participant> units = {unit(0, 30., 1., 0., 32.), unit(1, 40., 1., 40., 100.)};
+    units[1].in_slack = false;
+    units[1].overshoot_mw = -5.;
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    const Report rep = distribute(units, 10., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.all_saturated);
+    CHECK(sat[0] == 0);  // cleared: the slack is not left empty
+    CHECK(sat[1] == 0);
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(32., 1e-6));
+    CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(48., 1e-6));
+    CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-6));
+    SECTION("a second slack unit with room: the saturated one leaves the slack as usual"){
+        units.push_back(unit(2, 20., 1., 0., 100.));
+        const Report rep2 = distribute(units, 10., default_eps_mw, new_inj, sat);
+        REQUIRE_FALSE(rep2.all_saturated);
+        CHECK(sat[0] == 1);
+        CHECK(sat[2] == 0);
+    }
+}
+
+TEST_CASE("distribute: no weight to share on, the whole mismatch is not distributed", "[slack_redistribution]"){
+    // both paths agree: nothing moved, so nothing was distributed
+    std::vector<Participant> units = {unit(0, 30., 0., 0., 100.), unit(1, 40., 0., 0., 40.)};
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    SECTION("round-based path"){
+        const Report rep = distribute(units, -10., default_eps_mw, new_inj, sat);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(30., 1e-12));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(-10., 1e-12));
+    }
+    SECTION("overshoot path"){
+        units[1].in_slack = false;
+        units[1].overshoot_mw = 5.;
+        const Report rep = distribute(units, -10., default_eps_mw, new_inj, sat);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(30., 1e-12));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(-10., 1e-12));
+    }
+}
+
+TEST_CASE("distribute: the overshoot left is what the shift did not use up", "[slack_redistribution]"){
+    // unit 1 sat 25 MW beyond its max_p in the reference solve: carried into the next
+    // distribution, what is left of it makes sharing d1 then d2 end where sharing d1 + d2 at
+    // once does. A distribution never makes an overshoot of its own.
+    std::vector<real_type> new_inj, left;
+    std::vector<char> sat;
+    std::vector<Participant> units = {unit(0, 30., 1., 0., 500.), unit(1, 40., 1., 0., 40.)};
+    units[1].in_slack = false;
+    units[1].overshoot_mw = 25.;
+    SECTION("used up in part, then in full"){
+        // -20: shift -40, unit 1 stays at 40 with 5 MW left
+        distribute(units, -20., default_eps_mw, new_inj, sat, &left);
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-6));
+        CHECK_THAT(left[1], Catch::Matchers::WithinAbs(5., 1e-6));
+        CHECK_THAT(left[0], Catch::Matchers::WithinAbs(0., 1e-12));
+        // -30: shift -55 > 50, unit 1 leaves its max_p: nothing left
+        distribute(units, -30., default_eps_mw, new_inj, sat, &left);
+        CHECK(new_inj[1] < 40.);
+        CHECK_THAT(left[1], Catch::Matchers::WithinAbs(0., 1e-12));
+    }
+    SECTION("chained then at once, both signs"){
+        for(const real_type d2 : {-10., -25., 5.}){
+            std::vector<Participant> chained = units;
+            distribute(chained, -20., default_eps_mw, new_inj, sat, &left);
+            for(std::size_t k = 0; k < chained.size(); ++k){
+                chained[k].injection_mw = new_inj[k];
+                chained[k].overshoot_mw = left[k];
+            }
+            distribute(chained, d2, default_eps_mw, new_inj, sat, &left);
+            const std::vector<real_type> chained_inj = new_inj;
+            distribute(units, -20. + d2, default_eps_mw, new_inj, sat, &left);
+            CHECK_THAT(chained_inj[0], Catch::Matchers::WithinAbs(new_inj[0], 1e-6));
+            CHECK_THAT(chained_inj[1], Catch::Matchers::WithinAbs(new_inj[1], 1e-6));
+        }
+    }
+    SECTION("a unit a distribution saturates carries nothing"){
+        std::vector<Participant> plain = {unit(0, 30., 1., 0., 500.), unit(1, 30., 1., 0., 40.)};
+        distribute(plain, 30., default_eps_mw, new_inj, sat, &left);
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(left[1], Catch::Matchers::WithinAbs(0., 1e-12));
+    }
+}
+
+TEST_CASE("distribute with an overshoot: a drawing unit capped at 0 MW keeps its side", "[slack_redistribution]"){
+    // a charging storage unit (range [-50, 50]) a positive mismatch pushed up to 0 MW, 5 MW
+    // beyond it: the overshoot is above 0 MW (> 0), and 0 MW stays its UPPER bound
+    std::vector<Participant> units = {unit(0, 30., 1., NaN, NaN), unit(1, 0., 1., -50., 50.)};
+    units[1].kind = UnitKind::STORAGE;
+    units[1].in_slack = false;
+    units[1].overshoot_mw = 5.;
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    SECTION("pushed down: it moves once the shift used up its overshoot"){
+        // equal weights, shift -25: the slack unit gives 12.5, the storage unit 5 - 12.5
+        const Report rep = distribute(units, -20., default_eps_mw, new_inj, sat);
+        REQUIRE_FALSE(rep.all_saturated);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(17.5, 1e-6));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(-7.5, 1e-6));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-6));
+    }
+    SECTION("pushed up: it stays at 0 MW, never crossing it"){
+        const Report rep = distribute(units, 10., default_eps_mw, new_inj, sat);
+        CHECK(sat[1] == 1);
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(0., 1e-6));
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(40., 1e-6));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-6));
+    }
+}
+
 TEST_CASE("distribute: a unit injecting never crosses 0 MW on the way down", "[slack_redistribution]"){
     // unit 1 has min_p < 0 < max_p: its share (-10) would take it to -8, OLF stops it at 0
     // and the rest goes to unit 0

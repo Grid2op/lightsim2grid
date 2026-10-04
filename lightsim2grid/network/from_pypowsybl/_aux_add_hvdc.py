@@ -11,10 +11,34 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from ._aux_common import _aux_get_bus
+from ._aux_common import _aux_get_bus, _aux_reactive_limits_at_target_p
 
 
-def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, can_be_pv=None):
+def _hvdc_pmax_per_direction(net, hvdc_ids, max_p_mw):
+    """Maximum active power of each hvdc line, from side 1 to side 2 and the other way
+    (MW), as OpenLoadFlow sees them: the ``hvdcOperatorActivePowerRange`` extension when
+    the line carries it (``opr_from_cs1_to_cs2`` / ``opr_from_cs2_to_cs1``), the line's
+    own ``max_p`` in both directions otherwise. It is the limit OLF's
+    ``AcHvdcAcEmulationLimits`` outer loop saturates an angle-droop line at."""
+    pmax_1to2 = np.array(max_p_mw, dtype=float)
+    pmax_2to1 = np.array(max_p_mw, dtype=float)
+    try:
+        df_opr = net.get_extensions("hvdcOperatorActivePowerRange")
+    except Exception:
+        # extension tables may be unavailable on (very) old pypowsybl versions
+        df_opr = None
+    if df_opr is None or not df_opr.shape[0]:
+        return pmax_1to2, pmax_2to1
+    df_opr = df_opr.reindex(pd.Index(hvdc_ids))
+    for pmax, col in ((pmax_1to2, "opr_from_cs1_to_cs2"), (pmax_2to1, "opr_from_cs2_to_cs1")):
+        opr = df_opr[col].to_numpy(dtype=float)
+        has_opr = np.isfinite(opr)
+        pmax[has_opr] = opr[has_opr]
+    return pmax_1to2, pmax_2to1
+
+
+def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, can_be_pv=None,
+                  ac_emulation_frozen=None):
     """Add every HVDC line of ``net`` (VSC / LCC converter stations, possibly
     carrying the angle-droop ("AC emulation") extension) to ``model``. Returns
     ``(df_dc, hvdc_sub_from_id, hvdc_sub_to_id)``, used by the final
@@ -22,12 +46,18 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
 
     The converter station ids ``can_be_pv`` holds (what `bake_outer_loops` returns for
     the VSC stations it froze at a reactive limit, or a boolean Series indexed by id)
-    are flagged with ``LSGrid.set_hvdc_can_be_pv``, per line and side."""
+    are flagged with ``LSGrid.set_hvdc_can_be_pv``, per line and side.
+
+    The hvdc line ids ``ac_emulation_frozen`` holds (what `bake_outer_loops` froze at their
+    AC-emulation limit) are flagged with ``LSGrid.set_hvdc_ac_emulation_frozen``, their droop
+    parameters read off the extension although it is disabled."""
     if sort_index:
         df_dc = net.get_hvdc_lines().sort_index()
     else:
         df_dc = net.get_hvdc_lines()
-    df_vsc = net.get_vsc_converter_stations()
+    # all_attributes: the capability curve at the target P (min_q_at_target_p...) is not a
+    # default column
+    df_vsc = net.get_vsc_converter_stations(all_attributes=True)
     df_lcc = net.get_lcc_converter_stations()
     # the vsc / lcc frames have different columns (target_v / power_factor...):
     # the concatenation puts NaN where an attribute does not exist for a type
@@ -53,9 +83,9 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         vset_pu = np.where(np.isfinite(vset_pu), vset_pu, 1.0)
         qset = df_side["target_q"].values
         qset = np.where(np.isfinite(qset), qset, 0.)
-        min_q = df_side["min_q"].values
+        # as for the generators: the curve at the target P for a CURVE-kind station
+        min_q, max_q = _aux_reactive_limits_at_target_p(df_side)
         min_q = np.where(np.isfinite(min_q), min_q, -_max_hvdc_mva)
-        max_q = df_side["max_q"].values
         max_q = np.where(np.isfinite(max_q), max_q, _max_hvdc_mva)
         power_factor = df_side["power_factor"].values
         power_factor = np.where(np.isfinite(power_factor), power_factor, 1.0)
@@ -74,6 +104,7 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
     nominal_v_kv = df_dc["nominal_v"].values.astype(float)
     max_p_mw = df_dc["max_p"].values.astype(float)
     max_p_mw = np.where(np.isfinite(max_p_mw), max_p_mw, _max_hvdc_mva)
+    pmax_1to2_mw, pmax_2to1_mw = _hvdc_pmax_per_direction(net, df_dc.index, max_p_mw)
 
     # the angle-droop active power control ("AC emulation"), an IIDM extension
     droop_enabled = np.zeros(nb_dc, dtype=bool)
@@ -84,13 +115,22 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
     except Exception:
         # extension tables may be unavailable on (very) old pypowsybl versions
         df_droop = None
+    frozen_ids = set(str(el) for el in ac_emulation_frozen) if ac_emulation_frozen is not None else set()
+    unknown = frozen_ids.difference(df_dc.index)
+    if unknown:
+        raise ValueError(f"`hvdc_ac_emulation_frozen`: unknown hvdc line id(s) {sorted(unknown)[:10]}.")
+    frozen = np.zeros(nb_dc, dtype=bool)
     if df_droop is not None and df_droop.shape[0]:
         for hvdc_pos, line_id in enumerate(df_dc.index):
             if line_id not in df_droop.index:
                 continue
-            if not bool(df_droop.loc[line_id, "enabled"]):
+            is_frozen = line_id in frozen_ids
+            if not bool(df_droop.loc[line_id, "enabled"]) and not is_frozen:
                 continue
-            droop_enabled[hvdc_pos] = True
+            # a line frozen at its limit keeps its droop parameters (droop off): the check of
+            # its release reads them
+            droop_enabled[hvdc_pos] = bool(df_droop.loc[line_id, "enabled"])
+            frozen[hvdc_pos] = is_frozen and not droop_enabled[hvdc_pos]
             droop_p0_mw[hvdc_pos] = float(df_droop.loc[line_id, "p0"])
             droop_mw_per_deg[hvdc_pos] = float(df_droop.loc[line_id, "droop"])
 
@@ -112,8 +152,8 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
                           [bool(el) for el in droop_enabled],
                           droop_p0_mw,
                           droop_mw_per_deg,
-                          max_p_mw,  # pmax 1 -> 2: IIDM has a single max_p (open-loadflow convention)
-                          max_p_mw,  # pmax 2 -> 1
+                          pmax_1to2_mw,
+                          pmax_2to1_mw,
                           )
     for hvdc_id, (is_or_disc, is_ex_disc, line_conn1, line_conn2) in enumerate(
             zip(hvdc_from_disco, hvdc_to_disco, df_dc["connected1"].values, df_dc["connected2"].values)):
@@ -131,6 +171,8 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         elif ex_disc:
             model.deactivate_dcline_side2(hvdc_id)
     model.set_dcline_names(df_dc.index)
+    if frozen.any():
+        model.set_hvdc_ac_emulation_frozen([bool(el) for el in frozen])
 
     # the VSC stations an outer loop froze at a reactive limit: nothing in the powerflow
     # reads the flag, it only opens them to the physical check of their PQ -> PV release

@@ -20,6 +20,7 @@
 #include <cstdint> // for int32
 #include <chrono>
 #include <cmath>  // for PI
+#include <limits>  // std::numeric_limits (NaN defaults)
 
 #include "Utils.hpp"
 #include "SolverSideCache.hpp"
@@ -110,7 +111,11 @@ class LS2G_API LSGrid final
                 std::vector<std::string>,  // init_kwargs values
                 // fused-bus representative lookup (appended; old pickles/binary
                 // formats are version-gated). See get_bus_fusion_rep().
-                std::vector<int>  // bus_fusion_rep
+                std::vector<int>,  // bus_fusion_rep
+                // the remote voltage control range of the physical checks (appended; NaN
+                // when unset). See set_remote_voltage_control_vm_range().
+                real_type,  // remote_vc_min_vm_pu
+                real_type   // remote_vc_max_vm_pu
                 >;
 
         // named indices into the StateRes tuple above (get_state()/set_state()
@@ -139,6 +144,8 @@ class LS2G_API LSGrid final
         static const std::size_t INIT_KWARGS_KEYS_ID = 20;
         static const std::size_t INIT_KWARGS_VALUES_ID = 21;
         static const std::size_t BUS_FUSION_REP_ID = 22;
+        static const std::size_t REMOTE_VC_MIN_VM_PU_ID = 23;
+        static const std::size_t REMOTE_VC_MAX_VM_PU_ID = 24;
 
         LSGrid():
           timer_last_ac_pf_(0.),
@@ -148,6 +155,8 @@ class LS2G_API LSGrid final
           init_vm_pu_(1.04),
           keep_vinit_group_controlled_(false),
           hold_frozen_regulators_(false),
+          remote_vc_min_vm_pu_(std::numeric_limits<real_type>::quiet_NaN()),
+          remote_vc_max_vm_pu_(std::numeric_limits<real_type>::quiet_NaN()),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
             _algo.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -275,7 +284,9 @@ class LS2G_API LSGrid final
          * shared again on the others. Writes the new setpoints and takes the saturated
          * units out of the distributed slack, so the next solve only shares what is
          * left (the change in the losses) on the units that can still move. If EVERY
-         * unit saturates, all of them stay in the slack (see the report).
+         * unit saturates, all of them stay in the slack (see the report). A unit out of
+         * the slack afterwards keeps what this shift left of its overshoot, never a new one
+         * (see slack_redistribution::distribute).
          */
         slack_redistribution::Report redistribute_active_power(real_type mismatch_mw);
         /**
@@ -445,6 +456,24 @@ class LS2G_API LSGrid final
          */
         void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
         [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
+
+        /**
+         * The range of voltage (pu of its own bus' nominal voltage) a generator regulating a
+         * REMOTE bus may sit at, for the physical checks (see RemoteVoltageControlCheck.hpp):
+         * a remote controller whose own bus ends up below `min_vm_pu` or above `max_vm_pu` is
+         * reported as LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL by
+         * get_physical_violations and every batch's compute_physical_violations. This mirrors
+         * OpenLoadFlow's "robust" remote voltage control, which switches such a controller to
+         * PQ: there the range is [minRealisticVoltage * 1.02, maxRealisticVoltage / 1.02].
+         *
+         * Never read by a powerflow. NaN (the default) on both sides: no check. A NaN on one
+         * side only checks the other. Copied with the grid, so a batch algorithm built from
+         * this grid inherits it, and part of `get_state` / the binary format: a grid pickled
+         * or saved keeps checking its remote controllers.
+         */
+        void set_remote_voltage_control_vm_range(real_type min_vm_pu, real_type max_vm_pu);
+        [[nodiscard]] real_type get_remote_voltage_control_min_vm_pu() const noexcept {return remote_vc_min_vm_pu_;}
+        [[nodiscard]] real_type get_remote_voltage_control_max_vm_pu() const noexcept {return remote_vc_max_vm_pu_;}
 
         /**
          * Keep, in the voltage-control group it would join, every generator an outer
@@ -1220,6 +1249,17 @@ class LS2G_API LSGrid final
             hvdc_lines_.set_stations_can_be_pv(side_1, side_2);
         }
         /**
+         * Flag the angle-droop ("AC emulation") hvdc lines a caller knows an outer loop froze at
+         * their active power limit (OpenLoadFlow's AcHvdcAcEmulationLimits; `bake_outer_loops`
+         * turns them into a fixed set-point at that limit and keeps their droop parameters).
+         * Never read by a powerflow: the physical checks report such a line whose droop would
+         * ask for less than that limit (the loop would leave it in AC emulation). See
+         * HvdcLineContainer::set_ac_emulation_frozen and HvdcPCheck.hpp.
+         */
+        void set_hvdc_ac_emulation_frozen(const std::vector<bool> & frozen){
+            hvdc_lines_.set_ac_emulation_frozen(frozen);
+        }
+        /**
          * Flag the generators a caller knows an outer loop left out of the distributed
          * slack ONLY because they sat at an active limit in the reference solve
          * (OpenLoadFlow caps a unit at max_p when the mismatch it distributes is
@@ -1239,6 +1279,24 @@ class LS2G_API LSGrid final
         void set_storage_can_participate_slack(const std::vector<bool> & flags,
                                                const Eigen::Ref<const RealVect> & weights){
             storages_.set_can_participate_slack(flags, weights);
+        }
+        /**
+         * For the generators flagged "can participate in the slack": how far BEYOND the
+         * limit it sits at each one was in the reference solve, in MW, signed (> 0 above its
+         * upper limit, < 0 below its lower one; one value per generator, 0 by default). The
+         * sign is what tells, for a unit at 0 MW, which side of 0 it was capped from.
+         * OpenLoadFlow shares the slack from the raw set-points, so a unit it capped at
+         * max_p had raw + lambda * weight above max_p by that much, and an imbalance of the
+         * other sign only moves it once the shift of the distribution has used that up.
+         * Only the bounded redistribution pre-pass reads it.
+         * See SlackParticipation::set_can_participate_overshoot.
+         */
+        void set_gen_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
+            generators_.set_can_participate_slack_overshoot(overshoot_mw);
+        }
+        /// the same, for the storage units
+        void set_storage_can_participate_slack_overshoot(const Eigen::Ref<const RealVect> & overshoot_mw){
+            storages_.set_can_participate_slack_overshoot(overshoot_mw);
         }
         /**
          * Same, for the storage units -- which take part in the distributed slack under
@@ -3004,6 +3062,8 @@ class LS2G_API LSGrid final
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
         bool hold_frozen_regulators_;  // see set_hold_frozen_regulators
+        real_type remote_vc_min_vm_pu_;  // see set_remote_voltage_control_vm_range
+        real_type remote_vc_max_vm_pu_;  // see set_remote_voltage_control_vm_range
         real_type sn_mva_;
 
         // powersystem representation
