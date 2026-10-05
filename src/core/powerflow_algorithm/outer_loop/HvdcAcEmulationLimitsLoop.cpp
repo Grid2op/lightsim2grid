@@ -38,8 +38,13 @@ hvdc_p_check::HvdcPPlan HvdcAcEmulationLimitsLoop::_ac_emulation_lines(const Out
 
 void HvdcAcEmulationLimitsLoop::_declare(const OuterContext & ctx) const
 {
-    // every line in AC emulation may saturate
-    for(const auto & line : _ac_emulation_lines(ctx).lines) ctx.controls->reserve_hvdc_regime(line.hvdc_id);
+    // every line in AC emulation may saturate -- and so may a line the caller holds at a
+    // limit now: putting it back in AC emulation (set_status_droop) changes values only, and
+    // does not reach this reservation again
+    const HvdcLineContainer & hvdcs = ctx.grid->get_dclines();
+    for(int hvdc_id = 0; hvdc_id < hvdcs.nb(); ++hvdc_id){
+        if(hvdcs.is_droop_active(hvdc_id)) ctx.controls->reserve_hvdc_regime(hvdc_id);
+    }
 }
 
 bool HvdcAcEmulationLimitsLoop::_is_needed(const OuterContext & ctx) const

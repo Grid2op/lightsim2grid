@@ -142,12 +142,12 @@ void TransformerVoltageControlLoop::_declare(const OuterContext & ctx) const
     const std::vector<Group> gs = groups(*ctx.grid);
     if (gs.empty()) return;
     // a hidden group never acts (OpenLoadFlow's getControllerElements keeps the visible
-    // controls only): nothing to reserve for it
+    // controls only): nothing to reserve for it; nor for a group the inner algorithm cannot
+    // solve the ratios of (no BranchControl)
     bool any = false;
     for (const Group & g : gs) {
         if (g.hidden) continue;
-        ctx.controls->reserve_ratio_group(g.bus_solver, g.target, g.trafos, true);
-        any = true;
+        if (ctx.controls->reserve_ratio_group(g.bus_solver, g.target, g.trafos, true)) any = true;
     }
     if (!any) return;
     // the generators the INITIAL step may freeze: every one (declaring the lot costs a few

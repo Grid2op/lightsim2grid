@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -44,9 +45,9 @@ namespace ls2g {
  * union of what every loop declared, so a whole solve is one symbolic analysis.
  *
  * `Inner` is what the driver needs from the algorithm beyond BaseAlgo's interface (see
- * NROuterInner, the one there is): algo() (the wrapped BaseAlgo), controls() (the
- * OuterControls the loops reserve and act through), begin(), setup(..., declare), newton(),
- * finalize(), request_rebuild(), apply_controls(), fill_context(),
+ * NROuterInner, the one there is): algo() (the wrapped BaseAlgo, of type Inner::Algo),
+ * controls() (the OuterControls the loops reserve and act through), begin(), setup(...,
+ * declare), newton(), finalize(), request_rebuild(), apply_controls(), fill_context(),
  * vm_unknown(), and the phase_tap / ratio_tap / shunt_sections results. Everything else
  * BaseAlgo declares is forwarded to algo(), and the results of each solve are copied back
  * into this object, which is what LSGrid reads.
@@ -177,9 +178,13 @@ public:
 
     // ----- forwarded to the inner algorithm ------------------------------------------
 
-    bool supports_hvdc_droop() const noexcept override { return inner_.algo().supports_hvdc_droop(); }
-    bool supports_remote_voltage_control() const noexcept override { return inner_.algo().supports_remote_voltage_control(); }
-    bool fills_bus_mismatch() const noexcept override { return inner_.algo().fills_bus_mismatch(); }
+    // the wrapped algorithm's capabilities, as constants too (see BaseAlgo's capability flags)
+    static constexpr bool SUPPORTS_HVDC_DROOP = Inner::Algo::SUPPORTS_HVDC_DROOP;
+    static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = Inner::Algo::SUPPORTS_REMOTE_VOLTAGE_CONTROL;
+    static constexpr bool FILLS_BUS_MISMATCH = Inner::Algo::FILLS_BUS_MISMATCH;
+    bool supports_hvdc_droop() const noexcept override { return SUPPORTS_HVDC_DROOP; }
+    bool supports_remote_voltage_control() const noexcept override { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
+    bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
 
     EigenRefConstRealSpMat get_J() const override { return inner_.algo().get_J(); }
     IntVect get_theta_to_J_col_python() const override { return inner_.algo().get_theta_to_J_col_python(); }
@@ -256,12 +261,16 @@ private:
         }
     }
 
+    // the loop's name and its parameters, exactly: the only way to tell a loop from the one
+    // already held (parameters are set at construction), so a decimal rendering, which loses
+    // anything below its last digit, will not do
     static std::string _signature(const BaseOuterLoop & loop) {
-        std::string res = loop.name();
+        std::ostringstream res;
+        res << loop.name() << std::hexfloat;
         const AlgoConfig params = loop.get_params();
-        for(int v : params.int_params) res += "|" + std::to_string(v);
-        for(double v : params.real_params) res += "|" + std::to_string(v);
-        return res;
+        for(int v : params.int_params) res << '|' << v;
+        for(double v : params.real_params) res << '|' << v;
+        return res.str();
     }
 
     Inner inner_;

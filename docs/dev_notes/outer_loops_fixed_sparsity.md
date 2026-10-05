@@ -264,7 +264,7 @@ A loop acts on the solve only through the controls it reserved in `declare`
 | `BusVoltageControl` | `ReactiveLimits`, `TransformerVoltageControl` | a bus PV or PQ (its Q row pinned or not) |
 | `VoltageControllerHold` | `ReactiveLimits`, `TransformerVoltageControl` | a group controller held at a reactive output |
 | `StandbySvcControl` | `VoltageMonitoring` | an idle standby SVC switched on |
-| `HvdcRegimeControl` | `AcHvdcAcEmulationLimits` | the regime of a line in AC emulation |
+| `HvdcRegimeControl` | `AcHvdcAcEmulationLimits` | the regime of a line with its droop on -- held at a limit by the caller too, since `set_status_droop` puts it back in AC emulation without a rebuild |
 | `PhaseShifterControl` | `PhaseControl` | a phase shifter's control and tap; reads its shift and current |
 | `RatioTapControl` (by `reserve_ratio_group`) | `TransformerVoltageControl` | a transformer's voltage control and tap; reads its ratio |
 | `ShuntSectionControl` (by `reserve_shunt_group`) | `ShuntVoltageControl` | a shunt controller's control and sections; reads its susceptance |

@@ -100,10 +100,10 @@ OuterLoopStatus VoltageMonitoringLoop::_check(OuterContext & ctx)
         if(v.violation_type == LimitViolationType::LOW_VOLTAGE_SVC_STANDBY) target = svcs.get_standby_low_target_vm_pu(v.element_id);
         else if(v.violation_type == LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY) target = svcs.get_standby_high_target_vm_pu(v.element_id);
         else continue;
-        ctx.record("SWITCH_ON", std::isfinite(target), ViolationElementType::SVC, v.element_id,
+        // without a set-point, or without the control a reservation gives, it stays idle
+        StandbySvcControl * svc = std::isfinite(target) ? ctx.controls->standby_svc(v.element_id) : nullptr;
+        ctx.record("SWITCH_ON", svc != nullptr, ViolationElementType::SVC, v.element_id,
                    v.violation_type, v.value, v.limit);
-        if(!std::isfinite(target)) continue;
-        StandbySvcControl * svc = ctx.controls->standby_svc(v.element_id);
         if(svc == nullptr) continue;
         svc->switch_on(target);
         changed = true;

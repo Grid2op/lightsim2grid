@@ -219,3 +219,26 @@ TEST_CASE("not needed without a line in AC emulation", "[outer][hvdc]")
     ctx.grid = &frozen;
     CHECK_FALSE(loop.is_needed(ctx));
 }
+
+TEST_CASE("a line put back in AC emulation between two solves can still saturate", "[outer][hvdc]")
+{
+    // the caller holds the line at its limit: not in AC emulation when the solver input is
+    // built ...
+    LSGrid grid = make_grid(/*pmax12=*/5., /*pmax21=*/500.);
+    grid.set_status_droop_hvdc(0, 1);
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<HvdcAcEmulationLimitsLoop>());
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 4);
+    CHECK(grid.get_algo().get_outer_loop_stats().loop_iterations.empty());
+
+    // ... then releases it, a change of values only: the loop saturates it all the same
+    grid.set_status_droop_hvdc(0, 0);
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 4);
+    const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    REQUIRE(stats.loop_iterations.size() == 1);
+    CHECK(stats.loop_iterations[0].second == 1);
+    CHECK(std::get<0>(grid.get_dclines().get_res_side_1())(0) == Approx(-5.));
+    CHECK(std::get<0>(grid.get_dclines().get_res_side_2())(0) == Approx(5.));
+}
