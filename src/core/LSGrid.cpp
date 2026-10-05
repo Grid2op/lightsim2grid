@@ -3061,6 +3061,10 @@ void LSGrid::fillBf_for_PTDF(Eigen::SparseMatrix<real_type> & Bf, bool transpose
 // returns only the gen_id with the highest p that is connected to this bus !
 // returns bus_id, gen_bus_id
 std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
+    return _assign_slack_most_connected(false);
+}
+
+std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool highest_voltage_first){
     auto res = std::tuple<int, int>(-1, -1);
     int res_bus_id = -1;
     int res_gen_id = -1;
@@ -3069,19 +3073,29 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     std::vector<real_type> gen_p_per_bus(nb_busbars, 0.);
     std::vector<int> nb_line_end_per_bus(nb_busbars, 0);
 
-    // computes the total amount of power produce at each nodes
-    for(const GenericContainer * container : _all_containers()) container->gen_p_per_bus(gen_p_per_bus);
+    // the power the units able to hold the slack produce at each bus, generator convention:
+    // the generators and the storage units (the generic gen_p_per_bus hook also counted the
+    // loads' consumption as production, and could pick a bus no unit of the slack is on)
+    generators_.slack_p_per_bus(gen_p_per_bus);
+    storages_.slack_p_per_bus(gen_p_per_bus);
 
     // computes the total number of "neighbors" (extremity of connected powerlines and trafo, not real neighbors)
     for(const GenericContainer * container : _all_containers()) container->nb_line_end(nb_line_end_per_bus);
     
-    // now find the most connected buses
+    // now find the most connected buses (OpenLoadFlow's MOST_MESHED order with
+    // `highest_voltage_first`: the highest nominal voltage, then the most branches -- a bus a
+    // unit is on, which the slack of lightsim2grid has to be)
+    const Eigen::Ref<const RealVect> vn_kv = get_bus_vn_kv();
+    real_type max_vn = -1.;
     for(unsigned int bus_id = 0; bus_id < nb_busbars; ++bus_id)
     {
+        if(!(gen_p_per_bus[bus_id] > 0.)) continue;
         const auto & nb_lines_this = nb_line_end_per_bus[bus_id];
-        if((nb_lines_this > max_line) && (gen_p_per_bus[bus_id] > 0.)){
+        const real_type vn = highest_voltage_first ? vn_kv(bus_id) : 0.;
+        if((vn > max_vn) || ((vn == max_vn) && (nb_lines_this > max_line))){
             res_bus_id = bus_id;
             max_line = nb_lines_this;
+            max_vn = vn;
         }
     }
     // TODO DEBUG MODE
@@ -3092,6 +3106,10 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     generators_.remove_all_slackbus();
     storages_.remove_all_slackbus();
     res_gen_id = generators_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
+    const int res_storage_id = storages_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
+    if(res_gen_id == -1 && res_storage_id == -1){
+        throw std::runtime_error("LSGrid::assign_slack_to_most_connected: no generator nor storage unit on the chosen bus.");
+    }
     std::get<1>(res) = res_gen_id;
     ac_cache_.slack_bus_id_solver = SolverBusIdVect();
     dc_cache_.slack_bus_id_solver = SolverBusIdVect();
@@ -3340,25 +3358,35 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     std::vector<int> conn_comp(nb_busbars, -1);
     std::vector<bool> already_added(nb_busbars, false);
 
+    // every bus starts a component until it is reached: the slack buses first (their components
+    // are numbered first), then all the others -- the main component is the largest, as
+    // OpenLoadFlow's, whether a slack is in it or not (a bus nothing holds is a component of
+    // its own, never the largest)
+    std::vector<int> starts;
+    starts.reserve(slack_buses_id.size() + nb_busbars);
+    for(const auto & el : slack_buses_id) starts.push_back(el.cast_int());
+    for(int bus_id = 0; bus_id < static_cast<int>(nb_busbars); ++bus_id) starts.push_back(bus_id);
+    std::size_t next_start = 0;
+
     int connected_comp = 0;
     std::queue<GlobalBusId> neighborhood;
     while(true)
     {
         neighborhood = std::queue<GlobalBusId>();
 
-        // choose bus id (one of the slack) to start
+        // choose the bus to start from
         bool one_added = false;
-        for(const auto & el : slack_buses_id){
-            if(!tmp_visited[el.cast_int()] && !already_added[el.cast_int()])
+        for(; next_start < starts.size(); ++next_start){
+            const int el = starts[next_start];
+            if(!tmp_visited[el] && !already_added[el])
             {
                 one_added = true;
-                neighborhood.push(el);
-                already_added[el.cast_int()] = true;
+                neighborhood.push(GlobalBusId(el));
+                already_added[el] = true;
                 break;
             }
         }
-        
-        if(!one_added) break; // no more slack bus, I stop
+        if(!one_added) break; // every connected bus is in a component
 
         // start the bfs
         while (true)
@@ -3408,7 +3436,9 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     // component leave the slack FIRST (as OLF, which only distributes on the main
     // component): once deactivated below they would still be listed by
     // _slack_bus_id_me(), on a disconnected bus, and the next solve would throw.
-    // The main component always keeps at least one slack (it is grown from one).
+    // The main component may then have no slack left (given one at the end).
+    bool slack_in_main = false;
+    for(const auto & el : slack_buses_id) slack_in_main = slack_in_main || bus_in_main_cc[el.cast_int()];
     generators_.remove_slackbus_not_in_main_component(bus_in_main_cc, algo_controler_);
     storages_.remove_slackbus_not_in_main_component(bus_in_main_cc, algo_controler_);
     if((_forced_ref_slack_bus_id >= 0) && !bus_in_main_cc[_forced_ref_slack_bus_id]){
@@ -3424,6 +3454,10 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     }
     // and finally deal with the buses
     init_bus_status();
+    // every slack was stranded: the main component's highest-voltage, most connected producing
+    // bus takes it (OpenLoadFlow falls back to its most meshed bus, among the highest nominal
+    // voltage ones, when the slack it was named is not in the main component)
+    if(!slack_in_main) _assign_slack_most_connected(true);
 
     // the lost power is shared on the slack units that remain (the stranded ones are
     // out of the slack and off by now), with their bounds

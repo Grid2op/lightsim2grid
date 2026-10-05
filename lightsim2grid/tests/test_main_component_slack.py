@@ -117,6 +117,39 @@ class TestMainComponentSlack(unittest.TestCase):
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0, "ac_pf diverged after islanding a slack generator")
 
+    def test_only_slack_stranded_keeps_the_largest_component(self):
+        # the leaf generator is the only slack: islanding it must not keep the leaf alone
+        for gen in self.model.get_generators():
+            if gen.id != self.leaf_gen[0]:
+                self.model.remove_gen_slackbus(gen.id)
+        self._isolate_leaf()
+        self.model.consider_only_main_component(False)
+        gens = self.model.get_generators()
+        self.assertFalse(gens[self.leaf_gen[0]].connected)
+        self.assertEqual(sum(gen.connected for gen in gens), self.n_gen - 1)
+        # the main component got a slack of its own
+        self.assertEqual(sum(gen.is_slack for gen in gens if gen.connected), 1)
+        V = self._ac_pf()
+        self.assertGreater(V.shape[0], 0)
+        # every bus but the leaf solved
+        to_solver = np.asarray(self.model.id_me_to_ac_solver())
+        self.assertLess(to_solver[_LEAF_BUS], 0)
+        self.assertEqual(int((to_solver >= 0).sum()), self.net.bus.shape[0] - 1)
+
+    def test_most_connected_slack_on_a_storage_unit(self):
+        # no generator produces: the slack goes to the bus of a discharging storage unit
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            net = pn.case14()
+            pp.create_storage(net, bus=3, p_mw=-30., max_e_mwh=100.)  # load convention: discharging
+            model = init_from_pandapower(net)
+        for gen in model.get_generators():
+            model.change_p_gen(gen.id, 0.)
+        bus_id, _ = model.assign_slack_to_most_connected()
+        self.assertEqual(bus_id, 3)
+        self.assertTrue(model.get_storages()[0].is_slack)
+        self.assertFalse(any(gen.is_slack for gen in model.get_generators()))
+
     def test_stranded_forced_reference_is_cleared(self):
         self.model.set_reference_slack_bus(_LEAF_BUS)
         self._isolate_leaf()

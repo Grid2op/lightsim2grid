@@ -170,7 +170,17 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             slack_.remove_if_bus_not_in(busbar_in_main_component, bus_id_, solver_control);
         }
 
-        // returns only the gen_id with the highest p that is connected to this bus !
+        /// add, per bus, the active power (MW, generator convention) the connected generators
+        /// produce: what LSGrid::assign_slack_to_most_connected shares the slack by
+        void slack_p_per_bus(std::vector<real_type> & res) const {
+            for(int gen_id = 0; gen_id < nb(); ++gen_id){
+                if(status_[gen_id]) res[bus_id_(gen_id).cast_int()] += target_p_mw_(gen_id);
+            }
+        }
+
+        /// put every connected generator of `slack_bus_id` producing power in the slack, weighted
+        /// by its share of `gen_p_per_bus` (see slack_p_per_bus); returns the gen_id of the
+        /// connected one with the highest p (-1 if none is connected there)
         int assign_slack_bus(int slack_bus_id,
                              const std::vector<real_type> & gen_p_per_bus,
                              DualAlgoControl & solver_control){
@@ -188,8 +198,6 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
                     max_p = p_mw;
                 }
             }
-            // TODO DEBUG MODE
-            if(res_gen_id == -1) throw std::runtime_error("GeneratorContainer::assign_slack_bus No generator connected to the desired buses");
             return res_gen_id;
         }
 

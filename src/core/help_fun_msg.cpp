@@ -4260,22 +4260,23 @@ const std::string DocLSGrid::update_slack_weights_by_id = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::assign_slack_to_most_connected = R"mydelimiter(
-    Pick a single new slack generator automatically: among the buses with at least one generator
-    producing (``target_p_mw > 0``), the one with the most powerline / transformer ends connected
-    to it: then, at that bus, the generator with the highest ``abs(target_p_mw)``.
+    Pick a new slack bus automatically: among the buses where the units able to hold the slack
+    (generators, and storage units discharging) produce some active power, the one with the most
+    powerline / transformer ends connected to it. Every such unit of that bus producing power
+    takes part in the slack, weighted by its share of the bus' production.
 
-    Clears every existing slack assignment first, so the result is always a single slack
-    generator, not a distributed one.
+    Clears every existing slack assignment first, so the slack ends up on that one bus.
 
-    Returns ``(bus_id, gen_id)`` (gridmodel ids) of the bus and generator picked.
+    Returns ``(bus_id, gen_id)`` (gridmodel ids): the bus picked, and its generator producing the
+    most (``-1`` when only storage units are on it).
 
 )mydelimiter";
 
 const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
-    Restrict the grid to its main synchronous component: starting a breadth-first search from the
-    slack bus(es) over the branch graph (powerlines, transformers, and any other connecting
-    element), find every bus reachable from them, then disconnect every element with no bus in
-    that component.
+    Restrict the grid to its main synchronous component: the connected component of the branch
+    graph (powerlines, transformers, and any other connecting element) with the most buses, as
+    OpenLoadFlow's, whether a slack bus is in it or not. Every element with no bus in that
+    component is disconnected.
 
     An HVDC line with only one converter station in the main component is not fully disconnected:
     the in-main-component converter stays active (still injecting / regulating its scheduled
@@ -4286,8 +4287,11 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
     component are first removed from the slack (as with :func:`remove_gen_slackbus` /
     :func:`remove_storage_slackbus`), so that the slack is only distributed on the main component.
     A reference slack bus forced with :func:`set_reference_slack_bus` that is outside the main
-    component is cleared. Reactivating the elements afterwards does not put them back in the
-    slack: work on a copy (:func:`copy`) if the original slack is needed afterwards.
+    component is cleared. When no slack is left in the main component, it is given one as
+    :func:`assign_slack_to_most_connected` does, the buses compared on their nominal voltage
+    first (OpenLoadFlow's most meshed bus is among the highest nominal voltage ones): a strong bus
+    absorbs what the islanding took out. Reactivating the elements afterwards does not put
+    them back in the slack: work on a copy (:func:`copy`) if the original slack is needed afterwards.
 
     With ``redistribute_slack`` (default ``True``), the active power the islanding takes out --
     the set-points of the stranded generators and static generators, minus the stranded loads,

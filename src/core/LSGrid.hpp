@@ -2761,6 +2761,9 @@ class LS2G_API LSGrid final
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
+        /// assign_slack_to_most_connected, the buses compared on the highest nominal voltage first
+        /// when `highest_voltage_first` (consider_only_main_component's fallback)
+        std::tuple<int, int> _assign_slack_most_connected(bool highest_voltage_first);
         void init_slack_bus(const SolverBusIdVect & id_me_to_solver,
                             const GlobalBusIdVect& id_solver_to_me,
                             const GlobalBusIdVect & slack_bus_id_me,

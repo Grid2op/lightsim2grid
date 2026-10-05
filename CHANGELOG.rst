@@ -233,6 +233,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``consider_only_main_component`` keeps the largest component, as OpenLoadFlow, not the slack's;
+  one that lost every slack unit gets one on its highest-voltage, most connected producing bus.
+- [FIXED] ``assign_slack_to_most_connected`` counted the loads' consumption as production, and left out
+  the storage units, which can hold the slack.
 - [ADDED] ``OuterLoopStats.decisions``: every decision of the outer loops, with the values it compared.
 - [FIXED] ``ReactiveLimits`` no longer releases a frozen controller while another one of its group holds
   the bus at its set-point, and the outer loops read the Newton's magnitudes, not ``|V|``: the outcome

@@ -215,6 +215,30 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
             slack_.remove(storage_id, solver_control);
         }
         void remove_all_slackbus(){ slack_.remove_all(); }
+        /// add, per bus, the active power (MW, generator convention: what they discharge) the
+        /// connected storage units produce -- see GeneratorContainer::slack_p_per_bus
+        void slack_p_per_bus(std::vector<real_type> & res) const {
+            for(int storage_id = 0; storage_id < nb(); ++storage_id){
+                if(status_[storage_id]) res[bus_id_(storage_id).cast_int()] -= target_p_mw_(storage_id);
+            }
+        }
+        /// put every connected storage unit of `bus` discharging in the slack, weighted by its
+        /// share of `p_per_bus` (see GeneratorContainer::assign_slack_bus); returns the id of the
+        /// connected one discharging the most (-1 if none is connected there)
+        int assign_slack_bus(int bus, const std::vector<real_type> & p_per_bus, DualAlgoControl & solver_control){
+            int res_id = -1;
+            real_type max_p = -1.;
+            for(int storage_id = 0; storage_id < nb(); ++storage_id){
+                if(!status_[storage_id] || bus_id_(storage_id).cast_int() != bus) continue;
+                const real_type p_mw = -target_p_mw_(storage_id);
+                if(p_mw > 0.) add_slackbus(storage_id, p_mw / p_per_bus[bus], solver_control);
+                if(p_mw > max_p || res_id == -1){
+                    res_id = storage_id;
+                    max_p = p_mw;
+                }
+            }
+            return res_id;
+        }
         /// the participants outside the main component leave the slack (LSGrid::consider_only_main_component)
         void remove_slackbus_not_in_main_component(const std::vector<bool> & busbar_in_main_component,
                                                    DualAlgoControl & solver_control){
