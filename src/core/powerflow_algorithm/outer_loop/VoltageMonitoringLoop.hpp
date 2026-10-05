@@ -30,7 +30,7 @@ class LSGrid;
  * Such an SVC is idle in the grid (off, flagged standby with its set-points, see
  * LSGrid::set_svc_standby). With this loop in the grid's list, the voltage-control plan
  * holds it in a group of its own (VoltageControlPlan::build_controllers' `hold_monitors`),
- * so switching it on is a value edit (OuterState::svc_target_vm, then
+ * so switching it on is a value edit (a StandbySvcControl, then
  * NRSystem::release_held_svcs): one symbolic analysis for the whole solve.
  *
  * Trigger (detect): svc_standby_check (SvcStandbyCheck.hpp) on the monitors still idle,
@@ -46,6 +46,7 @@ class LS2G_API VoltageMonitoringLoop final : public BaseOuterLoop
     protected:
         std::string _name() const override { return "VoltageMonitoring"; }
         bool _holds_svc_monitors() const override { return true; }
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;

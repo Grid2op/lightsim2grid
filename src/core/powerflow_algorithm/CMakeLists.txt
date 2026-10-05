@@ -9,6 +9,7 @@ list(APPEND SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemVoltageControl.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NRSystemMultiSlack.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/OuterLoopDriver.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/OuterControls.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DefaultOuterLoops.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/DistributedSlackLoop.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/outer_loop/HvdcAcEmulationLimitsLoop.cpp"

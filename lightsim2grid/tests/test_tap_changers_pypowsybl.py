@@ -28,8 +28,22 @@ except ImportError:
 SLACK_GEN = "GH1"
 
 
+# what the hvdc lines join to the transformer's synchronous area, in an order pypowsybl can
+# remove it in (an element only once nothing is left on it)
+_OTHER_AREA = (["HVDC1", "HVDC2"],
+               ["VSC1", "VSC2", "LCC1", "LCC2", "LINE_S2S3", "LINE_S3S4", "GTH1", "GTH2", "LD5", "LD6"],
+               ["S2VL1", "S3VL1", "S4VL1"],
+               ["S2", "S3", "S4"])
+
+
 def _net():
-    return pp.network.create_four_substations_node_breaker_network()
+    """pypowsybl's four-substation network, cut down to the synchronous area of the transformer
+    TWT. The full network has two areas joined by hvdc lines, and lightsim2grid solves only its
+    main component -- the largest, as OpenLoadFlow -- which is the other one."""
+    net = pp.network.create_four_substations_node_breaker_network()
+    for ids in _OTHER_AREA:
+        net.remove_elements(ids)
+    return net
 
 
 def _grid(net):
@@ -47,26 +61,25 @@ class TestTapChangersPypowsybl(unittest.TestCase):
     def _trafo(grid, name):
         return next(el for el in grid.get_trafos() if el.name == name)
 
-    def _max_dvm(self, net, grid):
-        """OpenLoadFlow on `net` (no outer loop, slack on SLACK_GEN's bus) against `grid`, on
-        the synchronous area of SLACK_GEN: the network has two, joined by hvdc lines, and the
-        transformer is not in the largest one (OpenLoadFlow's main component)."""
+    def _assert_same_as_olf(self, net, grid):
+        """OpenLoadFlow on `net` (no outer loop, slack on SLACK_GEN's bus) against `grid`, on every
+        bus: the magnitudes, and the angles a phase shift shows in."""
         from _olf_reference import reference_parameters
+        self.assertEqual(net.get_buses()["synchronous_component"].nunique(), 1)
         params = reference_parameters(
             provider={"slackBusSelectionMode": "NAME", "slackBusesIds": net.get_generators().loc[SLACK_GEN, "bus_id"],
                       "newtonRaphsonConvEpsPerEq": "1e-12", "outerLoopNames": ""},
-            distributed_slack=False, use_reactive_limits=False, read_slack_bus=False,
-            component_mode=lf.ComponentMode.ALL_CONNECTED)
+            distributed_slack=False, use_reactive_limits=False, read_slack_bus=False)
         self.assertEqual(lf.run_ac(net, params)[0].status.name, "CONVERGED")
         grid.change_algorithm("NRSing_KLU")
         self.assertGreater(grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-12).shape[0], 0)
         olf = iidm_bus_voltages(net)
         ls = LightsimResultNetwork(grid, net).get_buses()
-        vm = (ls["v_mag"] / ls["voltage_level_id"].map(net.get_voltage_levels()["nominal_v"])).dropna()
-        vm = vm[vm > 0.]  # the other synchronous area, not solved here
-        common = olf.dropna().index.intersection(vm.index)
-        self.assertGreaterEqual(len(common), 2)
-        return float((olf.loc[common, "vm_pu"] - vm.loc[common]).abs().max())
+        vm = ls["v_mag"] / ls["voltage_level_id"].map(net.get_voltage_levels()["nominal_v"])
+        # every bus solved, the transformer's two among them (one left out reads 0 or NaN)
+        self.assertEqual(sorted(vm[vm > 0.].index), sorted(olf.index))
+        self.assertLess(float((olf["vm_pu"] - vm.loc[olf.index]).abs().max()), 1e-9)
+        self.assertLess(float((olf["va_deg"] - ls["v_angle"].loc[olf.index]).abs().max()), 1e-9)
 
     def test_read(self):
         net = _net()
@@ -102,7 +115,7 @@ class TestTapChangersPypowsybl(unittest.TestCase):
 
     def test_same_as_olf(self):
         net = _net()
-        self.assertLess(self._max_dvm(net, _grid(net)), 1e-9)
+        self._assert_same_as_olf(net, _grid(net))
 
     def test_moved_taps_same_as_olf(self):
         # both changers moved, on OpenLoadFlow's network and on the grid built before
@@ -113,14 +126,14 @@ class TestTapChangersPypowsybl(unittest.TestCase):
         net.update_phase_tap_changers(id="TWT", tap=10)
         grid.change_trafo_ratio_tap(tid, 2)
         grid.change_trafo_phase_tap(tid, 10)
-        self.assertLess(self._max_dvm(net, grid), 1e-9)
+        self._assert_same_as_olf(net, grid)
         self.assertEqual(grid.closest_trafo_phase_tap(tid, self._trafo(grid, "TWT").shift_rad), 10)
 
     def test_ratio_step_corrections(self):
         # a ratio tap step correcting r, x, g and b: OpenLoadFlow applies it, so does the grid
         net = _net()
         net.update_ratio_tap_changer_steps(id="TWT", position=1, r=10., x=-20., g=5., b=30.)
-        self.assertLess(self._max_dvm(net, _grid(net)), 1e-9)
+        self._assert_same_as_olf(net, _grid(net))
 
     def test_moved_sections_same_as_olf(self):
         net = _net()
@@ -129,7 +142,7 @@ class TestTapChangersPypowsybl(unittest.TestCase):
         net.update_shunt_compensators(id="SHUNT", section_count=0)
         grid.change_shunt_section_count(sid, 0)
         self.assertEqual(grid.get_shunts()[sid].target_q_mvar, 0.)
-        self.assertLess(self._max_dvm(net, grid), 1e-9)
+        self._assert_same_as_olf(net, grid)
 
     def test_copy(self):
         grid = _grid(_net())

@@ -613,8 +613,8 @@ class LS2G_API BaseAlgo : public BaseConstants
             gen_p_mw.clear();
             storage_p_mw.clear();
         }
-        // the droop regime the last solve's outer loops set per hvdc line (OuterState::
-        // hvdc_status), empty when none did
+        // the droop regime the last solve's outer loops set per hvdc line (grid id,
+        // HvdcRegimeControl::KEEP where they kept the grid's), empty when none did
         virtual void get_outer_hvdc_status(std::vector<int> & status) const { status.clear(); }
         /// the phase tap position the outer loops left each transformer at (grid id,
         /// INT_MIN where they kept the grid's; empty: none)

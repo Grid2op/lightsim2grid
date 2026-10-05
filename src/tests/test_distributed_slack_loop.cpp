@@ -82,10 +82,10 @@ void use_loop(LSGrid & grid, real_type threshold_mw = 1e-6, bool fail_on_residue
 {
     grid.change_algorithm("NROuter_SparseLU");
     grid.clear_outer_loops();
-    auto loop = std::make_shared<DistributedSlackLoop>();
-    loop->slack_bus_p_max_mismatch_mw = threshold_mw;
-    loop->fail_on_residue = fail_on_residue;
-    grid.add_outer_loop(loop);
+    DistributedSlackLoop::Params params;
+    params.slack_bus_p_max_mismatch_mw = threshold_mw;
+    params.fail_on_residue = fail_on_residue;
+    grid.add_outer_loop(std::make_shared<DistributedSlackLoop>(params));
 }
 
 RealVect gen_p(const LSGrid & grid)

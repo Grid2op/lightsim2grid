@@ -35,7 +35,7 @@ class LSGrid;
  * Its three steps:
  *  - INITIAL (first check): every group off its target by more than half its deadband switches
  *    its transformers on. If none, the loop is done. Otherwise the generators regulating a bus
- *    of at most `max_controlled_nominal_voltage` kV (step-up units aside) are frozen at the
+ *    of at most `Params::max_controlled_nominal_voltage` kV (step-up units aside) are frozen at the
  *    reactive power their bus injects -- OpenLoadFlow's GeneratorVoltageControlManager, which
  *    passes the bus' injection, its load included, as the generation; reproduced -- and a
  *    transformer with no PV bus left on its other side is switched off
@@ -56,12 +56,22 @@ class LSGrid;
 class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
 {
     public:
-        /// OpenLoadFlow's transformerVoltageControlUseInitialTapPosition
-        bool use_initial_tap_position = true;
-        /// OpenLoadFlow's generatorVoltageControlMinNominalVoltage (kV): the generators
-        /// regulating a bus of at most this are frozen while the transformers act; < 0: the
-        /// highest nominal voltage the transformers regulate (OpenLoadFlow's automatic value)
-        real_type max_controlled_nominal_voltage = 120.;
+        /// The loop's parameters, OpenLoadFlow's values by default; fixed at construction.
+        struct Params {
+            /// OpenLoadFlow's transformerVoltageControlUseInitialTapPosition
+            bool use_initial_tap_position = true;
+            /// OpenLoadFlow's generatorVoltageControlMinNominalVoltage (kV): the generators
+            /// regulating a bus of at most this are frozen while the transformers act; < 0: the
+            /// highest nominal voltage the transformers regulate (OpenLoadFlow's automatic value)
+            real_type max_controlled_nominal_voltage = 120.;
+            /// the deadband of a group none of whose transformers has one, kV
+            /// (AbstractTransformerVoltageControlOuterLoop's MIN_TARGET_DEADBAND_KV)
+            real_type min_target_deadband_kv = 0.1;
+        };
+
+        TransformerVoltageControlLoop();
+        explicit TransformerVoltageControlLoop(const Params & params);
+        const Params & params() const { return params_; }
 
         struct Group {
             int bus_solver = -1;
@@ -72,11 +82,11 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
             bool hidden = false;
         };
         /// the transformer voltage controls of `grid`, see the class comment
-        static std::vector<Group> groups(const LSGrid & grid);
+        std::vector<Group> groups(const LSGrid & grid) const;
 
     protected:
         std::string _name() const override { return "TransformerVoltageControl"; }
-        void _declare(const OuterContext & ctx, OuterDeclaration & decl) const override;
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;
@@ -86,7 +96,6 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
             return std::unique_ptr<BaseOuterLoop>(new TransformerVoltageControlLoop(*this));
         }
         AlgoConfig _get_params() const override;
-        void _set_params(const AlgoConfig & params) override;
 
     private:
         enum class Step { INITIAL, CONTROL, COMPLETE };
@@ -120,6 +129,8 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
         std::vector<char> controller_;     // per transformer: in a group
         std::vector<Ratio> ratios_;        // per transformer
         std::vector<Frozen> frozen_;
+
+        const Params params_;
 };
 
 }  // namespace ls2g

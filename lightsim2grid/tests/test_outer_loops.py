@@ -144,9 +144,17 @@ class TestDistributedSlack(unittest.TestCase):
         grid = self._grid(gen_slack_id="B1-G")
         self.assertEqual([loop.name() for loop in grid.get_outer_loops()],
                          ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring", "ReactiveLimits"])
-        loop = DistributedSlack(slack_bus_p_max_mismatch_mw=2., fail_on_residue=False)
+        loop = DistributedSlack(slack_bus_p_max_mismatch_mw=2., fail_on_residue=False,
+                                p_residue_eps_mw=1e-2, moved_fraction=0.5)
         self.assertEqual(loop.slack_bus_p_max_mismatch_mw, 2.)
         self.assertFalse(loop.fail_on_residue)
+        self.assertEqual(loop.p_residue_eps_mw, 1e-2)
+        self.assertEqual(loop.moved_fraction, 0.5)
+        # set at construction only
+        with self.assertRaises(AttributeError):
+            loop.slack_bus_p_max_mismatch_mw = 3.
+        with self.assertRaises(RuntimeError):
+            DistributedSlack(p_residue_eps_mw=-1.)
 
     def test_same_as_the_newton_distributed_slack(self):
         from lightsim2grid.algorithm import DistributedSlack
@@ -525,11 +533,20 @@ class TestReactiveLimits(unittest.TestCase):
 
     def test_parameters(self):
         from lightsim2grid.algorithm import ReactiveLimits
-        loop = ReactiveLimits(max_pq_pv_switch=5, max_reactive_power_mismatch=1e-6)
+        loop = ReactiveLimits(max_pq_pv_switch=5, max_reactive_power_mismatch=1e-6, mismatch_base_mva=10.,
+                              realistic_voltage_margin=1.05, robust_restart_vm_pu=0.95)
         self.assertEqual(loop.max_pq_pv_switch, 5)
         self.assertAlmostEqual(loop.max_reactive_power_mismatch, 1e-6)
+        self.assertEqual(loop.mismatch_base_mva, 10.)
+        self.assertEqual(loop.realistic_voltage_margin, 1.05)
+        self.assertEqual(loop.robust_restart_vm_pu, 0.95)
+        # set at construction only
+        with self.assertRaises(AttributeError):
+            loop.max_pq_pv_switch = 2
         with self.assertRaises(RuntimeError):
             ReactiveLimits(max_pq_pv_switch=-1)
+        with self.assertRaises(RuntimeError):
+            ReactiveLimits(mismatch_base_mva=0.)
 
 
 class TestReactiveDispatch(unittest.TestCase):

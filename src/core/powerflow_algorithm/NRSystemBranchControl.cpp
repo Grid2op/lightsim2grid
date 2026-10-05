@@ -121,7 +121,7 @@ void BranchControl::_reset(Entry & e)
     e.rho = e.rho_tap;
     e.rho_target = e.rho_tap;
     e.tap = trafos.pi_block_at(e.trafo, e.rpos, e.pos, e.a_tap);
-    // Ybus holds what the container stamped (a fresh copy of the grid's, see NROuterAlgo)
+    // Ybus holds what the container stamped (a fresh copy of the grid's, see OuterLoopAlgo)
     e.applied = {info.yac_eff_11, info.yac_eff_12, info.yac_eff_21, info.yac_eff_22};
     _patch(e);
 }
