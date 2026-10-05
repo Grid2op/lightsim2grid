@@ -162,6 +162,50 @@ class LS2G_API PhaseShifterControl final
 };
 
 /**
+ * A transformer of a ratio group (grid id): transformers regulating the voltage of one bus.
+ * Its ratio tap may move and, when the group is solved (`solved`, a column per transformer and
+ * the group's rows), its voltage control may be switched on or off. The reads are the last
+ * solve's, and mean nothing unless the solve handles it (handled()).
+ */
+class LS2G_API RatioTapControl final
+{
+    public:
+        int trafo() const { return trafo_; }
+        /// whether the solve handles it (a transformer connected at both ends, on two buses)
+        bool handled() const;
+        /// its ratio now
+        real_type ratio() const;
+        /// its ratio tap position now
+        int position() const;
+
+        /// switch its voltage control on or off (off: its ratio stays where it is)
+        void set_control(bool on) { control_ = on ? 1 : 0; }
+        /// move its ratio tap to `position`, once, at the next solve
+        void move_tap(int position) { tap_ = position; tap_moved_ = true; }
+
+        /// what a loop asked, for the inner algorithm: the control (1 on, 0 off, -1 as it is)
+        int requested_control() const { return control_; }
+        /// the tap a loop moved it to, once: false when it did not
+        bool take_tap(int & position) {
+            if (!tap_moved_) return false;
+            position = tap_;
+            tap_moved_ = false;
+            return true;
+        }
+
+    private:
+        friend class OuterControls;
+        RatioTapControl(const OuterControls * owner, int trafo) : owner_(owner), trafo_(trafo) {}
+        void _reset() { control_ = -1; tap_moved_ = false; tap_ = 0; }
+
+        const OuterControls * owner_;
+        int trafo_;
+        int control_ = -1;
+        bool tap_moved_ = false;
+        int tap_ = 0;
+};
+
+/**
  * Collects what the outer loops reserve in the solve and hands out the controls they act
  * through. A loop reserves, when the solver input is (re)built (BaseOuterLoop::declare),
  * every slot any of its states may need; the union is what lets a whole solve run on one
@@ -197,6 +241,10 @@ class LS2G_API OuterControls
         /// a phase shifter (transformer grid id) whose tap may move and, with `solves_shift`,
         /// whose shift the solve solves for; nullptr when the inner algorithm has none
         PhaseShifterControl * reserve_phase_shifter(int trafo, bool solves_shift);
+        /// transformers (grid ids, in order: the first one on holds the voltage) regulating
+        /// the voltage of `bus` at `target_vm` pu, their ratios solved for when `solved`; a
+        /// RatioTapControl per transformer. False when the inner algorithm has none.
+        bool reserve_ratio_group(int bus, real_type target_vm, const std::vector<int> & trafos, bool solved);
 
         // ----- lookup (after the reservation) -----------------------------------------------
         /// the control of `bus`, nullptr when no loop reserved it
@@ -210,6 +258,11 @@ class LS2G_API OuterControls
         const HvdcRegimeControl * hvdc_regime(int line) const;
         PhaseShifterControl * phase_shifter(int trafo);
         const PhaseShifterControl * phase_shifter(int trafo) const;
+        RatioTapControl * ratio_tap(int trafo);
+        const RatioTapControl * ratio_tap(int trafo) const;
+        /// the buses a reserved ratio group regulates (a control of a higher priority than a
+        /// shunt's, see ShuntVoltageControlLoop)
+        std::set<int> ratio_group_buses() const;
         /// whether a loop holds that controller now
         bool is_held(int controller) const {
             const VoltageControllerHold * hold = controller_hold(controller);
@@ -254,6 +307,15 @@ class LS2G_API OuterControls
         /// the phase shifters, in the order they were reserved / by transformer id
         const std::vector<PhaseShifterControl *> & phase_shifters_reserved() const { return phase_shifter_order_; }
         const std::map<int, PhaseShifterControl *> & phase_shifters() const { return phase_shifter_of_; }
+        /// the ratio groups, in the order they were reserved, and their transformers by id
+        struct RatioGroup {
+            int bus;
+            real_type target_vm;
+            std::vector<int> trafos;
+            bool solved;
+        };
+        const std::vector<RatioGroup> & ratio_groups() const { return ratio_groups_; }
+        const std::map<int, RatioTapControl *> & ratio_taps() const { return ratio_tap_of_; }
 
         /// the magnitudes to reset (bus, pu), in the order they were asked for, then forgotten
         void take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm);
@@ -261,7 +323,12 @@ class LS2G_API OuterControls
     protected:
         // what the solve reads back, for the controls above (the inner algorithm's)
         friend class PhaseShifterControl;
+        friend class RatioTapControl;
         virtual bool _supports_phase_shifters() const { return false; }
+        virtual bool _supports_ratio_groups() const { return false; }
+        virtual bool _ratio_handled(int /*trafo*/) const { return false; }
+        virtual real_type _ratio(int /*trafo*/) const { return std::numeric_limits<real_type>::quiet_NaN(); }
+        virtual int _ratio_position(int /*trafo*/) const { return 0; }
         virtual bool _phase_handled(int /*trafo*/) const { return false; }
         virtual real_type _phase_shift(int /*trafo*/) const { return std::numeric_limits<real_type>::quiet_NaN(); }
         virtual int _phase_position(int /*trafo*/) const { return 0; }
@@ -283,6 +350,9 @@ class LS2G_API OuterControls
         std::deque<PhaseShifterControl> phase_shifter_store_;
         std::map<int, PhaseShifterControl *> phase_shifter_of_;
         std::vector<PhaseShifterControl *> phase_shifter_order_;
+        std::vector<RatioGroup> ratio_groups_;
+        std::deque<RatioTapControl> ratio_tap_store_;
+        std::map<int, RatioTapControl *> ratio_tap_of_;
         std::vector<int> caller_switchable_;
         std::vector<int> caller_pinned_;
         std::vector<std::pair<int, real_type> > pending_vm_;

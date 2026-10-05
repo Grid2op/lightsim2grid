@@ -47,19 +47,6 @@ enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
 class LS2G_API OuterDeclaration final
 {
     public:
-        /// transformers (grid ids, in order) regulating the voltage of `bus_solver` at
-        /// `target_vm` pu: with `solved`, the Newton solves for their ratios (BranchControl),
-        /// otherwise only their taps may move
-        void add_ratio_group(int bus_solver, real_type target_vm, const std::vector<int> & trafo_ids, bool solved) {
-            ratio_groups_.push_back(RatioGroup{bus_solver, target_vm, trafo_ids, solved});
-        }
-        struct RatioGroup {
-            int bus_solver;
-            real_type target_vm;
-            std::vector<int> trafos;
-            bool solved;
-        };
-        const std::vector<RatioGroup> & ratio_groups() const { return ratio_groups_; }
         /// shunts regulating the voltage of `bus_solver` at `target_vm` pu, from the controller
         /// buses `controller_buses` (solver ids), each with its regulating shunts (grid ids):
         /// with `solved`, the Newton solves for their susceptances (ShuntControl), otherwise
@@ -77,12 +64,10 @@ class LS2G_API OuterDeclaration final
         };
         const std::vector<ShuntGroup> & shunt_groups() const { return shunt_groups_; }
         void clear() {
-            ratio_groups_.clear();
             shunt_groups_.clear();
         }
 
     private:
-        std::vector<RatioGroup> ratio_groups_;
         std::vector<ShuntGroup> shunt_groups_;
 };
 
@@ -105,19 +90,13 @@ struct OuterState
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
-    /// the same for the ratio tap changers (moved, TAP_KEEP) and their voltage control
-    /// (1 on, 0 off, -1 kept); the moves are applied by the next solve, then forgotten
-    std::vector<int> ratio_tap;
-    std::vector<int> ratio_control;
     /// the shunt controllers (by controller bus, solver id): their voltage control (1 on, 0 off,
     /// -1 kept; empty until a loop sizes it), and the section counts a loop switched their shunts
     /// to (applied by the next solve, then forgotten)
     std::vector<int> shunt_control;
     std::vector<std::pair<int, std::vector<int> > > shunt_sections;
-    static constexpr int TAP_KEEP = std::numeric_limits<int>::min();
 };
 
-class BranchControl;
 class ShuntControl;
 
 /**
@@ -198,9 +177,6 @@ struct OuterContext
     OuterState * state = nullptr;
     /// what the loops reserve and act through (null in detection)
     OuterControls * controls = nullptr;
-    /// the transformers whose phase the solve handles (their shift, tap, current), null
-    /// when there are none or in detection
-    const BranchControl * branch_control = nullptr;
     /// the shunts whose susceptance the solve handles, null when there are none or in detection
     const ShuntControl * shunt_control = nullptr;
     /// where a check records its decisions (null: not recorded, eg in detection)

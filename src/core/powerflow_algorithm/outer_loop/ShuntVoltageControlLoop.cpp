@@ -90,8 +90,7 @@ void ShuntVoltageControlLoop::_declare(const OuterContext & ctx, OuterDeclaratio
 {
     // the buses the transformers regulate: a transformer voltage control declared before this
     // loop (OpenLoadFlow's order) hides a shunt one
-    transformer_buses_.clear();
-    for (const auto & g : decl.ratio_groups()) transformer_buses_.insert(g.bus_solver);
+    transformer_buses_ = ctx.controls->ratio_group_buses();
     // a hidden group never acts (OpenLoadFlow's getControllerElements keeps the visible
     // controls only): nothing to reserve for it
     for (const Group & g : groups(*ctx.grid, transformer_buses_)) {

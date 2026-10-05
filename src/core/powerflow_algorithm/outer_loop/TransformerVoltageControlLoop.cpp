@@ -17,7 +17,6 @@
 #include <sstream>
 
 #include "LSGrid.hpp"
-#include "powerflow_algorithm/NRSystem.hpp"
 
 namespace ls2g {
 
@@ -43,6 +42,23 @@ int find_root(std::vector<int> & parent, int x)
         x = parent[static_cast<std::size_t>(x)];
     }
     return x;
+}
+
+// the phase tap position of transformer `t` in the solve: a phase shifter's (PhaseControl may
+// move it), the grid's otherwise
+int phase_position(const OuterContext & ctx, int t)
+{
+    const PhaseShifterControl * phase = ctx.controls->phase_shifter(t);
+    if (phase != nullptr && phase->handled()) return phase->position();
+    const TapChangers & ptc = ctx.grid->get_trafos().get_tap_changers(true);
+    return ptc.has(t) ? ptc.position(t) : 0;
+}
+
+// the ratio control of transformer `t` when the solve handles it, null otherwise
+RatioTapControl * handled_ratio(const OuterContext & ctx, int t)
+{
+    RatioTapControl * tap = ctx.controls->ratio_tap(t);
+    return tap != nullptr && tap->handled() ? tap : nullptr;
 }
 
 }  // namespace
@@ -114,7 +130,7 @@ real_type TransformerVoltageControlLoop::_limit(const LSGrid & grid) const
     return res;
 }
 
-void TransformerVoltageControlLoop::_declare(const OuterContext & ctx, OuterDeclaration & decl) const
+void TransformerVoltageControlLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
 {
     const std::vector<Group> gs = groups(*ctx.grid);
     if (gs.empty()) return;
@@ -123,7 +139,7 @@ void TransformerVoltageControlLoop::_declare(const OuterContext & ctx, OuterDecl
     bool any = false;
     for (const Group & g : gs) {
         if (g.hidden) continue;
-        decl.add_ratio_group(g.bus_solver, g.target, g.trafos, true);
+        ctx.controls->reserve_ratio_group(g.bus_solver, g.target, g.trafos, true);
         any = true;
     }
     if (!any) return;
@@ -159,19 +175,19 @@ void TransformerVoltageControlLoop::_initialize(OuterContext & ctx)
     for (const Group & g : groups_) {
         for (int t : g.trafos) controller_[static_cast<std::size_t>(t)] = 1;
     }
-    OuterState & st = *ctx.state;
-    st.ratio_tap.assign(nb, OuterState::TAP_KEEP);
-    st.ratio_control.assign(nb, -1);
     // every transformer voltage control off for the first solve
     for (std::size_t t = 0; t < nb; ++t) {
-        if (controller_[t]) st.ratio_control[t] = 0;
+        if (!controller_[t]) continue;
+        RatioTapControl * tap = ctx.controls->ratio_tap(static_cast<int>(t));
+        if (tap != nullptr) tap->set_control(false);
     }
 }
 
 void TransformerVoltageControlLoop::_set_on(OuterContext & ctx, int t, bool on)
 {
     enabled_[static_cast<std::size_t>(t)] = on ? 1 : 0;
-    ctx.state->ratio_control[static_cast<std::size_t>(t)] = on ? 1 : 0;
+    RatioTapControl * tap = ctx.controls->ratio_tap(t);
+    if (tap != nullptr) tap->set_control(on);
 }
 
 int TransformerVoltageControlLoop::_closest_tap(const OuterContext & ctx, int t, real_type value) const
@@ -179,10 +195,8 @@ int TransformerVoltageControlLoop::_closest_tap(const OuterContext & ctx, int t,
     // PiModelArray.roundR1ToClosestTap: the current position unless another is strictly closer
     const TrafoContainer & trafos = ctx.grid->get_trafos();
     const TapChangers & rtc = trafos.get_tap_changers(false);
-    const TapChangers & ptc = trafos.get_tap_changers(true);
-    const BranchControl & branch = *ctx.branch_control;
-    const int ppos = branch.handles(t) ? branch.position(t) : (ptc.has(t) ? ptc.position(t) : 0);
-    int best = branch.ratio_position(t);
+    const int ppos = phase_position(ctx, t);
+    int best = ctx.controls->ratio_tap(t)->position();
     real_type best_distance = std::abs(value - trafos.ratio_at(t, best, ppos));
     for (int pos = rtc.low_tap(t); pos <= rtc.high_tap(t); ++pos) {
         const real_type distance = std::abs(value - trafos.ratio_at(t, pos, ppos));
@@ -371,8 +385,13 @@ void TransformerVoltageControlLoop::_fix_controls(OuterContext & ctx)
 
 OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
 {
-    if (step_ == Step::COMPLETE || groups_.empty() || ctx.branch_control == nullptr) return OuterLoopStatus::STABLE;
-    const BranchControl & branch = *ctx.branch_control;
+    if (step_ == Step::COMPLETE || groups_.empty()) return OuterLoopStatus::STABLE;
+    // nothing to do without a transformer the inner algorithm can act on
+    bool any = false;
+    for (const Group & g : groups_) {
+        for (int t : g.trafos) any = any || ctx.controls->ratio_tap(t) != nullptr;
+    }
+    if (!any) return OuterLoopStatus::STABLE;
     const TrafoContainer & trafos = ctx.grid->get_trafos();
     const TapChangers & ptc = trafos.get_tap_changers(true);
     const TapChangers & rtc = trafos.get_tap_changers(false);
@@ -388,7 +407,7 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
                            std::abs(g.target - v), g.half_deadband);
             if (!outside) continue;
             for (int t : g.trafos) {
-                if (!branch.handles_ratio(t)) continue;
+                if (handled_ratio(ctx, t) == nullptr) continue;
                 _set_on(ctx, t, true);
                 need_run = true;
             }
@@ -403,8 +422,8 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
             real_type a = 0., b = 0., sum_min = 0., sum_max = 0.;
             for (int t : on) {
                 Ratio & r = ratios_[static_cast<std::size_t>(t)];
-                const int ppos = ptc.has(t) ? branch.position(t) : 0;
-                r.initial = branch.ratio(t);
+                const int ppos = ptc.has(t) ? phase_position(ctx, t) : 0;
+                r.initial = ctx.controls->ratio_tap(t)->ratio();
                 r.min = std::numeric_limits<real_type>::infinity();
                 r.max = -std::numeric_limits<real_type>::infinity();
                 for (int pos = rtc.low_tap(t); pos <= rtc.high_tap(t); ++pos) {
@@ -447,18 +466,18 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
     }
 
     // CONTROL: the ratios out of their range rounded to their extreme tap
-    OuterState & st = *ctx.state;
     bool out_of_range = false;
     for (const Group & g : groups_) {
         for (int t : g.trafos) {
             if (!enabled_[static_cast<std::size_t>(t)]) continue;
             const Ratio & r = ratios_[static_cast<std::size_t>(t)];
-            const real_type value = branch.ratio(t);
+            RatioTapControl * tap = ctx.controls->ratio_tap(t);
+            const real_type value = tap->ratio();
             if (value < r.shared_min || value > r.shared_max) {
                 // the ratio, and the end of the range it left
                 ctx.record("ROUND_TO_RANGE", true, ViolationElementType::TRAFO, t, LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND,
                            value, value > r.shared_max ? r.shared_max : r.shared_min);
-                st.ratio_tap[static_cast<std::size_t>(t)] = _closest_tap(ctx, t, value > r.shared_max ? r.shared_max : r.shared_min);
+                tap->move_tap(_closest_tap(ctx, t, value > r.shared_max ? r.shared_max : r.shared_min));
                 _set_on(ctx, t, false);
                 out_of_range = true;
             }
@@ -469,18 +488,20 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
         for (const Group & g : groups_) {
             if (g.hidden) continue;
             for (int t : g.trafos) {
-                if (!branch.handles_ratio(t)) continue;
-                real_type value = branch.ratio(t);
+                RatioTapControl * tap = handled_ratio(ctx, t);
+                if (tap == nullptr) continue;
+                real_type value = tap->ratio();
                 if (enabled_[static_cast<std::size_t>(t)] && use_initial_tap_position) {
                     const Ratio & r = ratios_[static_cast<std::size_t>(t)];
                     value = value >= r.shared_initial
                         ? r.initial + (value - r.shared_initial) * (r.max - r.initial) / (r.shared_max - r.shared_initial)
                         : r.initial - (r.shared_initial - value) * (r.initial - r.min) / (r.shared_initial - r.shared_min);
                 }
-                st.ratio_tap[static_cast<std::size_t>(t)] = _closest_tap(ctx, t, value);
+                const int position = _closest_tap(ctx, t, value);
+                tap->move_tap(position);
                 // the continuous ratio, and the tap position it is rounded to
                 ctx.record("ROUND_TAP", true, ViolationElementType::TRAFO, t, LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND,
-                           value, static_cast<real_type>(st.ratio_tap[static_cast<std::size_t>(t)]));
+                           value, static_cast<real_type>(position));
                 _set_on(ctx, t, false);
             }
         }

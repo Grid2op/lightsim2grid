@@ -114,6 +114,32 @@ void PhaseShifterControl::current(int side, real_type & i_pu, real_type & di_da)
     owner_->_phase_current(trafo_, side, i_pu, di_da);
 }
 
+bool OuterControls::reserve_ratio_group(int bus, real_type target_vm, const std::vector<int> & trafos, bool solved)
+{
+    if (!_supports_ratio_groups()) return false;
+    ratio_groups_.push_back(RatioGroup{bus, target_vm, trafos, solved});
+    for (int trafo : trafos) {
+        if (ratio_tap(trafo) != nullptr) continue;
+        ratio_tap_store_.push_back(RatioTapControl(this, trafo));
+        ratio_tap_of_[trafo] = &ratio_tap_store_.back();
+    }
+    return true;
+}
+
+RatioTapControl * OuterControls::ratio_tap(int trafo) { return find_control(ratio_tap_of_, trafo); }
+const RatioTapControl * OuterControls::ratio_tap(int trafo) const { return find_control(ratio_tap_of_, trafo); }
+
+std::set<int> OuterControls::ratio_group_buses() const
+{
+    std::set<int> res;
+    for (const RatioGroup & g : ratio_groups_) res.insert(g.bus);
+    return res;
+}
+
+bool RatioTapControl::handled() const { return owner_->_ratio_handled(trafo_); }
+real_type RatioTapControl::ratio() const { return owner_->_ratio(trafo_); }
+int RatioTapControl::position() const { return owner_->_ratio_position(trafo_); }
+
 StandbySvcControl * OuterControls::standby_svc(int svc) { return find_control(standby_svc_of_, svc); }
 const StandbySvcControl * OuterControls::standby_svc(int svc) const { return find_control(standby_svc_of_, svc); }
 HvdcRegimeControl * OuterControls::hvdc_regime(int line) { return find_control(hvdc_regime_of_, line); }
@@ -132,6 +158,9 @@ void OuterControls::clear_reservations()
     phase_shifter_of_.clear();
     phase_shifter_order_.clear();
     phase_shifter_store_.clear();
+    ratio_groups_.clear();
+    ratio_tap_of_.clear();
+    ratio_tap_store_.clear();
 }
 
 void OuterControls::reset_states()
@@ -141,6 +170,7 @@ void OuterControls::reset_states()
     for (auto & svc : standby_svc_store_) svc._reset();
     for (auto & regime : hvdc_regime_store_) regime._reset();
     for (auto & shifter : phase_shifter_store_) shifter._reset();
+    for (auto & tap : ratio_tap_store_) tap._reset();
     pending_vm_.clear();
     suspended_.clear();
 }

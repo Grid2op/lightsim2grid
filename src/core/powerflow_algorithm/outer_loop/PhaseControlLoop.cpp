@@ -13,7 +13,6 @@
 #include <numeric>
 
 #include "LSGrid.hpp"
-#include "powerflow_algorithm/NRSystem.hpp"
 
 namespace ls2g {
 

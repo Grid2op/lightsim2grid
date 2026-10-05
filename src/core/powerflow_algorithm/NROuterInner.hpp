@@ -28,6 +28,19 @@ public:
 
 protected:
     bool _supports_phase_shifters() const override { return system_.branch_control() != nullptr; }
+    bool _supports_ratio_groups() const override { return system_.branch_control() != nullptr; }
+    bool _ratio_handled(int trafo) const override {
+        const BranchControl * branch = system_.branch_control();
+        return branch != nullptr && branch->handles_ratio(trafo);
+    }
+    real_type _ratio(int trafo) const override {
+        const BranchControl * branch = system_.branch_control();
+        return branch != nullptr ? branch->ratio(trafo) : OuterControls::_ratio(trafo);
+    }
+    int _ratio_position(int trafo) const override {
+        const BranchControl * branch = system_.branch_control();
+        return branch != nullptr ? branch->ratio_position(trafo) : OuterControls::_ratio_position(trafo);
+    }
     bool _phase_handled(int trafo) const override {
         const BranchControl * branch = system_.branch_control();
         return branch != nullptr && branch->handles(trafo);
@@ -118,7 +131,6 @@ public:
         controller_q = algo_.system().controller_q();
         ctx.controller_q = &controller_q;
         ctx.slack_absorbed = algo_.system().slack_absorbed();
-        ctx.branch_control = algo_.system().branch_control();
         ctx.shunt_control = algo_.system().shunt_control();
     }
 
@@ -139,7 +151,7 @@ public:
     void phase_tap(std::vector<int> & positions) const {
         positions.clear();
         const BranchControl * phase = algo_.system().branch_control();
-        if(phase != nullptr) phase->positions(positions);  // TAP_KEEP for the transformers it does not handle
+        if(phase != nullptr) phase->positions(positions);  // INT_MIN for the transformers it does not handle
     }
     void ratio_tap(std::vector<int> & positions) const {
         positions.clear();
@@ -178,9 +190,9 @@ void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & dec
         system.set_phase_controllers(trafos, with_column);
     }
     std::vector<BranchControl::RatioGroupDecl> groups;
-    for(const auto & g : decl.ratio_groups()) {
+    for(const auto & g : controls_.ratio_groups()) {
         BranchControl::RatioGroupDecl d;
-        d.bus_solver = g.bus_solver;
+        d.bus_solver = g.bus;
         d.target_vm = g.target_vm;
         d.trafos = g.trafos;
         d.solved = g.solved;
@@ -222,13 +234,12 @@ void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state)
             if(ts.second->requested_control() >= 0) phase->set_control_on(ts.first, ts.second->requested_control() == 1);
         }
         // the ratio taps (a move once), then the voltage controls
-        for(std::size_t t = 0; t < state.ratio_tap.size(); ++t) {
-            if(state.ratio_tap[t] == OuterState::TAP_KEEP) continue;
-            phase->set_ratio_tap(static_cast<int>(t), state.ratio_tap[t]);
-            state.ratio_tap[t] = OuterState::TAP_KEEP;
+        for(const auto & tr : controls_.ratio_taps()) {
+            int position;
+            if(tr.second->take_tap(position)) phase->set_ratio_tap(tr.first, position);
         }
-        for(std::size_t t = 0; t < state.ratio_control.size(); ++t) {
-            if(state.ratio_control[t] >= 0) phase->set_ratio_control_on(static_cast<int>(t), state.ratio_control[t] == 1);
+        for(const auto & tr : controls_.ratio_taps()) {
+            if(tr.second->requested_control() >= 0) phase->set_ratio_control_on(tr.first, tr.second->requested_control() == 1);
         }
     }
     // the shunt sections (a switch once), then the voltage controls

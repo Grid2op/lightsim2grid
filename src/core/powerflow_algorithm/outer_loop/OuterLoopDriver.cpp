@@ -14,10 +14,6 @@
 
 namespace ls2g {
 
-// out-of-class definitions: the C++14 build odr-uses these (vector::assign takes a const reference),
-// and a static constexpr member is only implicitly inline from C++17 on
-constexpr int OuterState::TAP_KEEP;
-
 void OuterContext::record_bus(const char * action, bool taken, int solver_bus, LimitViolationType reason,
                               real_type value, real_type limit) const
 {
