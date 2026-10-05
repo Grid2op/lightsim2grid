@@ -233,6 +233,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``init_from_pypowsybl``: a battery with a capability curve was left without reactive limits (the
+  curve at target P was not read); with ``olf_rules`` the curve is extrapolated as OpenLoadFlow's.
 - [FIXED] ``consider_only_main_component`` keeps the largest component, as OpenLoadFlow, not the slack's;
   one that lost every slack unit gets one on its highest-voltage, most connected producing bus.
 - [FIXED] ``assign_slack_to_most_connected`` counted the loads' consumption as production, and left out

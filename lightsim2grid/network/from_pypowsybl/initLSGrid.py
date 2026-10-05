@@ -399,7 +399,7 @@ def init(net : pypo.network.Network,
 
     # storage units
     df_batt, batt_sub = _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                                         olf_vc=olf_vc)
+                                         olf_vc=olf_vc, olf_rules=olf_rules)
 
     # slack bus(es)
     gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,

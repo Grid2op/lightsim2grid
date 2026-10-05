@@ -10,6 +10,7 @@ import warnings
 
 import numpy as np
 
+from . import _olf_rules
 from ._aux_common import _aux_get_bus
 
 
@@ -50,11 +51,13 @@ def _aux_battery_voltage_regulation(net, df_batt, batt_bus, batt_disco, voltage_
     return vreg, target_vm
 
 
-def _aux_battery_q_limits(df_batt):
+def _aux_battery_q_limits(df_batt, net=None, olf_rules=None):
     """``(min_q, max_q)`` of the batteries in MVAr (generator convention), the
-    capability curve at the target P when the battery has one, the fixed box
-    otherwise; NaN / absurd values become the float32 "unbounded" sentinels the
-    generators use (see `_aux_add_generators.py`)."""
+    capability curve at the target P when the battery has one (``min_q_at_target_p``:
+    ``df_batt`` must be read with ``all_attributes=True``), the fixed box otherwise; NaN /
+    absurd values become the float32 "unbounded" sentinels the generators use (see
+    `_aux_add_generators.py`). With ``olf_rules`` (and ``net``), the curve is extrapolated
+    past its ends as OpenLoadFlow does, and the limits are kept unrounded, as a generator's."""
     def col(name, fallback):
         # copies: swapped in place below, and under pandas' copy-on-write `to_numpy` can
         # return a read-only view of the frame
@@ -66,6 +69,10 @@ def _aux_battery_q_limits(df_batt):
                 else np.full(len(df_batt), np.nan))
     min_q = col("min_q_at_target_p", "min_q")
     max_q = col("max_q_at_target_p", "max_q")
+    if olf_rules is not None and net is not None and olf_rules.extrapolate_reactive_limits and len(df_batt):
+        min_q, max_q = _olf_rules.curve_limits_at(net, df_batt.index, df_batt["target_p"].to_numpy(float),
+                                                  min_q, max_q)
+        min_q, max_q = np.array(min_q, dtype=float), np.array(max_q, dtype=float)
     min_float_value = np.finfo(np.float32).min * 1e-4 + 1.
     max_float_value = np.finfo(np.float32).max * 1e-4 + 1.
     swapped = np.isfinite(min_q) & np.isfinite(max_q) & (min_q > max_q)
@@ -73,6 +80,9 @@ def _aux_battery_q_limits(df_batt):
         min_q[swapped], max_q[swapped] = max_q[swapped], min_q[swapped].copy()
     min_q = np.where(np.isfinite(min_q) & (min_q >= min_float_value), min_q, min_float_value)
     max_q = np.where(np.isfinite(max_q) & (np.abs(max_q) <= max_float_value), max_q, max_float_value)
+    if olf_rules is not None:
+        # compared to a fraction of a kvar by the ReactiveLimits loop: no float32 rounding
+        return min_q, max_q
     return min_q.astype(np.float32).astype(float), max_q.astype(np.float32).astype(float)
 
 
@@ -91,7 +101,7 @@ def _aux_battery_p_limits(df_batt):
     return min_p_mw, max_p_mw
 
 
-def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, olf_vc=None):
+def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, olf_vc=None, olf_rules=None):
     """Add every storage unit (IIDM battery) of ``net`` to ``model``. IIDM gives
     the battery setpoints in the *generator* convention (positive target_p =
     power produced / injected) while lightsim2grid stores storage as PQ in the
@@ -101,13 +111,15 @@ def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_p
     extension is on regulates the voltage of its own bus (a PV bus, as
     OpenLoadFlow runs it; see :func:`_aux_battery_voltage_regulation`), unless ``olf_vc``
     (:func:`._olf_rules.voltage_controllers`, with ``olf_rules``) says OpenLoadFlow
-    discards its voltage control. Returns
+    discards its voltage control. Its reactive limits are its capability curve at its target P
+    (extrapolated as OpenLoadFlow does with ``olf_rules``, see :func:`_aux_battery_q_limits`). Returns
     ``(df_batt, batt_sub)``, used by the final substation-id bookkeeping and
     ``return_sub_id`` in `initLSGrid.py`."""
+    # every attribute: the capability curve at the target P (min_q_at_target_p) is not in the
+    # default ones, and a battery with a curve has no fixed box -- it was left unbounded
+    df_batt = net.get_batteries(all_attributes=True)
     if sort_index:
-        df_batt = net.get_batteries().sort_index()
-    else:
-        df_batt = net.get_batteries()
+        df_batt = df_batt.sort_index()
     batt_bus, batt_disco, batt_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "storage", df_batt)
     batt_p = df_batt["target_p"].values.astype(float)
     batt_q = df_batt["target_q"].values.astype(float)
@@ -116,7 +128,7 @@ def _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_p
     vreg, target_vm = _aux_battery_voltage_regulation(net, df_batt, batt_bus, batt_disco, voltage_levels)
     if olf_vc is not None:
         vreg = vreg & ~olf_vc["discarded"].reindex(df_batt.index).fillna(False).to_numpy(bool)
-    min_q, max_q = _aux_battery_q_limits(df_batt)
+    min_q, max_q = _aux_battery_q_limits(df_batt, net, olf_rules)
     model.init_storages_full(-batt_p,  # IIDM generator convention -> lightsim2grid load convention
                              -batt_q,
                              [bool(el) for el in vreg],
