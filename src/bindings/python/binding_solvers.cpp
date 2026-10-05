@@ -196,17 +196,33 @@ void bind_solvers(py::module_& m) {
 
     py::class_<DistributedSlackLoop, BaseOuterLoop, std::shared_ptr<DistributedSlackLoop> >(
             m, "DistributedSlack", DocSolver::DistributedSlackLoop.c_str())
-        .def(py::init([](real_type slack_bus_p_max_mismatch_mw, bool fail_on_residue){
-                 auto res = std::make_shared<DistributedSlackLoop>();
-                 res->set_params(AlgoConfig{{fail_on_residue ? 1 : 0}, {static_cast<double>(slack_bus_p_max_mismatch_mw)}});
-                 return res;
+        .def(py::init([](real_type slack_bus_p_max_mismatch_mw, bool fail_on_residue, real_type p_residue_eps_mw,
+                         real_type moved_fraction){
+                 DistributedSlackLoop::Params params;
+                 params.slack_bus_p_max_mismatch_mw = slack_bus_p_max_mismatch_mw;
+                 params.fail_on_residue = fail_on_residue;
+                 params.p_residue_eps_mw = p_residue_eps_mw;
+                 params.moved_fraction = moved_fraction;
+                 return std::make_shared<DistributedSlackLoop>(params);  // checks them
              }),
-             py::arg("slack_bus_p_max_mismatch_mw") = 1., py::arg("fail_on_residue") = true)
-        .def_readwrite("slack_bus_p_max_mismatch_mw", &DistributedSlackLoop::slack_bus_p_max_mismatch_mw,
-                       "OpenLoadFlow's slackBusPMaxMismatch, MW: below it the slack bus keeps what it absorbed")
-        .def_readwrite("fail_on_residue", &DistributedSlackLoop::fail_on_residue,
-                       "OpenLoadFlow's slackDistributionFailureBehavior: FAIL (True) or LEAVE_ON_SLACK_BUS (False) "
-                       "when every unit reached a bound before the mismatch was shared");
+             py::arg("slack_bus_p_max_mismatch_mw") = DistributedSlackLoop::Params().slack_bus_p_max_mismatch_mw,
+             py::arg("fail_on_residue") = DistributedSlackLoop::Params().fail_on_residue,
+             py::arg("p_residue_eps_mw") = DistributedSlackLoop::Params().p_residue_eps_mw,
+             py::arg("moved_fraction") = DistributedSlackLoop::Params().moved_fraction)
+        .def_property_readonly("slack_bus_p_max_mismatch_mw",
+                               [](const DistributedSlackLoop & self){ return self.params().slack_bus_p_max_mismatch_mw; },
+                               "OpenLoadFlow's slackBusPMaxMismatch, MW: below it the slack bus keeps what it absorbed")
+        .def_property_readonly("fail_on_residue",
+                               [](const DistributedSlackLoop & self){ return self.params().fail_on_residue; },
+                               "OpenLoadFlow's slackDistributionFailureBehavior: FAIL (True) or LEAVE_ON_SLACK_BUS (False) "
+                               "when every unit reached a bound before the mismatch was shared")
+        .def_property_readonly("p_residue_eps_mw",
+                               [](const DistributedSlackLoop & self){ return self.params().p_residue_eps_mw; },
+                               "OpenLoadFlow's P_RESIDUE_EPS, MW: what is left to share below it is nothing")
+        .def_property_readonly("moved_fraction",
+                               [](const DistributedSlackLoop & self){ return self.params().moved_fraction; },
+                               "OpenLoadFlow's PreviousStateInfo.moved: the units moved when they moved by more than "
+                               "this fraction of p_residue_eps_mw");
 
     py::class_<HvdcAcEmulationLimitsLoop, BaseOuterLoop, std::shared_ptr<HvdcAcEmulationLimitsLoop> >(
             m, "HvdcAcEmulationLimits", DocSolver::HvdcAcEmulationLimitsLoop.c_str())
@@ -219,27 +235,44 @@ void bind_solvers(py::module_& m) {
     py::class_<ReactiveLimitsLoop, BaseOuterLoop, std::shared_ptr<ReactiveLimitsLoop> >(
             m, "ReactiveLimits", DocSolver::ReactiveLimitsLoop.c_str())
         .def(py::init([](int max_pq_pv_switch, real_type max_reactive_power_mismatch, bool robust_mode,
-                         real_type min_realistic_voltage, real_type max_realistic_voltage) {
-                 auto res = std::make_shared<ReactiveLimitsLoop>();
-                 AlgoConfig params;
-                 params.int_params = {max_pq_pv_switch, robust_mode ? 1 : 0};
-                 params.real_params = {max_reactive_power_mismatch, min_realistic_voltage, max_realistic_voltage};
-                 res->set_params(params);  // checks them
-                 return res;
+                         real_type min_realistic_voltage, real_type max_realistic_voltage,
+                         real_type mismatch_base_mva, real_type realistic_voltage_margin,
+                         real_type robust_restart_vm_pu) {
+                 ReactiveLimitsLoop::Params params;
+                 params.max_pq_pv_switch = max_pq_pv_switch;
+                 params.max_reactive_power_mismatch = max_reactive_power_mismatch;
+                 params.robust_mode = robust_mode;
+                 params.min_realistic_voltage = min_realistic_voltage;
+                 params.max_realistic_voltage = max_realistic_voltage;
+                 params.mismatch_base_mva = mismatch_base_mva;
+                 params.realistic_voltage_margin = realistic_voltage_margin;
+                 params.robust_restart_vm_pu = robust_restart_vm_pu;
+                 return std::make_shared<ReactiveLimitsLoop>(params);  // checks them
              }),
-             py::arg("max_pq_pv_switch") = 3, py::arg("max_reactive_power_mismatch") = 1e-4,
-             py::arg("robust_mode") = true, py::arg("min_realistic_voltage") = 0.8,
-             py::arg("max_realistic_voltage") = 1.2)
-        .def_readwrite("robust_mode", &ReactiveLimitsLoop::robust_mode,
-                       "OpenLoadFlow's voltageRemoteControlRobustMode")
-        .def_readwrite("min_realistic_voltage", &ReactiveLimitsLoop::min_realistic_voltage,
-                       "OpenLoadFlow's minRealisticVoltage, pu")
-        .def_readwrite("max_realistic_voltage", &ReactiveLimitsLoop::max_realistic_voltage,
-                       "OpenLoadFlow's maxRealisticVoltage, pu")
-        .def_readwrite("max_pq_pv_switch", &ReactiveLimitsLoop::max_pq_pv_switch,
-                       "OpenLoadFlow's reactiveLimitsMaxPqPvSwitch: how many times a bus may go back PV")
-        .def_readwrite("max_reactive_power_mismatch", &ReactiveLimitsLoop::max_reactive_power_mismatch,
-                       "OpenLoadFlow's maxReactivePowerMismatch (its newtonRaphsonConvEpsPerEq), pu of a 100 MVA base");
+             py::arg("max_pq_pv_switch") = ReactiveLimitsLoop::Params().max_pq_pv_switch,
+             py::arg("max_reactive_power_mismatch") = ReactiveLimitsLoop::Params().max_reactive_power_mismatch,
+             py::arg("robust_mode") = ReactiveLimitsLoop::Params().robust_mode,
+             py::arg("min_realistic_voltage") = ReactiveLimitsLoop::Params().min_realistic_voltage,
+             py::arg("max_realistic_voltage") = ReactiveLimitsLoop::Params().max_realistic_voltage,
+             py::arg("mismatch_base_mva") = ReactiveLimitsLoop::Params().mismatch_base_mva,
+             py::arg("realistic_voltage_margin") = ReactiveLimitsLoop::Params().realistic_voltage_margin,
+             py::arg("robust_restart_vm_pu") = ReactiveLimitsLoop::Params().robust_restart_vm_pu)
+        .def_property_readonly("robust_mode", [](const ReactiveLimitsLoop & self){ return self.params().robust_mode; },
+                               "OpenLoadFlow's voltageRemoteControlRobustMode")
+        .def_property_readonly("min_realistic_voltage", [](const ReactiveLimitsLoop & self){ return self.params().min_realistic_voltage; },
+                               "OpenLoadFlow's minRealisticVoltage, pu")
+        .def_property_readonly("max_realistic_voltage", [](const ReactiveLimitsLoop & self){ return self.params().max_realistic_voltage; },
+                               "OpenLoadFlow's maxRealisticVoltage, pu")
+        .def_property_readonly("max_pq_pv_switch", [](const ReactiveLimitsLoop & self){ return self.params().max_pq_pv_switch; },
+                               "OpenLoadFlow's reactiveLimitsMaxPqPvSwitch: how many times a bus may go back PV")
+        .def_property_readonly("max_reactive_power_mismatch", [](const ReactiveLimitsLoop & self){ return self.params().max_reactive_power_mismatch; },
+                               "OpenLoadFlow's maxReactivePowerMismatch (its newtonRaphsonConvEpsPerEq), pu of mismatch_base_mva")
+        .def_property_readonly("mismatch_base_mva", [](const ReactiveLimitsLoop & self){ return self.params().mismatch_base_mva; },
+                               "the base of max_reactive_power_mismatch, MVA (OpenLoadFlow's own)")
+        .def_property_readonly("realistic_voltage_margin", [](const ReactiveLimitsLoop & self){ return self.params().realistic_voltage_margin; },
+                               "OpenLoadFlow's REALISTIC_VOLTAGE_MARGIN (the robust mode's)")
+        .def_property_readonly("robust_restart_vm_pu", [](const ReactiveLimitsLoop & self){ return self.params().robust_restart_vm_pu; },
+                               "the magnitude the robust mode restarts a bus from, pu");
 
     py::class_<PhaseControlLoop, BaseOuterLoop, std::shared_ptr<PhaseControlLoop> >(
             m, "PhaseControl",
@@ -258,17 +291,29 @@ void bind_solvers(py::module_& m) {
             "whose ratio tap changer regulates a voltage (LSGrid.set_trafo_ratio_tap_regulation) are solved "
             "for their ratios, the generators of the low voltage buses frozen meanwhile, then rounded to their "
             "closest tap. The positions it leaves are in the results (TrafoInfo.res_ratio_tap_position), the "
-            "inputs are not modified.")
-        .def(py::init([](bool use_initial_tap_position, real_type max_controlled_nominal_voltage) {
-                 auto res = std::make_shared<TransformerVoltageControlLoop>();
-                 res->use_initial_tap_position = use_initial_tap_position;
-                 res->max_controlled_nominal_voltage = max_controlled_nominal_voltage;
-                 return res;
-             }), py::arg("use_initial_tap_position") = true, py::arg("max_controlled_nominal_voltage") = 120.)
-        .def_readwrite("use_initial_tap_position", &TransformerVoltageControlLoop::use_initial_tap_position,
-                       "OpenLoadFlow's transformerVoltageControlUseInitialTapPosition")
-        .def_readwrite("max_controlled_nominal_voltage", &TransformerVoltageControlLoop::max_controlled_nominal_voltage,
-                       "OpenLoadFlow's generatorVoltageControlMinNominalVoltage, kV (< 0: automatic)");
+            "inputs are not modified. Its parameters are keyword arguments of the constructor, OpenLoadFlow's "
+            "values by default, read-only afterwards.")
+        .def(py::init([](bool use_initial_tap_position, real_type max_controlled_nominal_voltage,
+                         real_type min_target_deadband_kv) {
+                 TransformerVoltageControlLoop::Params params;
+                 params.use_initial_tap_position = use_initial_tap_position;
+                 params.max_controlled_nominal_voltage = max_controlled_nominal_voltage;
+                 params.min_target_deadband_kv = min_target_deadband_kv;
+                 return std::make_shared<TransformerVoltageControlLoop>(params);  // checks them
+             }),
+             py::arg("use_initial_tap_position") = TransformerVoltageControlLoop::Params().use_initial_tap_position,
+             py::arg("max_controlled_nominal_voltage") = TransformerVoltageControlLoop::Params().max_controlled_nominal_voltage,
+             py::arg("min_target_deadband_kv") = TransformerVoltageControlLoop::Params().min_target_deadband_kv)
+        .def_property_readonly("use_initial_tap_position",
+                               [](const TransformerVoltageControlLoop & self){ return self.params().use_initial_tap_position; },
+                               "OpenLoadFlow's transformerVoltageControlUseInitialTapPosition")
+        .def_property_readonly("max_controlled_nominal_voltage",
+                               [](const TransformerVoltageControlLoop & self){ return self.params().max_controlled_nominal_voltage; },
+                               "OpenLoadFlow's generatorVoltageControlMinNominalVoltage, kV (< 0: automatic)")
+        .def_property_readonly("min_target_deadband_kv",
+                               [](const TransformerVoltageControlLoop & self){ return self.params().min_target_deadband_kv; },
+                               "the deadband of a group none of whose transformers has one, kV "
+                               "(OpenLoadFlow's MIN_TARGET_DEADBAND_KV)");
 
     py::class_<ShuntVoltageControlLoop, BaseOuterLoop, std::shared_ptr<ShuntVoltageControlLoop> >(
             m, "ShuntVoltageControl",

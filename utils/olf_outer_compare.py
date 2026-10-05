@@ -417,10 +417,11 @@ def solve_lightsim(path, gen_slack_id, algo=None, max_iter=50, tol=1e-8, olf_rul
         model.clear_outer_loops()
         for name in OLF_ORDER:
             if name in loops:
-                loop = LIGHTSIM_LOOPS[name]()
                 if name == "ReactiveLimits" and olf_eps is not None:
                     # OpenLoadFlow's maxReactivePowerMismatch is its Newton epsilon
-                    loop.max_reactive_power_mismatch = olf_eps
+                    loop = _algorithm.ReactiveLimits(max_reactive_power_mismatch=olf_eps)
+                else:
+                    loop = LIGHTSIM_LOOPS[name]()
                 model.add_outer_loop(loop)
     elif algo is not None:
         model.change_algorithm(algo)

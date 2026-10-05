@@ -22,8 +22,6 @@ namespace ls2g {
 
 namespace {
 
-const real_type MIN_TARGET_DEADBAND_KV = 0.1;  // AbstractTransformerVoltageControlOuterLoop
-
 const SolverBusIdVect & solver_map(const OuterContext & ctx)
 {
     return ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver : ctx.grid->id_me_to_ac_solver();
@@ -63,7 +61,16 @@ RatioTapControl * handled_ratio(const OuterContext & ctx, int t)
 
 }  // namespace
 
-std::vector<TransformerVoltageControlLoop::Group> TransformerVoltageControlLoop::groups(const LSGrid & grid)
+TransformerVoltageControlLoop::TransformerVoltageControlLoop() : TransformerVoltageControlLoop(Params()) {}
+
+TransformerVoltageControlLoop::TransformerVoltageControlLoop(const Params & params) : params_(params)
+{
+    if (!(params.min_target_deadband_kv >= 0.)) {
+        throw std::runtime_error("TransformerVoltageControlLoop: min_target_deadband_kv must be >= 0.");
+    }
+}
+
+std::vector<TransformerVoltageControlLoop::Group> TransformerVoltageControlLoop::groups(const LSGrid & grid) const
 {
     std::vector<Group> res;
     const TrafoContainer & trafos = grid.get_trafos();
@@ -104,14 +111,14 @@ std::vector<TransformerVoltageControlLoop::Group> TransformerVoltageControlLoop:
         if (rtc.deadband(t) > 0.) g.half_deadband = std::min(g.half_deadband, rtc.deadband(t) / 2.);
     }
     for (Group & g : res) {
-        if (!std::isfinite(g.half_deadband)) g.half_deadband = MIN_TARGET_DEADBAND_KV / vn_kv(g.bus_grid) / 2.;
+        if (!std::isfinite(g.half_deadband)) g.half_deadband = params_.min_target_deadband_kv / vn_kv(g.bus_grid) / 2.;
     }
     return res;
 }
 
 real_type TransformerVoltageControlLoop::_limit(const LSGrid & grid) const
 {
-    if (max_controlled_nominal_voltage >= 0.) return max_controlled_nominal_voltage;
+    if (params_.max_controlled_nominal_voltage >= 0.) return params_.max_controlled_nominal_voltage;
     // GeneratorVoltageControlManager.computeDefaultMinNominalVoltageLimit
     real_type res = std::numeric_limits<real_type>::min();
     const TrafoContainer & trafos = grid.get_trafos();
@@ -444,7 +451,7 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
             const real_type n = static_cast<real_type>(on.size());
             for (int t : on) {
                 Ratio & r = ratios_[static_cast<std::size_t>(t)];
-                if (use_initial_tap_position) {
+                if (params_.use_initial_tap_position) {
                     r.shared_min = sum_min / n;
                     r.shared_max = sum_max / n;
                     r.shared_initial = (r.shared_min * a + r.shared_max * b) / n;
@@ -491,7 +498,7 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
                 RatioTapControl * tap = handled_ratio(ctx, t);
                 if (tap == nullptr) continue;
                 real_type value = tap->ratio();
-                if (enabled_[static_cast<std::size_t>(t)] && use_initial_tap_position) {
+                if (enabled_[static_cast<std::size_t>(t)] && params_.use_initial_tap_position) {
                     const Ratio & r = ratios_[static_cast<std::size_t>(t)];
                     value = value >= r.shared_initial
                         ? r.initial + (value - r.shared_initial) * (r.max - r.initial) / (r.shared_max - r.shared_initial)
@@ -533,18 +540,10 @@ void TransformerVoltageControlLoop::_detect(const OuterContext & ctx, std::vecto
 AlgoConfig TransformerVoltageControlLoop::_get_params() const
 {
     AlgoConfig cfg;
-    cfg.int_params = {use_initial_tap_position ? 1 : 0};
-    cfg.real_params = {static_cast<double>(max_controlled_nominal_voltage)};
+    cfg.int_params = {params_.use_initial_tap_position ? 1 : 0};
+    cfg.real_params = {static_cast<double>(params_.max_controlled_nominal_voltage),
+                       static_cast<double>(params_.min_target_deadband_kv)};
     return cfg;
-}
-
-void TransformerVoltageControlLoop::_set_params(const AlgoConfig & params)
-{
-    if (params.int_params.size() != 1 || params.real_params.size() != 1) {
-        throw std::runtime_error("TransformerVoltageControl: 1 integer and 1 real parameter expected.");
-    }
-    use_initial_tap_position = params.int_params[0] != 0;
-    max_controlled_nominal_voltage = static_cast<real_type>(params.real_params[0]);
 }
 
 }  // namespace ls2g

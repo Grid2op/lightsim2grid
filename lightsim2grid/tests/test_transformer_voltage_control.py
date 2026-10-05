@@ -138,9 +138,13 @@ class TestTransformerVoltageControl(unittest.TestCase):
                           if v.violation_type == LimitViolationType.TRANSFORMER_VOLTAGE_DEADBAND])
 
     def test_parameters_and_default_list(self):
-        loop = TransformerVoltageControl(use_initial_tap_position=False, max_controlled_nominal_voltage=-1.)
+        loop = TransformerVoltageControl(use_initial_tap_position=False, max_controlled_nominal_voltage=-1.,
+                                         min_target_deadband_kv=0.2)
         self.assertFalse(loop.use_initial_tap_position)
         self.assertEqual(loop.max_controlled_nominal_voltage, -1.)
+        self.assertEqual(loop.min_target_deadband_kv, 0.2)
+        with self.assertRaises(AttributeError):  # set at construction only
+            loop.use_initial_tap_position = True
         grid = _grid(_net("T4-9-1", 12.6, 0.1))
         self.assertNotIn("TransformerVoltageControl", [l.name() for l in grid.get_outer_loops()])
 

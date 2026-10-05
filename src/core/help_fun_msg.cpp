@@ -743,6 +743,11 @@ const std::string DocSolver::DistributedSlackLoop = R"mydelimiter(
     units cannot take all of it, the solve fails (``fail_on_residue``) or the slack bus keeps
     the rest.
 
+    Every parameter is a keyword argument of the constructor, OpenLoadFlow's value by default,
+    and read-only afterwards: ``slack_bus_p_max_mismatch_mw``, ``fail_on_residue``,
+    ``p_residue_eps_mw`` (what is left to share below it is nothing) and ``moved_fraction``
+    (the units moved when they moved by more than this fraction of ``p_residue_eps_mw``).
+
 )mydelimiter";
 
 const std::string DocSolver::HvdcAcEmulationLimitsLoop = R"mydelimiter(
@@ -776,11 +781,17 @@ const std::string DocSolver::ReactiveLimitsLoop = R"mydelimiter(
     (``name()`` is ``"ReactiveLimits"``).
 
     A bus whose units hold its voltage needs some reactive power from them. When that leaves
-    the sum of their reactive limits by more than ``max_reactive_power_mismatch`` (pu of a
-    100 MVA base, OpenLoadFlow's ``newtonRaphsonConvEpsPerEq``), the bus is switched PQ with
-    its units at that limit; a frozen bus whose voltage came back on the side of its
-    set-point the limit was stopping it from reaching is switched PV again, at most
-    ``max_pq_pv_switch`` times. If every PV bus would switch, the strongest one stays PV.
+    the sum of their reactive limits by more than ``max_reactive_power_mismatch`` (pu of
+    ``mismatch_base_mva``, OpenLoadFlow's ``newtonRaphsonConvEpsPerEq`` on its 100 MVA base),
+    the bus is switched PQ with its units at that limit; a frozen bus whose voltage came back
+    on the side of its set-point the limit was stopping it from reaching is switched PV again,
+    at most ``max_pq_pv_switch`` times. If every PV bus would switch, the strongest one stays
+    PV. With ``robust_mode``, a remote controller whose own bus' voltage leaves the realistic
+    band (``min_realistic_voltage`` / ``max_realistic_voltage``, narrowed by
+    ``realistic_voltage_margin``) is frozen and restarted from ``robust_restart_vm_pu``.
+
+    Every parameter is a keyword argument of the constructor, OpenLoadFlow's value by default,
+    and read-only afterwards.
 
 )mydelimiter";
 

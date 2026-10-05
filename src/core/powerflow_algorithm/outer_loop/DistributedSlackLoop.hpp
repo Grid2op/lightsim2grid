@@ -31,27 +31,36 @@ class LSGrid;
  * targets with the cumulative mismatch (slack_redistribution::distribute). The new targets
  * go into the algorithm's injection (OuterInjections::Sbus) and are published as the units' P.
  *
- * Trigger (detect): the mismatch above `slack_bus_p_max_mismatch_mw` (SLACK_MISMATCH).
+ * Trigger (detect): the mismatch above `Params::slack_bus_p_max_mismatch_mw` (SLACK_MISMATCH).
  *
  * Only on a grid with some unit flagged "can participate in the slack" (is_needed, and the
  * same rule in detection mode): a grid where no unit is flagged has no distributed slack set
  * up at all -- OpenLoadFlow with distributedSlack off, where the loop does not exist -- and
  * its single slack is kept on purpose.
  * UNSTABLE when the targets moved, FAILED when some of the mismatch could not be shared
- * (every unit at a bound) and `fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its
+ * (every unit at a bound) and `Params::fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its
  * LEAVE_ON_SLACK_BUS: the slack bus keeps it).
  */
 class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
 {
     public:
-        /// OpenLoadFlow's slackBusPMaxMismatch, MW
-        real_type slack_bus_p_max_mismatch_mw = 1.;
-        /// OpenLoadFlow's slackDistributionFailureBehavior: FAIL (true) or LEAVE_ON_SLACK_BUS
-        bool fail_on_residue = true;
+        /// The loop's parameters, OpenLoadFlow's values by default; fixed at construction.
+        struct Params {
+            /// OpenLoadFlow's slackBusPMaxMismatch, MW
+            real_type slack_bus_p_max_mismatch_mw = 1.;
+            /// OpenLoadFlow's slackDistributionFailureBehavior: FAIL (true) or LEAVE_ON_SLACK_BUS
+            bool fail_on_residue = true;
+            /// OpenLoadFlow's P_RESIDUE_EPS (1e-5 pu of its 100 MVA base), MW: what is left to
+            /// share below it is nothing
+            real_type p_residue_eps_mw = 1e-3;
+            /// OpenLoadFlow's PreviousStateInfo.moved: the units moved when they moved by more
+            /// than this fraction of p_residue_eps_mw (its margin against rounding)
+            real_type moved_fraction = 0.9;
+        };
 
-        /// OpenLoadFlow's P_RESIDUE_EPS (1e-5 pu of its 100 MVA base), MW: what is left to
-        /// share below it is nothing
-        static constexpr real_type P_RESIDUE_EPS_MW = 1e-3;
+        DistributedSlackLoop();
+        explicit DistributedSlackLoop(const Params & params);
+        const Params & params() const { return params_; }
 
     protected:
         std::string _name() const override { return "DistributedSlack"; }
@@ -63,7 +72,6 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
             return std::unique_ptr<BaseOuterLoop>(new DistributedSlackLoop(*this));
         }
         AlgoConfig _get_params() const override;
-        void _set_params(const AlgoConfig & params) override;
 
     private:
         /// the mismatch of the slack bus (MW, > 0: the units must inject more), NaN without
@@ -79,6 +87,8 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         std::vector<slack_redistribution::Participant> units_;
         std::vector<int> unit_solver_bus_;
         std::vector<real_type> current_mw_;
+
+        const Params params_;
 };
 
 }  // namespace ls2g

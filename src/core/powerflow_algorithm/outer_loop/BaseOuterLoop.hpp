@@ -249,9 +249,9 @@ class LS2G_API BaseOuterLoop
 
         std::unique_ptr<BaseOuterLoop> clone() const { return _clone(); }
 
-        /// the loop's parameters, flattened like an AlgoConfig (persistence, copies)
+        /// the loop's parameters, flattened like an AlgoConfig (what tells two loop lists
+        /// apart). A loop's parameters are set at construction and never change afterwards.
         AlgoConfig get_params() const { return _get_params(); }
-        void set_params(const AlgoConfig & params) { _set_params(params); }
 
     protected:
         virtual std::string _name() const = 0;
@@ -265,7 +265,6 @@ class LS2G_API BaseOuterLoop
         virtual bool _holds_svc_monitors() const { return false; }
         virtual std::unique_ptr<BaseOuterLoop> _clone() const = 0;
         virtual AlgoConfig _get_params() const { return AlgoConfig(); }
-        virtual void _set_params(const AlgoConfig & /*params*/) {}
 };
 
 }  // namespace ls2g

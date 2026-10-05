@@ -56,6 +56,21 @@ void collect_units(const Container & container,
 
 }  // namespace
 
+DistributedSlackLoop::DistributedSlackLoop() : DistributedSlackLoop(Params()) {}
+
+DistributedSlackLoop::DistributedSlackLoop(const Params & params) : params_(params)
+{
+    if(!(params.slack_bus_p_max_mismatch_mw >= 0.)){
+        throw std::runtime_error("DistributedSlackLoop: slack_bus_p_max_mismatch_mw must be >= 0.");
+    }
+    if(!(params.p_residue_eps_mw >= 0.)){
+        throw std::runtime_error("DistributedSlackLoop: p_residue_eps_mw must be >= 0.");
+    }
+    if(!(params.moved_fraction > 0.)){
+        throw std::runtime_error("DistributedSlackLoop: moved_fraction must be > 0.");
+    }
+}
+
 bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
 {
     return _has_participant(*ctx.grid, ctx.grid->id_me_to_ac_solver());
@@ -91,7 +106,7 @@ real_type DistributedSlackLoop::_mismatch_mw(const OuterContext & ctx) const
 bool DistributedSlackLoop::_triggered(const OuterContext & ctx, real_type & mismatch_mw) const
 {
     mismatch_mw = _mismatch_mw(ctx);
-    return std::abs(mismatch_mw) > slack_bus_p_max_mismatch_mw && std::abs(mismatch_mw) > P_RESIDUE_EPS_MW;
+    return std::abs(mismatch_mw) > params_.slack_bus_p_max_mismatch_mw && std::abs(mismatch_mw) > params_.p_residue_eps_mw;
 }
 
 void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const
@@ -104,7 +119,7 @@ void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitVi
        !_has_participant(*ctx.grid, ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver
                                                                    : ctx.grid->id_me_to_ac_solver())) return;
     out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::SLACK_MISMATCH,
-                                 mismatch, slack_bus_p_max_mismatch_mw, std::string()});
+                                 mismatch, params_.slack_bus_p_max_mismatch_mw, std::string()});
 }
 
 bool DistributedSlackLoop::_has_participant(const LSGrid & grid, const SolverBusIdVect & id_me_to_solver)
@@ -124,7 +139,7 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
     real_type mismatch = 0.;
     const bool triggered = _triggered(ctx, mismatch);
     ctx.record("DISTRIBUTE", triggered, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
-               mismatch, std::max(slack_bus_p_max_mismatch_mw, P_RESIDUE_EPS_MW));
+               mismatch, std::max(params_.slack_bus_p_max_mismatch_mw, params_.p_residue_eps_mw));
     if(!triggered) return OuterLoopStatus::STABLE;
 
     // OpenLoadFlow shares the cumulative mismatch from the initial targets every time: what
@@ -135,12 +150,12 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
     std::vector<real_type> new_mw;
     std::vector<char> saturated;
     const slack_redistribution::Report report = slack_redistribution::distribute(
-        units_, remaining, P_RESIDUE_EPS_MW, new_mw, saturated);
+        units_, remaining, params_.p_residue_eps_mw, new_mw, saturated);
     // with no unit at all, nothing was shared and everything is left
     const real_type residue = units_.empty() ? remaining : report.not_distributed_mw;
-    if(fail_on_residue && std::abs(residue) > P_RESIDUE_EPS_MW) {
+    if(params_.fail_on_residue && std::abs(residue) > params_.p_residue_eps_mw) {
         ctx.record("FAIL_RESIDUE", true, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
-                   residue, P_RESIDUE_EPS_MW);
+                   residue, params_.p_residue_eps_mw);
         return OuterLoopStatus::FAILED;
     }
 
@@ -175,31 +190,21 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
             if(state.Sbus_target != nullptr) (*state.Sbus_target)(unit_solver_bus_[k]) += ds;
         }
     }
-    // OpenLoadFlow's PreviousStateInfo.moved, its 0.9 against rounding
-    const bool unstable = moved > 0.9 * P_RESIDUE_EPS_MW;
+    // OpenLoadFlow's PreviousStateInfo.moved, with its margin against rounding
+    const bool unstable = moved > params_.moved_fraction * params_.p_residue_eps_mw;
     ctx.record("UNITS_MOVED", unstable, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
-               moved, 0.9 * P_RESIDUE_EPS_MW);
+               moved, params_.moved_fraction * params_.p_residue_eps_mw);
     return unstable ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
 }
 
 AlgoConfig DistributedSlackLoop::_get_params() const
 {
     AlgoConfig cfg;
-    cfg.int_params = {fail_on_residue ? 1 : 0};
-    cfg.real_params = {static_cast<double>(slack_bus_p_max_mismatch_mw)};
+    cfg.int_params = {params_.fail_on_residue ? 1 : 0};
+    cfg.real_params = {static_cast<double>(params_.slack_bus_p_max_mismatch_mw),
+                       static_cast<double>(params_.p_residue_eps_mw),
+                       static_cast<double>(params_.moved_fraction)};
     return cfg;
-}
-
-void DistributedSlackLoop::_set_params(const AlgoConfig & params)
-{
-    if(params.int_params.size() != 1 || params.real_params.size() != 1){
-        throw std::runtime_error("DistributedSlackLoop::set_params: expected 1 int and 1 real parameter.");
-    }
-    if(!(params.real_params[0] >= 0.)){
-        throw std::runtime_error("DistributedSlackLoop::set_params: slack_bus_p_max_mismatch_mw must be >= 0.");
-    }
-    fail_on_residue = params.int_params[0] != 0;
-    slack_bus_p_max_mismatch_mw = static_cast<real_type>(params.real_params[0]);
 }
 
 }  // namespace ls2g

@@ -27,6 +27,26 @@ const SolverBusIdVect & solver_map(const OuterContext & ctx)
 
 }  // namespace
 
+ReactiveLimitsLoop::ReactiveLimitsLoop() : ReactiveLimitsLoop(Params()) {}
+
+ReactiveLimitsLoop::ReactiveLimitsLoop(const Params & params) : params_(params)
+{
+    if (params.max_pq_pv_switch < 0) throw std::runtime_error("ReactiveLimitsLoop: max_pq_pv_switch must be >= 0.");
+    if (!(params.max_reactive_power_mismatch >= 0.)) {
+        throw std::runtime_error("ReactiveLimitsLoop: max_reactive_power_mismatch must be >= 0.");
+    }
+    if (!(params.mismatch_base_mva > 0.)) throw std::runtime_error("ReactiveLimitsLoop: mismatch_base_mva must be > 0.");
+    if (!(params.min_realistic_voltage < params.max_realistic_voltage)) {
+        throw std::runtime_error("ReactiveLimitsLoop: min_realistic_voltage must be lower than max_realistic_voltage.");
+    }
+    if (!(params.realistic_voltage_margin > 0.)) {
+        throw std::runtime_error("ReactiveLimitsLoop: realistic_voltage_margin must be > 0.");
+    }
+    if (!(params.robust_restart_vm_pu > 0.)) {
+        throw std::runtime_error("ReactiveLimitsLoop: robust_restart_vm_pu must be > 0.");
+    }
+}
+
 bus_q_check::BusQPlan ReactiveLimitsLoop::_plan(const OuterContext & ctx)
 {
     bus_q_check::BusQPlan plan;
@@ -239,7 +259,7 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
                                    std::vector<Switch> & to_pv, std::vector<int> & moved,
                                    int & remaining_pv, std::vector<Switch> * kept) const
 {
-    const real_type eps = max_reactive_power_mismatch * OLF_SB_MVA;
+    const real_type eps = params_.max_reactive_power_mismatch * params_.mismatch_base_mva;
     remaining_pv = 0;
     const std::vector<char> groups_holding = _groups_holding(ctx);
     for (std::size_t k = 0; k < buses_.size(); ++k) {
@@ -264,12 +284,12 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
                 to_pq.push_back(Switch{ki, LimitViolationType::LOW_Q, q, q_min});
             } else if (q > q_max + eps) {
                 to_pq.push_back(Switch{ki, LimitViolationType::HIGH_Q, q, q_max});
-            } else if (robust_mode && bus.reg_bus_solver != bus.bus_solver) {
+            } else if (params_.robust_mode && bus.reg_bus_solver != bus.bus_solver) {
                 // a remote controller within its limits, but its own bus' voltage unrealistic
                 const real_type v = ctx.vm(bus.bus_solver);
-                if (v < min_realistic_voltage * REALISTIC_VOLTAGE_MARGIN) {
+                if (v < params_.min_realistic_voltage * params_.realistic_voltage_margin) {
                     to_pq.push_back(Switch{ki, LimitViolationType::LOW_Q, q, bus.target_q, true});
-                } else if (v > max_realistic_voltage / REALISTIC_VOLTAGE_MARGIN) {
+                } else if (v > params_.max_realistic_voltage / params_.realistic_voltage_margin) {
                     to_pq.push_back(Switch{ki, LimitViolationType::HIGH_Q, q, bus.target_q, true});
                 } else {
                     ++remaining_pv;
@@ -413,11 +433,11 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
         ++bus.nb_pv_pq;
         // the robust mode: a remote controller with an unrealistic voltage of its own
         // restarts from 1 pu
-        if (robust_mode && bus.reg_bus_solver != bus.bus_solver) {
+        if (params_.robust_mode && bus.reg_bus_solver != bus.bus_solver) {
             const real_type v = ctx.vm(bus.bus_solver);
-            if (sw.realistic || v < min_realistic_voltage * REALISTIC_VOLTAGE_MARGIN ||
-                v > max_realistic_voltage / REALISTIC_VOLTAGE_MARGIN) {
-                ctx.controls->reset_vm(bus.bus_solver, static_cast<real_type>(1.));
+            if (sw.realistic || v < params_.min_realistic_voltage * params_.realistic_voltage_margin ||
+                v > params_.max_realistic_voltage / params_.realistic_voltage_margin) {
+                ctx.controls->reset_vm(bus.bus_solver, params_.robust_restart_vm_pu);
             }
         }
         changed = true;
@@ -425,7 +445,7 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
     // PQ -> PV, but not past max_pq_pv_switch
     for (const Switch & sw : to_pv) {
         ControllerBus & bus = buses_[static_cast<std::size_t>(sw.k)];
-        if (bus.nb_pv_pq >= max_pq_pv_switch) {
+        if (bus.nb_pv_pq >= params_.max_pq_pv_switch) {
             record("KEPT_PQ_MAX_SWITCH", false, sw);
             continue;
         }
@@ -449,26 +469,11 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
 AlgoConfig ReactiveLimitsLoop::_get_params() const
 {
     AlgoConfig res;
-    res.int_params = {max_pq_pv_switch, robust_mode ? 1 : 0};
-    res.real_params = {max_reactive_power_mismatch, min_realistic_voltage, max_realistic_voltage};
+    res.int_params = {params_.max_pq_pv_switch, params_.robust_mode ? 1 : 0};
+    res.real_params = {params_.max_reactive_power_mismatch, params_.mismatch_base_mva,
+                       params_.min_realistic_voltage, params_.max_realistic_voltage,
+                       params_.realistic_voltage_margin, params_.robust_restart_vm_pu};
     return res;
-}
-
-void ReactiveLimitsLoop::_set_params(const AlgoConfig & params)
-{
-    if (params.int_params.size() != 2 || params.real_params.size() != 3) {
-        throw std::runtime_error("ReactiveLimitsLoop::set_params: expects 2 int and 3 real parameters.");
-    }
-    if (params.int_params[0] < 0) throw std::runtime_error("ReactiveLimitsLoop: max_pq_pv_switch must be >= 0.");
-    if (!(params.real_params[0] >= 0.)) throw std::runtime_error("ReactiveLimitsLoop: max_reactive_power_mismatch must be >= 0.");
-    if (!(params.real_params[1] < params.real_params[2])) {
-        throw std::runtime_error("ReactiveLimitsLoop: min_realistic_voltage must be lower than max_realistic_voltage.");
-    }
-    max_pq_pv_switch = params.int_params[0];
-    robust_mode = params.int_params[1] != 0;
-    max_reactive_power_mismatch = params.real_params[0];
-    min_realistic_voltage = params.real_params[1];
-    max_realistic_voltage = params.real_params[2];
 }
 
 }  // namespace ls2g
