@@ -18,6 +18,39 @@
 namespace ls2g {
 
 /**
+ * The outer loops' controls on a Newton-Raphson: what they read back comes from its system.
+ */
+template<class NRSystem>
+class NROuterControls final : public OuterControls
+{
+public:
+    explicit NROuterControls(const NRSystem & system) : system_(system) {}
+
+protected:
+    bool _supports_phase_shifters() const override { return system_.branch_control() != nullptr; }
+    bool _phase_handled(int trafo) const override {
+        const BranchControl * branch = system_.branch_control();
+        return branch != nullptr && branch->handles(trafo);
+    }
+    real_type _phase_shift(int trafo) const override {
+        const BranchControl * branch = system_.branch_control();
+        return branch != nullptr ? branch->shift(trafo) : OuterControls::_phase_shift(trafo);
+    }
+    int _phase_position(int trafo) const override {
+        const BranchControl * branch = system_.branch_control();
+        return branch != nullptr ? branch->position(trafo) : OuterControls::_phase_position(trafo);
+    }
+    void _phase_current(int trafo, int side, real_type & i_pu, real_type & di_da) const override {
+        const BranchControl * branch = system_.branch_control();
+        if(branch != nullptr) branch->current(trafo, side, i_pu, di_da);
+        else OuterControls::_phase_current(trafo, side, i_pu, di_da);
+    }
+
+private:
+    const NRSystem & system_;
+};
+
+/**
  * The Newton-Raphson as the outer-loop driver (OuterLoopAlgo) sees it: what the driver
  * needs from the algorithm it wraps beyond BaseAlgo's interface. Everything here goes
  * through the Newton's system -- the controls the loops reserve in it (phase shifters,
@@ -33,7 +66,7 @@ class NROuterInner
 public:
     using Algo = NRAlgo<LinearSolver, NRSystem>;
 
-    NROuterInner() {
+    NROuterInner() : controls_(algo_.system()) {
         // always on: a value edit between two solves may shrink a pivot the fixed pivot
         // sequence then finds at zero
         algo_.set_refactor_fallback(true);
@@ -124,7 +157,7 @@ private:
     void _reserve(const OuterDeclaration & decl);
 
     Algo algo_;
-    OuterControls controls_;
+    NROuterControls<NRSystem> controls_;
     std::vector<int> pinned_;  // the buses pinned PV in the last solve
 };
 
@@ -135,7 +168,15 @@ void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & dec
     // the switchable buses: a caller's (a batch), then the loops'
     algo_.set_switchable_vm_buses(controls_.switchable_buses());  // a set there: duplicates are fine
     system.set_may_hold_voltage_controllers(controls_.holds_voltage_controllers());
-    system.set_phase_controllers(decl.phase_shifters(), decl.phase_shifter_column());
+    {
+        std::vector<int> trafos;
+        std::vector<char> with_column;
+        for(const PhaseShifterControl * shifter : controls_.phase_shifters_reserved()) {
+            trafos.push_back(shifter->trafo());
+            with_column.push_back(shifter->solves_shift() ? 1 : 0);
+        }
+        system.set_phase_controllers(trafos, with_column);
+    }
     std::vector<BranchControl::RatioGroupDecl> groups;
     for(const auto & g : decl.ratio_groups()) {
         BranchControl::RatioGroupDecl d;
@@ -174,11 +215,11 @@ void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state)
     // the phase taps a loop moved, then the shifts it lets the Newton solve for
     BranchControl * phase = system.branch_control();
     if(phase != nullptr) {
-        for(std::size_t t = 0; t < state.phase_tap.size(); ++t) {
-            if(state.phase_tap[t] != OuterState::TAP_KEEP) phase->set_tap(static_cast<int>(t), state.phase_tap[t]);
+        for(const auto & ts : controls_.phase_shifters()) {
+            if(ts.second->tap_moved()) phase->set_tap(ts.first, ts.second->requested_tap());
         }
-        for(std::size_t t = 0; t < state.phase_control.size(); ++t) {
-            if(state.phase_control[t] >= 0) phase->set_control_on(static_cast<int>(t), state.phase_control[t] == 1);
+        for(const auto & ts : controls_.phase_shifters()) {
+            if(ts.second->requested_control() >= 0) phase->set_control_on(ts.first, ts.second->requested_control() == 1);
         }
         // the ratio taps (a move once), then the voltage controls
         for(std::size_t t = 0; t < state.ratio_tap.size(); ++t) {

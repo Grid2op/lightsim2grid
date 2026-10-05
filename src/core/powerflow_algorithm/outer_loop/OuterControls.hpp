@@ -116,6 +116,52 @@ class LS2G_API HvdcRegimeControl final
 };
 
 /**
+ * A phase shifter (a transformer, grid id): its tap may move and, when the solve solves for
+ * its shift (`solves_shift`, a column and a row), its active power control may be switched
+ * on or off. Its block of Ybus is patched by value (BranchControl). The reads are the last
+ * solve's, and mean nothing unless the solve handles it (handled()).
+ */
+class LS2G_API PhaseShifterControl final
+{
+    public:
+        int trafo() const { return trafo_; }
+        bool solves_shift() const { return solves_shift_; }
+        /// whether the solve handles it (a transformer connected at both ends, on two buses)
+        bool handled() const;
+        /// its shift now, rad
+        real_type shift() const;
+        /// its tap position now
+        int position() const;
+        /// the current through its `side` (1 or 2), pu of that side's base, and its derivative
+        /// with respect to the shift
+        void current(int side, real_type & i_pu, real_type & di_da) const;
+
+        /// switch its active power control on or off (off: its shift stays where it is)
+        void set_control(bool on) { control_ = on ? 1 : 0; }
+        /// move its tap to `position`: its shift is that tap's from the next solve on
+        void move_tap(int position) { tap_ = position; tap_moved_ = true; }
+
+        /// what a loop asked, for the inner algorithm: the control (1 on, 0 off, -1 as it is)
+        /// and the tap (when moved)
+        int requested_control() const { return control_; }
+        bool tap_moved() const { return tap_moved_; }
+        int requested_tap() const { return tap_; }
+
+    private:
+        friend class OuterControls;
+        PhaseShifterControl(const OuterControls * owner, int trafo, bool solves_shift)
+            : owner_(owner), trafo_(trafo), solves_shift_(solves_shift) {}
+        void _reset() { control_ = -1; tap_moved_ = false; tap_ = 0; }
+
+        const OuterControls * owner_;
+        int trafo_;
+        bool solves_shift_;
+        int control_ = -1;
+        bool tap_moved_ = false;
+        int tap_ = 0;
+};
+
+/**
  * Collects what the outer loops reserve in the solve and hands out the controls they act
  * through. A loop reserves, when the solver input is (re)built (BaseOuterLoop::declare),
  * every slot any of its states may need; the union is what lets a whole solve run on one
@@ -132,7 +178,11 @@ class LS2G_API HvdcRegimeControl final
 class LS2G_API OuterControls
 {
     public:
+        OuterControls() = default;
         virtual ~OuterControls() = default;
+        // the controls point back to it
+        OuterControls(const OuterControls &) = delete;
+        OuterControls & operator=(const OuterControls &) = delete;
 
         // ----- reservation (BaseOuterLoop::declare) ---------------------------------------
         /// a bus that is PV in the labelling but may become PQ (or back); the same control for
@@ -144,6 +194,9 @@ class LS2G_API OuterControls
         StandbySvcControl * reserve_standby_svc(int svc);
         /// an hvdc line (grid id) in AC emulation whose regime may change
         HvdcRegimeControl * reserve_hvdc_regime(int line);
+        /// a phase shifter (transformer grid id) whose tap may move and, with `solves_shift`,
+        /// whose shift the solve solves for; nullptr when the inner algorithm has none
+        PhaseShifterControl * reserve_phase_shifter(int trafo, bool solves_shift);
 
         // ----- lookup (after the reservation) -----------------------------------------------
         /// the control of `bus`, nullptr when no loop reserved it
@@ -155,6 +208,8 @@ class LS2G_API OuterControls
         const StandbySvcControl * standby_svc(int svc) const;
         HvdcRegimeControl * hvdc_regime(int line);
         const HvdcRegimeControl * hvdc_regime(int line) const;
+        PhaseShifterControl * phase_shifter(int trafo);
+        const PhaseShifterControl * phase_shifter(int trafo) const;
         /// whether a loop holds that controller now
         bool is_held(int controller) const {
             const VoltageControllerHold * hold = controller_hold(controller);
@@ -196,8 +251,24 @@ class LS2G_API OuterControls
         /// the regime of each hvdc line, by grid id (HvdcRegimeControl::KEEP: the grid's);
         /// empty when none is reserved
         std::vector<int> hvdc_regimes() const;
+        /// the phase shifters, in the order they were reserved / by transformer id
+        const std::vector<PhaseShifterControl *> & phase_shifters_reserved() const { return phase_shifter_order_; }
+        const std::map<int, PhaseShifterControl *> & phase_shifters() const { return phase_shifter_of_; }
+
         /// the magnitudes to reset (bus, pu), in the order they were asked for, then forgotten
         void take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm);
+
+    protected:
+        // what the solve reads back, for the controls above (the inner algorithm's)
+        friend class PhaseShifterControl;
+        virtual bool _supports_phase_shifters() const { return false; }
+        virtual bool _phase_handled(int /*trafo*/) const { return false; }
+        virtual real_type _phase_shift(int /*trafo*/) const { return std::numeric_limits<real_type>::quiet_NaN(); }
+        virtual int _phase_position(int /*trafo*/) const { return 0; }
+        virtual void _phase_current(int /*trafo*/, int /*side*/, real_type & i_pu, real_type & di_da) const {
+            i_pu = std::numeric_limits<real_type>::quiet_NaN();
+            di_da = std::numeric_limits<real_type>::quiet_NaN();
+        }
 
     private:
         // stable addresses: the loops keep pointers to these
@@ -209,6 +280,9 @@ class LS2G_API OuterControls
         std::map<int, StandbySvcControl *> standby_svc_of_;
         std::deque<HvdcRegimeControl> hvdc_regime_store_;
         std::map<int, HvdcRegimeControl *> hvdc_regime_of_;
+        std::deque<PhaseShifterControl> phase_shifter_store_;
+        std::map<int, PhaseShifterControl *> phase_shifter_of_;
+        std::vector<PhaseShifterControl *> phase_shifter_order_;
         std::vector<int> caller_switchable_;
         std::vector<int> caller_pinned_;
         std::vector<std::pair<int, real_type> > pending_vm_;

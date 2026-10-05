@@ -96,10 +96,10 @@ std::vector<PhaseControlLoop::Shifter> PhaseControlLoop::shifters(const LSGrid &
     return res;
 }
 
-void PhaseControlLoop::_declare(const OuterContext & ctx, OuterDeclaration & decl) const
+void PhaseControlLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
 {
     for (const Shifter & s : shifters(*ctx.grid)) {
-        decl.add_phase_shifter(s.trafo, s.mode == RegulationMode::ACTIVE_POWER && s.regulates);
+        ctx.controls->reserve_phase_shifter(s.trafo, s.mode == RegulationMode::ACTIVE_POWER && s.regulates);
     }
 }
 
@@ -111,30 +111,36 @@ bool PhaseControlLoop::_is_needed(const OuterContext & /*ctx*/) const
 void PhaseControlLoop::_initialize(OuterContext & ctx)
 {
     shifters_ = shifters(*ctx.grid);
-    OuterState & st = *ctx.state;
-    const std::size_t nb = static_cast<std::size_t>(ctx.grid->get_trafos().nb());
-    st.phase_tap.assign(nb, OuterState::TAP_KEEP);
-    st.phase_control.assign(nb, -1);
     // the active power controllers regulate from the first solve on
     for (const Shifter & s : shifters_) {
-        if (s.mode == RegulationMode::ACTIVE_POWER && s.regulates) st.phase_control[static_cast<std::size_t>(s.trafo)] = 1;
+        if (s.mode != RegulationMode::ACTIVE_POWER || !s.regulates) continue;
+        PhaseShifterControl * control = ctx.controls->phase_shifter(s.trafo);
+        if (control != nullptr) control->set_control(true);
     }
 }
 
 OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
 {
-    if (shifters_.empty() || ctx.branch_control == nullptr) return OuterLoopStatus::STABLE;
-    OuterState & st = *ctx.state;
-    const BranchControl & phase = *ctx.branch_control;
+    // nothing to do without a phase shifter the inner algorithm can act on
+    bool any = false;
+    for (const Shifter & s : shifters_) any = any || ctx.controls->phase_shifter(s.trafo) != nullptr;
+    if (!any) return OuterLoopStatus::STABLE;
+    // the control of a shifter the solve handles, null otherwise
+    auto handled = [&](const Shifter & s) -> PhaseShifterControl * {
+        PhaseShifterControl * control = ctx.controls->phase_shifter(s.trafo);
+        return control != nullptr && control->handled() ? control : nullptr;
+    };
     const TapChangers & ptc = ctx.grid->get_trafos().get_tap_changers(true);
     if (ctx.iteration == 0) {
         // the active power controllers are switched off, their shift rounded to the
         // closest tap (the current one unless another is strictly closer)
         for (const Shifter & s : shifters_) {
-            if (s.mode != RegulationMode::ACTIVE_POWER || !s.regulates || !phase.handles(s.trafo)) continue;
-            st.phase_control[static_cast<std::size_t>(s.trafo)] = 0;
-            const real_type a = phase.shift(s.trafo);
-            int best = phase.position(s.trafo);
+            if (s.mode != RegulationMode::ACTIVE_POWER || !s.regulates) continue;
+            PhaseShifterControl * phase = handled(s);
+            if (phase == nullptr) continue;
+            phase->set_control(false);
+            const real_type a = phase->shift();
+            int best = phase->position();
             real_type best_distance = std::abs(a - ptc.alpha_at(s.trafo, best));
             for (int pos = ptc.low_tap(s.trafo); pos <= ptc.high_tap(s.trafo); ++pos) {
                 const real_type distance = std::abs(a - ptc.alpha_at(s.trafo, pos));
@@ -143,7 +149,7 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
                     best_distance = distance;
                 }
             }
-            st.phase_tap[static_cast<std::size_t>(s.trafo)] = best;
+            phase->move_tap(best);
             // the shift (rad) and the one of the tap it is rounded to
             ctx.record("ROUND_TAP", true, ViolationElementType::TRAFO, s.trafo, LimitViolationType::PHASE_CONTROL_P,
                        a, ptc.alpha_at(s.trafo, best));
@@ -156,9 +162,11 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
     const TrafoContainer & trafos = ctx.grid->get_trafos();
     const Eigen::Ref<const RealVect> vn_kv = ctx.grid->get_bus_vn_kv();
     for (const Shifter & s : shifters_) {
-        if (s.mode != RegulationMode::CURRENT_LIMITER || !phase.handles(s.trafo)) continue;
+        if (s.mode != RegulationMode::CURRENT_LIMITER) continue;
+        PhaseShifterControl * phase = handled(s);
+        if (phase == nullptr) continue;
         real_type i_pu, di_da;
-        phase.current(s.trafo, s.side, i_pu, di_da);
+        phase->current(s.side, i_pu, di_da);
         const int bus = (s.side == 1 ? trafos.get_bus_side_1(s.trafo) : trafos.get_bus_side_2(s.trafo)).cast_int();
         const real_type i_a = to_amps(i_pu, ctx.grid->get_sn_mva(), vn_kv(bus));
         if (!(ptc.target(s.trafo) < i_a)) {
@@ -169,8 +177,8 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
         // PiModelArray.shiftOneTapPositionToChangeA1: increase (decrease) the shift when a
         // larger (smaller) one lowers the current
         const bool increase = !(di_da > 0.);
-        const real_type a = phase.shift(s.trafo);
-        int pos = phase.position(s.trafo);
+        const real_type a = phase->shift();
+        int pos = phase->position();
         const int old_pos = pos;
         if (pos < ptc.high_tap(s.trafo)) {
             const real_type next = ptc.alpha_at(s.trafo, pos + 1);
@@ -183,7 +191,7 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
         ctx.record("MOVE_TAP", pos != old_pos, ViolationElementType::TRAFO, s.trafo,
                    LimitViolationType::PHASE_LIMITER_CURRENT, i_a, ptc.target(s.trafo));
         if (pos != old_pos) {
-            st.phase_tap[static_cast<std::size_t>(s.trafo)] = pos;
+            phase->move_tap(pos);
             moved = true;
         }
     }

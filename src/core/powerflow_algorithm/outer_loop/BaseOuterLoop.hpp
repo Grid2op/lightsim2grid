@@ -47,15 +47,6 @@ enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
 class LS2G_API OuterDeclaration final
 {
     public:
-        /// a transformer (grid id) whose phase tap may move during the solve and, with
-        /// `solves_shift`, whose shift the Newton solves for: see BranchControl
-        void add_phase_shifter(int trafo_id, bool solves_shift) {
-            phase_shifters_.push_back(trafo_id);
-            phase_shifter_column_.push_back(solves_shift ? 1 : 0);
-        }
-
-        const std::vector<int> & phase_shifters() const { return phase_shifters_; }
-        const std::vector<char> & phase_shifter_column() const { return phase_shifter_column_; }
         /// transformers (grid ids, in order) regulating the voltage of `bus_solver` at
         /// `target_vm` pu: with `solved`, the Newton solves for their ratios (BranchControl),
         /// otherwise only their taps may move
@@ -86,13 +77,11 @@ class LS2G_API OuterDeclaration final
         };
         const std::vector<ShuntGroup> & shunt_groups() const { return shunt_groups_; }
         void clear() {
-            phase_shifters_.clear(); phase_shifter_column_.clear(); ratio_groups_.clear();
+            ratio_groups_.clear();
             shunt_groups_.clear();
         }
 
     private:
-        std::vector<int> phase_shifters_;
-        std::vector<char> phase_shifter_column_;
         std::vector<RatioGroup> ratio_groups_;
         std::vector<ShuntGroup> shunt_groups_;
 };
@@ -116,12 +105,6 @@ struct OuterState
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
-    /// the position a loop moved each transformer's phase tap to (grid id), TAP_KEEP where it
-    /// kept the solve's; empty until a loop sizes it
-    std::vector<int> phase_tap;
-    /// whether the Newton solves each declared transformer's shift for its active power
-    /// (grid id): 1 on, 0 off, -1 kept as it is; empty until a loop sizes it
-    std::vector<int> phase_control;
     /// the same for the ratio tap changers (moved, TAP_KEEP) and their voltage control
     /// (1 on, 0 off, -1 kept); the moves are applied by the next solve, then forgotten
     std::vector<int> ratio_tap;

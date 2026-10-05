@@ -88,6 +88,32 @@ HvdcRegimeControl * OuterControls::reserve_hvdc_regime(int line)
     return res;
 }
 
+PhaseShifterControl * OuterControls::reserve_phase_shifter(int trafo, bool solves_shift)
+{
+    if (!_supports_phase_shifters()) return nullptr;
+    PhaseShifterControl * known = phase_shifter(trafo);
+    if (known != nullptr) {
+        known->solves_shift_ = known->solves_shift_ || solves_shift;
+        return known;
+    }
+    phase_shifter_store_.push_back(PhaseShifterControl(this, trafo, solves_shift));
+    PhaseShifterControl * res = &phase_shifter_store_.back();
+    phase_shifter_of_[trafo] = res;
+    phase_shifter_order_.push_back(res);
+    return res;
+}
+
+PhaseShifterControl * OuterControls::phase_shifter(int trafo) { return find_control(phase_shifter_of_, trafo); }
+const PhaseShifterControl * OuterControls::phase_shifter(int trafo) const { return find_control(phase_shifter_of_, trafo); }
+
+bool PhaseShifterControl::handled() const { return owner_->_phase_handled(trafo_); }
+real_type PhaseShifterControl::shift() const { return owner_->_phase_shift(trafo_); }
+int PhaseShifterControl::position() const { return owner_->_phase_position(trafo_); }
+void PhaseShifterControl::current(int side, real_type & i_pu, real_type & di_da) const
+{
+    owner_->_phase_current(trafo_, side, i_pu, di_da);
+}
+
 StandbySvcControl * OuterControls::standby_svc(int svc) { return find_control(standby_svc_of_, svc); }
 const StandbySvcControl * OuterControls::standby_svc(int svc) const { return find_control(standby_svc_of_, svc); }
 HvdcRegimeControl * OuterControls::hvdc_regime(int line) { return find_control(hvdc_regime_of_, line); }
@@ -103,6 +129,9 @@ void OuterControls::clear_reservations()
     standby_svc_store_.clear();
     hvdc_regime_of_.clear();
     hvdc_regime_store_.clear();
+    phase_shifter_of_.clear();
+    phase_shifter_order_.clear();
+    phase_shifter_store_.clear();
 }
 
 void OuterControls::reset_states()
@@ -111,6 +140,7 @@ void OuterControls::reset_states()
     for (auto & hold : controller_hold_store_) hold.release();
     for (auto & svc : standby_svc_store_) svc._reset();
     for (auto & regime : hvdc_regime_store_) regime._reset();
+    for (auto & shifter : phase_shifter_store_) shifter._reset();
     pending_vm_.clear();
     suspended_.clear();
 }
