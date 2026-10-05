@@ -136,6 +136,25 @@ std::set<int> OuterControls::ratio_group_buses() const
     return res;
 }
 
+bool OuterControls::reserve_shunt_group(int bus, real_type target_vm, const std::vector<int> & controller_buses,
+                                        const std::vector<std::vector<int> > & shunts, bool solved)
+{
+    if (!_supports_shunt_groups()) return false;
+    shunt_groups_.push_back(ShuntGroup{bus, target_vm, controller_buses, shunts, solved});
+    for (int controller : controller_buses) {
+        if (shunt_controller(controller) != nullptr) continue;
+        shunt_controller_store_.push_back(ShuntSectionControl(this, controller));
+        shunt_controller_of_[controller] = &shunt_controller_store_.back();
+    }
+    return true;
+}
+
+ShuntSectionControl * OuterControls::shunt_controller(int bus) { return find_control(shunt_controller_of_, bus); }
+const ShuntSectionControl * OuterControls::shunt_controller(int bus) const { return find_control(shunt_controller_of_, bus); }
+
+bool ShuntSectionControl::handled() const { return owner_->_shunt_handled(bus_); }
+real_type ShuntSectionControl::b() const { return owner_->_shunt_b(bus_); }
+
 bool RatioTapControl::handled() const { return owner_->_ratio_handled(trafo_); }
 real_type RatioTapControl::ratio() const { return owner_->_ratio(trafo_); }
 int RatioTapControl::position() const { return owner_->_ratio_position(trafo_); }
@@ -161,6 +180,9 @@ void OuterControls::clear_reservations()
     ratio_groups_.clear();
     ratio_tap_of_.clear();
     ratio_tap_store_.clear();
+    shunt_groups_.clear();
+    shunt_controller_of_.clear();
+    shunt_controller_store_.clear();
 }
 
 void OuterControls::reset_states()
@@ -171,6 +193,7 @@ void OuterControls::reset_states()
     for (auto & regime : hvdc_regime_store_) regime._reset();
     for (auto & shifter : phase_shifter_store_) shifter._reset();
     for (auto & tap : ratio_tap_store_) tap._reset();
+    for (auto & shunt : shunt_controller_store_) shunt._reset();
     pending_vm_.clear();
     suspended_.clear();
 }

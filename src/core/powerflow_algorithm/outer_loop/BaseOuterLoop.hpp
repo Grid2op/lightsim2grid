@@ -46,29 +46,6 @@ enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
  */
 class LS2G_API OuterDeclaration final
 {
-    public:
-        /// shunts regulating the voltage of `bus_solver` at `target_vm` pu, from the controller
-        /// buses `controller_buses` (solver ids), each with its regulating shunts (grid ids):
-        /// with `solved`, the Newton solves for their susceptances (ShuntControl), otherwise
-        /// only their sections may move
-        void add_shunt_group(int bus_solver, real_type target_vm, const std::vector<int> & controller_buses,
-                             const std::vector<std::vector<int> > & shunts, bool solved) {
-            shunt_groups_.push_back(ShuntGroup{bus_solver, target_vm, controller_buses, shunts, solved});
-        }
-        struct ShuntGroup {
-            int bus_solver;
-            real_type target_vm;
-            std::vector<int> controller_buses;
-            std::vector<std::vector<int> > shunts;
-            bool solved;
-        };
-        const std::vector<ShuntGroup> & shunt_groups() const { return shunt_groups_; }
-        void clear() {
-            shunt_groups_.clear();
-        }
-
-    private:
-        std::vector<ShuntGroup> shunt_groups_;
 };
 
 /**
@@ -90,14 +67,8 @@ struct OuterState
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
-    /// the shunt controllers (by controller bus, solver id): their voltage control (1 on, 0 off,
-    /// -1 kept; empty until a loop sizes it), and the section counts a loop switched their shunts
-    /// to (applied by the next solve, then forgotten)
-    std::vector<int> shunt_control;
-    std::vector<std::pair<int, std::vector<int> > > shunt_sections;
 };
 
-class ShuntControl;
 
 /**
  * One decision of an outer loop in a check: what it acted on, or a test it ran and did not act
@@ -177,8 +148,6 @@ struct OuterContext
     OuterState * state = nullptr;
     /// what the loops reserve and act through (null in detection)
     OuterControls * controls = nullptr;
-    /// the shunts whose susceptance the solve handles, null when there are none or in detection
-    const ShuntControl * shunt_control = nullptr;
     /// where a check records its decisions (null: not recorded, eg in detection)
     std::vector<OuterDecision> * trace = nullptr;
 

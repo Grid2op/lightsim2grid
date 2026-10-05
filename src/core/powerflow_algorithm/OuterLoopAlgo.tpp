@@ -54,8 +54,6 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     state_.Sbus_target = &Sbus_target_;
     state_.gen_target_p.clear();
     state_.storage_target_p.clear();
-    state_.shunt_control.clear();
-    state_.shunt_sections.clear();
     inner_.controls().reset_states();
     OuterState & state = state_;
 

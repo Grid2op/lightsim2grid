@@ -206,6 +206,49 @@ class LS2G_API RatioTapControl final
 };
 
 /**
+ * A shunt controller: the regulating shunts of one bus (solver id), ONE susceptance. When its
+ * group is solved (a column and a row per controller), its voltage control may be switched on
+ * or off; its sections may be switched. Its susceptance lives in Ybus, patched by value
+ * (ShuntControl). The reads are the last solve's, and mean nothing unless the solve handles it.
+ */
+class LS2G_API ShuntSectionControl final
+{
+    public:
+        int bus() const { return bus_; }
+        /// whether the solve handles it
+        bool handled() const;
+        /// its susceptance now, pu (sn_mva base, positive producing)
+        real_type b() const;
+
+        /// switch its voltage control on or off (off: its susceptance stays where it is)
+        void set_control(bool on) { control_ = on ? 1 : 0; }
+        /// switch its shunts' sections (aligned with the shunts its group was reserved with),
+        /// once, at the next solve: its susceptance follows
+        void set_sections(const std::vector<int> & counts) { sections_ = counts; sections_set_ = true; }
+
+        /// what a loop asked, for the inner algorithm: the control (1 on, 0 off, -1 as it is)
+        int requested_control() const { return control_; }
+        /// the sections a loop switched it to, once: false when it did not
+        bool take_sections(std::vector<int> & counts) {
+            if (!sections_set_) return false;
+            counts = sections_;
+            sections_set_ = false;
+            return true;
+        }
+
+    private:
+        friend class OuterControls;
+        ShuntSectionControl(const OuterControls * owner, int bus) : owner_(owner), bus_(bus) {}
+        void _reset() { control_ = -1; sections_set_ = false; sections_.clear(); }
+
+        const OuterControls * owner_;
+        int bus_;
+        int control_ = -1;
+        bool sections_set_ = false;
+        std::vector<int> sections_;
+};
+
+/**
  * Collects what the outer loops reserve in the solve and hands out the controls they act
  * through. A loop reserves, when the solver input is (re)built (BaseOuterLoop::declare),
  * every slot any of its states may need; the union is what lets a whole solve run on one
@@ -245,6 +288,12 @@ class LS2G_API OuterControls
         /// the voltage of `bus` at `target_vm` pu, their ratios solved for when `solved`; a
         /// RatioTapControl per transformer. False when the inner algorithm has none.
         bool reserve_ratio_group(int bus, real_type target_vm, const std::vector<int> & trafos, bool solved);
+        /// shunt controllers (`controller_buses`, solver ids, in order: the first one on holds the
+        /// voltage; `shunts` their shunts, grid ids) regulating the voltage of `bus` at `target_vm`
+        /// pu, their susceptances solved for when `solved`; a ShuntSectionControl per controller.
+        /// False when the inner algorithm has none.
+        bool reserve_shunt_group(int bus, real_type target_vm, const std::vector<int> & controller_buses,
+                                 const std::vector<std::vector<int> > & shunts, bool solved);
 
         // ----- lookup (after the reservation) -----------------------------------------------
         /// the control of `bus`, nullptr when no loop reserved it
@@ -260,6 +309,8 @@ class LS2G_API OuterControls
         const PhaseShifterControl * phase_shifter(int trafo) const;
         RatioTapControl * ratio_tap(int trafo);
         const RatioTapControl * ratio_tap(int trafo) const;
+        ShuntSectionControl * shunt_controller(int bus);
+        const ShuntSectionControl * shunt_controller(int bus) const;
         /// the buses a reserved ratio group regulates (a control of a higher priority than a
         /// shunt's, see ShuntVoltageControlLoop)
         std::set<int> ratio_group_buses() const;
@@ -316,6 +367,16 @@ class LS2G_API OuterControls
         };
         const std::vector<RatioGroup> & ratio_groups() const { return ratio_groups_; }
         const std::map<int, RatioTapControl *> & ratio_taps() const { return ratio_tap_of_; }
+        /// the shunt groups, in the order they were reserved, and their controllers by bus
+        struct ShuntGroup {
+            int bus;
+            real_type target_vm;
+            std::vector<int> controller_buses;
+            std::vector<std::vector<int> > shunts;
+            bool solved;
+        };
+        const std::vector<ShuntGroup> & shunt_groups() const { return shunt_groups_; }
+        const std::map<int, ShuntSectionControl *> & shunt_controllers() const { return shunt_controller_of_; }
 
         /// the magnitudes to reset (bus, pu), in the order they were asked for, then forgotten
         void take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm);
@@ -324,6 +385,10 @@ class LS2G_API OuterControls
         // what the solve reads back, for the controls above (the inner algorithm's)
         friend class PhaseShifterControl;
         friend class RatioTapControl;
+        friend class ShuntSectionControl;
+        virtual bool _supports_shunt_groups() const { return false; }
+        virtual bool _shunt_handled(int /*bus*/) const { return false; }
+        virtual real_type _shunt_b(int /*bus*/) const { return std::numeric_limits<real_type>::quiet_NaN(); }
         virtual bool _supports_phase_shifters() const { return false; }
         virtual bool _supports_ratio_groups() const { return false; }
         virtual bool _ratio_handled(int /*trafo*/) const { return false; }
@@ -353,6 +418,9 @@ class LS2G_API OuterControls
         std::vector<RatioGroup> ratio_groups_;
         std::deque<RatioTapControl> ratio_tap_store_;
         std::map<int, RatioTapControl *> ratio_tap_of_;
+        std::vector<ShuntGroup> shunt_groups_;
+        std::deque<ShuntSectionControl> shunt_controller_store_;
+        std::map<int, ShuntSectionControl *> shunt_controller_of_;
         std::vector<int> caller_switchable_;
         std::vector<int> caller_pinned_;
         std::vector<std::pair<int, real_type> > pending_vm_;

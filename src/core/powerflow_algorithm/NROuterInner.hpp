@@ -29,6 +29,15 @@ public:
 protected:
     bool _supports_phase_shifters() const override { return system_.branch_control() != nullptr; }
     bool _supports_ratio_groups() const override { return system_.branch_control() != nullptr; }
+    bool _supports_shunt_groups() const override { return system_.shunt_control() != nullptr; }
+    bool _shunt_handled(int bus) const override {
+        const ShuntControl * shunt = system_.shunt_control();
+        return shunt != nullptr && shunt->handles(bus);
+    }
+    real_type _shunt_b(int bus) const override {
+        const ShuntControl * shunt = system_.shunt_control();
+        return shunt != nullptr ? shunt->b(bus) : OuterControls::_shunt_b(bus);
+    }
     bool _ratio_handled(int trafo) const override {
         const BranchControl * branch = system_.branch_control();
         return branch != nullptr && branch->handles_ratio(trafo);
@@ -131,7 +140,6 @@ public:
         controller_q = algo_.system().controller_q();
         ctx.controller_q = &controller_q;
         ctx.slack_absorbed = algo_.system().slack_absorbed();
-        ctx.shunt_control = algo_.system().shunt_control();
     }
 
     // per solver bus, whether its magnitude is an unknown of the last solve; a pinned bus
@@ -174,7 +182,7 @@ private:
 };
 
 template<class LinearSolver, class NRSystem>
-void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & decl)
+void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & /*decl*/)
 {
     NRSystem & system = algo_.system();
     // the switchable buses: a caller's (a batch), then the loops'
@@ -200,9 +208,9 @@ void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & dec
     }
     system.set_ratio_groups(groups);
     std::vector<ShuntControl::GroupDecl> shunt_groups;
-    for(const auto & g : decl.shunt_groups()) {
+    for(const auto & g : controls_.shunt_groups()) {
         ShuntControl::GroupDecl d;
-        d.bus_solver = g.bus_solver;
+        d.bus_solver = g.bus;
         d.target_vm = g.target_vm;
         d.controller_buses = g.controller_buses;
         d.shunts = g.shunts;
@@ -213,7 +221,7 @@ void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & dec
 }
 
 template<class LinearSolver, class NRSystem>
-void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state)
+void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & /*state*/)
 {
     NRSystem & system = algo_.system();
     // what the loops changed outside the injection: the hvdc lines' regimes
@@ -245,10 +253,12 @@ void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state)
     // the shunt sections (a switch once), then the voltage controls
     ShuntControl * shunt = system.shunt_control();
     if(shunt != nullptr) {
-        for(const auto & bs : state.shunt_sections) shunt->set_sections(bs.first, bs.second);
-        state.shunt_sections.clear();
-        for(std::size_t b = 0; b < state.shunt_control.size(); ++b) {
-            if(state.shunt_control[b] >= 0) shunt->set_control_on(static_cast<int>(b), state.shunt_control[b] == 1);
+        std::vector<int> counts;
+        for(const auto & bc : controls_.shunt_controllers()) {
+            if(bc.second->take_sections(counts)) shunt->set_sections(bc.first, counts);
+        }
+        for(const auto & bc : controls_.shunt_controllers()) {
+            if(bc.second->requested_control() >= 0) shunt->set_control_on(bc.first, bc.second->requested_control() == 1);
         }
     }
     // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
