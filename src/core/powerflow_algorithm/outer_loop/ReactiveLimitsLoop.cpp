@@ -102,6 +102,7 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             // the group's: the bus it regulates, its set-point
             const VoltageControlSolverData & ctrl = grid.get_ac_voltage_control_plan().controllers();
             const int g = ctrl.group(entry.ctrl_pos.front());
+            bus.group = g;
             bus.reg_bus_solver = ctrl.reg_bus(g);
             bus.target_vm = ctrl.v_set(g);
             has_target = true;
@@ -205,12 +206,40 @@ real_type ReactiveLimitsLoop::_controller_limit(const OuterContext & ctx, int ct
     }
 }
 
+std::vector<char> ReactiveLimitsLoop::_groups_holding(const OuterContext & ctx) const
+{
+    const VoltageControlSolverData & ctrl = ctx.grid->get_ac_voltage_control_plan().controllers();
+    std::vector<char> holding(static_cast<std::size_t>(ctrl.n_groups()), 0);
+    std::vector<char> sloped(holding.size(), 0);
+    static const std::vector<real_type> none;
+    const std::vector<real_type> & hold_q = ctx.state != nullptr ? ctx.state->controller_hold_q : none;
+    const std::vector<real_type> & svc_on = ctx.state != nullptr ? ctx.state->svc_target_vm : none;
+    for (int c = 0; c < ctrl.n_controllers(); ++c) {
+        const std::size_t g = static_cast<std::size_t>(ctrl.group(c));
+        if (ctrl.slope(c) != 0.) sloped[g] = 1;
+        // held at a limit by this loop
+        if (static_cast<std::size_t>(c) < hold_q.size() && std::isfinite(hold_q[static_cast<std::size_t>(c)])) continue;
+        // held by the plan: a frozen regulator, or a voltage monitor not switched on
+        if (ctrl.is_held(c)) {
+            const std::size_t svc = static_cast<std::size_t>(ctrl.elem_id(c));
+            const bool switched_on = ctrl.kind(c) == VoltageControlSolverData::SVC &&
+                                     svc < svc_on.size() && std::isfinite(svc_on[svc]);
+            if (!switched_on) continue;
+        }
+        holding[g] = 1;
+    }
+    // with a slope, the regulated voltage is off its set-point by design
+    for (std::size_t g = 0; g < holding.size(); ++g) holding[g] = holding[g] && !sloped[g];
+    return holding;
+}
+
 void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch> & to_pq,
                                    std::vector<Switch> & to_pv, std::vector<int> & moved,
                                    int & remaining_pv) const
 {
     const real_type eps = max_reactive_power_mismatch * OLF_SB_MVA;
     remaining_pv = 0;
+    const std::vector<char> groups_holding = _groups_holding(ctx);
     for (std::size_t k = 0; k < buses_.size(); ++k) {
         const ControllerBus & bus = buses_[k];
         const int ki = static_cast<int>(k);
@@ -237,7 +266,7 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
                 to_pq.push_back(Switch{ki, LimitViolationType::HIGH_Q, q, q_max});
             } else if (robust_mode && bus.reg_bus_solver != bus.bus_solver) {
                 // a remote controller within its limits, but its own bus' voltage unrealistic
-                const real_type v = std::abs((*ctx.V)(bus.bus_solver));
+                const real_type v = ctx.vm(bus.bus_solver);
                 if (v < min_realistic_voltage * REALISTIC_VOLTAGE_MARGIN) {
                     to_pq.push_back(Switch{ki, LimitViolationType::LOW_Q, q, bus.target_q, true});
                 } else if (v > max_realistic_voltage / REALISTIC_VOLTAGE_MARGIN) {
@@ -250,8 +279,14 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
             }
             continue;
         }
-        // PQ: checkPqBus, the voltage it regulates against its set-point
-        const real_type vm = std::abs((*ctx.V)(bus.reg_bus_solver));
+        // PQ: checkPqBus, the voltage it regulates against its set-point. A bus another
+        // controller of its group still holds is AT the set-point: the Newton's voltage row
+        // makes it so, to within a rounding that differs from one CPU to the next, and a
+        // strict comparison of the two would release the bus on the sign of that rounding.
+        // Taken as equal, the bus stays frozen, which is what OpenLoadFlow's strict test
+        // says whenever the two are equal.
+        const bool held_by_group = bus.group >= 0 && groups_holding[static_cast<std::size_t>(bus.group)];
+        const real_type vm = held_by_group ? target_vm : ctx.vm(bus.reg_bus_solver);
         const real_type vn = bus.nominal_v;
         if (bus.state < 0) {
             if (vm < target_vm) {
@@ -370,7 +405,7 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
         // the robust mode: a remote controller with an unrealistic voltage of its own
         // restarts from 1 pu
         if (robust_mode && bus.reg_bus_solver != bus.bus_solver) {
-            const real_type v = std::abs((*ctx.V)(bus.bus_solver));
+            const real_type v = ctx.vm(bus.bus_solver);
             if (sw.realistic || v < min_realistic_voltage * REALISTIC_VOLTAGE_MARGIN ||
                 v > max_realistic_voltage / REALISTIC_VOLTAGE_MARGIN) {
                 ctx.state->vm_set.push_back(std::make_pair(bus.bus_solver, static_cast<real_type>(1.)));

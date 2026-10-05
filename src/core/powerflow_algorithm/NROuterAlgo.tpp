@@ -68,6 +68,7 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
         OuterContext ctx = _context(&state);
         ctx.V = nullptr;  // nothing solved yet
         ctx.Va = nullptr;
+        ctx.Vm = nullptr;
         for (auto & loop : loops_) {
             if (loop->is_needed(ctx)) active.push_back(loop.get());
         }
@@ -252,6 +253,7 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
     OuterContext ctx = _context(&state_);
     ctx.V = nullptr;
     ctx.Va = nullptr;
+    ctx.Vm = nullptr;
     OuterDeclaration decl;
     for (const auto & loop : loops_) loop->declare(ctx, decl);
     std::vector<int> switchable = caller_switchable_;

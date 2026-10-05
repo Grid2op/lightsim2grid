@@ -93,6 +93,7 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             real_type min_q = 0.;    ///< the sum of its storage units' and stations' limits, MVar
             real_type max_q = 0.;
             int reg_bus_solver = -1; ///< the bus it regulates
+            int group = -1;          ///< its voltage-control group (-1: a local bus)
             real_type target_vm = 1.;    ///< its set-point, pu
             real_type nominal_v = 0.;    ///< kV, for the strongest PV bus
             real_type target_p = 0.;     ///< MW, its units' target P, for the same
@@ -124,6 +125,9 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             real_type limit;     ///< the limit it left (MVar) / its set-point (kV)
             bool realistic = false;  ///< the robust mode's (frozen at its target Q)
         };
+        /// for each voltage-control group, whether a controller of it still regulates without
+        /// a slope: its regulated bus is then at the set-point by construction
+        std::vector<char> _groups_holding(const OuterContext & ctx) const;
         /// the switches the current solve calls for, as OpenLoadFlow's check computes them
         void _evaluate(const OuterContext & ctx, std::vector<Switch> & to_pq,
                        std::vector<Switch> & to_pv, std::vector<int> & moved,

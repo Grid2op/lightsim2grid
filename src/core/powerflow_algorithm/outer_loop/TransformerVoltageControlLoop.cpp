@@ -267,7 +267,7 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
             if (held) continue;
         }
         if (_step_up(grid, entry, limit)) continue;
-        real_type target_vm = std::abs((*ctx.V)(b));
+        real_type target_vm = ctx.vm(b);
         const GeneratorContainer & gens = grid.get_generators();
         if (!entry.gen_ids.empty()) target_vm = gens.get_target_vm_pu(entry.gen_ids.front());
         else if (!entry.storage_ids.empty()) target_vm = grid.get_storages().get_target_vm_pu(entry.storage_ids.front());
@@ -372,7 +372,7 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
         bool need_run = false;
         for (const Group & g : groups_) {
             if (g.hidden) continue;
-            const real_type v = std::abs((*ctx.V)(g.bus_solver));
+            const real_type v = ctx.vm(g.bus_solver);
             if (std::abs(g.target - v) <= g.half_deadband) continue;
             for (int t : g.trafos) {
                 if (!branch.handles_ratio(t)) continue;
@@ -481,7 +481,7 @@ void TransformerVoltageControlLoop::_detect(const OuterContext & ctx, std::vecto
         if (g.hidden) continue;
         const int b = to_solver[g.bus_grid].cast_int();
         if (b < 0 || b >= ctx.V->size()) continue;
-        const real_type v = std::abs((*ctx.V)(b));
+        const real_type v = ctx.vm(b);
         if (std::abs(g.target - v) > std::max(g.half_deadband, ctx.tol_vm_pu)) {
             const real_type vn = vn_kv(g.bus_grid);
             out.push_back(LimitViolation{ViolationElementType::BUS, g.bus_grid, 0,

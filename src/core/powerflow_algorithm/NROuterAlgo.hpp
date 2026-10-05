@@ -232,6 +232,7 @@ OuterContext NROuterAlgo<LinearSolver>::_context(OuterState * state)
     ctx.grid = this->lsgrid_ptr_;
     ctx.V = &this->V_;
     ctx.Va = &this->Va_;
+    ctx.Vm = &this->Vm_;
     ctx.bus_mismatch = &this->mis_bus_;
     controller_q_ = this->_system.controller_q();
     ctx.controller_q = &controller_q_;

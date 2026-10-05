@@ -177,6 +177,11 @@ struct OuterContext
     const LSGrid * grid = nullptr;
     const CplxVect * V = nullptr;              ///< complex voltages, pu
     const RealVect * Va = nullptr;             ///< the angles, rad (a DC solve's are only here)
+    /// the magnitudes, pu, as the Newton holds them (its own unknowns): read through vm(),
+    /// not as |V|, which rebuilds them through cos / sin / hypot and can land an ulp away --
+    /// enough to flip a strict comparison with the set-point a bus is held at, differently
+    /// from one CPU to the next. Null outside a Newton solve (a detection, a batch).
+    const RealVect * Vm = nullptr;
     const CplxVect * bus_mismatch = nullptr;   ///< see BaseAlgo::get_bus_mismatch
     const RealVect * controller_q = nullptr;   ///< see BaseAlgo::get_controller_q
     int slack_bus = -1;                        ///< solver id of the slack bus, -1 when several
@@ -207,6 +212,8 @@ struct OuterContext
     const ShuntControl * shunt_control = nullptr;
 
     bool is_detection() const { return state == nullptr; }
+    /// the voltage magnitude of solver bus `bus`, pu: Vm's, |V| when there is none
+    real_type vm(int bus) const { return Vm != nullptr ? (*Vm)(bus) : std::abs((*V)(bus)); }
 };
 
 /**

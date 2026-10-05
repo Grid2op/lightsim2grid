@@ -184,7 +184,7 @@ void ShuntVoltageControlLoop::_detect(const OuterContext & ctx, std::vector<Limi
         if (g.hidden) continue;
         const int b = to_solver[g.bus_grid].cast_int();
         if (b < 0 || b >= ctx.V->size()) continue;
-        const real_type v = std::abs((*ctx.V)(b));
+        const real_type v = ctx.vm(b);
         if (std::abs(g.target - v) > std::max(g.half_deadband, ctx.tol_vm_pu)) {
             const real_type vn = vn_kv(g.bus_grid);
             out.push_back(LimitViolation{ViolationElementType::BUS, g.bus_grid, 0,

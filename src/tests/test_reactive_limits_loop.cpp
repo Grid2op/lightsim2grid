@@ -235,6 +235,57 @@ TEST_CASE("the first controller of a group is held, the other one regulates on",
     CHECK(gen_q(grid, 2) == Approx(gen_q(ref, 2)).margin(1e-6));
 }
 
+TEST_CASE("a controller frozen at its limit stays frozen while its group holds the bus", "[outer][reactive_limits]")
+{
+    // gen 1 is asked more than its max, gen 3 holds bus 2: the loop driven by hand, so that
+    // the regulated magnitude it reads can be put an ulp past the set-point
+    LSGrid grid = make_group_grid(/*max_q1=*/5., /*max_q3=*/500., true, 0., true, /*min_q1=*/-500.);
+    grid.change_algorithm("NRSing_SparseLU");
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 5);
+    CplxVect V = grid.get_algo().get_V();
+    RealVect Vm = V.cwiseAbs();
+    const CplxVect mismatch = grid.get_algo().get_bus_mismatch();
+    const RealVect ctrl_q = grid.get_controller_q_solver();
+    CplxVect Sbus = CplxVect::Zero(V.size());
+    ls2g::OuterState state;
+    state.Sbus = &Sbus;
+    state.Sbus_init = &Sbus;
+    state.Sbus_target = &Sbus;
+    ls2g::OuterContext ctx;
+    ctx.grid = &grid;
+    ctx.V = &V;
+    ctx.Vm = &Vm;
+    ctx.bus_mismatch = &mismatch;
+    ctx.controller_q = &ctrl_q;
+    ctx.state = &state;
+
+    const ls2g::VoltageControlSolverData & ctrl = grid.get_ac_voltage_control_plan().controllers();
+    REQUIRE(ctrl.n_groups() == 1);
+    int c1 = -1, c3 = -1;
+    for (int c = 0; c < ctrl.n_controllers(); ++c) (ctrl.elem_id(c) == 1 ? c1 : c3) = c;
+    const int reg = ctrl.reg_bus(0);
+    const real_type v_set = ctrl.v_set(0);
+
+    ReactiveLimitsLoop loop;
+    REQUIRE(loop.is_needed(ctx));
+    loop.initialize(ctx);
+    CHECK(loop.check(ctx) == OuterLoopStatus::UNSTABLE);  // gen 1 frozen at its max
+    REQUIRE(std::isfinite(state.controller_hold_q[static_cast<std::size_t>(c1)]));
+
+    // gen 3 holds bus 2 at its set-point: a magnitude an ulp above it is that set-point,
+    // not a voltage gen 1's limit was keeping down
+    Vm(reg) = std::nextafter(v_set, static_cast<real_type>(2.));
+    CHECK(loop.check(ctx) == OuterLoopStatus::STABLE);
+    CHECK(std::isfinite(state.controller_hold_q[static_cast<std::size_t>(c1)]));
+
+    // nobody holds it any more: the magnitude is the Newton's (Vm, not |V|), and above the
+    // set-point it releases gen 1
+    state.controller_hold_q[static_cast<std::size_t>(c3)] = 0.;
+    V(reg) = std::polar(v_set - static_cast<real_type>(1e-3), std::arg(V(reg)));
+    CHECK(loop.check(ctx) == OuterLoopStatus::UNSTABLE);
+    CHECK(std::isnan(state.controller_hold_q[static_cast<std::size_t>(c1)]));
+}
+
 namespace {
 
 // buses 0-1-2-3 in a line, a load at bus 3, the slack generator at bus 0; two hvdc lines from
