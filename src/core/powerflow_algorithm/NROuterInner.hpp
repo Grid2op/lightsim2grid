@@ -107,9 +107,9 @@ public:
     bool begin() { return algo_.begin_solve(); }
 
     // The Newton's setup, on the driver's private Ybus (whose values the phase shifters and
-    // the shunts patch). On a rebuild of the topology only, the reservations are cleared and
-    // `declare()` is called right before the system claims its rows / columns: the loops
-    // reserve their controls (controls()) and return the rest of what they need.
+    // the shunts patch). On a rebuild of the topology only, the reservations are cleared,
+    // `declare()` lets the loops reserve their controls (controls()), and what they reserved
+    // is reserved in the system, right before it claims its rows / columns.
     template<class Declare>
     bool setup(Eigen::SparseMatrix<cplx_type>   & Ybus,
                const Eigen::Ref<const CplxVect> & V,
@@ -123,7 +123,7 @@ public:
     {
         algo_.system().set_branch_mutable_ybus(&Ybus);
         return algo_.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, need_init,
-                           [&](){ controls_.clear_reservations(); _reserve(declare()); });
+                           [&](){ controls_.clear_reservations(); declare(); _reserve(); });
     }
 
     bool newton(int max_iter, real_type tol, bool need_init) { return algo_.newton(max_iter, tol, need_init); }
@@ -131,8 +131,9 @@ public:
     // what the loops reserve changed: rebuild the sparsity on the next setup
     void request_rebuild() { algo_.request_rebuild(); }
 
-    // Push what the loops changed to the system, before a solve.
-    void apply_state(OuterState & state);
+    // Push what the loops asked of their controls to the system, before a solve: the
+    // persistent switches every time, in a fixed order, the one-shot moves once.
+    void apply_controls();
 
     // the solver's side of a loop's context; `controller_q` is the driver's buffer the
     // context points to
@@ -174,7 +175,7 @@ public:
 
 private:
     // what the loops reserved, in the system
-    void _reserve(const OuterDeclaration & decl);
+    void _reserve();
 
     Algo algo_;
     NROuterControls<NRSystem> controls_;
@@ -182,7 +183,7 @@ private:
 };
 
 template<class LinearSolver, class NRSystem>
-void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & /*decl*/)
+void NROuterInner<LinearSolver, NRSystem>::_reserve()
 {
     NRSystem & system = algo_.system();
     // the switchable buses: a caller's (a batch), then the loops'
@@ -221,7 +222,7 @@ void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & /*d
 }
 
 template<class LinearSolver, class NRSystem>
-void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & /*state*/)
+void NROuterInner<LinearSolver, NRSystem>::apply_controls()
 {
     NRSystem & system = algo_.system();
     // what the loops changed outside the injection: the hvdc lines' regimes

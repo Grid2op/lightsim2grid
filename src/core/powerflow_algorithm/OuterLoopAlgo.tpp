@@ -42,25 +42,24 @@ bool OuterLoopAlgo<Inner>::compute_pf(
 
     bool need_init = false;
     if (!inner_.setup(Ybus_, V, Sbus_, slack_ids, slack_weights, pv, pq, need_init,
-                      [this](){ return _declare(); })) {
+                      [this](){ _declare(); })) {
         err_ = inner_.algo().get_error();
         timer_total_nr_ += timer.duration();
         return false;
     }
 
     slack_bus_ = slack_ids.size() > 0 ? slack_ids(0) : -1;
-    state_.Sbus = &Sbus_;
-    state_.Sbus_init = &Sbus_init_;
-    state_.Sbus_target = &Sbus_target_;
-    state_.gen_target_p.clear();
-    state_.storage_target_p.clear();
+    injections_.Sbus = &Sbus_;
+    injections_.Sbus_init = &Sbus_init_;
+    injections_.Sbus_target = &Sbus_target_;
+    injections_.gen_target_p.clear();
+    injections_.storage_target_p.clear();
     inner_.controls().reset_states();
-    OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
     std::vector<BaseOuterLoop *> active;
     {
-        OuterContext ctx = _context(&state);
+        OuterContext ctx = _context();
         ctx.V = nullptr;  // nothing solved yet
         ctx.Va = nullptr;
         ctx.Vm = nullptr;
@@ -100,7 +99,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
                 // runOuterLoop: re-solve until this loop is stable
                 OuterLoopStatus status;
                 do {
-                    OuterContext ctx = _context(&state);
+                    OuterContext ctx = _context();
                     ctx.iteration = stats_.loop_iterations[i].second;
                     const std::size_t first_decision = stats_.decisions.size();
                     status = loop->check(ctx);
@@ -135,7 +134,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     }
 
     {
-        OuterContext ctx = _context(&state);
+        OuterContext ctx = _context();
         for (auto it = active.rbegin(); it != active.rend(); ++it) (*it)->cleanup(ctx);
     }
 
@@ -164,7 +163,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
 template<class Inner>
 bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic)
 {
-    inner_.apply_state(state_);
+    inner_.apply_controls();
     bool converged = inner_.newton(max_iter, tol, need_init);
     // the first iteration analyzed (or tried to): every later solve only refactorizes. A
     // solve that converged in zero iterations factorized nothing, so it does not count.
@@ -203,22 +202,20 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
 }
 
 template<class Inner>
-OuterDeclaration OuterLoopAlgo<Inner>::_declare()
+void OuterLoopAlgo<Inner>::_declare()
 {
-    state_.Sbus = &Sbus_;
-    state_.Sbus_init = &Sbus_init_;
-    state_.Sbus_target = &Sbus_target_;
-    OuterContext ctx = _context(&state_);
+    injections_.Sbus = &Sbus_;
+    injections_.Sbus_init = &Sbus_init_;
+    injections_.Sbus_target = &Sbus_target_;
+    OuterContext ctx = _context();
     ctx.V = nullptr;
     ctx.Va = nullptr;
     ctx.Vm = nullptr;
-    OuterDeclaration decl;
-    for (const auto & loop : loops_) loop->declare(ctx, decl);
-    return decl;
+    for (const auto & loop : loops_) loop->declare(ctx);
 }
 
 template<class Inner>
-OuterContext OuterLoopAlgo<Inner>::_context(OuterState * state)
+OuterContext OuterLoopAlgo<Inner>::_context()
 {
     OuterContext ctx;
     ctx.grid = lsgrid_ptr_;
@@ -227,7 +224,7 @@ OuterContext OuterLoopAlgo<Inner>::_context(OuterState * state)
     ctx.Vm = &Vm_;
     ctx.bus_mismatch = &mis_bus_;
     ctx.slack_bus = slack_bus_;
-    ctx.state = state;
+    ctx.injections = &injections_;
     ctx.controls = &inner_.controls();
     ctx.trace = &stats_.decisions;
     inner_.fill_context(ctx, controller_q_);

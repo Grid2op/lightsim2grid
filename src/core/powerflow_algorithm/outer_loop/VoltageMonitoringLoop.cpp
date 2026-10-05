@@ -42,7 +42,7 @@ std::vector<int> VoltageMonitoringLoop::_held_svcs(const LSGrid & grid)
     return res;
 }
 
-void VoltageMonitoringLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
+void VoltageMonitoringLoop::_declare(const OuterContext & ctx) const
 {
     // every idle standby SVC may be switched on
     for(int svc_id : _held_svcs(*ctx.grid)) ctx.controls->reserve_standby_svc(svc_id);

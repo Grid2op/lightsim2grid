@@ -247,7 +247,7 @@ TEST_CASE("a controller frozen at its limit stays frozen while its group holds t
     const CplxVect mismatch = grid.get_algo().get_bus_mismatch();
     const RealVect ctrl_q = grid.get_controller_q_solver();
     CplxVect Sbus = CplxVect::Zero(V.size());
-    ls2g::OuterState state;
+    ls2g::OuterInjections state;
     state.Sbus = &Sbus;
     state.Sbus_init = &Sbus;
     state.Sbus_target = &Sbus;
@@ -257,7 +257,7 @@ TEST_CASE("a controller frozen at its limit stays frozen while its group holds t
     ctx.Vm = &Vm;
     ctx.bus_mismatch = &mismatch;
     ctx.controller_q = &ctrl_q;
-    ctx.state = &state;
+    ctx.injections = &state;
     ls2g::OuterControls controls;
     ctx.controls = &controls;
 
@@ -269,8 +269,7 @@ TEST_CASE("a controller frozen at its limit stays frozen while its group holds t
     const real_type v_set = ctrl.v_set(0);
 
     ReactiveLimitsLoop loop;
-    ls2g::OuterDeclaration decl;
-    loop.declare(ctx, decl);
+    loop.declare(ctx);
     REQUIRE(controls.controller_hold(c1) != nullptr);
     REQUIRE(controls.controller_hold(c3) != nullptr);
     REQUIRE(loop.is_needed(ctx));

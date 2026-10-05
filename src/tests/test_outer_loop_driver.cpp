@@ -100,7 +100,7 @@ class ScriptedLoop final : public BaseOuterLoop
             const std::size_t pos = std::min(calls_, script_.size() - 1);
             ++calls_;
             const OuterLoopStatus res = script_[pos];
-            if (res == OuterLoopStatus::UNSTABLE) *ctx.state->Sbus *= 1.01;
+            if (res == OuterLoopStatus::UNSTABLE) *ctx.injections->Sbus *= 1.01;
             return res;
         }
         void _cleanup(OuterContext &) override { log_->push_back(name_ + ".cleanup"); }
@@ -123,7 +123,7 @@ class DeclaringLoop final : public BaseOuterLoop
 {
     protected:
         std::string _name() const override { return "Declaring"; }
-        void _declare(const OuterContext & ctx, ls2g::OuterDeclaration &) const override {
+        void _declare(const OuterContext & ctx) const override {
             const ls2g::SolverBusIdVect & pv = ctx.grid->get_ac_pv_solver();
             for (std::size_t i = 0; i < pv.size(); ++i) ctx.controls->reserve_bus_voltage(pv[i].cast_int());
         }

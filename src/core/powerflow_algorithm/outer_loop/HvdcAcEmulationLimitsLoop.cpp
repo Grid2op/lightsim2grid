@@ -36,7 +36,7 @@ hvdc_p_check::HvdcPPlan HvdcAcEmulationLimitsLoop::_ac_emulation_lines(const Out
     return res;
 }
 
-void HvdcAcEmulationLimitsLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
+void HvdcAcEmulationLimitsLoop::_declare(const OuterContext & ctx) const
 {
     // every line in AC emulation may saturate
     for(const auto & line : _ac_emulation_lines(ctx).lines) ctx.controls->reserve_hvdc_regime(line.hvdc_id);

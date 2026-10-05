@@ -95,7 +95,7 @@ std::vector<PhaseControlLoop::Shifter> PhaseControlLoop::shifters(const LSGrid &
     return res;
 }
 
-void PhaseControlLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
+void PhaseControlLoop::_declare(const OuterContext & ctx) const
 {
     for (const Shifter & s : shifters(*ctx.grid)) {
         ctx.controls->reserve_phase_shifter(s.trafo, s.mode == RegulationMode::ACTIVE_POWER && s.regulates);

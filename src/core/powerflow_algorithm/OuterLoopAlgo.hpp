@@ -46,7 +46,7 @@ namespace ls2g {
  * `Inner` is what the driver needs from the algorithm beyond BaseAlgo's interface (see
  * NROuterInner, the one there is): algo() (the wrapped BaseAlgo), controls() (the
  * OuterControls the loops reserve and act through), begin(), setup(..., declare), newton(),
- * finalize(), request_rebuild(), apply_state(), fill_context(),
+ * finalize(), request_rebuild(), apply_controls(), fill_context(),
  * vm_unknown(), and the phase_tap / ratio_tap / shunt_sections results. Everything else
  * BaseAlgo declares is forwarded to algo(), and the results of each solve are copied back
  * into this object, which is what LSGrid reads.
@@ -86,8 +86,8 @@ public:
 
     void get_outer_target_p(std::vector<real_type> & gen_p_mw,
                             std::vector<real_type> & storage_p_mw) const override {
-        gen_p_mw = state_.gen_target_p;
-        storage_p_mw = state_.storage_target_p;
+        gen_p_mw = injections_.gen_target_p;
+        storage_p_mw = injections_.storage_target_p;
     }
     void get_outer_hvdc_status(std::vector<int> & status) const override {
         status = inner_.controls().hvdc_regimes();
@@ -241,10 +241,10 @@ private:
     // the inner solve from the current state, then its results copied here and, if asked,
     // the unrealistic-voltage check. Returns whether the solve is usable by the loops.
     bool _solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic);
-    // the loops' declarations, on a rebuild of the topology (see Inner::setup)
-    OuterDeclaration _declare();
+    // the loops' reservations, on a rebuild of the topology (see Inner::setup)
+    void _declare();
     // OuterContext on the algorithm's current state
-    OuterContext _context(OuterState * state);
+    OuterContext _context();
 
     static void _check_driver_params(const OuterLoopDriverParams & params) {
         if(params.max_outer_iterations < 0){
@@ -277,11 +277,11 @@ private:
     // pointer, so they must not move during a solve (they are only reassigned before setup)
     CplxVect Sbus_;
     CplxVect Sbus_init_;
-    CplxVect Sbus_target_;  // see OuterState::Sbus_target
+    CplxVect Sbus_target_;  // see OuterInjections::Sbus_target
     Eigen::SparseMatrix<cplx_type> Ybus_;  // the grid's, its values patched by the phase shifters
     RealVect controller_q_;  // the context's copy, refreshed with it
     int slack_bus_ = -1;     // solver id of the slack bus of the current solve
-    OuterState state_;       // what the loops edit; kept after the solve for its results
+    OuterInjections injections_;  // what the loops inject; kept after the solve for its results
 };
 
 #include "OuterLoopAlgo.tpp"

@@ -280,7 +280,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // droop API
         /**
          * The droop regime the next compute_results publishes each line's flows in, by line
-         * id: what an outer loop decided (OuterState::hvdc_status) rather than the line's own
+         * id: what an outer loop decided (HvdcRegimeControl) rather than the line's own
          * status_droop, which is not modified. A value other than -1, 0 or +1 keeps the
          * line's own; an empty vector (the default) keeps every line's.
          */

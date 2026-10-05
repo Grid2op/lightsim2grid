@@ -29,7 +29,7 @@ using ls2g::HvdcAcEmulationLimitsLoop;
 using ls2g::LSGrid;
 using ls2g::OuterContext;
 using ls2g::OuterLoopStatus;
-using ls2g::OuterState;
+using ls2g::OuterInjections;
 using ls2g::RealVect;
 using ls2g::real_type;
 
@@ -99,7 +99,7 @@ struct Driver
     LSGrid grid;
     HvdcAcEmulationLimitsLoop loop;
     CplxVect Sbus;
-    OuterState state;
+    OuterInjections state;
     ls2g::OuterControls controls;
     RealVect Va;
     int b1, b2;
@@ -115,8 +115,7 @@ struct Driver
         state.Sbus_init = &Sbus;
         Va = RealVect::Zero(4);
         OuterContext ctx = context();
-        ls2g::OuterDeclaration decl;
-        loop.declare(ctx, decl);  // reserves the line's regime
+        loop.declare(ctx);  // reserves the line's regime
         REQUIRE(loop.is_needed(ctx));
         loop.initialize(ctx);
     }
@@ -126,7 +125,7 @@ struct Driver
         OuterContext ctx;
         ctx.grid = &grid;
         ctx.Va = &Va;
-        ctx.state = &state;
+        ctx.injections = &state;
         ctx.controls = &controls;
         return ctx;
     }

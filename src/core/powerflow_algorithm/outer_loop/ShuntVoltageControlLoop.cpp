@@ -85,7 +85,7 @@ std::vector<ShuntVoltageControlLoop::Group> ShuntVoltageControlLoop::groups(cons
     return res;
 }
 
-void ShuntVoltageControlLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
+void ShuntVoltageControlLoop::_declare(const OuterContext & ctx) const
 {
     // the buses the transformers regulate: a transformer voltage control declared before this
     // loop (OpenLoadFlow's order) hides a shunt one

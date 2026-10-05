@@ -225,9 +225,6 @@ std::vector<int> OuterControls::pinned_buses() const
     return res;
 }
 
-}  // namespace ls2g
-
-namespace ls2g {
 
 std::vector<real_type> OuterControls::held_q() const
 {

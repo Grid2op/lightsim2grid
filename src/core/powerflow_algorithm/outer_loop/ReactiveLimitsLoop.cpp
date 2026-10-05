@@ -35,7 +35,7 @@ bus_q_check::BusQPlan ReactiveLimitsLoop::_plan(const OuterContext & ctx)
     return plan;
 }
 
-void ReactiveLimitsLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
+void ReactiveLimitsLoop::_declare(const OuterContext & ctx) const
 {
     // every bus holding its own voltage through the PV path may become PQ
     OuterControls & controls = *ctx.controls;
@@ -167,7 +167,7 @@ void ReactiveLimitsLoop::_limits(const OuterContext & ctx, const ControllerBus &
     const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
     // a generator: its curve at the target P an outer loop gave it, its fixed limits otherwise
     static const std::vector<real_type> none;
-    const std::vector<real_type> & target_p = ctx.state != nullptr ? ctx.state->gen_target_p : none;
+    const std::vector<real_type> & target_p = ctx.injections != nullptr ? ctx.injections->gen_target_p : none;
     for (int gen_id : entry.gen_ids) {
         real_type lo, hi;
         ctx.grid->gen_limits_at_outer_target(gen_id, target_p, lo, hi);
@@ -193,7 +193,7 @@ real_type ReactiveLimitsLoop::_controller_limit(const OuterContext & ctx, int ct
         case VoltageControlSolverData::GEN: {
             static const std::vector<real_type> none;
             real_type lo, hi;
-            grid.gen_limits_at_outer_target(el, ctx.state != nullptr ? ctx.state->gen_target_p : none, lo, hi);
+            grid.gen_limits_at_outer_target(el, ctx.injections != nullptr ? ctx.injections->gen_target_p : none, lo, hi);
             return max ? hi : lo;
         }
         case VoltageControlSolverData::SVC: {
@@ -329,7 +329,7 @@ void ReactiveLimitsLoop::_freeze(OuterContext & ctx, ControllerBus & bus, real_t
 {
     // its units now inject their limit, on top of what the bus' Sbus held already (their
     // own Q is not in it while they regulate)
-    OuterState & st = *ctx.state;
+    OuterInjections & st = *ctx.injections;
     const real_type sn = ctx.grid->get_sn_mva();
     if (!bus.local) {
         // each of its controllers held at its own limit: the bus' at that limit
@@ -357,7 +357,7 @@ void ReactiveLimitsLoop::_freeze(OuterContext & ctx, ControllerBus & bus, real_t
 
 void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
 {
-    OuterState & st = *ctx.state;
+    OuterInjections & st = *ctx.injections;
     if (!bus.local) {
         const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
         for (int c : entry.ctrl_pos) {

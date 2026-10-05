@@ -32,7 +32,7 @@ class LSGrid;
  *
  * Fixed pattern. A controller bus holding its own voltage (the ordinary PV path) reserves a
  * BusVoltageControl (its Vm unknown and Q row, pinned while it is PV); making it PQ is a
- * value edit of the algorithm's injection (OuterState::Sbus) and of that control; making it
+ * value edit of the algorithm's injection (OuterInjections::Sbus) and of that control; making it
  * PV again resets its magnitude to its set-point (OuterControls::reset_vm). The bus' units share what is frozen as the results split any bus'
  * reactive power. A bus whose units are controllers of a voltage-control group (remote
  * regulation, an SVC) is frozen by holding each of them at its own limit
@@ -71,7 +71,7 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
 
     protected:
         std::string _name() const override { return "ReactiveLimits"; }
-        void _declare(const OuterContext & ctx, OuterDeclaration & decl) const override;
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;

@@ -130,7 +130,7 @@ real_type TransformerVoltageControlLoop::_limit(const LSGrid & grid) const
     return res;
 }
 
-void TransformerVoltageControlLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
+void TransformerVoltageControlLoop::_declare(const OuterContext & ctx) const
 {
     const std::vector<Group> gs = groups(*ctx.grid);
     if (gs.empty()) return;
@@ -253,7 +253,7 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
     // disableGeneratorVoltageControlsUnderMaxControlledNominalVoltage: a controller bus frozen at
     // its bus' Q equation, the injection, which OpenLoadFlow takes as the generation (its load
     // is then counted twice)
-    OuterState & st = *ctx.state;
+    OuterInjections & st = *ctx.injections;
     const LSGrid & grid = *ctx.grid;
     const real_type sn = grid.get_sn_mva();
     const Eigen::Ref<const RealVect> vn_kv = grid.get_bus_vn_kv();
@@ -319,7 +319,7 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
 
 void TransformerVoltageControlLoop::_release_generators(OuterContext & ctx)
 {
-    OuterState & st = *ctx.state;
+    OuterInjections & st = *ctx.injections;
     for (const Frozen & f : frozen_) {
         if (f.local) {
             CplxVect & Sbus = *st.Sbus;

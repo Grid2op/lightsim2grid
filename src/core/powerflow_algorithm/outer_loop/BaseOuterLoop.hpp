@@ -39,25 +39,16 @@ class LSGrid;
 enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
 
 /**
- * Collects what the outer loops reserve in the Newton-Raphson's Jacobian, before its
- * sparsity is built. A loop asks for every slot ANY of its states may need -- that union
- * is what lets the whole solve run on one symbolic analysis; afterwards a loop only
- * rewrites values. Solver bus ids throughout.
- */
-class LS2G_API OuterDeclaration final
-{
-};
-
-/**
- * What the outer-loop algorithm lets a loop edit between two Newton solves, all of it
- * private to the algorithm (the grid is never modified). Absent in detection mode.
+ * The injections the outer loops edit between two solves, all of it private to the algorithm
+ * (the grid is never modified), whatever the inner algorithm. What a loop switches in the solve
+ * itself goes through its controls (OuterControls). Absent in detection mode.
  *
  * `Sbus` is the injection the next Newton solve reads (solver numbering, pu, generation
  * positive); `Sbus_init` the one the grid handed in, untouched by any loop; `Sbus_target`
  * that one with the units' targets a loop moved (DistributedSlack's target P, and the target
  * Q that follows it, see LSGrid::set_gen_raw_target_q): a unit's own output, not a residual.
  */
-struct OuterState
+struct OuterInjections
 {
     CplxVect * Sbus = nullptr;
     const CplxVect * Sbus_init = nullptr;
@@ -145,13 +136,14 @@ struct OuterContext
     /// how many times THIS loop was unstable so far in the solve (OpenLoadFlow's
     /// `context.getIteration()`: 0 means it has not changed anything yet)
     int iteration = 0;
-    OuterState * state = nullptr;
+    /// the injections the loops edit (null in detection)
+    OuterInjections * injections = nullptr;
     /// what the loops reserve and act through (null in detection)
     OuterControls * controls = nullptr;
     /// where a check records its decisions (null: not recorded, eg in detection)
     std::vector<OuterDecision> * trace = nullptr;
 
-    bool is_detection() const { return state == nullptr; }
+    bool is_detection() const { return injections == nullptr; }
     /// the voltage magnitude of solver bus `bus`, pu: Vm's, |V| when there is none
     real_type vm(int bus) const { return Vm != nullptr ? (*Vm)(bus) : std::abs((*V)(bus)); }
 
@@ -226,9 +218,10 @@ class LS2G_API BaseOuterLoop
         /// the OpenLoadFlow name of the loop
         std::string name() const { return _name(); }
 
-        /// reserve, in the Jacobian, every slot any state of this loop may use. Called
-        /// when the solver input is (re)built, with the grid data known.
-        void declare(const OuterContext & ctx, OuterDeclaration & decl) const { _declare(ctx, decl); }
+        /// reserve, in ctx.controls, every control any state of this loop may use (and so
+        /// every slot of the solve it needs). Called when the solver input is (re)built, with
+        /// the grid data known; the controls live until the next call.
+        void declare(const OuterContext & ctx) const { _declare(ctx); }
 
         /// OpenLoadFlow's isNeeded: whether the loop has anything to do on this grid
         bool is_needed(const OuterContext & ctx) const { return _is_needed(ctx); }
@@ -262,7 +255,7 @@ class LS2G_API BaseOuterLoop
 
     protected:
         virtual std::string _name() const = 0;
-        virtual void _declare(const OuterContext & /*ctx*/, OuterDeclaration & /*decl*/) const {}
+        virtual void _declare(const OuterContext & /*ctx*/) const {}
         virtual bool _is_needed(const OuterContext & /*ctx*/) const { return true; }
         virtual void _initialize(OuterContext & /*ctx*/) {}
         virtual void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const = 0;

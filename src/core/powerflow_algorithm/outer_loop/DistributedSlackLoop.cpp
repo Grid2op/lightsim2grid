@@ -144,7 +144,7 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
         return OuterLoopStatus::FAILED;
     }
 
-    OuterState & state = *ctx.state;
+    OuterInjections & state = *ctx.injections;
     const LSGrid & grid = *ctx.grid;
     const real_type sn_mva = grid.get_sn_mva();
     if(state.gen_target_p.empty() && grid.get_generators().nb() > 0){

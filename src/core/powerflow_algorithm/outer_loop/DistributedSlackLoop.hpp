@@ -29,7 +29,7 @@ class LSGrid;
  * set_gen_p_limits, OpenLoadFlow's target range) and never pushed across 0 MW. The sharing
  * is OpenLoadFlow's: not incremental, every pass starts again from the units' initial
  * targets with the cumulative mismatch (slack_redistribution::distribute). The new targets
- * go into the algorithm's injection (OuterState::Sbus) and are published as the units' P.
+ * go into the algorithm's injection (OuterInjections::Sbus) and are published as the units' P.
  *
  * Trigger (detect): the mismatch above `slack_bus_p_max_mismatch_mw` (SLACK_MISMATCH).
  *

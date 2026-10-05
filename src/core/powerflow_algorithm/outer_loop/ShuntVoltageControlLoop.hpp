@@ -60,7 +60,7 @@ class LS2G_API ShuntVoltageControlLoop final : public BaseOuterLoop
 
     protected:
         std::string _name() const override { return "ShuntVoltageControl"; }
-        void _declare(const OuterContext & ctx, OuterDeclaration & decl) const override;
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;
