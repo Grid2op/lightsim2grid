@@ -36,7 +36,7 @@ class LSGrid;
  * PV again resets its magnitude to its set-point (OuterControls::reset_vm). The bus' units share what is frozen as the results split any bus'
  * reactive power. A bus whose units are controllers of a voltage-control group (remote
  * regulation, an SVC) is frozen by holding each of them at its own limit
- * (OuterState::controller_hold_q, VoltageControl::set_held_controllers), the group's other
+ * (VoltageControllerHold, VoltageControl::set_held_controllers), the group's other
  * controllers regulating on; released, they regulate again.
  *
  * Trigger (detect): bus_q_check (BusQCheck.hpp) on the PV buses, compared with the

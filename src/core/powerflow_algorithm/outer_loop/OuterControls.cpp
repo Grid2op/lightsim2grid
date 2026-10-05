@@ -32,15 +32,40 @@ const BusVoltageControl * OuterControls::bus_voltage(int bus) const
     return it == bus_voltage_of_.end() ? nullptr : it->second;
 }
 
+VoltageControllerHold * OuterControls::reserve_controller_hold(int controller)
+{
+    VoltageControllerHold * known = controller_hold(controller);
+    if (known != nullptr) return known;
+    controller_hold_store_.push_back(VoltageControllerHold(controller));
+    VoltageControllerHold * res = &controller_hold_store_.back();
+    controller_hold_of_[controller] = res;
+    return res;
+}
+
+VoltageControllerHold * OuterControls::controller_hold(int controller)
+{
+    const auto it = controller_hold_of_.find(controller);
+    return it == controller_hold_of_.end() ? nullptr : it->second;
+}
+
+const VoltageControllerHold * OuterControls::controller_hold(int controller) const
+{
+    const auto it = controller_hold_of_.find(controller);
+    return it == controller_hold_of_.end() ? nullptr : it->second;
+}
+
 void OuterControls::clear_reservations()
 {
     bus_voltage_of_.clear();
     bus_voltage_store_.clear();
+    controller_hold_of_.clear();
+    controller_hold_store_.clear();
 }
 
 void OuterControls::reset_states()
 {
     for (auto & control : bus_voltage_store_) control._reset();
+    for (auto & hold : controller_hold_store_) hold.release();
     pending_vm_.clear();
     suspended_.clear();
 }
@@ -68,6 +93,22 @@ std::vector<int> OuterControls::pinned_buses() const
     std::vector<int> res = caller_pinned_;
     for (const auto & bc : bus_voltage_of_) {
         if (!bc.second->is_pq()) res.push_back(bc.first);
+    }
+    return res;
+}
+
+}  // namespace ls2g
+
+namespace ls2g {
+
+std::vector<real_type> OuterControls::held_q() const
+{
+    std::vector<real_type> res;
+    if (controller_hold_of_.empty() || controller_hold_of_.rbegin()->first < 0) return res;
+    res.assign(static_cast<std::size_t>(controller_hold_of_.rbegin()->first) + 1,
+               std::numeric_limits<real_type>::quiet_NaN());
+    for (const auto & ch : controller_hold_of_) {
+        if (ch.first >= 0) res[static_cast<std::size_t>(ch.first)] = ch.second->q();
     }
     return res;
 }

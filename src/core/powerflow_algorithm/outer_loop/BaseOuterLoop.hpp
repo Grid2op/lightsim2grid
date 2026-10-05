@@ -47,10 +47,6 @@ enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
 class LS2G_API OuterDeclaration final
 {
     public:
-        /// any voltage controller may be held at a reactive output by value
-        /// (OuterState::controller_hold_q): see VoltageControl::set_may_hold_controllers
-        void hold_voltage_controllers() { hold_voltage_controllers_ = true; }
-        bool holds_voltage_controllers() const { return hold_voltage_controllers_; }
         /// a transformer (grid id) whose phase tap may move during the solve and, with
         /// `solves_shift`, whose shift the Newton solves for: see BranchControl
         void add_phase_shifter(int trafo_id, bool solves_shift) {
@@ -95,7 +91,6 @@ class LS2G_API OuterDeclaration final
         }
 
     private:
-        bool hold_voltage_controllers_ = false;
         std::vector<int> phase_shifters_;
         std::vector<char> phase_shifter_column_;
         std::vector<RatioGroup> ratio_groups_;
@@ -127,9 +122,6 @@ struct OuterState
     /// the set-point (pu) a loop switched each idle standby SVC on at (grid id), NaN where it
     /// is still held at Q = 0; empty until a loop sizes it
     std::vector<real_type> svc_target_vm;
-    /// the reactive output (pu) a loop holds each voltage controller at, in the plan's
-    /// controller order, NaN where it regulates; empty until a loop sizes it
-    std::vector<real_type> controller_hold_q;
     /// the position a loop moved each transformer's phase tap to (grid id), TAP_KEEP where it
     /// kept the solve's; empty until a loop sizes it
     std::vector<int> phase_tap;

@@ -56,7 +56,6 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     state_.storage_target_p.clear();
     state_.hvdc_status.clear();
     state_.svc_target_vm.clear();
-    state_.controller_hold_q.clear();
     state_.phase_tap.clear();
     state_.phase_control.clear();
     state_.ratio_tap.clear();

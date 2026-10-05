@@ -134,7 +134,7 @@ void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & dec
     NRSystem & system = algo_.system();
     // the switchable buses: a caller's (a batch), then the loops'
     algo_.set_switchable_vm_buses(controls_.switchable_buses());  // a set there: duplicates are fine
-    system.set_may_hold_voltage_controllers(decl.holds_voltage_controllers());
+    system.set_may_hold_voltage_controllers(controls_.holds_voltage_controllers());
     system.set_phase_controllers(decl.phase_shifters(), decl.phase_shifter_column());
     std::vector<BranchControl::RatioGroupDecl> groups;
     for(const auto & g : decl.ratio_groups()) {
@@ -172,7 +172,7 @@ void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state)
         system.release_held_svcs(state.svc_target_vm);
     }
     // the voltage controllers a loop holds (none: the plan's own state)
-    system.set_held_voltage_controllers(state.controller_hold_q);
+    system.set_held_voltage_controllers(controls_.held_q());
     // the phase taps a loop moved, then the shifts it lets the Newton solve for
     BranchControl * phase = system.branch_control();
     if(phase != nullptr) {

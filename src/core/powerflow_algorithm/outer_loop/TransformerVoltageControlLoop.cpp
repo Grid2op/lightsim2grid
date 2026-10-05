@@ -133,7 +133,7 @@ void TransformerVoltageControlLoop::_declare(const OuterContext & ctx, OuterDecl
     bus_q_check::build_bus_q_plan(*ctx.grid, solver_map(ctx), ctx.grid->get_ac_voltage_control_plan().controllers(), plan);
     for (const auto & entry : plan.buses) {
         if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) ctx.controls->reserve_bus_voltage(entry.bus_solver);
-        else decl.hold_voltage_controllers();
+        for (int c : entry.ctrl_pos) ctx.controls->reserve_controller_hold(c);
     }
 }
 
@@ -256,7 +256,6 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
             if (b >= 0 && b < static_cast<int>(load_q.size())) load_q[static_cast<std::size_t>(b)] += loads.get_target_q()(l) / sn;
         }
     }
-    const int nc = ctrl.n_controllers();
     for (std::size_t k = 0; k < plan_.buses.size(); ++k) {
         const auto & entry = plan_.buses[k];
         const bool local = entry.ctrl_pos.empty() && entry.svc_ids.empty();
@@ -272,8 +271,7 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
         if (!local) {
             bool held = false;
             for (int c : entry.ctrl_pos) {
-                if (static_cast<std::size_t>(c) < st.controller_hold_q.size() &&
-                    std::isfinite(st.controller_hold_q[static_cast<std::size_t>(c)])) held = true;
+                if (ctx.controls->is_held(c)) held = true;
             }
             if (held) continue;
         }
@@ -291,15 +289,13 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
             BusVoltageControl * voltage = ctx.controls->bus_voltage(b);
             if (voltage != nullptr) voltage->set_pq();
         } else {
-            if (st.controller_hold_q.empty()) {
-                st.controller_hold_q.assign(static_cast<std::size_t>(nc), std::numeric_limits<real_type>::quiet_NaN());
-            }
             bool first = true;
             for (int c : entry.ctrl_pos) {
                 real_type q = ctx.controller_q != nullptr && c < ctx.controller_q->size() ? (*ctx.controller_q)(c) : 0.;
                 if (first) q -= load;
                 first = false;
-                st.controller_hold_q[static_cast<std::size_t>(c)] = q;
+                VoltageControllerHold * hold = ctx.controls->controller_hold(c);
+                if (hold != nullptr) hold->hold(q);
             }
         }
         ctx.controls->set_suspended(b, true);
@@ -319,7 +315,8 @@ void TransformerVoltageControlLoop::_release_generators(OuterContext & ctx)
             ctx.controls->reset_vm(f.bus_solver, f.target_vm);
         } else {
             for (int c : plan_.buses[static_cast<std::size_t>(f.entry)].ctrl_pos) {
-                st.controller_hold_q[static_cast<std::size_t>(c)] = std::numeric_limits<real_type>::quiet_NaN();
+                VoltageControllerHold * hold = ctx.controls->controller_hold(c);
+                if (hold != nullptr) hold->release();
             }
         }
         ctx.controls->set_suspended(f.bus_solver, false);

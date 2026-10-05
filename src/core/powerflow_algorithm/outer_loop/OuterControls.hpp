@@ -9,6 +9,7 @@
 #ifndef OUTER_CONTROLS_H
 #define OUTER_CONTROLS_H
 
+#include <cmath>
 #include <deque>
 #include <limits>
 #include <map>
@@ -45,6 +46,31 @@ class LS2G_API BusVoltageControl final
 };
 
 /**
+ * A voltage controller of a group (remote regulation, an SVC, a station) that may be held at
+ * a reactive output, by value: its share of the group's rows pins it there, the group's other
+ * controllers regulating on. Reserving one writes every group's rows in the form where any
+ * controller may be held (VoltageControl::set_may_hold_controllers).
+ */
+class LS2G_API VoltageControllerHold final
+{
+    public:
+        /// its position in the voltage-control plan's controller list
+        int controller() const { return controller_; }
+        bool is_held() const { return std::isfinite(q_); }
+        /// the reactive output it is held at, pu (NaN when it regulates)
+        real_type q() const { return q_; }
+        void hold(real_type q_pu) { q_ = q_pu; }
+        void release() { q_ = std::numeric_limits<real_type>::quiet_NaN(); }
+
+    private:
+        friend class OuterControls;
+        explicit VoltageControllerHold(int controller) : controller_(controller) {}
+
+        int controller_;
+        real_type q_ = std::numeric_limits<real_type>::quiet_NaN();
+};
+
+/**
  * Collects what the outer loops reserve in the solve and hands out the controls they act
  * through. A loop reserves, when the solver input is (re)built (BaseOuterLoop::declare),
  * every slot any of its states may need; the union is what lets a whole solve run on one
@@ -67,11 +93,20 @@ class LS2G_API OuterControls
         /// a bus that is PV in the labelling but may become PQ (or back); the same control for
         /// every loop asking
         BusVoltageControl * reserve_bus_voltage(int bus);
+        /// a voltage controller (its position in the plan's list) that may be held
+        VoltageControllerHold * reserve_controller_hold(int controller);
 
         // ----- lookup (after the reservation) -----------------------------------------------
         /// the control of `bus`, nullptr when no loop reserved it
         BusVoltageControl * bus_voltage(int bus);
         const BusVoltageControl * bus_voltage(int bus) const;
+        VoltageControllerHold * controller_hold(int controller);
+        const VoltageControllerHold * controller_hold(int controller) const;
+        /// whether a loop holds that controller now
+        bool is_held(int controller) const {
+            const VoltageControllerHold * hold = controller_hold(controller);
+            return hold != nullptr && hold->is_held();
+        }
 
         // ----- edits that need no reservation --------------------------------------------
         /// restart the magnitude of `bus` from `vm_pu` at the next solve, once (a bus back to
@@ -98,6 +133,10 @@ class LS2G_API OuterControls
         std::vector<int> pinned_buses() const;
 
         // ----- the inner algorithm's side ------------------------------------------------
+        /// whether any controller may be held
+        bool holds_voltage_controllers() const { return !controller_hold_of_.empty(); }
+        /// the output each controller is held at, by position in the plan (NaN: not held)
+        std::vector<real_type> held_q() const;
         /// the magnitudes to reset (bus, pu), in the order they were asked for, then forgotten
         void take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm);
 
@@ -105,6 +144,8 @@ class LS2G_API OuterControls
         // stable addresses: the loops keep pointers to these
         std::deque<BusVoltageControl> bus_voltage_store_;
         std::map<int, BusVoltageControl *> bus_voltage_of_;
+        std::deque<VoltageControllerHold> controller_hold_store_;
+        std::map<int, VoltageControllerHold *> controller_hold_of_;
         std::vector<int> caller_switchable_;
         std::vector<int> caller_pinned_;
         std::vector<std::pair<int, real_type> > pending_vm_;

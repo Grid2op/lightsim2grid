@@ -35,17 +35,21 @@ bus_q_check::BusQPlan ReactiveLimitsLoop::_plan(const OuterContext & ctx)
     return plan;
 }
 
-void ReactiveLimitsLoop::_declare(const OuterContext & ctx, OuterDeclaration & decl) const
+void ReactiveLimitsLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
 {
     // every bus holding its own voltage through the PV path may become PQ
+    OuterControls & controls = *ctx.controls;
     const bus_q_check::BusQPlan plan = _plan(ctx);
     for (const auto & entry : plan.buses) {
-        if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) ctx.controls->reserve_bus_voltage(entry.bus_solver);
+        if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) controls.reserve_bus_voltage(entry.bus_solver);
         // ... and the controllers of a group may be held at a limit
-        else decl.hold_voltage_controllers();
+        for (int c : entry.ctrl_pos) controls.reserve_controller_hold(c);
     }
     // so may a voltage monitor, once switched on (see _initialize)
-    if (_has_monitor(ctx)) decl.hold_voltage_controllers();
+    const VoltageControlSolverData & ctrl = ctx.grid->get_ac_voltage_control_plan().controllers();
+    for (int c = 0; c < ctrl.n_controllers(); ++c) {
+        if (ctrl.is_held(c) && ctrl.kind(c) == VoltageControlSolverData::SVC) controls.reserve_controller_hold(c);
+    }
 }
 
 bool ReactiveLimitsLoop::_has_monitor(const OuterContext & ctx)
@@ -213,13 +217,12 @@ std::vector<char> ReactiveLimitsLoop::_groups_holding(const OuterContext & ctx) 
     std::vector<char> holding(static_cast<std::size_t>(ctrl.n_groups()), 0);
     std::vector<char> sloped(holding.size(), 0);
     static const std::vector<real_type> none;
-    const std::vector<real_type> & hold_q = ctx.state != nullptr ? ctx.state->controller_hold_q : none;
     const std::vector<real_type> & svc_on = ctx.state != nullptr ? ctx.state->svc_target_vm : none;
     for (int c = 0; c < ctrl.n_controllers(); ++c) {
         const std::size_t g = static_cast<std::size_t>(ctrl.group(c));
         if (ctrl.slope(c) != 0.) sloped[g] = 1;
         // held at a limit by this loop
-        if (static_cast<std::size_t>(c) < hold_q.size() && std::isfinite(hold_q[static_cast<std::size_t>(c)])) continue;
+        if (ctx.controls != nullptr && ctx.controls->is_held(c)) continue;
         // held by the plan: a frozen regulator, or a voltage monitor not switched on
         if (ctrl.is_held(c)) {
             const std::size_t svc = static_cast<std::size_t>(ctrl.elem_id(c));
@@ -335,15 +338,14 @@ void ReactiveLimitsLoop::_freeze(OuterContext & ctx, ControllerBus & bus, real_t
     if (!bus.local) {
         // each of its controllers held at its own limit: the bus' at that limit
         const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
-        const int nc = ctx.grid->get_ac_voltage_control_plan().controllers().n_controllers();
-        if (st.controller_hold_q.empty()) st.controller_hold_q.assign(static_cast<std::size_t>(nc), std::numeric_limits<real_type>::quiet_NaN());
         const VoltageControlSolverData & ctrl = ctx.grid->get_ac_voltage_control_plan().controllers();
         for (int c : entry.ctrl_pos) {
             real_type q = _controller_limit(ctx, c, state > 0);
             if (bus.realistic && ctrl.kind(c) == VoltageControlSolverData::GEN) {
                 q = ctx.grid->get_generators().get_target_q()(ctrl.elem_id(c));  // the robust mode's
             }
-            st.controller_hold_q[static_cast<std::size_t>(c)] = q / sn;
+            VoltageControllerHold * hold = ctx.controls->controller_hold(c);
+            if (hold != nullptr) hold->hold(q / sn);
         }
         bus.state = state;
         bus.frozen_q = q_mvar;
@@ -363,9 +365,8 @@ void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
     if (!bus.local) {
         const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
         for (int c : entry.ctrl_pos) {
-            if (static_cast<std::size_t>(c) < st.controller_hold_q.size()) {
-                st.controller_hold_q[static_cast<std::size_t>(c)] = std::numeric_limits<real_type>::quiet_NaN();
-            }
+            VoltageControllerHold * hold = ctx.controls->controller_hold(c);
+            if (hold != nullptr) hold->release();
         }
         bus.state = 0;
         bus.realistic = false;
