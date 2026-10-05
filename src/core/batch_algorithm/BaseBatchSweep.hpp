@@ -3049,6 +3049,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // masked generators happen never to leave a bus without a controller.
         bool _has_pv_switching() const { return _pv_pinning_active_; }
 
+        // whether some row solves with slack weights of its own (_row_slack_weights): a
+        // participant it disconnects, or one its slack pre-pass saturates
+        bool _row_slack_weights_vary() const {
+            const auto any_row = [](const std::vector<std::vector<int> > & rows){
+                for(const std::vector<int> & row : rows) if(!row.empty()) return true;
+                return false;
+            };
+            return any_row(_row_slack_gens_off_) || any_row(_row_sat_gens_) || any_row(_row_sat_storages_);
+        }
+
         // the buses to pin PV in row i: the switchable buses that are STILL PV there
         // (the complement, _row_pv_to_pq_[i], is what becomes PQ) plus the base-PQ
         // buses a reactivated generator pins. Sorted, precomputed per row.

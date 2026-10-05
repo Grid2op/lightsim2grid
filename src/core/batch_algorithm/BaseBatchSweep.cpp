@@ -381,7 +381,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
         // the refactorize fallback the member algo got (see _maybe_prepare_masks /
         // _push_switchable_to_algo): a fresh algo starts without it
-        if(mask_mode || _has_pv_switching()) algos[t]->set_refactor_fallback(true);
+        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary()) algos[t]->set_refactor_fallback(true);
         // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
         // yet, so telling it here is enough -- its first build_J_sparsity() already
         // accounts for them. Starts fully pinned, like _algo; each row releases what
@@ -579,6 +579,12 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // reads the per-row injections above, the masks and the generator contingencies:
     // after all of them, before the "n" solve it leaves untouched)
     _prepare_slack_redistribution(nb_steps);
+    // A row whose slack weights differ from the base case's (a participant it disconnects,
+    // one its pre-pass saturates) zeroes a value of the Jacobian's slack column that the
+    // "n" factorization had non-zero, and KLU's refactorization keeps that pivot order:
+    // let it fall back to a numeric factorize there, as for masking / PV pinning. A
+    // bool store; the fallback only runs on a failure.
+    if(_row_slack_weights_vary()) _algo.set_refactor_fallback(true);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager

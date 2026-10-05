@@ -530,6 +530,86 @@ class TestRedistributeSlackNeedsADistributedSlack(_Base):
                 sweep.compute(1. * self.V0, _MAX_IT, _TOL)
 
 
+class TestRedistributeSlackRefactorFallback(unittest.TestCase):
+    """A row whose pre-pass saturates a slack unit solves with that unit's weight at 0,
+    a value the "n" factorization had non-zero. With KLU, whose refactorization keeps the
+    pivot sequence of the base case, that zero can be a pivot: the row then failed, while
+    SparseLU (it re-pivots) solved it. The batch must fall back to a numeric factorize,
+    as it does for masked buses and PV / PQ switches.
+
+    l2rpn_case14_sandbox, NR_KLU: generator 1 joins the slack of generator 5 with 2 MW of
+    room each way. KLU's pivot order for this grid is what makes generator 1 the one that
+    hits it (generator 0 does not)."""
+    def setUp(self):
+        import grid2op
+        from grid2op.Parameters import Parameters
+        from lightsim2grid import LightSimBackend
+        if AlgorithmType.NR_KLU not in ScenarioSweepCPP(init_from_pandapower(pn.case14())).available_default_algorithms():
+            self.skipTest("KLU is not available in this build")
+        param = Parameters()
+        param.NO_OVERFLOW_DISCONNECTION = True
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.env = grid2op.make("l2rpn_case14_sandbox", test=True, backend=LightSimBackend(), param=param)
+        self.env.reset(seed=0, options={"time serie id": 0})
+        self.V0 = 1. * self.env.backend.V
+        grid = self.env.backend._grid.copy()
+        grid.change_algorithm(AlgorithmType.NR_KLU)
+        grid.add_gen_slackbus(1, 1.)
+        gens = grid.get_generators()
+        targets = np.array([g.target_p_mw for g in gens])
+        min_p = np.full(len(gens), -np.inf)
+        max_p = np.full(len(gens), np.inf)
+        min_p[1] = targets[1] - 2.
+        max_p[1] = targets[1] + 2.
+        grid.set_gen_p_limits(min_p, max_p)
+        self.grid = grid
+        self.load_targets = np.array([l.target_p_mw for l in grid.get_loads()])
+
+    def tearDown(self):
+        self.env.close()
+
+    def _load_rows(self):
+        # a plain row, then a load change that saturates generator 1 in either direction
+        load_p = np.vstack([self.load_targets] * 3)
+        load_p[1, 2] -= 20.
+        load_p[2, 2] += 20.
+        return load_p
+
+    def _reference(self, load_p):
+        ref = self.grid.copy()
+        for load_id, p in enumerate(load_p):
+            ref.change_p_load(load_id, float(p))
+        lost = -float(np.sum(self.load_targets - load_p))
+        if lost != 0.:
+            self.assertEqual(ref.redistribute_active_power(lost).nb_saturated, 1)
+        V = ref.ac_pf(1. * self.V0, _MAX_IT, 1e-8)
+        self.assertGreater(V.shape[0], 0, "the one-off reference diverged")
+        return V, np.asarray(ref.id_ac_solver_to_me(), dtype=int)
+
+    def _check(self, nb_thread):
+        load_p = self._load_rows()
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(AlgorithmType.NR_KLU)
+        sweep.modify_load_p(load_p)
+        sweep.redistribute_slack = True
+        sweep.nb_thread = nb_thread
+        sweep.compute(1. * self.V0, _MAX_IT, 1e-8)
+        for row in range(load_p.shape[0]):
+            with self.subTest(row=row, nb_thread=nb_thread):
+                self.assertTrue(sweep.converged_mask()[row], f"row {row} did not converge")
+                V_ref, buses = self._reference(load_p[row])
+                got = sweep.get_voltages()[row]
+                np.testing.assert_allclose(np.abs(got[buses]), np.abs(V_ref[buses]), rtol=0., atol=1e-6)
+                np.testing.assert_allclose(_angles_rel(got)[buses], _angles_rel(V_ref)[buses], rtol=0., atol=1e-6)
+
+    def test_single_thread(self):
+        self._check(nb_thread=1)
+
+    def test_threads(self):
+        self._check(nb_thread=2)
+
+
 class TestContingencyAnalysisPythonToggle(unittest.TestCase):
     """The python ``ContingencyAnalysis`` keeps the results of its last computation: an
     option changed after it must not hand them back unchanged. l2rpn_case14_sandbox: the
