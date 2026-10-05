@@ -144,6 +144,9 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
                 }
             }
             st.phase_tap[static_cast<std::size_t>(s.trafo)] = best;
+            // the shift (rad) and the one of the tap it is rounded to
+            ctx.record("ROUND_TAP", true, ViolationElementType::TRAFO, s.trafo, LimitViolationType::PHASE_CONTROL_P,
+                       a, ptc.alpha_at(s.trafo, best));
         }
         // OpenLoadFlow re-solves whenever there is a phase shifter, limiters included
         return OuterLoopStatus::UNSTABLE;
@@ -158,7 +161,11 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
         phase.current(s.trafo, s.side, i_pu, di_da);
         const int bus = (s.side == 1 ? trafos.get_bus_side_1(s.trafo) : trafos.get_bus_side_2(s.trafo)).cast_int();
         const real_type i_a = to_amps(i_pu, ctx.grid->get_sn_mva(), vn_kv(bus));
-        if (!(ptc.target(s.trafo) < i_a)) continue;
+        if (!(ptc.target(s.trafo) < i_a)) {
+            ctx.record("KEPT_TAP", false, ViolationElementType::TRAFO, s.trafo, LimitViolationType::PHASE_LIMITER_CURRENT,
+                       i_a, ptc.target(s.trafo));
+            continue;
+        }
         // PiModelArray.shiftOneTapPositionToChangeA1: increase (decrease) the shift when a
         // larger (smaller) one lowers the current
         const bool increase = !(di_da > 0.);
@@ -173,6 +180,8 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
             const real_type previous = ptc.alpha_at(s.trafo, pos - 1);
             if ((increase && previous > a) || (!increase && previous < a)) --pos;
         }
+        ctx.record("MOVE_TAP", pos != old_pos, ViolationElementType::TRAFO, s.trafo,
+                   LimitViolationType::PHASE_LIMITER_CURRENT, i_a, ptc.target(s.trafo));
         if (pos != old_pos) {
             st.phase_tap[static_cast<std::size_t>(s.trafo)] = pos;
             moved = true;

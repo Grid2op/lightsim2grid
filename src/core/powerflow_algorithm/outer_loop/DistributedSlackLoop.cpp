@@ -8,6 +8,7 @@
 
 #include "DistributedSlackLoop.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -121,7 +122,10 @@ bool DistributedSlackLoop::_has_participant(const LSGrid & grid, const SolverBus
 OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
 {
     real_type mismatch = 0.;
-    if(!_triggered(ctx, mismatch)) return OuterLoopStatus::STABLE;
+    const bool triggered = _triggered(ctx, mismatch);
+    ctx.record("DISTRIBUTE", triggered, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
+               mismatch, std::max(slack_bus_p_max_mismatch_mw, P_RESIDUE_EPS_MW));
+    if(!triggered) return OuterLoopStatus::STABLE;
 
     // OpenLoadFlow shares the cumulative mismatch from the initial targets every time: what
     // the units already took is given back first
@@ -135,6 +139,8 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
     // with no unit at all, nothing was shared and everything is left
     const real_type residue = units_.empty() ? remaining : report.not_distributed_mw;
     if(fail_on_residue && std::abs(residue) > P_RESIDUE_EPS_MW) {
+        ctx.record("FAIL_RESIDUE", true, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
+                   residue, P_RESIDUE_EPS_MW);
         return OuterLoopStatus::FAILED;
     }
 
@@ -170,7 +176,10 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
         }
     }
     // OpenLoadFlow's PreviousStateInfo.moved, its 0.9 against rounding
-    return moved > 0.9 * P_RESIDUE_EPS_MW ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
+    const bool unstable = moved > 0.9 * P_RESIDUE_EPS_MW;
+    ctx.record("UNITS_MOVED", unstable, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
+               moved, 0.9 * P_RESIDUE_EPS_MW);
+    return unstable ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
 }
 
 AlgoConfig DistributedSlackLoop::_get_params() const

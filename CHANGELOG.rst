@@ -233,6 +233,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [ADDED] ``OuterLoopStats.decisions``: every decision of the outer loops, with the values it compared.
 - [FIXED] ``ReactiveLimits`` no longer releases a frozen controller while another one of its group holds
   the bus at its set-point, and the outer loops read the Newton's magnitudes, not ``|V|``: the outcome
   depended on rounding, hence on the CPU.

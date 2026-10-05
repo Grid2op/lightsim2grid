@@ -165,6 +165,41 @@ class BranchControl;
 class ShuntControl;
 
 /**
+ * One decision of an outer loop in a check: what it acted on, or a test it ran and did not act
+ * on, with the two numbers it compared. Two runs that part ways show it here first, with the
+ * margin that decided it (OuterLoopStats::decisions).
+ *
+ * The element and the reason use LimitViolation's conventions: a grid-model bus id for BUS,
+ * the element's own id otherwise, -1 for GRID; `value` / `limit` in the unit of `reason`
+ * (see LimitViolation), except where an action says otherwise. The actions:
+ *
+ * - DistributedSlack: DISTRIBUTE (every check: the slack mismatch, MW, against the threshold),
+ *   UNITS_MOVED (how much the units moved, MW, against what counts as a move), FAIL_RESIDUE.
+ * - ReactiveLimits, on a controller bus: PV_TO_PQ (PV_TO_PQ_UNREALISTIC, the robust mode's),
+ *   KEPT_PV_STRONGEST; PQ_TO_PV, KEPT_PQ_MAX_SWITCH, and, every check for every frozen bus,
+ *   KEPT_PQ / KEPT_PQ_GROUP_HOLDS (the release test that did not trigger: the regulated voltage
+ *   the solve gave and the set-point, kV; GROUP_HOLDS when another controller of the group
+ *   settled it); LIMIT_MOVED (the new limit and the one it was frozen at, MVar).
+ * - AcHvdcAcEmulationLimits: SATURATE, RELEASE. VoltageMonitoring: SWITCH_ON.
+ * - PhaseControl: ROUND_TAP (the shift and its tap's, rad), MOVE_TAP / KEPT_TAP (the current,
+ *   A, against the limiter's). TransformerVoltageControl: SWITCH_ON (|target - v| against the
+ *   half deadband, pu), ROUND_TO_RANGE (the ratio and the end it left), ROUND_TAP (the ratio and
+ *   the tap position). ShuntVoltageControl: ROUND_SECTIONS (the susceptance solved for, pu).
+ */
+struct LS2G_API OuterDecision
+{
+    std::string loop;           ///< the loop's name (filled by the driver)
+    int outer_iteration = 0;    ///< OuterLoopStats::nb_outer_iterations at the check
+    std::string action;         ///< what the test decides, eg "PV_TO_PQ" (see each loop)
+    bool taken = true;          ///< whether the loop acted on it
+    ViolationElementType element_type = ViolationElementType::GRID;
+    int element_id = -1;
+    LimitViolationType reason = LimitViolationType::NOT_SIMULATED;
+    real_type value = std::numeric_limits<real_type>::quiet_NaN();
+    real_type limit = std::numeric_limits<real_type>::quiet_NaN();
+};
+
+/**
  * Everything a loop sees, after a Newton solve. Built by the outer-loop algorithm between
  * two solves (with `state`), or by the grid after any AC solve for detection (`state` is
  * then null: a loop reports what it WOULD do, from the grid and the solve alone).
@@ -210,10 +245,31 @@ struct OuterContext
     const BranchControl * branch_control = nullptr;
     /// the shunts whose susceptance the solve handles, null when there are none or in detection
     const ShuntControl * shunt_control = nullptr;
+    /// where a check records its decisions (null: not recorded, eg in detection)
+    std::vector<OuterDecision> * trace = nullptr;
 
     bool is_detection() const { return state == nullptr; }
     /// the voltage magnitude of solver bus `bus`, pu: Vm's, |V| when there is none
     real_type vm(int bus) const { return Vm != nullptr ? (*Vm)(bus) : std::abs((*V)(bus)); }
+
+    /// record a decision in `trace` (nothing without one)
+    void record(const char * action, bool taken, ViolationElementType element_type, int element_id,
+                LimitViolationType reason, real_type value, real_type limit) const
+    {
+        if (trace == nullptr) return;
+        OuterDecision d;
+        d.action = action;
+        d.taken = taken;
+        d.element_type = element_type;
+        d.element_id = element_id;
+        d.reason = reason;
+        d.value = value;
+        d.limit = limit;
+        trace->push_back(d);
+    }
+    /// the same for a bus given by its SOLVER id (recorded as its grid-model id)
+    void record_bus(const char * action, bool taken, int solver_bus, LimitViolationType reason,
+                    real_type value, real_type limit) const;
 };
 
 /**
@@ -233,6 +289,8 @@ struct LS2G_API OuterLoopStats
     std::vector<std::pair<std::string, int> > loop_iterations;
     /// Newton iterations of every inner solve, the first solve included
     std::vector<int> nr_iterations;
+    /// every decision the loops took, and the tests they ran without acting, in order
+    std::vector<OuterDecision> decisions;
 
     void clear() {
         status = OuterLoopStatus::STABLE;
@@ -242,6 +300,7 @@ struct LS2G_API OuterLoopStats
         nb_passes = 0;
         loop_iterations.clear();
         nr_iterations.clear();
+        decisions.clear();
     }
 };
 

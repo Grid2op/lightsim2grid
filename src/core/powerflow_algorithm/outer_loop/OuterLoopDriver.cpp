@@ -19,6 +19,16 @@ namespace ls2g {
 constexpr int OuterState::HVDC_KEEP;
 constexpr int OuterState::TAP_KEEP;
 
+void OuterContext::record_bus(const char * action, bool taken, int solver_bus, LimitViolationType reason,
+                              real_type value, real_type limit) const
+{
+    if (trace == nullptr) return;
+    const GlobalBusIdVect & solver_to_me = grid->id_ac_solver_to_me();
+    const int me = solver_bus >= 0 && solver_bus < static_cast<int>(solver_to_me.size())
+                   ? solver_to_me[solver_bus].cast_int() : -1;
+    record(action, taken, ViolationElementType::BUS, me, reason, value, limit);
+}
+
 bool is_state_unrealistic(const LSGrid & grid,
                           const CplxVect & V,
                           const std::vector<bool> & vm_unknown,

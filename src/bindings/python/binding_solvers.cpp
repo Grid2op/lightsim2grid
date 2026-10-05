@@ -142,6 +142,24 @@ void bind_solvers(py::module_& m) {
         .value("FAILED", OuterLoopStatus::FAILED)
         .export_values();
 
+    py::class_<OuterDecision>(m, "OuterDecision", DocSolver::OuterDecision.c_str())
+        .def_readonly("loop", &OuterDecision::loop)
+        .def_readonly("outer_iteration", &OuterDecision::outer_iteration)
+        .def_readonly("action", &OuterDecision::action)
+        .def_readonly("taken", &OuterDecision::taken)
+        .def_readonly("element_type", &OuterDecision::element_type)
+        .def_readonly("element_id", &OuterDecision::element_id)
+        .def_readonly("reason", &OuterDecision::reason)
+        .def_readonly("value", &OuterDecision::value)
+        .def_readonly("limit", &OuterDecision::limit)
+        .def("__repr__", [](const OuterDecision & self){
+            std::ostringstream out;
+            out << "OuterDecision(" << self.loop << " #" << self.outer_iteration << " " << self.action
+                << (self.taken ? "" : " (not taken)") << ", element " << self.element_id
+                << ", value=" << self.value << ", limit=" << self.limit << ")";
+            return out.str();
+        });
+
     py::class_<OuterLoopStats>(m, "OuterLoopStats", DocSolver::OuterLoopStats.c_str())
         .def_readonly("status", &OuterLoopStats::status)
         .def_readonly("failed_loop", &OuterLoopStats::failed_loop)
@@ -150,6 +168,7 @@ void bind_solvers(py::module_& m) {
         .def_readonly("nb_passes", &OuterLoopStats::nb_passes)
         .def_readonly("loop_iterations", &OuterLoopStats::loop_iterations)
         .def_readonly("nr_iterations", &OuterLoopStats::nr_iterations)
+        .def_readonly("decisions", &OuterLoopStats::decisions)
         .def("__repr__", [](const OuterLoopStats & self){
             std::ostringstream out;
             out << "OuterLoopStats(status=" << static_cast<int>(self.status)

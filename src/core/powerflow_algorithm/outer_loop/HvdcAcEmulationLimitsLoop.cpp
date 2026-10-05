@@ -77,12 +77,16 @@ OuterLoopStatus HvdcAcEmulationLimitsLoop::_check(OuterContext & ctx)
         if(v.violation_type == LimitViolationType::HIGH_P) regime = v.side == 1 ? 1 : -1;
         else if(v.violation_type == LimitViolationType::HVDC_AC_EMULATION_RELEASE) regime = 0;
         else continue;
+        bool acted = false;
         for(auto & line : plan_.lines){
             if(line.hvdc_id != v.element_id || line.frozen_dir == regime) continue;
             line.frozen_dir = regime;
             state.hvdc_status[static_cast<std::size_t>(line.hvdc_id)] = regime;
             changed = true;
+            acted = true;
         }
+        ctx.record(regime == 0 ? "RELEASE" : "SATURATE", acted, ViolationElementType::HVDC, v.element_id,
+                   v.violation_type, v.value, v.limit);
     }
     return changed ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
 }

@@ -695,8 +695,20 @@ const std::string DocSolver::OuterLoopStats = R"mydelimiter(
     (:class:`OuterLoopStatus`), the loop that failed if any (`failed_loop`), whether the
     unrealistic-voltage check failed (`unrealistic_state`), the number of outer iterations
     and of passes, the number of times each loop changed something (`loop_iterations`, in
-    the order of the list) and the Newton iterations of every inner solve
-    (`nr_iterations`, the first solve included).
+    the order of the list), the Newton iterations of every inner solve
+    (`nr_iterations`, the first solve included) and every decision the loops took
+    (`decisions`, a list of :class:`OuterDecision`).
+
+)mydelimiter";
+
+const std::string DocSolver::OuterDecision = R"mydelimiter(
+    One decision of an outer loop: what it acted on, or a test it ran without acting, with
+    the two numbers it compared -- comparing two runs decision by decision shows where they
+    part, and by what margin. `loop` and `outer_iteration` say when, `action` what the test
+    decides (eg "PV_TO_PQ", "KEPT_PQ"), `taken` whether the loop acted on it, `element_type` /
+    `element_id` on what (a grid bus id for BUS, the element's own id otherwise), `reason`
+    (:class:`LimitViolationType`) what was compared, `value` against `limit`. The actions
+    and their units are listed with `OuterDecision` in BaseOuterLoop.hpp.
 
 )mydelimiter";
 

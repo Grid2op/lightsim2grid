@@ -98,6 +98,8 @@ OuterLoopStatus VoltageMonitoringLoop::_check(OuterContext & ctx)
         if(v.violation_type == LimitViolationType::LOW_VOLTAGE_SVC_STANDBY) target = svcs.get_standby_low_target_vm_pu(v.element_id);
         else if(v.violation_type == LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY) target = svcs.get_standby_high_target_vm_pu(v.element_id);
         else continue;
+        ctx.record("SWITCH_ON", std::isfinite(target), ViolationElementType::SVC, v.element_id,
+                   v.violation_type, v.value, v.limit);
         if(!std::isfinite(target)) continue;
         state.svc_target_vm[static_cast<std::size_t>(v.element_id)] = target;
         changed = true;

@@ -169,6 +169,9 @@ OuterLoopStatus ShuntVoltageControlLoop::_check(OuterContext & ctx)
             if (!shunt.handles(bus)) continue;
             st.shunt_control[static_cast<std::size_t>(bus)] = 0;
             st.shunt_sections.emplace_back(bus, _dispatch(*ctx.grid, g.shunts[c], shunt.b(bus)));
+            // the susceptance the Newton solved for (pu), rounded to sections
+            ctx.record_bus("ROUND_SECTIONS", true, bus, LimitViolationType::SHUNT_VOLTAGE_CONTROL,
+                           shunt.b(bus), std::numeric_limits<real_type>::quiet_NaN());
             any = true;
         }
     }

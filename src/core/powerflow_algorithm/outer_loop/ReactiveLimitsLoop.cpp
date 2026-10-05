@@ -235,7 +235,7 @@ std::vector<char> ReactiveLimitsLoop::_groups_holding(const OuterContext & ctx) 
 
 void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch> & to_pq,
                                    std::vector<Switch> & to_pv, std::vector<int> & moved,
-                                   int & remaining_pv) const
+                                   int & remaining_pv, std::vector<Switch> * kept) const
 {
     const real_type eps = max_reactive_power_mismatch * OLF_SB_MVA;
     remaining_pv = 0;
@@ -286,21 +286,24 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
         // Taken as equal, the bus stays frozen, which is what OpenLoadFlow's strict test
         // says whenever the two are equal.
         const bool held_by_group = bus.group >= 0 && groups_holding[static_cast<std::size_t>(bus.group)];
-        const real_type vm = held_by_group ? target_vm : ctx.vm(bus.reg_bus_solver);
+        const real_type vm_read = ctx.vm(bus.reg_bus_solver);
+        const real_type vm = held_by_group ? target_vm : vm_read;
         const real_type vn = bus.nominal_v;
-        if (bus.state < 0) {
-            if (vm < target_vm) {
-                to_pv.push_back(Switch{ki, LimitViolationType::LOW_VOLTAGE_AT_MIN_Q, vm * vn, target_vm * vn});
-            } else if (!bus.realistic && std::abs(q_min - bus.frozen_q) > eps) {
-                moved.push_back(ki);
-            }
-        } else {
-            if (vm > target_vm) {
-                to_pv.push_back(Switch{ki, LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q, vm * vn, target_vm * vn});
-            } else if (!bus.realistic && std::abs(q_max - bus.frozen_q) > eps) {
-                moved.push_back(ki);
-            }
+        const LimitViolationType release = bus.state < 0 ? LimitViolationType::LOW_VOLTAGE_AT_MIN_Q
+                                                         : LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q;
+        if (bus.state < 0 ? vm < target_vm : vm > target_vm) {
+            to_pv.push_back(Switch{ki, release, vm * vn, target_vm * vn});
+            continue;
         }
+        // not released: the test as it read (the magnitude the solve gave, even where the
+        // group's regulation settled it), for the decision trace
+        if (kept != nullptr) {
+            Switch sw{ki, release, vm_read * vn, target_vm * vn};
+            sw.group_holds = held_by_group;
+            kept->push_back(sw);
+        }
+        const real_type q_lim = bus.state < 0 ? q_min : q_max;
+        if (!bus.realistic && std::abs(q_lim - bus.frozen_q) > eps) moved.push_back(ki);
     }
 }
 
@@ -380,11 +383,16 @@ void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
 
 OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
 {
-    std::vector<Switch> to_pq, to_pv;
+    std::vector<Switch> to_pq, to_pv, kept;
     std::vector<int> moved;
     int remaining_pv = 0;
-    _evaluate(ctx, to_pq, to_pv, moved, remaining_pv);
+    _evaluate(ctx, to_pq, to_pv, moved, remaining_pv, &kept);
     bool changed = false;
+    // the decision trace: a controller bus by its own bus
+    auto record = [&](const char * action, bool taken, const Switch & sw) {
+        ctx.record_bus(action, taken, buses_[static_cast<std::size_t>(sw.k)].bus_solver, sw.type, sw.value, sw.limit);
+    };
+    for (const Switch & sw : kept) record(sw.group_holds ? "KEPT_PQ_GROUP_HOLDS" : "KEPT_PQ", false, sw);
 
     // PV -> PQ, keeping the strongest bus PV when every one of them would switch
     if (!to_pq.empty() && remaining_pv == 0) {
@@ -395,9 +403,12 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
             if (ba.target_p != bb.target_p) return ba.target_p > bb.target_p;
             return ba.bus_solver < bb.bus_solver;
         };
-        to_pq.erase(std::min_element(to_pq.begin(), to_pq.end(), stronger));
+        const auto strongest = std::min_element(to_pq.begin(), to_pq.end(), stronger);
+        record("KEPT_PV_STRONGEST", false, *strongest);
+        to_pq.erase(strongest);
     }
     for (const Switch & sw : to_pq) {
+        record(sw.realistic ? "PV_TO_PQ_UNREALISTIC" : "PV_TO_PQ", true, sw);
         ControllerBus & bus = buses_[static_cast<std::size_t>(sw.k)];
         bus.realistic = sw.realistic;
         _freeze(ctx, bus, sw.limit, sw.type == LimitViolationType::LOW_Q ? -1 : +1);
@@ -416,7 +427,11 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
     // PQ -> PV, but not past max_pq_pv_switch
     for (const Switch & sw : to_pv) {
         ControllerBus & bus = buses_[static_cast<std::size_t>(sw.k)];
-        if (bus.nb_pv_pq >= max_pq_pv_switch) continue;
+        if (bus.nb_pv_pq >= max_pq_pv_switch) {
+            record("KEPT_PQ_MAX_SWITCH", false, sw);
+            continue;
+        }
+        record("PQ_TO_PV", true, sw);
         _release(ctx, bus);
         changed = true;
     }
@@ -425,6 +440,8 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
         ControllerBus & bus = buses_[static_cast<std::size_t>(k)];
         real_type q_min, q_max;
         _limits(ctx, bus, q_min, q_max);
+        ctx.record_bus("LIMIT_MOVED", true, bus.bus_solver, bus.state < 0 ? LimitViolationType::LOW_Q : LimitViolationType::HIGH_Q,
+                       bus.state < 0 ? q_min : q_max, bus.frozen_q);
         _freeze(ctx, bus, bus.state < 0 ? q_min : q_max, bus.state);
         changed = true;
     }

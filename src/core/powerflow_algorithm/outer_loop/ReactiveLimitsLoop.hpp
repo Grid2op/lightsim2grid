@@ -124,14 +124,16 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             real_type value;     ///< its generation (MVar) / the voltage it regulates (kV)
             real_type limit;     ///< the limit it left (MVar) / its set-point (kV)
             bool realistic = false;  ///< the robust mode's (frozen at its target Q)
+            bool group_holds = false;  ///< a release test its group's regulation settled
         };
         /// for each voltage-control group, whether a controller of it still regulates without
         /// a slope: its regulated bus is then at the set-point by construction
         std::vector<char> _groups_holding(const OuterContext & ctx) const;
-        /// the switches the current solve calls for, as OpenLoadFlow's check computes them
+        /// the switches the current solve calls for, as OpenLoadFlow's check computes them;
+        /// `kept` (when given) receives the frozen buses' release tests that did not trigger
         void _evaluate(const OuterContext & ctx, std::vector<Switch> & to_pq,
                        std::vector<Switch> & to_pv, std::vector<int> & moved,
-                       int & remaining_pv) const;
+                       int & remaining_pv, std::vector<Switch> * kept = nullptr) const;
         /// freeze / release a local bus in the algorithm's state
         void _freeze(OuterContext & ctx, ControllerBus & bus, real_type q_mvar, int state) const;
         void _release(OuterContext & ctx, ControllerBus & bus) const;

@@ -373,7 +373,11 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
         for (const Group & g : groups_) {
             if (g.hidden) continue;
             const real_type v = ctx.vm(g.bus_solver);
-            if (std::abs(g.target - v) <= g.half_deadband) continue;
+            // the distance to the target against the half deadband, pu
+            const bool outside = !(std::abs(g.target - v) <= g.half_deadband);
+            ctx.record_bus("SWITCH_ON", outside, g.bus_solver, LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND,
+                           std::abs(g.target - v), g.half_deadband);
+            if (!outside) continue;
             for (int t : g.trafos) {
                 if (!branch.handles_ratio(t)) continue;
                 _set_on(ctx, t, true);
@@ -442,6 +446,9 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
             const Ratio & r = ratios_[static_cast<std::size_t>(t)];
             const real_type value = branch.ratio(t);
             if (value < r.shared_min || value > r.shared_max) {
+                // the ratio, and the end of the range it left
+                ctx.record("ROUND_TO_RANGE", true, ViolationElementType::TRAFO, t, LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND,
+                           value, value > r.shared_max ? r.shared_max : r.shared_min);
                 st.ratio_tap[static_cast<std::size_t>(t)] = _closest_tap(ctx, t, value > r.shared_max ? r.shared_max : r.shared_min);
                 _set_on(ctx, t, false);
                 out_of_range = true;
@@ -462,6 +469,9 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
                         : r.initial - (r.shared_initial - value) * (r.initial - r.min) / (r.shared_initial - r.shared_min);
                 }
                 st.ratio_tap[static_cast<std::size_t>(t)] = _closest_tap(ctx, t, value);
+                // the continuous ratio, and the tap position it is rounded to
+                ctx.record("ROUND_TAP", true, ViolationElementType::TRAFO, t, LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND,
+                           value, static_cast<real_type>(st.ratio_tap[static_cast<std::size_t>(t)]));
                 _set_on(ctx, t, false);
             }
         }

@@ -239,6 +239,7 @@ OuterContext NROuterAlgo<LinearSolver>::_context(OuterState * state)
     ctx.slack_bus = slack_bus_;
     ctx.slack_absorbed = this->_system.slack_absorbed();
     ctx.state = state;
+    ctx.trace = &stats_.decisions;
     ctx.branch_control = this->_system.branch_control();
     ctx.shunt_control = this->_system.shunt_control();
     return ctx;

@@ -107,7 +107,12 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
                 do {
                     OuterContext ctx = _context(&state);
                     ctx.iteration = stats_.loop_iterations[i].second;
+                    const std::size_t first_decision = stats_.decisions.size();
                     status = loop->check(ctx);
+                    for (std::size_t d = first_decision; d < stats_.decisions.size(); ++d) {
+                        stats_.decisions[d].loop = loop->name();
+                        stats_.decisions[d].outer_iteration = stats_.nb_outer_iterations;
+                    }
                     last_status = status;
                     last_name = loop->name();
                     if (status == OuterLoopStatus::UNSTABLE) {
