@@ -90,6 +90,44 @@ LfNetworkLoaderImpl.java`, `AbstractLfGenerator.java`, `LfGeneratorImpl.java` (l
   on the same root; a loop threshold tied to OLF's epsilon (the reactive-limits loop uses
   `newtonRaphsonConvEpsPerEq` as its Q tolerance) is passed explicitly with the same value.
 
+### Decisions close to their threshold
+
+OLF compares strictly: a loop acts as soon as a value crosses its threshold, with no tolerance
+beyond the ones it has (`slackBusPMaxMismatch`, `P_RESIDUE_EPS`, `maxReactivePowerMismatch`, a
+deadband). The loops here do the same. A decision taken at a margin smaller than the noise on the
+value is then arbitrary, on both sides, and may differ from one machine, build or Newton path to
+the next. Two kinds of noise matter:
+
+- **ties by construction**: two numbers equal by design, compared strictly, decided by rounding.
+  The one found is `ReactiveLimits`' release test on a bus its voltage-control group still holds:
+  the regulated magnitude *is* the set-point, up to an ulp. It is settled at the source -- the
+  loop reads the Newton's own magnitudes (`OuterContext::vm`) and takes such a bus as at its
+  set-point (the `KEPT_PQ_GROUP_HOLDS` decisions). On real grid snapshots no other test lands
+  within rounding of its threshold;
+- **the solve's own accuracy**: a converged voltage is only known to the precision the Newton's
+  tolerance gives it. Some of `ReactiveLimits`' voltage tests (the PQ -> PV release, and the
+  same test when it does not trigger) are decided at margins of that order on real grid
+  snapshots, and so is, more rarely, `TransformerVoltageControl`'s deadband test. These are the
+  decisions a different trajectory can flip. The other loops (`DistributedSlack`, the hvdc and
+  voltage-monitoring loops, `PhaseControl`, `ShuntVoltageControl`) stay far from their
+  thresholds.
+
+How close a run's decisions came to their thresholds is read off its decision trace:
+`OuterDecision` records the `value` and the `limit` of every test, taken or not.
+
+**A per-loop decision tolerance (not OLF's, so 0 by default) is not added for now.** One
+tolerance per loop does not fit -- a loop compares several quantities, in different units (MW,
+MVar, pu, a ratio) -- and five of the seven loops never come near their thresholds. A
+tolerance also moves a threshold rather than removing it: it only helps for values sitting on
+the threshold, and away from 0 it is a deliberate difference from OLF that could hide the next
+real bug during the comparison campaign. If one is added, it is a `voltage_tolerance_pu`
+parameter of `ReactiveLimits` (and maybe of `TransformerVoltageControl`'s deadband test), 0 by
+default; the Q tests already have OLF's `maxReactivePowerMismatch`. It would also damp a bus
+switching back and forth between PV and PQ. The decision belongs to the N-1 cases that only
+reproduce on another machine: if their decision traces show the decision that differs from OLF
+taken at a margin of the solve's accuracy, the tolerance is warranted there; if not, it would
+not have changed them.
+
 ## The loops, in OpenLoadFlow's default order
 
 `isNeeded` drops a loop that has nothing to do (no hvdc line in AC emulation, no stand-by SVC,
