@@ -6,26 +6,28 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-#ifndef NR_OUTER_ALGO_H
-#define NR_OUTER_ALGO_H
+#ifndef OUTER_LOOP_ALGO_H
+#define OUTER_LOOP_ALGO_H
 
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
-#include "NRAlgo.hpp"
+#include "BaseAlgo.hpp"
 #include "outer_loop/BaseOuterLoop.hpp"
 #include "outer_loop/OuterLoopDriver.hpp"
 
 namespace ls2g {
 
 /**
- * Single-slack Newton-Raphson with OpenLoadFlow's outer loops around it (NROuter_*).
+ * OpenLoadFlow's outer loops around an algorithm it wraps (the NROuter_* family wraps a
+ * single-slack Newton-Raphson, see NROuterInner).
  *
  * The driver is OpenLoadFlow's AcloadFlowEngine.run (v2.3.0):
  *   1. keep the loops whose is_needed holds and initialize them, in order;
- *   2. first Newton solve; the loops only run if it converged;
+ *   2. first solve; the loops only run if it converged;
  *   3. passes over the loops: each one repeats check(), re-solving after every UNSTABLE
  *      result, until it is stable, a solve fails or the iteration cap is reached. A pass
  *      stops before the loop that was the last one to be unstable (every other loop has
@@ -36,25 +38,31 @@ namespace ls2g {
  *      from the end of the last loop able to fix an unrealistic state;
  *   6. cleanup() in reverse order.
  *
- * Between two solves the state is kept: voltages, controllers, the sparsity of J and its
- * factorization; a loop edits values only (the private Sbus copy, ...), and the next solve
- * refactorizes on its first iteration. The sparsity holds the union of what every loop
- * declared, so a whole solve is one symbolic analysis. The refactorization fallback is
- * always on: a value edit may shrink a pivot the fixed pivot sequence then finds at zero.
+ * Between two solves the inner algorithm keeps its state: voltages, controllers, the
+ * sparsity of J and its factorization; a loop edits values only (the private Sbus copy,
+ * ...), and the next solve refactorizes on its first iteration. The sparsity holds the
+ * union of what every loop declared, so a whole solve is one symbolic analysis.
+ *
+ * `Inner` is what the driver needs from the algorithm beyond BaseAlgo's interface (see
+ * NROuterInner, the one there is): algo() (the wrapped BaseAlgo), begin(), setup(...,
+ * declare), newton(), finalize(), request_rebuild(), apply_state(), fill_context(),
+ * vm_unknown(), and the phase_tap / ratio_tap / shunt_sections results. Everything else
+ * BaseAlgo declares is forwarded to algo(), and the results of each solve are copied back
+ * into this object, which is what LSGrid reads.
  *
  * The loop list is the grid's (LSGrid::add_outer_loop), handed over before each solve
  * through set_outer_loops; the algorithm runs clones of it.
  */
-template<class LinearSolver>
-class NROuterAlgo final : public NRAlgo<LinearSolver, SingleSlackNRSystem>
+template<class Inner>
+class OuterLoopAlgo final : public BaseAlgo
 {
-    using Parent = NRAlgo<LinearSolver, SingleSlackNRSystem>;
-
 public:
-    NROuterAlgo() noexcept : Parent() {
-        this->_linear_solver.set_refactor_fallback(true);
-    }
-    ~NROuterAlgo() noexcept override = default;
+    OuterLoopAlgo() noexcept : BaseAlgo(true) {}
+    ~OuterLoopAlgo() noexcept override = default;
+
+    // the wrapped algorithm (the bindings reach the Newton's own parameters through it)
+    Inner & inner() { return inner_; }
+    const Inner & inner() const { return inner_; }
 
     // ----- outer loops -----------------------------------------------------------
 
@@ -70,7 +78,7 @@ public:
         for(const auto & loop : loops) loops_.push_back(loop->clone());
         signature_ = signature;
         // what the loops reserve is part of the sparsity: rebuild it on the next solve
-        this->need_factorize_ = true;
+        inner_.request_rebuild();
     }
 
     OuterLoopStats get_outer_loop_stats() const override { return stats_; }
@@ -83,22 +91,9 @@ public:
     void get_outer_hvdc_status(std::vector<int> & status) const override {
         status = state_.hvdc_status;
     }
-    void get_outer_phase_tap(std::vector<int> & positions) const override {
-        positions.clear();
-        const BranchControl * phase = this->_system.branch_control();
-        if (phase == nullptr) return;
-        phase->positions(positions);  // TAP_KEEP for the transformers it does not handle
-    }
-    void get_outer_shunt_sections(std::vector<int> & counts) const override {
-        counts.clear();
-        const ShuntControl * shunt = this->_system.shunt_control();
-        if (shunt != nullptr) shunt->section_counts(counts);
-    }
-    void get_outer_ratio_tap(std::vector<int> & positions) const override {
-        positions.clear();
-        const BranchControl * branch = this->_system.branch_control();
-        if (branch != nullptr) branch->ratio_positions(positions);
-    }
+    void get_outer_phase_tap(std::vector<int> & positions) const override { inner_.phase_tap(positions); }
+    void get_outer_shunt_sections(std::vector<int> & counts) const override { inner_.shunt_sections(counts); }
+    void get_outer_ratio_tap(std::vector<int> & positions) const override { inner_.ratio_tap(positions); }
 
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
     void set_driver_params(const OuterLoopDriverParams & params) {
@@ -108,23 +103,26 @@ public:
 
     // ----- PV / PQ relabelling at constant sparsity --------------------------------
     // A caller (a batch's generator contingencies) and the loops may both reserve
-    // switchable buses: the system gets the union of the two, see _before_init_topology.
+    // switchable buses: the inner algorithm gets the union of the two, see _declare.
     void set_switchable_vm_buses(const std::vector<int> & solver_bus_ids) override {
         caller_switchable_ = solver_bus_ids;
-        this->_system.set_switchable_vm_buses(solver_bus_ids);
+        inner_.algo().set_switchable_vm_buses(solver_bus_ids);
     }
     // a caller's pinned buses (a batch's PV buses among its switchable ones) are pinned on
     // top of the loops' own, see _solve
     void set_pv_pinned_buses(const std::vector<int> & solver_bus_ids) override {
         caller_pinned_ = solver_bus_ids;
     }
+    // the fallback stays on whatever a caller asks: a value edit between two solves may
+    // shrink a pivot the fixed pivot sequence then finds at zero (see NROuterInner)
+    void set_refactor_fallback(bool /*val*/) override {}
 
-    // ----- AlgoConfig: the Newton's parameters, then the driver's ------------------
+    // ----- AlgoConfig: the inner algorithm's parameters, then the driver's ------------
     // int_params:  [the Newton's 4], max_outer_iterations, robust_mode
     // real_params: [the Newton's 6], min_realistic_voltage, max_realistic_voltage,
     //              min_nominal_voltage_realistic_check
     AlgoConfig get_config() const override {
-        AlgoConfig cfg = Parent::get_config();
+        AlgoConfig cfg = inner_.algo().get_config();
         cfg.int_params.push_back(params_.max_outer_iterations);
         cfg.int_params.push_back(params_.voltage_remote_control_robust_mode ? 1 : 0);
         cfg.real_params.push_back(static_cast<double>(params_.min_realistic_voltage));
@@ -146,9 +144,9 @@ public:
             params.min_nominal_voltage_realistic_check = static_cast<real_type>(cfg.real_params[8]);
         }
         // all or nothing, like NRAlgo::set_config: validate the driver's part, apply the
-        // Newton's (which validates itself before writing anything), then the driver's
+        // inner algorithm's (which validates itself before writing anything), then the driver's
         _check_driver_params(params);
-        Parent::set_config(cfg);
+        inner_.algo().set_config(cfg);
         params_ = params;
     }
 
@@ -167,21 +165,87 @@ public:
     ) override;
 
     void reset() override {
-        Parent::reset();
+        BaseAlgo::reset();
+        inner_.algo().reset();
+        err_ = inner_.algo().get_error();
         stats_.clear();
     }
 
-protected:
-    // the loops claim their slots before the system registers its rows / columns
-    void _before_init_topology() override;
+    void set_lsgrid(const LSGrid * gridmodel) override {
+        BaseAlgo::set_lsgrid(gridmodel);
+        inner_.algo().set_lsgrid(gridmodel);
+    }
+
+    // ----- forwarded to the inner algorithm ------------------------------------------
+
+    bool supports_hvdc_droop() const noexcept override { return inner_.algo().supports_hvdc_droop(); }
+    bool supports_remote_voltage_control() const noexcept override { return inner_.algo().supports_remote_voltage_control(); }
+    bool fills_bus_mismatch() const noexcept override { return inner_.algo().fills_bus_mismatch(); }
+
+    EigenRefConstRealSpMat get_J() const override { return inner_.algo().get_J(); }
+    IntVect get_theta_to_J_col_python() const override { return inner_.algo().get_theta_to_J_col_python(); }
+    IntVect get_vm_to_J_col_python()    const override { return inner_.algo().get_vm_to_J_col_python(); }
+    IntVect get_q_to_J_col_python()     const override { return inner_.algo().get_q_to_J_col_python(); }
+    IntVect get_p_to_J_row_python()     const override { return inner_.algo().get_p_to_J_row_python(); }
+    IntVect get_q_to_J_row_python()     const override { return inner_.algo().get_q_to_J_row_python(); }
+    IntVect get_p_buses_python()        const override { return inner_.algo().get_p_buses_python(); }
+    IntVect get_p_rows_python()         const override { return inner_.algo().get_p_rows_python(); }
+    IntVect get_q_buses_python()        const override { return inner_.algo().get_q_buses_python(); }
+    IntVect get_q_rows_python()         const override { return inner_.algo().get_q_rows_python(); }
+    IntVect get_theta_buses_python()    const override { return inner_.algo().get_theta_buses_python(); }
+    IntVect get_theta_cols_python()     const override { return inner_.algo().get_theta_cols_python(); }
+    IntVect get_vm_buses_python()       const override { return inner_.algo().get_vm_buses_python(); }
+    IntVect get_vm_cols_python()        const override { return inner_.algo().get_vm_cols_python(); }
+
+    RealVect  get_controller_q()       const override { return inner_.algo().get_controller_q(); }
+    IntVect   get_controller_kind()    const override { return inner_.algo().get_controller_kind(); }
+    IntVect   get_controller_elem_id() const override { return inner_.algo().get_controller_elem_id(); }
+    IntVect   get_controller_q_col()   const override { return inner_.algo().get_controller_q_col(); }
+    IntVect   get_group_v_row()        const override { return inner_.algo().get_group_v_row(); }
+    int       get_slack_col()          const override { return inner_.algo().get_slack_col(); }
+    real_type get_slack_absorbed()     const override { return inner_.algo().get_slack_absorbed(); }
+
+    // the inner algorithm's timers, over every solve of the last compute_pf, with the
+    // driver's total
+    TimerJac get_timers_jacobian() const override {
+        TimerJac res = inner_.algo().get_timers_jacobian();
+        res.timer_total_nr_ = timer_total_nr_;
+        return res;
+    }
+    LinearSolverStats get_linear_solver_stats() const override { return inner_.algo().get_linear_solver_stats(); }
+
+    bool supports_bus_masking() const override { return inner_.algo().supports_bus_masking(); }
+    bool supports_jacobian() const override { return inner_.algo().supports_jacobian(); }
+    void refresh_J_at_solution() override { inner_.algo().refresh_J_at_solution(); }
+    void set_masked_buses(const std::vector<int> & solver_bus_ids) override { inner_.algo().set_masked_buses(solver_bus_ids); }
+    void set_may_mask_voltage_control(bool val) override { inner_.algo().set_may_mask_voltage_control(val); }
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override { inner_.algo().set_voltage_control_v_set(v_set); }
+    bool supports_pv_pinning() const override { return inner_.algo().supports_pv_pinning(); }
+    void set_start_polar_cache(bool val) override { inner_.algo().set_start_polar_cache(val); }
+
+    bool supports_cpf() const noexcept override { return inner_.algo().supports_cpf(); }
+    bool cpf_tangent(const Eigen::Ref<const CplxVect> & dir_solver, RealVect & z) override {
+        const bool res = inner_.algo().cpf_tangent(dir_solver, z);
+        if(!res) err_ = inner_.algo().get_error();
+        return res;
+    }
+    void cpf_predict(const Eigen::Ref<const RealVect> & z, real_type coeff, CplxVect & V_pred) const override {
+        inner_.algo().cpf_predict(z, coeff, V_pred);
+    }
+    bool cpf_refactorize_at_current() override {
+        const bool res = inner_.algo().cpf_refactorize_at_current();
+        if(!res) err_ = inner_.algo().get_error();
+        return res;
+    }
 
 private:
-    // the Newton from the current state, then the voltages published and, if asked, the
-    // unrealistic-voltage check. Returns whether the solve is usable by the loops.
+    // the inner solve from the current state, then its results copied here and, if asked,
+    // the unrealistic-voltage check. Returns whether the solve is usable by the loops.
     bool _solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic);
+    // what the loops reserve, collected on a rebuild of the topology (see Inner::setup)
+    OuterDeclaration _declare();
     // OuterContext on the algorithm's current state
     OuterContext _context(OuterState * state);
-    std::vector<bool> _vm_unknown() const;
 
     static void _check_driver_params(const OuterLoopDriverParams & params) {
         if(params.max_outer_iterations < 0){
@@ -201,6 +265,8 @@ private:
         return res;
     }
 
+    Inner inner_;
+
     std::vector<std::unique_ptr<BaseOuterLoop> > loops_;
     std::vector<int> caller_switchable_;  // see set_switchable_vm_buses
     std::vector<int> caller_pinned_;      // see set_pv_pinned_buses
@@ -214,8 +280,8 @@ private:
     int total_nr_iterations_ = 0;
     bool unrealistic_ = false;
 
-    // private copies the loops edit; the system reads Sbus_ through a pointer, so it must
-    // not move during a solve (it is only reassigned before _setup)
+    // private copies the loops edit; the inner algorithm reads Sbus_ and Ybus_ through a
+    // pointer, so they must not move during a solve (they are only reassigned before setup)
     CplxVect Sbus_;
     CplxVect Sbus_init_;
     CplxVect Sbus_target_;  // see OuterState::Sbus_target
@@ -225,28 +291,8 @@ private:
     OuterState state_;       // what the loops edit; kept after the solve for its results
 };
 
-template<class LinearSolver>
-OuterContext NROuterAlgo<LinearSolver>::_context(OuterState * state)
-{
-    OuterContext ctx;
-    ctx.grid = this->lsgrid_ptr_;
-    ctx.V = &this->V_;
-    ctx.Va = &this->Va_;
-    ctx.Vm = &this->Vm_;
-    ctx.bus_mismatch = &this->mis_bus_;
-    controller_q_ = this->_system.controller_q();
-    ctx.controller_q = &controller_q_;
-    ctx.slack_bus = slack_bus_;
-    ctx.slack_absorbed = this->_system.slack_absorbed();
-    ctx.state = state;
-    ctx.trace = &stats_.decisions;
-    ctx.branch_control = this->_system.branch_control();
-    ctx.shunt_control = this->_system.shunt_control();
-    return ctx;
-}
-
-#include "NROuterAlgo.tpp"
+#include "OuterLoopAlgo.tpp"
 
 }  // namespace ls2g
 
-#endif  // NR_OUTER_ALGO_H
+#endif  // OUTER_LOOP_ALGO_H

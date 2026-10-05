@@ -114,10 +114,18 @@ below; it runs after the last loop able to fix it (`ReactiveLimits`, `Transforme
 
 ### The algorithm
 
-`NRAlgo::compute_pf` is split into three protected pieces -- setup (rebuild decision,
-`update_state`, `init_topology`, `build_J_sparsity`), the Newton loop, and the finalisation --
-and `compute_pf` keeps calling them in sequence, so `NR_*` and `NRSing_*` do not move.
-`NROuterAlgo<LinearSolver>` is built on the same pieces with the system
+`NRAlgo::compute_pf` is split into public steps -- `begin_solve`, `setup` (rebuild decision,
+`update_state`, `init_topology`, `build_J_sparsity`), `newton`, and `finalize` -- and
+`compute_pf` keeps calling them in sequence, so `NR_*` and `NRSing_*` do not move.
+
+The outer loops **wrap** a Newton rather than derive from one. `OuterLoopAlgo<Inner>` is the
+driver; it derives from `BaseAlgo` only, forwards what `BaseAlgo` declares to the wrapped
+algorithm, and copies each solve's results back into itself. `Inner` is the wrapped algorithm
+as the driver sees it: `NROuterInner<LinearSolver, NRSystem>` holds the `NRAlgo`, runs its
+steps, and is the only place that touches the system (the controls the loops reserve, the
+values they edit between two solves, what they read back). Another system, or another
+algorithm, is another `Inner`; the driver does not change. The `NROuter_*` family is
+`OuterLoopAlgo<NROuterInner<LinearSolver>>`, with the system
 
 ```
 NRSystem<Base, VoltageControl, Hvdc, BranchControl, ShuntControl>

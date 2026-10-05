@@ -49,43 +49,55 @@ void bind_algo_methods(py::class_<Solver>& cls) {
         ;
 }
 
-// Bind scaling/refactor policy accessors for NRAlgo<> types.
+// The Newton-Raphson an NR_* algorithm is, or the one an NROuter_* wraps.
+template<class LinearSolver, class NRSystem>
+NRAlgo<LinearSolver, NRSystem> & nr_of(NRAlgo<LinearSolver, NRSystem> & algo) { return algo; }
+template<class LinearSolver, class NRSystem>
+const NRAlgo<LinearSolver, NRSystem> & nr_of(const NRAlgo<LinearSolver, NRSystem> & algo) { return algo; }
+template<class Inner>
+auto nr_of(OuterLoopAlgo<Inner> & algo) -> decltype(algo.inner().algo()) { return algo.inner().algo(); }
+template<class Inner>
+auto nr_of(const OuterLoopAlgo<Inner> & algo) -> decltype(algo.inner().algo()) { return algo.inner().algo(); }
+
+// Bind scaling/refactor policy accessors for NRAlgo<> types, and the algorithms wrapping one.
 template<typename Solver>
 void bind_nr_algo_policies(py::class_<Solver>& cls) {
     cls
         // scaling policy
-        .def("get_scaling_policy_type",   &Solver::get_scaling_policy_type,   DocSolver::get_scaling_policy_type.c_str())
-        .def("set_scaling_policy",   &Solver::set_scaling_policy,   DocSolver::set_scaling_policy.c_str(),   py::arg("policy"))
+        .def("get_scaling_policy_type", [](const Solver & s){ return nr_of(s).get_scaling_policy_type(); }, DocSolver::get_scaling_policy_type.c_str())
+        .def("set_scaling_policy", [](Solver & s, ScalingPolicyType v){ nr_of(s).set_scaling_policy(v); }, DocSolver::set_scaling_policy.c_str(), py::arg("policy"))
         // refactor policy
-        .def("get_refactor_policy",  &Solver::get_refactor_policy,  DocSolver::get_refactor_policy.c_str())
-        .def("set_refactor_policy",  &Solver::set_refactor_policy,  DocSolver::set_refactor_policy.c_str(), py::arg("policy"))
+        .def("get_refactor_policy", [](const Solver & s){ return nr_of(s).get_refactor_policy(); }, DocSolver::get_refactor_policy.c_str())
+        .def("set_refactor_policy", [](Solver & s, RefactorPolicyType v){ nr_of(s).set_refactor_policy(v); }, DocSolver::set_refactor_policy.c_str(), py::arg("policy"))
         // MaxVoltageChange params
-        .def("get_max_dVa",          &Solver::get_max_dVa,          DocSolver::get_max_dVa.c_str())
-        .def("set_max_dVa",          &Solver::set_max_dVa,          DocSolver::set_max_dVa.c_str(), py::arg("value"))
-        .def("get_max_dVm",          &Solver::get_max_dVm,          DocSolver::get_max_dVm.c_str())
-        .def("set_max_dVm",          &Solver::set_max_dVm,          DocSolver::set_max_dVm.c_str(), py::arg("value"))
+        .def("get_max_dVa", [](const Solver & s){ return nr_of(s).get_max_dVa(); }, DocSolver::get_max_dVa.c_str())
+        .def("set_max_dVa", [](Solver & s, real_type v){ nr_of(s).set_max_dVa(v); }, DocSolver::set_max_dVa.c_str(), py::arg("value"))
+        .def("get_max_dVm", [](const Solver & s){ return nr_of(s).get_max_dVm(); }, DocSolver::get_max_dVm.c_str())
+        .def("set_max_dVm", [](Solver & s, real_type v){ nr_of(s).set_max_dVm(v); }, DocSolver::set_max_dVm.c_str(), py::arg("value"))
         // LineSearch (Armijo) params
-        .def("get_ls_c",             &Solver::get_ls_c,             DocSolver::get_ls_c.c_str())
-        .def("set_ls_c",             &Solver::set_ls_c,             DocSolver::set_ls_c.c_str(), py::arg("value"))
-        .def("get_ls_rho",           &Solver::get_ls_rho,           DocSolver::get_ls_rho.c_str())
-        .def("set_ls_rho",           &Solver::set_ls_rho,           DocSolver::set_ls_rho.c_str(), py::arg("value"))
-        .def("get_ls_max_iter",      &Solver::get_ls_max_iter,      DocSolver::get_ls_max_iter.c_str())
-        .def("set_ls_max_iter",      &Solver::set_ls_max_iter,      DocSolver::set_ls_max_iter.c_str(), py::arg("value"))
+        .def("get_ls_c", [](const Solver & s){ return nr_of(s).get_ls_c(); }, DocSolver::get_ls_c.c_str())
+        .def("set_ls_c", [](Solver & s, real_type v){ nr_of(s).set_ls_c(v); }, DocSolver::set_ls_c.c_str(), py::arg("value"))
+        .def("get_ls_rho", [](const Solver & s){ return nr_of(s).get_ls_rho(); }, DocSolver::get_ls_rho.c_str())
+        .def("set_ls_rho", [](Solver & s, real_type v){ nr_of(s).set_ls_rho(v); }, DocSolver::set_ls_rho.c_str(), py::arg("value"))
+        .def("get_ls_max_iter", [](const Solver & s){ return nr_of(s).get_ls_max_iter(); }, DocSolver::get_ls_max_iter.c_str())
+        .def("set_ls_max_iter", [](Solver & s, int v){ nr_of(s).set_ls_max_iter(v); }, DocSolver::set_ls_max_iter.c_str(), py::arg("value"))
         // Iwamoto params
-        .def("get_iw_mu_min",        &Solver::get_iw_mu_min,        DocSolver::get_iw_mu_min.c_str())
-        .def("set_iw_mu_min",        &Solver::set_iw_mu_min,        DocSolver::set_iw_mu_min.c_str(), py::arg("value"))
-        .def("get_iw_mu_max",        &Solver::get_iw_mu_max,        DocSolver::get_iw_mu_max.c_str())
-        .def("set_iw_mu_max",        &Solver::set_iw_mu_max,        DocSolver::set_iw_mu_max.c_str(), py::arg("value"))
+        .def("get_iw_mu_min", [](const Solver & s){ return nr_of(s).get_iw_mu_min(); }, DocSolver::get_iw_mu_min.c_str())
+        .def("set_iw_mu_min", [](Solver & s, real_type v){ nr_of(s).set_iw_mu_min(v); }, DocSolver::set_iw_mu_min.c_str(), py::arg("value"))
+        .def("get_iw_mu_max", [](const Solver & s){ return nr_of(s).get_iw_mu_max(); }, DocSolver::get_iw_mu_max.c_str())
+        .def("set_iw_mu_max", [](Solver & s, real_type v){ nr_of(s).set_iw_mu_max(v); }, DocSolver::set_iw_mu_max.c_str(), py::arg("value"))
         // EveryN param
-        .def("get_refactor_every_n", &Solver::get_refactor_every_n, DocSolver::get_refactor_every_n.c_str())
-        .def("set_refactor_every_n", &Solver::set_refactor_every_n, DocSolver::set_refactor_every_n.c_str(), py::arg("value"))
-        // AlgoConfig serialization
+        .def("get_refactor_every_n", [](const Solver & s){ return nr_of(s).get_refactor_every_n(); }, DocSolver::get_refactor_every_n.c_str())
+        .def("set_refactor_every_n", [](Solver & s, int v){ nr_of(s).set_refactor_every_n(v); }, DocSolver::set_refactor_every_n.c_str(), py::arg("value"))
+        // AlgoConfig serialization (the solver's own: an NROuter_* appends the driver's)
         .def("get_config", &Solver::get_config, DocSolver::get_config.c_str())
         .def("set_config", &Solver::set_config, py::arg("config"), DocSolver::set_config.c_str())
         // column (unknown) -> bus-id converters (only valid after a powerflow)
         .def("get_theta_to_J_col", &Solver::get_theta_to_J_col_python, DocSolver::get_theta_to_J_col.c_str())
         .def("get_vm_to_J_col",    &Solver::get_vm_to_J_col_python, DocSolver::get_vm_to_J_col.c_str())
         .def("get_q_to_J_col",     &Solver::get_q_to_J_col_python, DocSolver::get_q_to_J_col.c_str())
+        // the Jacobian, copied
+        .def("get_J", [](const Solver & s){ return nr_of(s).get_J_python(); }, DocSolver::get_J_python.c_str())
         ;
 }
 
@@ -344,24 +356,21 @@ void bind_solvers(py::module_& m) {
     // ---- SparseLU ----
     {
         auto cls = py::class_<NR_SparseLU>(m, "NR_SparseLU", DocSolver::NR_SparseLU.c_str())
-            .def(py::init<>())
-            .def("get_J", &NR_SparseLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NRSing_SparseLU>(m, "NRSing_SparseLU", DocSolver::NRSing_SparseLU.c_str())
-            .def(py::init<>())
-            .def("get_J", &NRSing_SparseLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NROuter_SparseLU>(m, "NROuter_SparseLU", DocSolver::NROuter.c_str())
-            .def(py::init<>())
-            .def("get_J", &NROuter_SparseLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
@@ -393,16 +402,14 @@ void bind_solvers(py::module_& m) {
 #if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     {
         auto cls = py::class_<NR_KLU>(m, "NR_KLU", DocSolver::NR_KLU.c_str())
-            .def(py::init<>())
-            .def("get_J", &NR_KLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NRSing_KLU>(m, "NRSing_KLU", DocSolver::NRSing_KLU.c_str())
-            .def(py::init<>())
-            .def("get_J", &NRSing_KLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
@@ -427,16 +434,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NRRefactorRetry_KLU>(m, "NRRefactorRetry_KLU", DocSolver::NRRefactorRetry_KLU.c_str())
-            .def(py::init<>())
-            .def("get_J", &NRRefactorRetry_KLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NROuter_KLU>(m, "NROuter_KLU", DocSolver::NROuter.c_str())
-            .def(py::init<>())
-            .def("get_J", &NROuter_KLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
@@ -447,16 +452,14 @@ void bind_solvers(py::module_& m) {
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     {
         auto cls = py::class_<NR_NICSLU>(m, "NR_NICSLU", DocSolver::NR_NICSLU.c_str())
-            .def(py::init<>())
-            .def("get_J", &NR_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NRSing_NICSLU>(m, "NRSing_NICSLU", DocSolver::NRSing_NICSLU.c_str())
-            .def(py::init<>())
-            .def("get_J", &NRSing_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
@@ -481,16 +484,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NRRefactorRetry_NICSLU>(m, "NRRefactorRetry_NICSLU", DocSolver::NRRefactorRetry_NICSLU.c_str())
-            .def(py::init<>())
-            .def("get_J", &NRRefactorRetry_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NROuter_NICSLU>(m, "NROuter_NICSLU", DocSolver::NROuter.c_str())
-            .def(py::init<>())
-            .def("get_J", &NROuter_NICSLU::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
@@ -501,16 +502,14 @@ void bind_solvers(py::module_& m) {
 #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     {
         auto cls = py::class_<NR_CKTSO>(m, "NR_CKTSO", DocSolver::NR_CKTSO.c_str())
-            .def(py::init<>())
-            .def("get_J", &NR_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NRSing_CKTSO>(m, "NRSing_CKTSO", DocSolver::NRSing_CKTSO.c_str())
-            .def(py::init<>())
-            .def("get_J", &NRSing_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
@@ -535,16 +534,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NRRefactorRetry_CKTSO>(m, "NRRefactorRetry_CKTSO", DocSolver::NRRefactorRetry_CKTSO.c_str())
-            .def(py::init<>())
-            .def("get_J", &NRRefactorRetry_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);
     }
     {
         auto cls = py::class_<NROuter_CKTSO>(m, "NROuter_CKTSO", DocSolver::NROuter.c_str())
-            .def(py::init<>())
-            .def("get_J", &NROuter_CKTSO::get_J_python, DocSolver::get_J_python.c_str());
+            .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
         bind_linear_solver_stats(cls);

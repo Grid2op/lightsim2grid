@@ -6,8 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-template<class LinearSolver>
-bool NROuterAlgo<LinearSolver>::compute_pf(
+template<class Inner>
+bool OuterLoopAlgo<Inner>::compute_pf(
         const EigenRefConstCplxSpMat     & Ybus,
         const Eigen::Ref<const CplxVect> & V,
         const Eigen::Ref<const CplxVect> & Sbus,
@@ -18,10 +18,15 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
         int                              max_iter,
         real_type                        tol)
 {
-    if (!this->is_linear_solver_valid()) return false;
+    // what changed since the last solve is told to this object (LSGrid, the batches)
+    inner_.algo().tell_solver_control(_solver_control);
+    if (!inner_.begin()) {
+        err_ = inner_.algo().get_error();
+        return false;
+    }
 
-    this->reset_timer();
-    this->err_ = ErrorType::NoError;
+    reset_timer();
+    err_ = ErrorType::NoError;
     auto timer = CustTimer();
     stats_.clear();
     total_nr_iterations_ = 0;
@@ -34,11 +39,12 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
 
     // ... and Ybus, whose values the phase shifters patch (see BranchControl)
     Ybus_ = Ybus;
-    this->_system.set_branch_mutable_ybus(&Ybus_);
 
     bool need_init = false;
-    if (!this->_setup(Ybus_, V, Sbus_, slack_ids, slack_weights, pv, pq, need_init)) {
-        this->timer_total_nr_ += timer.duration();
+    if (!inner_.setup(Ybus_, V, Sbus_, slack_ids, slack_weights, pv, pq, need_init,
+                      [this](){ return _declare(); })) {
+        err_ = inner_.algo().get_error();
+        timer_total_nr_ += timer.duration();
         return false;
     }
 
@@ -125,9 +131,9 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
                          stats_.nb_outer_iterations < params_.max_outer_iterations);
 
                 if (!check_unrealistic && static_cast<int>(i) == last_fixing && solver_ok &&
-                    this->lsgrid_ptr_ != nullptr) {
+                    lsgrid_ptr_ != nullptr) {
                     // the deferred check, once the last loop able to fix it is done
-                    if (is_state_unrealistic(*this->lsgrid_ptr_, this->V_, _vm_unknown(), params_)) {
+                    if (is_state_unrealistic(*lsgrid_ptr_, V_, inner_.vm_unknown(pinned_), params_)) {
                         unrealistic_ = true;
                         solver_ok = false;
                     }
@@ -155,102 +161,65 @@ bool NROuterAlgo<LinearSolver>::compute_pf(
 
     bool res = solver_ok && stats_.status == OuterLoopStatus::STABLE;
     if (solver_ok) {
-        if (stats_.status == OuterLoopStatus::FAILED) this->err_ = ErrorType::OuterLoopFailed;
-        else if (stats_.status == OuterLoopStatus::UNSTABLE) this->err_ = ErrorType::TooManyIterations;
+        if (stats_.status == OuterLoopStatus::FAILED) err_ = ErrorType::OuterLoopFailed;
+        else if (stats_.status == OuterLoopStatus::UNSTABLE) err_ = ErrorType::TooManyIterations;
     } else if (unrealistic_) {
-        this->err_ = ErrorType::UnrealisticState;
+        err_ = ErrorType::UnrealisticState;
     }
-    this->timer_total_nr_ += timer.duration();
+    // the inner algorithm's timers, accumulated over every solve
+    std::tie(timer_Fx_, timer_solve_, timer_check_, std::ignore) = inner_.algo().get_timers();
+    timer_total_nr_ += timer.duration();
     return res;
 }
 
-template<class LinearSolver>
-bool NROuterAlgo<LinearSolver>::_solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic)
+template<class Inner>
+bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic)
 {
-    // what the loops changed outside the injection: the hvdc lines' regimes
-    if (!state_.hvdc_status.empty()) {
-        this->_system.set_hvdc_status_override(state_.hvdc_status, OuterState::HVDC_KEEP);
-    }
-    // ... and the idle standby SVCs switched on (a release is never undone in a solve)
-    if (!state_.svc_target_vm.empty()) {
-        this->_system.release_held_svcs(state_.svc_target_vm);
-    }
-    // the voltage controllers a loop holds (none: the plan's own state)
-    this->_system.set_held_voltage_controllers(state_.controller_hold_q);
-    // the phase taps a loop moved, then the shifts it lets the Newton solve for
-    BranchControl * phase = this->_system.branch_control();
-    if (phase != nullptr) {
-        for (std::size_t t = 0; t < state_.phase_tap.size(); ++t) {
-            if (state_.phase_tap[t] != OuterState::TAP_KEEP) phase->set_tap(static_cast<int>(t), state_.phase_tap[t]);
-        }
-        for (std::size_t t = 0; t < state_.phase_control.size(); ++t) {
-            if (state_.phase_control[t] >= 0) phase->set_control_on(static_cast<int>(t), state_.phase_control[t] == 1);
-        }
-        // the ratio taps (a move once), then the voltage controls
-        for (std::size_t t = 0; t < state_.ratio_tap.size(); ++t) {
-            if (state_.ratio_tap[t] == OuterState::TAP_KEEP) continue;
-            phase->set_ratio_tap(static_cast<int>(t), state_.ratio_tap[t]);
-            state_.ratio_tap[t] = OuterState::TAP_KEEP;
-        }
-        for (std::size_t t = 0; t < state_.ratio_control.size(); ++t) {
-            if (state_.ratio_control[t] >= 0) phase->set_ratio_control_on(static_cast<int>(t), state_.ratio_control[t] == 1);
-        }
-    }
-    // the shunt sections (a switch once), then the voltage controls
-    ShuntControl * shunt = this->_system.shunt_control();
-    if (shunt != nullptr) {
-        for (const auto & bs : state_.shunt_sections) shunt->set_sections(bs.first, bs.second);
-        state_.shunt_sections.clear();
-        for (std::size_t b = 0; b < state_.shunt_control.size(); ++b) {
-            if (state_.shunt_control[b] >= 0) shunt->set_control_on(static_cast<int>(b), state_.shunt_control[b] == 1);
-        }
-    }
     // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
     pinned_ = caller_pinned_;
     for (int bus : declared_switchable_) {
         if (!state_.pq_buses.count(bus)) pinned_.push_back(bus);
     }
-    this->_system.set_pv_pinned_buses(pinned_);
-    // the magnitudes a loop reset (a bus back to PV at its set-point, robust mode)
-    if (!state_.vm_set.empty()) {
-        std::vector<int> buses;
-        std::vector<real_type> vm;
-        for (const auto & bv : state_.vm_set) { buses.push_back(bv.first); vm.push_back(bv.second); }
-        this->_system.set_vm_at(buses, vm);
-        state_.vm_set.clear();
-    }
-    bool converged = this->_newton(max_iter, tol, need_init);
+    inner_.apply_state(state_, pinned_);
+    bool converged = inner_.newton(max_iter, tol, need_init);
     // the first iteration analyzed (or tried to): every later solve only refactorizes. A
     // solve that converged in zero iterations factorized nothing, so it does not count.
-    if (this->nr_iter_ > 0) need_init = false;
-    this->_finalize();
+    nr_iter_ = inner_.algo().get_nb_iter();
+    if (nr_iter_ > 0) need_init = false;
+    inner_.finalize();
+    // the results, here: what LSGrid and the loops read
+    V_ = inner_.algo().get_V();
+    Va_ = inner_.algo().get_Va();
+    Vm_ = inner_.algo().get_Vm();
+    mis_bus_ = inner_.algo().get_bus_mismatch();
+    err_ = inner_.algo().get_error();
     // the residual is published against the units' targets: the reactive power a loop froze
     // into the algorithm's (a bus held at a limit) is its units' output, which the results
-    // and the physical checks read off this residual. Overwritten by the next
-    // Newton's first mismatch. The active part is not touched: the targets a loop moved are
-    // published as such (get_outer_target_p).
-    if (this->mis_bus_.size() == Sbus_.size() && Sbus_target_.size() == Sbus_.size()) {
+    // and the physical checks read off this residual. Overwritten by the next solve's copy.
+    // The active part is not touched: the targets a loop moved are published as such
+    // (get_outer_target_p).
+    if (mis_bus_.size() == Sbus_.size() && Sbus_target_.size() == Sbus_.size()) {
         for (Eigen::Index b = 0; b < Sbus_.size(); ++b) {
             const real_type dq = std::imag(Sbus_(b)) - std::imag(Sbus_target_(b));
-            if (dq != 0.) this->mis_bus_(b) += cplx_type(0., dq);
+            if (dq != 0.) mis_bus_(b) += cplx_type(0., dq);
         }
     }
-    stats_.nr_iterations.push_back(this->nr_iter_);
+    stats_.nr_iterations.push_back(nr_iter_);
     // OpenLoadFlow's Newton tests convergence only after a step, so a solve is at least one
     // iteration there, and "a pass added Newton iterations" (whether another pass runs)
     // means "a pass re-solved". Counted the same way here, where a solve already within
     // tolerance takes no step at all.
-    total_nr_iterations_ += std::max(this->nr_iter_, 1);
-    if (converged && check_unrealistic && this->lsgrid_ptr_ != nullptr &&
-        is_state_unrealistic(*this->lsgrid_ptr_, this->V_, _vm_unknown(), params_)) {
+    total_nr_iterations_ += std::max(nr_iter_, 1);
+    if (converged && check_unrealistic && lsgrid_ptr_ != nullptr &&
+        is_state_unrealistic(*lsgrid_ptr_, V_, inner_.vm_unknown(pinned_), params_)) {
         unrealistic_ = true;
         converged = false;
     }
     return converged;
 }
 
-template<class LinearSolver>
-void NROuterAlgo<LinearSolver>::_before_init_topology()
+template<class Inner>
+OuterDeclaration OuterLoopAlgo<Inner>::_declare()
 {
     state_.Sbus = &Sbus_;
     state_.Sbus_init = &Sbus_init_;
@@ -267,41 +236,22 @@ void NROuterAlgo<LinearSolver>::_before_init_topology()
     declared_switchable_.erase(std::unique(declared_switchable_.begin(), declared_switchable_.end()),
                                declared_switchable_.end());
     switchable.insert(switchable.end(), declared_switchable_.begin(), declared_switchable_.end());
-    this->_system.set_switchable_vm_buses(switchable);  // a set there: duplicates are fine
-    this->_system.set_may_hold_voltage_controllers(decl.holds_voltage_controllers());
-    this->_system.set_phase_controllers(decl.phase_shifters(), decl.phase_shifter_column());
-    std::vector<BranchControl::RatioGroupDecl> groups;
-    for (const auto & g : decl.ratio_groups()) {
-        BranchControl::RatioGroupDecl d;
-        d.bus_solver = g.bus_solver;
-        d.target_vm = g.target_vm;
-        d.trafos = g.trafos;
-        d.solved = g.solved;
-        groups.push_back(d);
-    }
-    this->_system.set_ratio_groups(groups);
-    std::vector<ShuntControl::GroupDecl> shunt_groups;
-    for (const auto & g : decl.shunt_groups()) {
-        ShuntControl::GroupDecl d;
-        d.bus_solver = g.bus_solver;
-        d.target_vm = g.target_vm;
-        d.controller_buses = g.controller_buses;
-        d.shunts = g.shunts;
-        d.solved = g.solved;
-        shunt_groups.push_back(d);
-    }
-    this->_system.set_shunt_groups(shunt_groups);
+    inner_.algo().set_switchable_vm_buses(switchable);  // a set there: duplicates are fine
+    return decl;
 }
 
-template<class LinearSolver>
-std::vector<bool> NROuterAlgo<LinearSolver>::_vm_unknown() const
+template<class Inner>
+OuterContext OuterLoopAlgo<Inner>::_context(OuterState * state)
 {
-    const std::vector<int> & vm_col = this->_system.vm_to_J_col();
-    std::vector<bool> res(vm_col.size(), false);
-    for (std::size_t bus = 0; bus < vm_col.size(); ++bus) res[bus] = vm_col[bus] >= 0;
-    // a pinned Q row makes the bus PV: its magnitude is not an unknown
-    for (int bus : pinned_) {
-        if (bus >= 0 && static_cast<std::size_t>(bus) < res.size()) res[static_cast<std::size_t>(bus)] = false;
-    }
-    return res;
+    OuterContext ctx;
+    ctx.grid = lsgrid_ptr_;
+    ctx.V = &V_;
+    ctx.Va = &Va_;
+    ctx.Vm = &Vm_;
+    ctx.bus_mismatch = &mis_bus_;
+    ctx.slack_bus = slack_bus_;
+    ctx.state = state;
+    ctx.trace = &stats_.decisions;
+    inner_.fill_context(ctx, controller_q_);
+    return ctx;
 }

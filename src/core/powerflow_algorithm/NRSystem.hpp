@@ -1119,7 +1119,7 @@ class LS2G_API VoltageControl
         // (v_row, q_col) slot of every group's first controller, and in each sharing row an
         // entry towards every other controller of the group, so that the reference of the
         // sharing can be any active one. Caller-set, before the sparsity build it should
-        // affect (an outer loop's declaration, see NROuterAlgo); off, nothing changes.
+        // affect (an outer loop's declaration, see OuterLoopAlgo); off, nothing changes.
         void set_may_hold_controllers(bool val) { may_hold_ = val; }
 
         // Hold some controllers at a reactive output by value, for the next Newton solves:

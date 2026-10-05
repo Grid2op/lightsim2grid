@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-// Tests of the outer-loop driver of the NROuter_* algorithms (NROuterAlgo): the order in
+// Tests of the outer-loop driver of the NROuter_* algorithms (OuterLoopAlgo): the order in
 // which OpenLoadFlow's engine runs, re-runs and stops the loops, and the one-analyze
 // premise. The loops here are scripted stand-ins that say STABLE / UNSTABLE / FAILED on cue
 // and log every call; the real loops have their own tests. C++14 only (project policy).

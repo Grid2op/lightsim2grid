@@ -31,9 +31,10 @@ namespace ls2g {
  * Step-scaling and refactorization strategies are runtime-configurable enums,
  * not template parameters, so the same binary can switch strategy at run time.
  *
- * A solve is three protected pieces -- _setup, _newton, _finalize -- that compute_pf
- * runs in sequence. NROuterAlgo (outer loops around the Newton) derives from this class
- * and runs _newton again between its loops, from the state the previous call left.
+ * A solve is four public steps -- begin_solve, setup, newton, finalize -- that compute_pf
+ * runs in sequence. A driver around the Newton (the outer loops, see OuterLoopAlgo and
+ * NROuterInner) runs them itself: newton again between its loops, from the state the
+ * previous call left, the system edited by value in between.
  */
 template<class LinearSolver, class NRSystem>
 class NRAlgo : public BaseAlgo
@@ -169,6 +170,51 @@ public:
     ) override;
 
     void reset() override;
+
+    // ----- a solve, step by step ------------------------------------------------
+    // What compute_pf runs, exposed for a driver that solves several times per solve
+    // (the outer loops, see NROuterInner). Between two newton calls the system keeps
+    // its state, its sparsity and its factorization; edit it by value only.
+
+    // A new solve: clears the error and the timers. False if the algorithm cannot run.
+    bool begin_solve() {
+        if (!is_linear_solver_valid()) return false;
+        reset_timer();
+        err_ = ErrorType::NoError;
+        return true;
+    }
+
+    // Decide whether the topology changed, point the system at this solve's Ybus / V /
+    // Sbus and, only if it changed, rebuild the ledger and the sparsity of J.
+    // `before_init_topology()` is called on a rebuild only, right before the system claims
+    // its rows / columns in the ledger: the last moment to change what it reserves (eg
+    // set_switchable_vm_buses). `need_init` tells newton whether the linear solver must
+    // analyze. False if the linear solver could not be reset (err_ says why).
+    template<class BeforeInitTopology>
+    bool setup(const EigenRefConstCplxSpMat     & Ybus,
+               const Eigen::Ref<const CplxVect> & V,
+               const Eigen::Ref<const CplxVect> & Sbus,
+               const Eigen::Ref<const IntVect>  & slack_ids,
+               const Eigen::Ref<const RealVect> & slack_weights,
+               const Eigen::Ref<const IntVect>  & pv,
+               const Eigen::Ref<const IntVect>  & pq,
+               bool                             & need_init,
+               BeforeInitTopology               && before_init_topology);
+
+    // The Newton iterations, from whatever state the system holds. Always factorizes on
+    // its first iteration: analyze + factorize if `need_init`, refactorize otherwise.
+    bool newton(int max_iter, real_type tol, bool need_init);
+
+    // Publish the voltages (get_V, ...) and fold the system's timers.
+    void finalize();
+
+    // Rebuild the topology (ledger, sparsity of J, symbolic analysis) on the next setup,
+    // eg because what a driver reserves in it changed.
+    void request_rebuild() { need_factorize_ = true; }
+
+    // The system the Newton solves, for a driver editing it between two newton calls.
+    NRSystem & system() { return _system; }
+    const NRSystem & system() const { return _system; }
 
     // ----- bus masking ---------------------------------------------------------
     bool supports_bus_masking() const override { return true; }
@@ -446,26 +492,6 @@ public:
     // }
 
 protected:
-    // the three pieces of a solve, see NRAlgo.tpp
-    bool _setup(const EigenRefConstCplxSpMat     & Ybus,
-                const Eigen::Ref<const CplxVect> & V,
-                const Eigen::Ref<const CplxVect> & Sbus,
-                const Eigen::Ref<const IntVect>  & slack_ids,
-                const Eigen::Ref<const RealVect> & slack_weights,
-                const Eigen::Ref<const IntVect>  & pv,
-                const Eigen::Ref<const IntVect>  & pq,
-                bool                             & need_init);
-    bool _newton(int max_iter, real_type tol, bool need_init);
-    void _finalize();
-
-    // Called by _setup only when the topology is rebuilt: right before the system
-    // claims its rows / columns in the ledger (the last moment to change what it
-    // reserves, eg set_switchable_vm_buses), and right after the sparsity of J is
-    // built (the first moment the positions of its coefficients are known, eg to
-    // push the pinned buses again). No-ops here.
-    virtual void _before_init_topology() {}
-    virtual void _after_build_J_sparsity() {}
-
     void reset_timer() override {
         BaseAlgo::reset_timer();
         detail::reset_stats_timers_impl(_linear_solver, 0);
