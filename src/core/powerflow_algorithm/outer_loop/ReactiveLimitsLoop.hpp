@@ -30,11 +30,10 @@ class LSGrid;
  * every PV bus would switch, the strongest one stays PV (highest nominal voltage, then
  * highest target P).
  *
- * Fixed pattern. A controller bus holding its own voltage (the ordinary PV path) is
- * declared switchable (its Vm unknown and Q row reserved, pinned while it is PV); making
- * it PQ is a value edit of the algorithm's injection (OuterState::Sbus) and of the pinned
- * set (OuterState::pq_buses); making it PV again resets its magnitude to its set-point
- * (OuterState::vm_set). The bus' units share what is frozen as the results split any bus'
+ * Fixed pattern. A controller bus holding its own voltage (the ordinary PV path) reserves a
+ * BusVoltageControl (its Vm unknown and Q row, pinned while it is PV); making it PQ is a
+ * value edit of the algorithm's injection (OuterState::Sbus) and of that control; making it
+ * PV again resets its magnitude to its set-point (OuterControls::reset_vm). The bus' units share what is frozen as the results split any bus'
  * reactive power. A bus whose units are controllers of a voltage-control group (remote
  * regulation, an SVC) is frozen by holding each of them at its own limit
  * (OuterState::controller_hold_q, VoltageControl::set_held_controllers), the group's other
@@ -105,6 +104,8 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             /// an idle standby SVC's bus (a voltage monitor, held by the plan): checked only
             /// once the VoltageMonitoring loop switched it on (OuterState::svc_target_vm)
             int monitor_svc = -1;
+            /// a local bus' PV / PQ switch (null for the others)
+            BusVoltageControl * voltage = nullptr;
         };
 
         /// the plan of every controller bus of `ctx` (bus_q_check)

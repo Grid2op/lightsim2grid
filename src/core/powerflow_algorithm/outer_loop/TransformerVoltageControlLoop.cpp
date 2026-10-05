@@ -132,7 +132,7 @@ void TransformerVoltageControlLoop::_declare(const OuterContext & ctx, OuterDecl
     bus_q_check::BusQPlan plan;
     bus_q_check::build_bus_q_plan(*ctx.grid, solver_map(ctx), ctx.grid->get_ac_voltage_control_plan().controllers(), plan);
     for (const auto & entry : plan.buses) {
-        if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) decl.add_switchable_vm_bus(entry.bus_solver);
+        if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) ctx.controls->reserve_bus_voltage(entry.bus_solver);
         else decl.hold_voltage_controllers();
     }
 }
@@ -223,6 +223,17 @@ bool TransformerVoltageControlLoop::_step_up(const LSGrid & grid, const bus_q_ch
     return min_connected > vn_kv(bus) && min_connected > limit;
 }
 
+namespace {
+
+// a controller bus whose voltage control a loop took away: switched PQ, or suspended
+bool voltage_control_off(const OuterControls & controls, int bus)
+{
+    const BusVoltageControl * voltage = controls.bus_voltage(bus);
+    return (voltage != nullptr && voltage->is_pq()) || controls.suspended(bus);
+}
+
+}  // namespace
+
 void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_type limit)
 {
     // disableGeneratorVoltageControlsUnderMaxControlledNominalVoltage: a controller bus frozen at
@@ -257,7 +268,7 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
         if (controlled_grid < 0 || vn_kv(controlled_grid) > limit) continue;
         const int b = entry.bus_solver;
         // enabled: not switched PQ by another loop
-        if (st.pq_buses.count(b) || st.suspended_buses.count(b)) continue;
+        if (voltage_control_off(*ctx.controls, b)) continue;
         if (!local) {
             bool held = false;
             for (int c : entry.ctrl_pos) {
@@ -277,7 +288,8 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
             const real_type q_gen = std::imag((*ctx.bus_mismatch)(b));
             CplxVect & Sbus = *st.Sbus;
             Sbus(b) = cplx_type(std::real(Sbus(b)), std::imag((*st.Sbus_target)(b)) + q_gen - load);
-            st.pq_buses.insert(b);
+            BusVoltageControl * voltage = ctx.controls->bus_voltage(b);
+            if (voltage != nullptr) voltage->set_pq();
         } else {
             if (st.controller_hold_q.empty()) {
                 st.controller_hold_q.assign(static_cast<std::size_t>(nc), std::numeric_limits<real_type>::quiet_NaN());
@@ -290,7 +302,7 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
                 st.controller_hold_q[static_cast<std::size_t>(c)] = q;
             }
         }
-        st.suspended_buses.insert(b);
+        ctx.controls->set_suspended(b, true);
         frozen_.push_back(Frozen{static_cast<int>(k), b, local, target_vm});
     }
 }
@@ -302,14 +314,15 @@ void TransformerVoltageControlLoop::_release_generators(OuterContext & ctx)
         if (f.local) {
             CplxVect & Sbus = *st.Sbus;
             Sbus(f.bus_solver) = cplx_type(std::real(Sbus(f.bus_solver)), std::imag((*st.Sbus_target)(f.bus_solver)));
-            st.pq_buses.erase(f.bus_solver);
-            st.vm_set.emplace_back(f.bus_solver, f.target_vm);
+            BusVoltageControl * voltage = ctx.controls->bus_voltage(f.bus_solver);
+            if (voltage != nullptr) voltage->set_pv();
+            ctx.controls->reset_vm(f.bus_solver, f.target_vm);
         } else {
             for (int c : plan_.buses[static_cast<std::size_t>(f.entry)].ctrl_pos) {
                 st.controller_hold_q[static_cast<std::size_t>(c)] = std::numeric_limits<real_type>::quiet_NaN();
             }
         }
-        st.suspended_buses.erase(f.bus_solver);
+        ctx.controls->set_suspended(f.bus_solver, false);
     }
     frozen_.clear();
 }
@@ -319,7 +332,6 @@ void TransformerVoltageControlLoop::_fix_controls(OuterContext & ctx)
     // LfNetwork.fixTransformerVoltageControls: a transformer whose other side, once every
     // transformer switched on is taken out, keeps no PV bus is switched off
     const LSGrid & grid = *ctx.grid;
-    const OuterState & st = *ctx.state;
     const SolverBusIdVect & to_solver = solver_map(ctx);
     std::vector<int> parent(static_cast<std::size_t>(ctx.V->size()));
     std::iota(parent.begin(), parent.end(), 0);
@@ -343,7 +355,7 @@ void TransformerVoltageControlLoop::_fix_controls(OuterContext & ctx)
     for (const auto & entry : plan_.buses) {
         if (!(entry.ctrl_pos.empty() && entry.svc_ids.empty())) continue;
         const int b = entry.bus_solver;
-        if (st.pq_buses.count(b) || st.suspended_buses.count(b)) continue;
+        if (voltage_control_off(*ctx.controls, b)) continue;
         with_pv.insert(find_root(parent, b));
     }
     for (const Group & g : groups_) {

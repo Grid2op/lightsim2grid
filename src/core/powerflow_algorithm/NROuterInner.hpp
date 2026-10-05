@@ -13,6 +13,7 @@
 
 #include "NRAlgo.hpp"
 #include "outer_loop/BaseOuterLoop.hpp"
+#include "outer_loop/OuterControls.hpp"
 
 namespace ls2g {
 
@@ -43,12 +44,17 @@ public:
     Algo & algo() { return algo_; }
     const Algo & algo() const { return algo_; }
 
+    // what the loops reserve and act through
+    OuterControls & controls() { return controls_; }
+    const OuterControls & controls() const { return controls_; }
+
     // a new solve: false if the algorithm cannot run
     bool begin() { return algo_.begin_solve(); }
 
     // The Newton's setup, on the driver's private Ybus (whose values the phase shifters and
-    // the shunts patch). On a rebuild of the topology only, `declare()` is called right
-    // before the system claims its rows / columns and returns what the loops reserve.
+    // the shunts patch). On a rebuild of the topology only, the reservations are cleared and
+    // `declare()` is called right before the system claims its rows / columns: the loops
+    // reserve their controls (controls()) and return the rest of what they need.
     template<class Declare>
     bool setup(Eigen::SparseMatrix<cplx_type>   & Ybus,
                const Eigen::Ref<const CplxVect> & V,
@@ -62,7 +68,7 @@ public:
     {
         algo_.system().set_branch_mutable_ybus(&Ybus);
         return algo_.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, need_init,
-                           [&](){ _reserve(declare()); });
+                           [&](){ controls_.clear_reservations(); _reserve(declare()); });
     }
 
     bool newton(int max_iter, real_type tol, bool need_init) { return algo_.newton(max_iter, tol, need_init); }
@@ -70,9 +76,8 @@ public:
     // what the loops reserve changed: rebuild the sparsity on the next setup
     void request_rebuild() { algo_.request_rebuild(); }
 
-    // Push what the loops changed to the system, before a solve: `pinned` are the switchable
-    // buses that are PV in this solve.
-    void apply_state(OuterState & state, const std::vector<int> & pinned);
+    // Push what the loops changed to the system, before a solve.
+    void apply_state(OuterState & state);
 
     // the solver's side of a loop's context; `controller_q` is the driver's buffer the
     // context points to
@@ -84,13 +89,13 @@ public:
         ctx.shunt_control = algo_.system().shunt_control();
     }
 
-    // per solver bus, whether its magnitude is an unknown of the last solve; a `pinned` bus
+    // per solver bus, whether its magnitude is an unknown of the last solve; a pinned bus
     // (its Q row pinned, so PV) is not
-    std::vector<bool> vm_unknown(const std::vector<int> & pinned) const {
+    std::vector<bool> vm_unknown() const {
         const std::vector<int> & vm_col = algo_.system().vm_to_J_col();
         std::vector<bool> res(vm_col.size(), false);
         for(std::size_t bus = 0; bus < vm_col.size(); ++bus) res[bus] = vm_col[bus] >= 0;
-        for(int bus : pinned) {
+        for(int bus : pinned_) {
             if(bus >= 0 && static_cast<std::size_t>(bus) < res.size()) res[static_cast<std::size_t>(bus)] = false;
         }
         return res;
@@ -115,17 +120,20 @@ public:
     }
 
 private:
-    // what the loops declared, reserved in the system (the switchable buses go through
-    // BaseAlgo::set_switchable_vm_buses, by the driver)
+    // what the loops reserved, in the system
     void _reserve(const OuterDeclaration & decl);
 
     Algo algo_;
+    OuterControls controls_;
+    std::vector<int> pinned_;  // the buses pinned PV in the last solve
 };
 
 template<class LinearSolver, class NRSystem>
 void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & decl)
 {
     NRSystem & system = algo_.system();
+    // the switchable buses: a caller's (a batch), then the loops'
+    algo_.set_switchable_vm_buses(controls_.switchable_buses());  // a set there: duplicates are fine
     system.set_may_hold_voltage_controllers(decl.holds_voltage_controllers());
     system.set_phase_controllers(decl.phase_shifters(), decl.phase_shifter_column());
     std::vector<BranchControl::RatioGroupDecl> groups;
@@ -152,7 +160,7 @@ void NROuterInner<LinearSolver, NRSystem>::_reserve(const OuterDeclaration & dec
 }
 
 template<class LinearSolver, class NRSystem>
-void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state, const std::vector<int> & pinned)
+void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state)
 {
     NRSystem & system = algo_.system();
     // what the loops changed outside the injection: the hvdc lines' regimes
@@ -193,15 +201,14 @@ void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state, const
             if(state.shunt_control[b] >= 0) shunt->set_control_on(static_cast<int>(b), state.shunt_control[b] == 1);
         }
     }
-    system.set_pv_pinned_buses(pinned);
+    // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
+    pinned_ = controls_.pinned_buses();
+    system.set_pv_pinned_buses(pinned_);
     // the magnitudes a loop reset (a bus back to PV at its set-point, robust mode)
-    if(!state.vm_set.empty()) {
-        std::vector<int> buses;
-        std::vector<real_type> vm;
-        for(const auto & bv : state.vm_set) { buses.push_back(bv.first); vm.push_back(bv.second); }
-        system.set_vm_at(buses, vm);
-        state.vm_set.clear();
-    }
+    std::vector<int> buses;
+    std::vector<real_type> vm;
+    controls_.take_pending_vm(buses, vm);
+    if(!buses.empty()) system.set_vm_at(buses, vm);
 }
 
 }  // namespace ls2g

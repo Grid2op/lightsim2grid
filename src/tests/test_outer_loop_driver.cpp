@@ -123,9 +123,9 @@ class DeclaringLoop final : public BaseOuterLoop
 {
     protected:
         std::string _name() const override { return "Declaring"; }
-        void _declare(const OuterContext & ctx, ls2g::OuterDeclaration & decl) const override {
+        void _declare(const OuterContext & ctx, ls2g::OuterDeclaration &) const override {
             const ls2g::SolverBusIdVect & pv = ctx.grid->get_ac_pv_solver();
-            for (std::size_t i = 0; i < pv.size(); ++i) decl.add_switchable_vm_bus(pv[i].cast_int());
+            for (std::size_t i = 0; i < pv.size(); ++i) ctx.controls->reserve_bus_voltage(pv[i].cast_int());
         }
         void _detect(const OuterContext &, std::vector<LimitViolation> &) const override {}
         OuterLoopStatus _check(OuterContext &) override { return OuterLoopStatus::STABLE; }

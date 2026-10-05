@@ -56,16 +56,14 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     state_.storage_target_p.clear();
     state_.hvdc_status.clear();
     state_.svc_target_vm.clear();
-    state_.pq_buses.clear();
-    state_.vm_set.clear();
     state_.controller_hold_q.clear();
     state_.phase_tap.clear();
     state_.phase_control.clear();
     state_.ratio_tap.clear();
     state_.ratio_control.clear();
-    state_.suspended_buses.clear();
     state_.shunt_control.clear();
     state_.shunt_sections.clear();
+    inner_.controls().reset_states();
     OuterState & state = state_;
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -133,7 +131,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
                 if (!check_unrealistic && static_cast<int>(i) == last_fixing && solver_ok &&
                     lsgrid_ptr_ != nullptr) {
                     // the deferred check, once the last loop able to fix it is done
-                    if (is_state_unrealistic(*lsgrid_ptr_, V_, inner_.vm_unknown(pinned_), params_)) {
+                    if (is_state_unrealistic(*lsgrid_ptr_, V_, inner_.vm_unknown(), params_)) {
                         unrealistic_ = true;
                         solver_ok = false;
                     }
@@ -175,12 +173,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
 template<class Inner>
 bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic)
 {
-    // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
-    pinned_ = caller_pinned_;
-    for (int bus : declared_switchable_) {
-        if (!state_.pq_buses.count(bus)) pinned_.push_back(bus);
-    }
-    inner_.apply_state(state_, pinned_);
+    inner_.apply_state(state_);
     bool converged = inner_.newton(max_iter, tol, need_init);
     // the first iteration analyzed (or tried to): every later solve only refactorizes. A
     // solve that converged in zero iterations factorized nothing, so it does not count.
@@ -211,7 +204,7 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
     // tolerance takes no step at all.
     total_nr_iterations_ += std::max(nr_iter_, 1);
     if (converged && check_unrealistic && lsgrid_ptr_ != nullptr &&
-        is_state_unrealistic(*lsgrid_ptr_, V_, inner_.vm_unknown(pinned_), params_)) {
+        is_state_unrealistic(*lsgrid_ptr_, V_, inner_.vm_unknown(), params_)) {
         unrealistic_ = true;
         converged = false;
     }
@@ -230,13 +223,6 @@ OuterDeclaration OuterLoopAlgo<Inner>::_declare()
     ctx.Vm = nullptr;
     OuterDeclaration decl;
     for (const auto & loop : loops_) loop->declare(ctx, decl);
-    std::vector<int> switchable = caller_switchable_;
-    declared_switchable_ = decl.switchable_vm_buses();
-    std::sort(declared_switchable_.begin(), declared_switchable_.end());
-    declared_switchable_.erase(std::unique(declared_switchable_.begin(), declared_switchable_.end()),
-                               declared_switchable_.end());
-    switchable.insert(switchable.end(), declared_switchable_.begin(), declared_switchable_.end());
-    inner_.algo().set_switchable_vm_buses(switchable);  // a set there: duplicates are fine
     return decl;
 }
 
@@ -251,6 +237,7 @@ OuterContext OuterLoopAlgo<Inner>::_context(OuterState * state)
     ctx.bus_mismatch = &mis_bus_;
     ctx.slack_bus = slack_bus_;
     ctx.state = state;
+    ctx.controls = &inner_.controls();
     ctx.trace = &stats_.decisions;
     inner_.fill_context(ctx, controller_q_);
     return ctx;

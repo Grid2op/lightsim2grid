@@ -21,6 +21,7 @@
 #include "TaggedIdVec.hpp"
 #include "AlgoConfig.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
+#include "OuterControls.hpp"
 
 #include "Eigen/Core"
 
@@ -46,9 +47,6 @@ enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
 class LS2G_API OuterDeclaration final
 {
     public:
-        /// a bus that is PV in the labelling but may become PQ (or back) during the solve:
-        /// it gets a Vm unknown and a Q equation, see Base::set_switchable_vm_buses
-        void add_switchable_vm_bus(int solver_bus_id) { switchable_vm_buses_.push_back(solver_bus_id); }
         /// any voltage controller may be held at a reactive output by value
         /// (OuterState::controller_hold_q): see VoltageControl::set_may_hold_controllers
         void hold_voltage_controllers() { hold_voltage_controllers_ = true; }
@@ -60,7 +58,6 @@ class LS2G_API OuterDeclaration final
             phase_shifter_column_.push_back(solves_shift ? 1 : 0);
         }
 
-        const std::vector<int> & switchable_vm_buses() const { return switchable_vm_buses_; }
         const std::vector<int> & phase_shifters() const { return phase_shifters_; }
         const std::vector<char> & phase_shifter_column() const { return phase_shifter_column_; }
         /// transformers (grid ids, in order) regulating the voltage of `bus_solver` at
@@ -93,12 +90,11 @@ class LS2G_API OuterDeclaration final
         };
         const std::vector<ShuntGroup> & shunt_groups() const { return shunt_groups_; }
         void clear() {
-            switchable_vm_buses_.clear(); phase_shifters_.clear(); phase_shifter_column_.clear(); ratio_groups_.clear();
+            phase_shifters_.clear(); phase_shifter_column_.clear(); ratio_groups_.clear();
             shunt_groups_.clear();
         }
 
     private:
-        std::vector<int> switchable_vm_buses_;
         bool hold_voltage_controllers_ = false;
         std::vector<int> phase_shifters_;
         std::vector<char> phase_shifter_column_;
@@ -131,11 +127,6 @@ struct OuterState
     /// the set-point (pu) a loop switched each idle standby SVC on at (grid id), NaN where it
     /// is still held at Q = 0; empty until a loop sizes it
     std::vector<real_type> svc_target_vm;
-    /// the buses a loop declared switchable (OuterDeclaration::add_switchable_vm_bus) it
-    /// made PQ, solver ids: every other declared one stays PV (its Q row pinned)
-    std::set<int> pq_buses;
-    /// magnitudes (solver bus id, pu) to set before the next Newton solve, then forgotten
-    std::vector<std::pair<int, real_type> > vm_set;
     /// the reactive output (pu) a loop holds each voltage controller at, in the plan's
     /// controller order, NaN where it regulates; empty until a loop sizes it
     std::vector<real_type> controller_hold_q;
@@ -149,9 +140,6 @@ struct OuterState
     /// (1 on, 0 off, -1 kept); the moves are applied by the next solve, then forgotten
     std::vector<int> ratio_tap;
     std::vector<int> ratio_control;
-    /// controller buses (solver ids) whose generators' voltage control a loop suspended for a
-    /// while (TransformerVoltageControl): the other loops leave them alone meanwhile
-    std::set<int> suspended_buses;
     /// the shunt controllers (by controller bus, solver id): their voltage control (1 on, 0 off,
     /// -1 kept; empty until a loop sizes it), and the section counts a loop switched their shunts
     /// to (applied by the next solve, then forgotten)
@@ -240,6 +228,8 @@ struct OuterContext
     /// `context.getIteration()`: 0 means it has not changed anything yet)
     int iteration = 0;
     OuterState * state = nullptr;
+    /// what the loops reserve and act through (null in detection)
+    OuterControls * controls = nullptr;
     /// the transformers whose phase the solve handles (their shift, tap, current), null
     /// when there are none or in detection
     const BranchControl * branch_control = nullptr;

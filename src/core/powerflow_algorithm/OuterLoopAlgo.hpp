@@ -44,8 +44,9 @@ namespace ls2g {
  * union of what every loop declared, so a whole solve is one symbolic analysis.
  *
  * `Inner` is what the driver needs from the algorithm beyond BaseAlgo's interface (see
- * NROuterInner, the one there is): algo() (the wrapped BaseAlgo), begin(), setup(...,
- * declare), newton(), finalize(), request_rebuild(), apply_state(), fill_context(),
+ * NROuterInner, the one there is): algo() (the wrapped BaseAlgo), controls() (the
+ * OuterControls the loops reserve and act through), begin(), setup(..., declare), newton(),
+ * finalize(), request_rebuild(), apply_state(), fill_context(),
  * vm_unknown(), and the phase_tap / ratio_tap / shunt_sections results. Everything else
  * BaseAlgo declares is forwarded to algo(), and the results of each solve are copied back
  * into this object, which is what LSGrid reads.
@@ -103,15 +104,13 @@ public:
 
     // ----- PV / PQ relabelling at constant sparsity --------------------------------
     // A caller (a batch's generator contingencies) and the loops may both reserve
-    // switchable buses: the inner algorithm gets the union of the two, see _declare.
+    // switchable buses: the controls hold the caller's next to the loops' own.
     void set_switchable_vm_buses(const std::vector<int> & solver_bus_ids) override {
-        caller_switchable_ = solver_bus_ids;
+        inner_.controls().set_caller_switchable(solver_bus_ids);
         inner_.algo().set_switchable_vm_buses(solver_bus_ids);
     }
-    // a caller's pinned buses (a batch's PV buses among its switchable ones) are pinned on
-    // top of the loops' own, see _solve
     void set_pv_pinned_buses(const std::vector<int> & solver_bus_ids) override {
-        caller_pinned_ = solver_bus_ids;
+        inner_.controls().set_caller_pinned(solver_bus_ids);
     }
     // the fallback stays on whatever a caller asks: a value edit between two solves may
     // shrink a pivot the fixed pivot sequence then finds at zero (see NROuterInner)
@@ -242,7 +241,7 @@ private:
     // the inner solve from the current state, then its results copied here and, if asked,
     // the unrealistic-voltage check. Returns whether the solve is usable by the loops.
     bool _solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic);
-    // what the loops reserve, collected on a rebuild of the topology (see Inner::setup)
+    // the loops' declarations, on a rebuild of the topology (see Inner::setup)
     OuterDeclaration _declare();
     // OuterContext on the algorithm's current state
     OuterContext _context(OuterState * state);
@@ -268,12 +267,6 @@ private:
     Inner inner_;
 
     std::vector<std::unique_ptr<BaseOuterLoop> > loops_;
-    std::vector<int> caller_switchable_;  // see set_switchable_vm_buses
-    std::vector<int> caller_pinned_;      // see set_pv_pinned_buses
-    // the buses the loops declared switchable (they are PV unless a loop made them PQ,
-    // OuterState::pq_buses), and the ones pinned in the last solve
-    std::vector<int> declared_switchable_;
-    std::vector<int> pinned_;
     std::vector<std::string> signature_;
     OuterLoopDriverParams params_;
     OuterLoopStats stats_;

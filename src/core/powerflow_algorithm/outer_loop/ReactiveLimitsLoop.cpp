@@ -40,7 +40,7 @@ void ReactiveLimitsLoop::_declare(const OuterContext & ctx, OuterDeclaration & d
     // every bus holding its own voltage through the PV path may become PQ
     const bus_q_check::BusQPlan plan = _plan(ctx);
     for (const auto & entry : plan.buses) {
-        if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) decl.add_switchable_vm_bus(entry.bus_solver);
+        if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) ctx.controls->reserve_bus_voltage(entry.bus_solver);
         // ... and the controllers of a group may be held at a limit
         else decl.hold_voltage_controllers();
     }
@@ -94,6 +94,7 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
         bus.entry = static_cast<int>(k);
         bus.bus_solver = entry.bus_solver;
         bus.local = entry.ctrl_pos.empty() && entry.svc_ids.empty();
+        if (bus.local && ctx.controls != nullptr) bus.voltage = ctx.controls->bus_voltage(entry.bus_solver);
         bus.monitor_svc = monitor_of_entry[k];
         bus.reg_bus_solver = entry.bus_solver;
         bus.nominal_v = vn_kv(entry.bus_grid);
@@ -246,7 +247,7 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
         // a bus whose voltage control another loop suspended (TransformerVoltageControl): neither
         // a PV bus to check nor one this loop switched, as OpenLoadFlow's (a frozen bus with no
         // reactive limit type)
-        if (ctx.state != nullptr && ctx.state->suspended_buses.count(bus.bus_solver)) continue;
+        if (ctx.controls != nullptr && ctx.controls->suspended(bus.bus_solver)) continue;
         real_type target_vm = bus.target_vm;
         if (bus.monitor_svc >= 0) {
             static const std::vector<real_type> none;
@@ -351,7 +352,7 @@ void ReactiveLimitsLoop::_freeze(OuterContext & ctx, ControllerBus & bus, real_t
     CplxVect & Sbus = *st.Sbus;
     const real_type q_init = std::imag((*st.Sbus_target)(bus.bus_solver));
     Sbus(bus.bus_solver) = cplx_type(std::real(Sbus(bus.bus_solver)), q_init + q_mvar / sn);
-    st.pq_buses.insert(bus.bus_solver);
+    if (bus.voltage != nullptr) bus.voltage->set_pq();
     bus.state = state;
     bus.frozen_q = q_mvar;
 }
@@ -373,9 +374,9 @@ void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
     }
     CplxVect & Sbus = *st.Sbus;
     Sbus(bus.bus_solver) = cplx_type(std::real(Sbus(bus.bus_solver)), std::imag((*st.Sbus_target)(bus.bus_solver)));
-    st.pq_buses.erase(bus.bus_solver);
+    if (bus.voltage != nullptr) bus.voltage->set_pv();
     // a pinned row keeps the magnitude the bus has: back at its set-point
-    st.vm_set.push_back(std::make_pair(bus.bus_solver, bus.target_vm));
+    ctx.controls->reset_vm(bus.bus_solver, bus.target_vm);
     bus.state = 0;
     bus.realistic = false;
     bus.frozen_q = 0.;
@@ -419,7 +420,7 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
             const real_type v = ctx.vm(bus.bus_solver);
             if (sw.realistic || v < min_realistic_voltage * REALISTIC_VOLTAGE_MARGIN ||
                 v > max_realistic_voltage / REALISTIC_VOLTAGE_MARGIN) {
-                ctx.state->vm_set.push_back(std::make_pair(bus.bus_solver, static_cast<real_type>(1.)));
+                ctx.controls->reset_vm(bus.bus_solver, static_cast<real_type>(1.));
             }
         }
         changed = true;
