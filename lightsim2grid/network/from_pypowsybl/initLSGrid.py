@@ -296,7 +296,8 @@ def init(net : pypo.network.Network,
         generator and battery OpenLoadFlow's distributed slack would share on is flagged "can
         participate in the slack" with OpenLoadFlow's key, and its active power limits are its
         ``activePowerControl`` target range: what the ``DistributedSlack`` outer loop of the
-        ``NROuter_*`` algorithms reads. ``True`` uses the default parameters (``OlfLoadingParameters()``), an
+        ``NROuter_*`` algorithms reads. A line or transformer with both ends on the same bus
+        is disconnected, as OpenLoadFlow discards it. ``True`` uses the default parameters (``OlfLoadingParameters()``), an
         ``OlfLoadingParameters`` is used as is. ``False`` (default) reads the network as it
         is written.
     :type olf_rules: bool or OlfLoadingParameters
@@ -366,6 +367,7 @@ def init(net : pypo.network.Network,
     df_line, lor_sub, lex_sub = _aux_add_lines(
         model, net, net_pu, sort_index, voltage_levels, bus_df, first_bus_per_vl,
         df_dl, ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_line_ids,
+        olf_rules=olf_rules,
     )
 
     # trafos

@@ -623,3 +623,21 @@ def generator_participation_weight(network, gen, params=OlfLoadingParameters()):
                                   apc["droop"].to_numpy(float), apc["min_target_p"].to_numpy(float),
                                   apc["max_target_p"].to_numpy(float), params)
     return pd.Series(weight, index=gen.index)
+
+
+# ---------------------------------------------------------------------------------------
+# branches
+# ---------------------------------------------------------------------------------------
+
+def branch_on_same_bus(branches):
+    """``LfNetworkLoaderImpl.addBranch``: a branch whose two ends are connected to the same
+    bus is discarded. ``branches`` is a frame of pypowsybl's ``get_lines`` /
+    ``get_2_windings_transformers`` (``bus1_id``, ``bus2_id``, ``connected1``,
+    ``connected2``), read on the network's own buses -- before lightsim2grid fuses any of
+    them: OpenLoadFlow keeps a branch whose ends are only joined by a zero-impedance one.
+    A numpy boolean array aligned on ``branches``."""
+    bus1 = branches["bus1_id"].astype(object)
+    bus2 = branches["bus2_id"].astype(object)
+    both_connected = (branches["connected1"].fillna(False).astype(bool) &
+                      branches["connected2"].fillna(False).astype(bool))
+    return (both_connected & bus1.notna() & (bus1 != "") & (bus1 == bus2)).to_numpy(bool)

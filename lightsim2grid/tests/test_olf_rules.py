@@ -17,6 +17,7 @@ import unittest
 import warnings
 
 import numpy as np
+import pandas as pd
 
 try:
     import pypowsybl as pp
@@ -268,6 +269,76 @@ class TestOlfRulesAgainstOLF(unittest.TestCase):
         # read as written, the grid has two set-points on one bus, which lightsim2grid refuses
         with self.assertRaises(RuntimeError):
             self._solve_ls(False)
+
+    def test_branches_on_same_bus_as_olf(self):
+        net = _net_with_self_loops()
+        slack_bus = net.get_generators().loc["B1-G", "bus_id"]
+        res = lf.run_ac(net, self._olf_params(slack_bus))
+        self.assertEqual(res[0].status, lf.ComponentStatus.CONVERGED)
+        olf_vm = iidm_bus_voltages(net)["vm_pu"]
+
+        def solve(olf_rules):
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                grid = init_from_pypowsybl(_net_with_self_loops(), gen_slack_id="B1-G", sort_index=False,
+                                           buses_for_sub=False, olf_rules=olf_rules)
+            V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10)
+            self.assertGreater(V.shape[0], 0)
+            to_iidm = lightsim_bus_to_iidm(grid, net)
+            return max(abs(abs(V[i]) - olf_vm[to_iidm[i]]) for i in range(V.shape[0])
+                       if i in to_iidm and to_iidm[i] in olf_vm.index)
+
+        self.assertLess(solve(OlfLoadingParameters(reactive_limits=False)), 1e-8)
+        # kept, the phase shifter carries a flow around itself and the voltages move
+        self.assertGreater(solve(False), 1e-4)
+
+
+def _net_with_self_loops():
+    """``_net`` plus a phase-shifting transformer and a line, each with both ends on the
+    same bus (and a branch between two buses, to check it is left alone)"""
+    net = _net()
+    vl = "VL4"
+    bus = net.get_bus_breaker_view_buses().query("voltage_level_id == @vl").index[0]
+    net.create_2_windings_transformers(id="T-self", voltage_level1_id=vl, bus1_id=bus, voltage_level2_id=vl,
+                                       bus2_id=bus, rated_u1=135., rated_u2=135., r=0.5, x=10., g=1e-6, b=-1e-5)
+    net.create_phase_tap_changers(
+        pd.DataFrame.from_records(index="id", data=[{"id": "T-self", "target_deadband": 0.,
+                                                     "regulation_mode": "CURRENT_LIMITER", "low_tap": 0, "tap": 0}]),
+        pd.DataFrame.from_records(index="id", data=[{"id": "T-self", "b": 0., "g": 0., "r": 0., "x": 0.,
+                                                     "rho": 1., "alpha": 3.}]))
+    net.create_lines(id="L-self", voltage_level1_id=vl, bus1_id=bus, voltage_level2_id=vl, bus2_id=bus,
+                     r=1., x=10., g1=0., b1=1e-3, g2=0., b2=1e-3)
+    return net
+
+
+@unittest.skipIf(not PP_OK, "pypowsybl is not installed")
+class TestOlfBranchOnSameBus(unittest.TestCase):
+    def test_rule(self):
+        net = _net_with_self_loops()
+        lines = net.get_lines()
+        trafos = net.get_2_windings_transformers()
+        self.assertEqual(list(lines.index[_olf_rules.branch_on_same_bus(lines)]), ["L-self"])
+        self.assertEqual(list(trafos.index[_olf_rules.branch_on_same_bus(trafos)]), ["T-self"])
+        # one end open: no longer on the same bus
+        net.update_lines(id="L-self", connected2=False)
+        self.assertFalse(_olf_rules.branch_on_same_bus(net.get_lines()).any())
+
+    def test_init_disconnects_them(self):
+        net = _net_with_self_loops()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            raw = init_from_pypowsybl(net, gen_slack_id="B1-G", sort_index=False)
+            ruled = init_from_pypowsybl(net, gen_slack_id="B1-G", sort_index=False, olf_rules=True)
+        line_ids = list(net.get_lines().index)
+        trafo_ids = list(net.get_2_windings_transformers().index)
+        for grid, expected in ((raw, True), (ruled, False)):
+            lines = grid.get_lines()
+            trafos = grid.get_trafos()
+            self.assertEqual(lines[line_ids.index("L-self")].connected_global, expected)
+            self.assertEqual(trafos[trafo_ids.index("T-self")].connected_global, expected)
+            # every other branch untouched
+            self.assertTrue(all(el.connected_global for i, el in enumerate(lines) if line_ids[i] != "L-self"))
+            self.assertTrue(all(el.connected_global for i, el in enumerate(trafos) if trafo_ids[i] != "T-self"))
 
 
 def _net_with_monitors():

@@ -9,18 +9,21 @@
 import numpy as np
 import pandas as pd
 
+from . import _olf_rules
 from ._aux_common import _aux_get_bus, _aux_current_limits
 from ._my_const import _DANGLING_BOUNDARY_LINE_SUFFIX
 
 
 def _aux_add_lines(model, net, net_pu, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                   df_dl, ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_line_ids):
+                   df_dl, ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_line_ids,
+                   olf_rules=None):
     """Add every line of ``net`` to ``model``, plus the equivalent branch (local
     bus -> fictitious boundary bus) for each dangling line (``df_dl``, from
     `_aux_add_buses.py`). ``ol_current`` (``net.get_operational_limits()``
     filtered to CURRENT, or ``None``) is shared with `_aux_add_trafos.py`, computed
-    once in `initLSGrid.py`. Returns ``(df_line, lor_sub, lex_sub)``, used by the
-    final substation-id bookkeeping and ``return_sub_id`` in `initLSGrid.py`."""
+    once in `initLSGrid.py`. With ``olf_rules``, a line with both ends on the same bus is
+    disconnected, as OpenLoadFlow discards it. Returns ``(df_line, lor_sub, lex_sub)``, used
+    by the final substation-id bookkeeping and ``return_sub_id`` in `initLSGrid.py`."""
     if sort_index:
         df_line = net.get_lines().sort_index()
     else:
@@ -73,6 +76,10 @@ def _aux_add_lines(model, net, net_pu, sort_index, voltage_levels, bus_df, first
                                lor_bus,
                                lex_bus
                               )
+    if olf_rules is not None:
+        same_bus = _olf_rules.branch_on_same_bus(df_line)
+    else:
+        same_bus = np.zeros(df_line.shape[0], dtype=bool)
     for line_id, (is_or_disc, is_ex_disc) in enumerate(zip(lor_disco, lex_disco)):
         if is_or_disc and is_ex_disc:
             model.deactivate_powerline(line_id)
@@ -83,6 +90,8 @@ def _aux_add_lines(model, net, net_pu, sort_index, voltage_levels, bus_df, first
         elif fuse_zero_impedance_branches and df_line.index[line_id] in fused_line_ids:
             # both terminal buses already fused into one node above: this line
             # would otherwise contribute a 1/Z admittance (Inf for an exact zero)
+            model.deactivate_powerline(line_id)
+        elif same_bus[line_id]:
             model.deactivate_powerline(line_id)
     model.set_line_names(df_line.index)
     line_limit_a1_ka, line_limit_a2_ka = _aux_current_limits(
