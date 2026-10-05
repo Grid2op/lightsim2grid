@@ -36,6 +36,12 @@ hvdc_p_check::HvdcPPlan HvdcAcEmulationLimitsLoop::_ac_emulation_lines(const Out
     return res;
 }
 
+void HvdcAcEmulationLimitsLoop::_declare(const OuterContext & ctx, OuterDeclaration & /*decl*/) const
+{
+    // every line in AC emulation may saturate
+    for(const auto & line : _ac_emulation_lines(ctx).lines) ctx.controls->reserve_hvdc_regime(line.hvdc_id);
+}
+
 bool HvdcAcEmulationLimitsLoop::_is_needed(const OuterContext & ctx) const
 {
     return !_ac_emulation_lines(ctx).empty();
@@ -67,9 +73,6 @@ OuterLoopStatus HvdcAcEmulationLimitsLoop::_check(OuterContext & ctx)
     _detect(ctx, trigger);
     if(trigger.empty()) return OuterLoopStatus::STABLE;
 
-    OuterState & state = *ctx.state;
-    const int nb_hvdc = ctx.grid->get_dclines().nb();
-    if(state.hvdc_status.empty()) state.hvdc_status.assign(nb_hvdc, OuterState::HVDC_KEEP);
     bool changed = false;
     for(const LimitViolation & v : trigger){
         if(v.element_type != ViolationElementType::HVDC) continue;
@@ -80,8 +83,10 @@ OuterLoopStatus HvdcAcEmulationLimitsLoop::_check(OuterContext & ctx)
         bool acted = false;
         for(auto & line : plan_.lines){
             if(line.hvdc_id != v.element_id || line.frozen_dir == regime) continue;
+            HvdcRegimeControl * control = ctx.controls->hvdc_regime(line.hvdc_id);
+            if(control == nullptr) continue;
             line.frozen_dir = regime;
-            state.hvdc_status[static_cast<std::size_t>(line.hvdc_id)] = regime;
+            control->set(regime);
             changed = true;
             acted = true;
         }

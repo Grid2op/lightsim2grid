@@ -116,12 +116,6 @@ struct OuterState
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
-    /// the droop regime (0 linear, +1 saturated 1 -> 2, -1 saturated 2 -> 1) a loop set for
-    /// each hvdc line (grid id), HVDC_KEEP where it kept the grid's; empty until a loop sizes it
-    std::vector<int> hvdc_status;
-    /// the set-point (pu) a loop switched each idle standby SVC on at (grid id), NaN where it
-    /// is still held at Q = 0; empty until a loop sizes it
-    std::vector<real_type> svc_target_vm;
     /// the position a loop moved each transformer's phase tap to (grid id), TAP_KEEP where it
     /// kept the solve's; empty until a loop sizes it
     std::vector<int> phase_tap;
@@ -137,7 +131,6 @@ struct OuterState
     /// to (applied by the next solve, then forgotten)
     std::vector<int> shunt_control;
     std::vector<std::pair<int, std::vector<int> > > shunt_sections;
-    static constexpr int HVDC_KEEP = 2;
     static constexpr int TAP_KEEP = std::numeric_limits<int>::min();
 };
 

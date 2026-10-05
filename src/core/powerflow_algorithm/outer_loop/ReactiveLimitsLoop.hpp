@@ -102,7 +102,7 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             real_type frozen_q = 0.;     ///< MVar, while frozen
             int nb_pv_pq = 0;        ///< how many times it was switched PV -> PQ
             /// an idle standby SVC's bus (a voltage monitor, held by the plan): checked only
-            /// once the VoltageMonitoring loop switched it on (OuterState::svc_target_vm)
+            /// once the VoltageMonitoring loop switched it on (StandbySvcControl)
             int monitor_svc = -1;
             /// a local bus' PV / PQ switch (null for the others)
             BusVoltageControl * voltage = nullptr;

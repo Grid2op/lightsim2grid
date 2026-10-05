@@ -164,13 +164,11 @@ void NROuterInner<LinearSolver, NRSystem>::apply_state(OuterState & state)
 {
     NRSystem & system = algo_.system();
     // what the loops changed outside the injection: the hvdc lines' regimes
-    if(!state.hvdc_status.empty()) {
-        system.set_hvdc_status_override(state.hvdc_status, OuterState::HVDC_KEEP);
-    }
+    const std::vector<int> regimes = controls_.hvdc_regimes();
+    if(!regimes.empty()) system.set_hvdc_status_override(regimes, HvdcRegimeControl::KEEP);
     // ... and the idle standby SVCs switched on (a release is never undone in a solve)
-    if(!state.svc_target_vm.empty()) {
-        system.release_held_svcs(state.svc_target_vm);
-    }
+    const std::vector<real_type> svc_target_vm = controls_.svc_target_vm();
+    if(!svc_target_vm.empty()) system.release_held_svcs(svc_target_vm);
     // the voltage controllers a loop holds (none: the plan's own state)
     system.set_held_voltage_controllers(controls_.held_q());
     // the phase taps a loop moved, then the shifts it lets the Newton solve for

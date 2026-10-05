@@ -90,7 +90,7 @@ public:
         storage_p_mw = state_.storage_target_p;
     }
     void get_outer_hvdc_status(std::vector<int> & status) const override {
-        status = state_.hvdc_status;
+        status = inner_.controls().hvdc_regimes();
     }
     void get_outer_phase_tap(std::vector<int> & positions) const override { inner_.phase_tap(positions); }
     void get_outer_shunt_sections(std::vector<int> & counts) const override { inner_.shunt_sections(counts); }

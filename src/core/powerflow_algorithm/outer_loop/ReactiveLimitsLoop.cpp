@@ -216,8 +216,6 @@ std::vector<char> ReactiveLimitsLoop::_groups_holding(const OuterContext & ctx) 
     const VoltageControlSolverData & ctrl = ctx.grid->get_ac_voltage_control_plan().controllers();
     std::vector<char> holding(static_cast<std::size_t>(ctrl.n_groups()), 0);
     std::vector<char> sloped(holding.size(), 0);
-    static const std::vector<real_type> none;
-    const std::vector<real_type> & svc_on = ctx.state != nullptr ? ctx.state->svc_target_vm : none;
     for (int c = 0; c < ctrl.n_controllers(); ++c) {
         const std::size_t g = static_cast<std::size_t>(ctrl.group(c));
         if (ctrl.slope(c) != 0.) sloped[g] = 1;
@@ -225,9 +223,9 @@ std::vector<char> ReactiveLimitsLoop::_groups_holding(const OuterContext & ctx) 
         if (ctx.controls != nullptr && ctx.controls->is_held(c)) continue;
         // held by the plan: a frozen regulator, or a voltage monitor not switched on
         if (ctrl.is_held(c)) {
-            const std::size_t svc = static_cast<std::size_t>(ctrl.elem_id(c));
+            const StandbySvcControl * standby = ctx.controls != nullptr ? ctx.controls->standby_svc(ctrl.elem_id(c)) : nullptr;
             const bool switched_on = ctrl.kind(c) == VoltageControlSolverData::SVC &&
-                                     svc < svc_on.size() && std::isfinite(svc_on[svc]);
+                                     standby != nullptr && standby->is_on();
             if (!switched_on) continue;
         }
         holding[g] = 1;
@@ -253,11 +251,9 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
         if (ctx.controls != nullptr && ctx.controls->suspended(bus.bus_solver)) continue;
         real_type target_vm = bus.target_vm;
         if (bus.monitor_svc >= 0) {
-            static const std::vector<real_type> none;
-            const std::vector<real_type> & on = ctx.state != nullptr ? ctx.state->svc_target_vm : none;
-            const std::size_t svc = static_cast<std::size_t>(bus.monitor_svc);
-            if (svc >= on.size() || !std::isfinite(on[svc])) continue;  // still idle
-            target_vm = on[svc];  // the set-point it was switched on at
+            const StandbySvcControl * standby = ctx.controls != nullptr ? ctx.controls->standby_svc(bus.monitor_svc) : nullptr;
+            if (standby == nullptr || !standby->is_on()) continue;  // still idle
+            target_vm = standby->target_vm();  // the set-point it was switched on at
         }
         real_type q_min, q_max;
         _limits(ctx, bus, q_min, q_max);

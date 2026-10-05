@@ -10,6 +10,20 @@
 
 namespace ls2g {
 
+namespace {
+
+template<class Control>
+Control * find_control(const std::map<int, Control *> & of, int key)
+{
+    const auto it = of.find(key);
+    return it == of.end() ? nullptr : it->second;
+}
+
+}  // namespace
+
+// out-of-class definition: the C++14 build odr-uses it (vector::assign takes a const reference)
+constexpr int HvdcRegimeControl::KEEP;
+
 BusVoltageControl * OuterControls::reserve_bus_voltage(int bus)
 {
     BusVoltageControl * known = bus_voltage(bus);
@@ -54,18 +68,49 @@ const VoltageControllerHold * OuterControls::controller_hold(int controller) con
     return it == controller_hold_of_.end() ? nullptr : it->second;
 }
 
+StandbySvcControl * OuterControls::reserve_standby_svc(int svc)
+{
+    StandbySvcControl * known = standby_svc(svc);
+    if (known != nullptr) return known;
+    standby_svc_store_.push_back(StandbySvcControl(svc));
+    StandbySvcControl * res = &standby_svc_store_.back();
+    standby_svc_of_[svc] = res;
+    return res;
+}
+
+HvdcRegimeControl * OuterControls::reserve_hvdc_regime(int line)
+{
+    HvdcRegimeControl * known = hvdc_regime(line);
+    if (known != nullptr) return known;
+    hvdc_regime_store_.push_back(HvdcRegimeControl(line));
+    HvdcRegimeControl * res = &hvdc_regime_store_.back();
+    hvdc_regime_of_[line] = res;
+    return res;
+}
+
+StandbySvcControl * OuterControls::standby_svc(int svc) { return find_control(standby_svc_of_, svc); }
+const StandbySvcControl * OuterControls::standby_svc(int svc) const { return find_control(standby_svc_of_, svc); }
+HvdcRegimeControl * OuterControls::hvdc_regime(int line) { return find_control(hvdc_regime_of_, line); }
+const HvdcRegimeControl * OuterControls::hvdc_regime(int line) const { return find_control(hvdc_regime_of_, line); }
+
 void OuterControls::clear_reservations()
 {
     bus_voltage_of_.clear();
     bus_voltage_store_.clear();
     controller_hold_of_.clear();
     controller_hold_store_.clear();
+    standby_svc_of_.clear();
+    standby_svc_store_.clear();
+    hvdc_regime_of_.clear();
+    hvdc_regime_store_.clear();
 }
 
 void OuterControls::reset_states()
 {
     for (auto & control : bus_voltage_store_) control._reset();
     for (auto & hold : controller_hold_store_) hold.release();
+    for (auto & svc : standby_svc_store_) svc._reset();
+    for (auto & regime : hvdc_regime_store_) regime._reset();
     pending_vm_.clear();
     suspended_.clear();
 }
@@ -109,6 +154,29 @@ std::vector<real_type> OuterControls::held_q() const
                std::numeric_limits<real_type>::quiet_NaN());
     for (const auto & ch : controller_hold_of_) {
         if (ch.first >= 0) res[static_cast<std::size_t>(ch.first)] = ch.second->q();
+    }
+    return res;
+}
+
+std::vector<real_type> OuterControls::svc_target_vm() const
+{
+    std::vector<real_type> res;
+    if (standby_svc_of_.empty() || standby_svc_of_.rbegin()->first < 0) return res;
+    res.assign(static_cast<std::size_t>(standby_svc_of_.rbegin()->first) + 1,
+               std::numeric_limits<real_type>::quiet_NaN());
+    for (const auto & sc : standby_svc_of_) {
+        if (sc.first >= 0) res[static_cast<std::size_t>(sc.first)] = sc.second->target_vm();
+    }
+    return res;
+}
+
+std::vector<int> OuterControls::hvdc_regimes() const
+{
+    std::vector<int> res;
+    if (hvdc_regime_of_.empty() || hvdc_regime_of_.rbegin()->first < 0) return res;
+    res.assign(static_cast<std::size_t>(hvdc_regime_of_.rbegin()->first) + 1, HvdcRegimeControl::KEEP);
+    for (const auto & hr : hvdc_regime_of_) {
+        if (hr.first >= 0) res[static_cast<std::size_t>(hr.first)] = hr.second->regime();
     }
     return res;
 }

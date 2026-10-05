@@ -71,6 +71,51 @@ class LS2G_API VoltageControllerHold final
 };
 
 /**
+ * An idle standby SVC (held at Q = 0 by the plan, alone in its group) that may be switched on
+ * to regulate its bus: the group's "Q = 0" row turns back into its voltage row, entries
+ * declared either way (VoltageControl::release_held_svcs).
+ */
+class LS2G_API StandbySvcControl final
+{
+    public:
+        int svc() const { return svc_; }
+        bool is_on() const { return std::isfinite(target_vm_); }
+        /// the set-point it regulates at once switched on, pu (NaN while idle)
+        real_type target_vm() const { return target_vm_; }
+        void switch_on(real_type target_vm_pu) { target_vm_ = target_vm_pu; }
+
+    private:
+        friend class OuterControls;
+        explicit StandbySvcControl(int svc) : svc_(svc) {}
+        void _reset() { target_vm_ = std::numeric_limits<real_type>::quiet_NaN(); }
+
+        int svc_;
+        real_type target_vm_ = std::numeric_limits<real_type>::quiet_NaN();
+};
+
+/**
+ * The regime of an hvdc line in AC emulation: 0 linear, +1 saturated 1 -> 2, -1 saturated
+ * 2 -> 1, KEEP as the grid has it. Every regime's entries are declared, so a change is a
+ * value edit (Hvdc::set_status_override).
+ */
+class LS2G_API HvdcRegimeControl final
+{
+    public:
+        static constexpr int KEEP = 2;
+        int line() const { return line_; }
+        int regime() const { return regime_; }
+        void set(int regime) { regime_ = regime; }
+
+    private:
+        friend class OuterControls;
+        explicit HvdcRegimeControl(int line) : line_(line) {}
+        void _reset() { regime_ = KEEP; }
+
+        int line_;
+        int regime_ = KEEP;
+};
+
+/**
  * Collects what the outer loops reserve in the solve and hands out the controls they act
  * through. A loop reserves, when the solver input is (re)built (BaseOuterLoop::declare),
  * every slot any of its states may need; the union is what lets a whole solve run on one
@@ -95,6 +140,10 @@ class LS2G_API OuterControls
         BusVoltageControl * reserve_bus_voltage(int bus);
         /// a voltage controller (its position in the plan's list) that may be held
         VoltageControllerHold * reserve_controller_hold(int controller);
+        /// an idle standby SVC (grid id) that may be switched on
+        StandbySvcControl * reserve_standby_svc(int svc);
+        /// an hvdc line (grid id) in AC emulation whose regime may change
+        HvdcRegimeControl * reserve_hvdc_regime(int line);
 
         // ----- lookup (after the reservation) -----------------------------------------------
         /// the control of `bus`, nullptr when no loop reserved it
@@ -102,6 +151,10 @@ class LS2G_API OuterControls
         const BusVoltageControl * bus_voltage(int bus) const;
         VoltageControllerHold * controller_hold(int controller);
         const VoltageControllerHold * controller_hold(int controller) const;
+        StandbySvcControl * standby_svc(int svc);
+        const StandbySvcControl * standby_svc(int svc) const;
+        HvdcRegimeControl * hvdc_regime(int line);
+        const HvdcRegimeControl * hvdc_regime(int line) const;
         /// whether a loop holds that controller now
         bool is_held(int controller) const {
             const VoltageControllerHold * hold = controller_hold(controller);
@@ -137,6 +190,12 @@ class LS2G_API OuterControls
         bool holds_voltage_controllers() const { return !controller_hold_of_.empty(); }
         /// the output each controller is held at, by position in the plan (NaN: not held)
         std::vector<real_type> held_q() const;
+        /// the set-point each standby SVC was switched on at, by grid id (NaN: idle); empty
+        /// when none is reserved
+        std::vector<real_type> svc_target_vm() const;
+        /// the regime of each hvdc line, by grid id (HvdcRegimeControl::KEEP: the grid's);
+        /// empty when none is reserved
+        std::vector<int> hvdc_regimes() const;
         /// the magnitudes to reset (bus, pu), in the order they were asked for, then forgotten
         void take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm);
 
@@ -146,6 +205,10 @@ class LS2G_API OuterControls
         std::map<int, BusVoltageControl *> bus_voltage_of_;
         std::deque<VoltageControllerHold> controller_hold_store_;
         std::map<int, VoltageControllerHold *> controller_hold_of_;
+        std::deque<StandbySvcControl> standby_svc_store_;
+        std::map<int, StandbySvcControl *> standby_svc_of_;
+        std::deque<HvdcRegimeControl> hvdc_regime_store_;
+        std::map<int, HvdcRegimeControl *> hvdc_regime_of_;
         std::vector<int> caller_switchable_;
         std::vector<int> caller_pinned_;
         std::vector<std::pair<int, real_type> > pending_vm_;

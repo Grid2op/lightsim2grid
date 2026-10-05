@@ -100,6 +100,7 @@ struct Driver
     HvdcAcEmulationLimitsLoop loop;
     CplxVect Sbus;
     OuterState state;
+    ls2g::OuterControls controls;
     RealVect Va;
     int b1, b2;
 
@@ -114,6 +115,8 @@ struct Driver
         state.Sbus_init = &Sbus;
         Va = RealVect::Zero(4);
         OuterContext ctx = context();
+        ls2g::OuterDeclaration decl;
+        loop.declare(ctx, decl);  // reserves the line's regime
         REQUIRE(loop.is_needed(ctx));
         loop.initialize(ctx);
     }
@@ -124,8 +127,12 @@ struct Driver
         ctx.grid = &grid;
         ctx.Va = &Va;
         ctx.state = &state;
+        ctx.controls = &controls;
         return ctx;
     }
+
+    // the regime the loop set for the line
+    int regime() const { return controls.hvdc_regime(0)->regime(); }
 
     // the loop's check with a droop flow of `p_mw` (side 1 -> side 2)
     OuterLoopStatus check(real_type p_mw)
@@ -143,22 +150,21 @@ TEST_CASE("the regime follows OpenLoadFlow's rules", "[outer][hvdc]")
 {
     Driver d(/*pmax12=*/50., /*pmax21=*/40.);
     CHECK(d.check(45.) == OuterLoopStatus::STABLE);  // inside: nothing to do
-    CHECK(d.state.hvdc_status.empty());
+    CHECK(d.regime() == ls2g::HvdcRegimeControl::KEEP);
 
     CHECK(d.check(70.) == OuterLoopStatus::UNSTABLE);  // above pmax12: saturated 1 -> 2
-    REQUIRE(d.state.hvdc_status.size() == 1);
-    CHECK(d.state.hvdc_status[0] == 1);
+    CHECK(d.regime() == 1);
     CHECK(d.check(70.) == OuterLoopStatus::STABLE);    // still beyond it: kept
 
     CHECK(d.check(45.) == OuterLoopStatus::UNSTABLE);  // back strictly inside: released
-    CHECK(d.state.hvdc_status[0] == 0);
+    CHECK(d.regime() == 0);
 
     CHECK(d.check(70.) == OuterLoopStatus::UNSTABLE);
     CHECK(d.check(-60.) == OuterLoopStatus::UNSTABLE);  // reversed beyond pmax21
-    CHECK(d.state.hvdc_status[0] == -1);
+    CHECK(d.regime() == -1);
     CHECK(d.check(-60.) == OuterLoopStatus::STABLE);
     CHECK(d.check(-30.) == OuterLoopStatus::UNSTABLE);  // back inside the reverse limit
-    CHECK(d.state.hvdc_status[0] == 0);
+    CHECK(d.regime() == 0);
 
     // the grid's own regime is never written
     CHECK(d.grid.get_status_droop_hvdc(0) == 0);
