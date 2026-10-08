@@ -168,6 +168,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // mask that came with it, and the PV <-> PQ structure a generator contingency
         // reserved. The base drops the algorithm, whose sparsity that structure is.
         void clear_batch_inputs() override {
+            // not under the test below: the actions are resolved before the "n" solve,
+            // so a batch whose "n" case diverged (never valid) holds a resolution too
+            _topo_resolved_ = false;
             if(_batch_inputs_valid_){
                 // the workers go with the member algorithm the base drops: each holds a
                 // ledger, a Jacobian sparsity and a factorization built from exactly the
@@ -415,7 +418,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                      << " does not exist, the batch has " << _nb_steps_locked << " rows.";
                 throw std::out_of_range(exc_.str());
             }
-            if(!topo_actions_.empty() && !_batch_inputs_valid_){
+            // resolved, not converged: a batch whose "n" case diverged still knows what
+            // each row disconnects (ScenarioSweep.run() reports it for that case too)
+            if(!topo_actions_.empty() && !_topo_resolved_){
                 std::ostringstream exc_;
                 exc_ << algo_name() << "::get_row_disconnected_branches: the topological actions "
                         "are resolved by compute(); call it first.";
@@ -2450,10 +2455,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _maybe_resolve_topology(size_t nb_steps){
             _row_topo_.clear();
             _topology_active_ = false;
+            _topo_resolved_ = false;
             _base_masked_.clear();
             _row_branch_overrides_.clear();
             _reset_topo_policy_state();
-            if(topo_actions_.empty()) return;
+            if(topo_actions_.empty()){
+                _topo_resolved_ = true;
+                return;
+            }
             if(topo_actions_.size() != nb_steps){
                 std::ostringstream exc_;
                 exc_ << algo_name() << "::set_topo_actions: " << topo_actions_.size()
@@ -2608,6 +2617,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // on the member algorithm from here on: compute() reset it just before this,
             // and the "n" solve runs with it (the workers set it themselves)
             _algo.set_masked_buses(_base_masked_);
+            _topo_resolved_ = true;
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<!(Y::supports_contingency && S::supports_vary), int>::type = 0>
@@ -3696,6 +3706,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<TopoAction> topo_actions_;
         std::vector<RowTopoPlan> _row_topo_;
         bool _topology_active_ = false;
+        // whether the policies hold the resolution of the registered actions (see
+        // get_row_disconnected_branches): set at the end of _maybe_resolve_topology,
+        // dropped with the batch inputs
+        bool _topo_resolved_ = false;
         // L1: the buses the actions use (gridmodel ids, sorted), those of them empty in
         // the base grid, and the (bus, bus) pairs a row's branch placement writes
         std::vector<int> _topo_used_buses_me_;

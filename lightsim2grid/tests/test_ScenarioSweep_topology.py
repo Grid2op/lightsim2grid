@@ -908,6 +908,25 @@ class TestScenarioSweepTopologyGrid2op(unittest.TestCase):
         for row in res.post_contingency_results:
             self.assertTrue(row.converged)
 
+    def test_run_reports_a_diverging_base_case(self):
+        """the "n" powerflow diverging is reported by run(), with what each row
+        disconnects, topological actions or not"""
+        actions = [self.env.action_space({}), self.env.action_space({"set_line_status": [(2, -1)]})]
+        sweep = ScenarioSweep(self.env)
+        sweep.compute_limit_violations = True
+        sweep.modify_load_p(np.tile(self.obs.load_p, (len(actions), 1)))
+        sweep.set_topo_actions(actions)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # a tolerance no powerflow reaches: the "n" case diverges
+            sweep.compute(tol=1e-30, ignore_errors=True)
+        self.assertNotEqual(sweep.computer.get_status(), 1)
+        res = sweep.run()
+        self.assertFalse(res.pre_contingency_result.converged)
+        self.assertEqual([row.element_ids for row in res.post_contingency_results], [[], [2]])
+        for row in res.post_contingency_results:
+            self.assertFalse(row.converged)
+
 
 if __name__ == "__main__":
     unittest.main()
