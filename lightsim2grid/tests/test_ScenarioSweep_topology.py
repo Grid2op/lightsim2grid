@@ -595,6 +595,38 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         self.assertEqual(abs(sweep.get_voltages()[0][1 + n_sub]), 0.)
         self.assertNotEqual(abs(sweep.get_voltages()[1][1 + n_sub]), 0.)
 
+    def test_moved_generator_leaves_its_gen_v_group(self):
+        """modify_gen_v: a generator the row moves off a bus it shares no longer has to agree
+        with the generator left there, nor writes its set-point there (generators 2 and 3
+        share a bus on case14; 3 is the one set_vm visits last)"""
+        cls = type(self.env)
+        stays, moves = 2, 3
+        self.assertEqual(self.bus_of_gen[stays], self.bus_of_gen[moves])
+        at_sub = self.env.action_space.get_obj_connect_to(substation_id=int(cls.gen_to_subid[moves]))
+        line_end = ("lines_or_id", int(at_sub["lines_or_id"][0])) if len(at_sub["lines_or_id"]) \
+            else ("lines_ex_id", int(at_sub["lines_ex_id"][0]))
+        moved = self._act({"set_bus": {"generators_id": [(moves, 2)], line_end[0]: [(line_end[1], 2)]}})
+        actions = [moved, self._act()]
+        target_vm = np.array([g.target_vm_pu for g in self.grid.get_generators()])
+        gen_v = np.tile(target_vm, (len(actions), 1))
+        gen_v[0, moves] += 0.02
+        sweep = self._sweep(actions, modify_gen_v=gen_v)
+        self.assertEqual(sweep.get_status(), 1)
+        # the reference: the move first (a grid refuses two set-points on one bus), then
+        # the moved generator's own
+        ref_grid = copy.deepcopy(self.grid)
+        move = self._topo([moved])[0]
+        move.check_validity(ref_grid)
+        move.apply_to_gridmodel(ref_grid)
+        ref_grid.change_v_gen(moves, float(gen_v[0, moves]))
+        self._assert_row_matches(sweep, 0, self._act(), grid=ref_grid)
+        self._assert_row_matches(sweep, 1, actions[1])
+        # each bus at the magnitude of the generator that stands on it in the row
+        n_sub = cls.n_sub
+        V = sweep.get_voltages()[0]
+        self.assertAlmostEqual(abs(V[self.bus_of_gen[stays]]), target_vm[stays], places=8)
+        self.assertAlmostEqual(abs(V[self.bus_of_gen[moves] + n_sub]), gen_v[0, moves], places=8)
+
     def test_extra_busbar_not_checked_in_the_n_case(self):
         """the extra busbars of the union layout do not exist in the base grid: masked in
         the "n" case, they are not voltage-checked there either -- as in a plain row"""

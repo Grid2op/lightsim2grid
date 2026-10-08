@@ -1664,8 +1664,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // Eigen::Ref<const RealVect> parameter without a copy (as _step_sbus)
             const Eigen::Map<const RealVect> target_vm_pu_row(sbus_policy_.gen_v.row(static_cast<Eigen::Index>(i)).data(),
                                                               sbus_policy_.gen_v.cols());
-            seed_vm_keeping(V, _vm_held_buses(), [this, &target_vm_pu_row](CplxVect & V_seed){
+            seed_vm_keeping(V, _vm_held_buses(), [this, i, &target_vm_pu_row](CplxVect & V_seed){
                 _grid_model.get_generators().set_vm(V_seed, active_layout().id_me_to_solver, target_vm_pu_row);
+                _reseat_shared_buses(i, target_vm_pu_row, V_seed);
             });
         }
 
@@ -1782,6 +1783,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // whatever this row likes: there is nothing to contradict
                 if(bus_and_gens.second.size() < 2 && !has_fixed) continue;
                 GenVConstraint c;
+                c.bus_solver = bus_and_gens.first;
                 c.gens = bus_and_gens.second;
                 c.has_fixed = has_fixed;
                 c.fixed_vm = has_fixed ? fixed->second : 0.;
@@ -1791,6 +1793,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         void _prepare_gen_v_constraints() {}
 
+        // The groups are those of the base placement: a generator the row takes off the
+        // bus (disconnected, or moved elsewhere -- see _maybe_resolve_topology) no longer
+        // writes it, so it has nothing to agree with there. Where it lands is checked
+        // against what stands there once, at compute() (_maybe_prepare_gen_contingency).
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         bool _row_gen_v_conflicts(size_t i) const {
             if(_gen_v_constraints_.empty()) return false;
@@ -1799,15 +1805,45 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(size_t c = 0; c < _gen_v_constraints_.size(); ++c){
                 const GenVConstraint & con = _gen_v_constraints_[c];
                 // whatever else is on the bus pins the value; otherwise the generators
-                // only have to agree among themselves
-                const real_type ref = con.has_fixed ? con.fixed_vm
-                                                    : sbus_policy_.gen_v(row, con.gens[0]);
-                for(size_t k = 0; k < con.gens.size(); ++k){
-                    if(std::abs(sbus_policy_.gen_v(row, con.gens[k]) - ref) >
-                       BaseConstants::_tol_equal_float) return true;
+                // left there only have to agree among themselves
+                bool has_ref = con.has_fixed;
+                real_type ref = con.fixed_vm;
+                for(int gen_id : con.gens){
+                    if(_gen_off_in_row(i, gen_id)) continue;
+                    const real_type vm = sbus_policy_.gen_v(row, gen_id);
+                    if(!has_ref){
+                        ref = vm;
+                        has_ref = true;
+                        continue;
+                    }
+                    if(std::abs(vm - ref) > BaseConstants::_tol_equal_float) return true;
                 }
             }
             return false;
+        }
+
+        // set_vm writes every generator at the bus of the base placement, the last one
+        // visited winning: on a shared bus row i takes one of them off, that may be the
+        // one that left. The bus is put back at what stays there asks for -- the
+        // generators left (they agree, _row_gen_v_conflicts), or the element whose
+        // set-point no row moves. A bus they all leave is the PV -> PQ path's.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _reseat_shared_buses(size_t i, const Eigen::Ref<const RealVect> & target_vm_pu_row, CplxVect & V) const {
+            for(const GenVConstraint & con : _gen_v_constraints_){
+                bool some_off = false;
+                int live = -1;
+                for(int gen_id : con.gens){
+                    if(_gen_off_in_row(i, gen_id)) some_off = true;
+                    else if(live < 0) live = gen_id;
+                }
+                if(!some_off) continue;
+                const real_type target = con.has_fixed ? con.fixed_vm
+                                                       : (live >= 0 ? target_vm_pu_row(live) : std::numeric_limits<real_type>::quiet_NaN());
+                const int b = con.bus_solver;
+                if(!std::isfinite(target) || b < 0 || b >= V.size()) continue;
+                const real_type vm = std::abs(V(b));
+                V(b) = vm > 0. ? V(b) * (target / vm) : cplx_type(target, 0.);
+            }
         }
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         bool _row_gen_v_conflicts(size_t) const { return false; }
@@ -3880,6 +3916,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // bus that can actually be contradicted. See _row_gen_v_conflicts.
         struct GenVConstraint
         {
+            int bus_solver;   // the bus they all write
             std::vector<int> gens;
             bool has_fixed;
             real_type fixed_vm;

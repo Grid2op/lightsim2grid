@@ -214,6 +214,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``ScenarioSweep.modify_gen_v``: a generator a row disconnects no longer has to agree
+  with the set-point of the generators left on its bus.
 - [ADDED] a documentation page for the light environment (``docs/light_env.rst``) and a
   benchmark against grid2op (``benchmarks/light_env.py``).
 - [FIXED] light environment: the ``Protections`` setters accept float32 and read-only arrays.
