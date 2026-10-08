@@ -186,6 +186,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _row_vm_seed_.clear();
                 _pv_pinning_active_ = false;
                 _row_slack_gens_off_.clear();
+                _row_slack_storages_off_.clear();
                 _li_defaults_vect_cache_.clear();
                 _physical_violations_n_.clear();
                 // what the topological actions were resolved into for this batch
@@ -2511,6 +2512,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _topo_resolved_ = false;
             _base_masked_.clear();
             _row_emptied_buses_.clear();
+            _row_slack_storages_off_.clear();
             _row_branch_overrides_.clear();
             _reset_topo_policy_state();
             if(topo_actions_.empty()){
@@ -2543,6 +2545,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             };
             _row_topo_.resize(nb_steps);
             _row_emptied_buses_.assign(nb_steps, std::vector<int>());
+            _row_slack_storages_off_.assign(nb_steps, std::vector<int>());
             const std::vector<std::size_t> & base_count = _grid_model.get_substations().get_nb_elements_per_bus();
             ybus_policy_.topo_branches_off.assign(nb_steps, std::vector<int>());
             ybus_policy_.topo_branches_moved.assign(nb_steps, std::vector<typename YbusPolicy::Contingency::BranchPlacement>());
@@ -2652,6 +2655,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         exc_ << algo_name() << "::set_topo_actions: the action of row " << row
                              << " places storage unit " << st.el_id << ", which regulates voltage: not supported yet.";
                         throw std::runtime_error(exc_.str());
+                    }
+                    // a share of the distributed slack: taken out, the row's weights are
+                    // re-derived without it (_row_slack_weights); placed, it would take
+                    // its share on another bus -- the slack set would change with the row,
+                    // refused as for a generator
+                    if(abs(storages.get_slack_weight(st.el_id)) > BaseConstants::_tol_equal_float){
+                        if(st.row_bus_me != BaseConstants::_deactivated_bus_id){
+                            const bool was_on = st.base_bus_me != BaseConstants::_deactivated_bus_id;
+                            std::ostringstream exc_;
+                            exc_ << algo_name() << "::set_topo_actions: the action of row " << row
+                                 << (was_on ? " moves" : " reactivates") << " storage unit " << st.el_id
+                                 << ", which takes part in the distributed slack. The slack set would change "
+                                    "with the row: not supported yet (see the TODO in the changelog).";
+                            throw std::runtime_error(exc_.str());
+                        }
+                        _row_slack_storages_off_[row].push_back(st.el_id);
                     }
                     if(st.base_bus_me != BaseConstants::_deactivated_bus_id) sbus_policy_.topo_storages_off[row].push_back(st.el_id);
                     if(st.row_bus_me != BaseConstants::_deactivated_bus_id){
@@ -3231,7 +3250,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 for(const std::vector<int> & row : rows) if(!row.empty()) return true;
                 return false;
             };
-            return any_row(_row_slack_gens_off_) || any_row(_row_sat_gens_) || any_row(_row_sat_storages_);
+            return any_row(_row_slack_gens_off_) || any_row(_row_slack_storages_off_) ||
+                   any_row(_row_sat_gens_) || any_row(_row_sat_storages_);
         }
 
         // the buses to pin PV in row i: the switchable buses that are STILL PV there
@@ -3256,9 +3276,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         // row i's distributed-slack weights: the layout's own unless the row takes a
-        // participating generator out, in which case they are re-derived without it
-        // and renormalised (LSGrid::get_slack_weights_solver_without -- the storage
-        // units taking part in the slack stay in: no row disconnects one).
+        // participating generator or storage unit out, in which case they are
+        // re-derived without it and renormalised (LSGrid::get_slack_weights_solver_without).
         // Should a row somehow leave no participant at all, the reference slack bus
         // keeps the whole share -- the angle reference is a property of the batch,
         // picked once, and must not move from row to row.
@@ -3272,15 +3291,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // (see _prepare_slack_redistribution)
             const bool has_sat_gens = (i < _row_sat_gens_.size()) && !_row_sat_gens_[i].empty();
             const bool has_sat_storages = (i < _row_sat_storages_.size()) && !_row_sat_storages_[i].empty();
-            if(!has_gens_off && !has_sat_gens && !has_sat_storages) return base_w;
+            const bool has_storages_off = (i < _row_slack_storages_off_.size()) && !_row_slack_storages_off_[i].empty();
+            if(!has_gens_off && !has_sat_gens && !has_sat_storages && !has_storages_off) return base_w;
             const auto & generators = _grid_model.get_generators();
             std::vector<bool> gen_off(generators.nb(), false);
             if(has_gens_off) for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
             if(has_sat_gens) for(int gen_id : _row_sat_gens_[i]) gen_off[gen_id] = true;
             std::vector<bool> storage_off;
-            if(has_sat_storages){
+            if(has_sat_storages || has_storages_off){
                 storage_off.assign(_grid_model.get_storages().nb(), false);
-                for(int storage_id : _row_sat_storages_[i]) storage_off[storage_id] = true;
+                if(has_sat_storages) for(int storage_id : _row_sat_storages_[i]) storage_off[storage_id] = true;
+                if(has_storages_off) for(int storage_id : _row_slack_storages_off_[i]) storage_off[storage_id] = true;
             }
             scratch = _grid_model.get_slack_weights_solver_without(
                 static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off, storage_off);
@@ -3861,6 +3882,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<std::pair<int, real_type> > > _row_vm_seed_;
         bool _pv_pinning_active_ = false;
         std::vector<std::vector<int> > _row_slack_gens_off_;
+        // per row, the storage units taking part in the slack its topological action
+        // disconnects (_maybe_resolve_topology), for _row_slack_weights as well
+        std::vector<std::vector<int> > _row_slack_storages_off_;
         // topological actions (ScenarioSweep only; plain, always-present state like
         // the above). topo_actions_ is a registration (one checked TopoAction per
         // row, see set_topo_actions); _row_topo_ / _topology_active_ are what

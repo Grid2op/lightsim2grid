@@ -880,8 +880,9 @@ class TestScenarioSweepTopologyRedistributeSlackStorage(_RedistributeSlackBase):
 
 
 class TestScenarioSweepTopologyStorage(_TopoSweepBase):
-    """storage units a row takes out that take part in the voltage control
-    (educ_case14_storage, whose action space has no set_bus: the rows are TopoAction)"""
+    """storage units a row takes out that take part in the voltage control or in the
+    distributed slack (educ_case14_storage, whose action space has no set_bus: the rows
+    are TopoAction)"""
     env_name = "educ_case14_storage"
 
     @staticmethod
@@ -940,6 +941,34 @@ class TestScenarioSweepTopologyStorage(_TopoSweepBase):
                    if v.element_type == ViolationElementType.BUS and
                    v.violation_type in (LimitViolationType.LOW_Q, LimitViolationType.HIGH_Q)]
         self.assertNotIn(load_bus, q_buses)
+
+    def _storage_in_the_slack(self):
+        grid = copy.deepcopy(self.grid)
+        grid.change_algorithm(AlgorithmType.NR_KLU)
+        grid.add_storage_slackbus(0, 1.)
+        grid.change_p_storage(0, 10.)
+        return grid
+
+    def test_storage_in_the_slack_taken_out(self):
+        """the row's distributed slack without the storage unit it disconnects"""
+        grid = self._storage_in_the_slack()
+        actions = [self._topo_act((ElementType.storage, 0, -1)), TopoAction()]
+        sweep = self._sweep(actions, grid=grid, change_algorithm=AlgorithmType.NR_KLU)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+
+    def test_storage_in_the_slack_move_refused(self):
+        """moved, it would take its share on another bus: the slack set would change with the
+        row, refused as for a generator"""
+        grid = self._storage_in_the_slack()
+        moved = self._topo_act((ElementType.storage, 0, 2), (ElementType.line_or, 7, 2))
+        with self.assertRaises(RuntimeError) as cm:
+            self._sweep([TopoAction(), moved], grid=grid, change_algorithm=AlgorithmType.NR_KLU)
+        self.assertIn("row 1", str(cm.exception))
+        self.assertIn("storage unit 0", str(cm.exception))
+        self.assertIn("slack", str(cm.exception))
 
 
 class TestScenarioSweepTopologyPhysical(unittest.TestCase):
