@@ -363,12 +363,15 @@ class TestScenarioSweepTopology(_TopoSweepBase):
         np.testing.assert_allclose(four.get_voltages(), one.get_voltages(), rtol=1e-10, atol=1e-10)
 
     def test_row_splitting_the_grid(self):
-        """trafo 3 out strands a bus (with generator 4 alone on it, taken out too): the
-        row is NOT_SIMULATED by default, solved on the main component in the
-        handle_disconnected_grid mode -- as the masks do it"""
-        action = self._act({"set_line_status": [(self.n_line + 3, -1)],
-                            "set_bus": {"generators_id": [(4, -1)]}})
-        ref_V, _, ref_grid = self._reference(0, action)
+        """trafo 3 out strands a bus with generator 4 alone on it: the row is NOT_SIMULATED
+        by default, solved on the main component in the handle_disconnected_grid mode -- as
+        the masks do it. Taking generator 4 out as well leaves that bus with no element at
+        all: nothing is stranded then, and the row is solved in either mode. Both answers
+        are the grid without the island (a one-off powerflow does not solve one)."""
+        split = self._act({"set_line_status": [(self.n_line + 3, -1)]})
+        emptied = self._act({"set_line_status": [(self.n_line + 3, -1)],
+                             "set_bus": {"generators_id": [(4, -1)]}})
+        ref_V, _, ref_grid = self._reference(0, emptied)
         live = np.asarray(ref_grid.id_ac_solver_to_me(), dtype=int)
         # the base grid's own solved buses, off a solve (a copy modified since its
         # last powerflow answers with a stale labelling)
@@ -379,21 +382,25 @@ class TestScenarioSweepTopology(_TopoSweepBase):
 
         sweep = ScenarioSweepCPP(self.grid)
         sweep.compute_limit_violations = True
-        sweep.modify_load_p(self.load_p[:1])
-        sweep.modify_load_q(self.load_q[:1])
-        sweep.modify_gen_p(self.gen_p[:1])
-        sweep.set_topo_actions(self._topo([action]))
+        # both rows with the injections of the reference
+        sweep.modify_load_p(np.repeat(self.load_p[:1], 2, axis=0))
+        sweep.modify_load_q(np.repeat(self.load_q[:1], 2, axis=0))
+        sweep.modify_gen_p(np.repeat(self.gen_p[:1], 2, axis=0))
+        sweep.set_topo_actions(self._topo([split, emptied]))
         sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
         self.assertFalse(sweep.converged_mask()[0])
         self.assertEqual(sweep.get_violations()[0][0].violation_type, LimitViolationType.NOT_SIMULATED)
+        self.assertTrue(sweep.converged_mask()[1])
 
         sweep.handle_disconnected_grid = True
         sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
-        self.assertTrue(sweep.converged_mask()[0])
-        V = sweep.get_voltages()[0]
-        for b in stranded:
-            self.assertEqual(abs(V[b]), 0., f"stranded bus {b} should read 0")
-        np.testing.assert_allclose(V[live], ref_V[live], rtol=1e-6, atol=1e-6)
+        for row in range(2):
+            with self.subTest(row=row):
+                self.assertTrue(sweep.converged_mask()[row])
+                V = sweep.get_voltages()[row]
+                for b in stranded:
+                    self.assertEqual(abs(V[b]), 0., f"stranded bus {b} should read 0")
+                np.testing.assert_allclose(V[live], ref_V[live], rtol=1e-6, atol=1e-6)
 
 
 class TestScenarioSweepGenReactivation(TestScenarioSweepTopology):
@@ -567,6 +574,27 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         np.testing.assert_allclose(sweep.get_voltages(), plain.get_voltages(), rtol=1e-10, atol=1e-10)
         self.assertEqual(sweep.compute_flows()[0, 3], 0.)
 
+    def test_merge_needs_no_disconnected_grid_mode(self):
+        """a row merging back a busbar the base grid splits leaves that busbar with no
+        element at all: nothing is stranded, so the row is solved without
+        handle_disconnected_grid, as the split itself is"""
+        grid = copy.deepcopy(self.grid)
+        split = self._topo([self._act({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2), (3, 2)]}})])[0]
+        split.check_validity(grid)
+        split.apply_to_gridmodel(grid)
+        actions = [self._act({"set_bus": {"loads_id": [(0, 1)], "lines_or_id": [(2, 1), (3, 1)]}}),
+                   self._act()]
+        sweep = self._sweep(actions, grid=grid)
+        self.assertFalse(sweep.handle_disconnected_grid)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+        # the busbar emptied by the merge reads 0, the one the base grid uses does not
+        n_sub = type(self.env).n_sub
+        self.assertEqual(abs(sweep.get_voltages()[0][1 + n_sub]), 0.)
+        self.assertNotEqual(abs(sweep.get_voltages()[1][1 + n_sub]), 0.)
+
     def test_extra_busbar_not_checked_in_the_n_case(self):
         """the extra busbars of the union layout do not exist in the base grid: masked in
         the "n" case, they are not voltage-checked there either -- as in a plain row"""
@@ -678,9 +706,6 @@ class _RedistributeSlackBase(_TopoSweepBase):
         sweep.change_algorithm(AlgorithmType.NR_KLU)
         sweep.set_topo_actions(self._topo(actions))
         sweep.redistribute_slack = redistribute
-        # a row leaving one of the base grid's busbars empty masks it: solved only in
-        # this mode (NOT_SIMULATED otherwise, see test_row_splitting_the_grid)
-        sweep.handle_disconnected_grid = True
         sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
         return sweep
 

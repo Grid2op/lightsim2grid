@@ -225,7 +225,9 @@ a bus its last generator leaves is solved for), and the masking of the buses of 
 it does not use, exactly as ``handle_disconnected_grid`` masks a stranded bus. A row that
 leaves an element alone on a busbar (an island of one bus) has that bus masked and its
 injection left out, as the disconnected-grid mode would; without ``handle_disconnected_grid``
-a row that strands one of the base grid's buses is still ``NOT_SIMULATED``.
+a row that strands one of the base grid's buses is still ``NOT_SIMULATED``. A busbar the row
+leaves with no element at all (a merge) strands nothing: it is masked, and the row solved,
+in either mode.
 
 .. warning::
 
