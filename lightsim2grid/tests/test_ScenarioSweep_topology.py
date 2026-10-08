@@ -539,6 +539,35 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         np.testing.assert_allclose(sweep.get_voltages(), plain.get_voltages(), rtol=1e-10, atol=1e-10)
         self.assertEqual(sweep.compute_flows()[0, 3], 0.)
 
+    def test_extra_busbar_not_checked_in_the_n_case(self):
+        """the extra busbars of the union layout do not exist in the base grid: masked in
+        the "n" case, they are not voltage-checked there either -- as in a plain row"""
+        from test_ContingencyAnalysis_limit_violations import _set_tight_limits
+        grid = copy.deepcopy(self.grid)
+        _set_tight_limits(grid)
+        extra = 1 + type(self.env).n_sub
+        # a limit the extra busbar breaks wherever it is checked
+        vn = grid.get_bus_vn_kv()
+        vmax = 1. * vn
+        vmax[extra] = 0.5 * vn[extra]
+        grid.set_bus_voltage_limits(np.full(vn.shape[0], np.nan), vmax)
+        actions = [self._act({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2), (3, 2)]}}),
+                   self._act()]
+        sweep = ScenarioSweepCPP(grid)
+        sweep.compute_limit_violations = True
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_topo_actions(self._topo(actions))
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+
+        def buses(violations):
+            return {v.element_id for v in violations
+                    if v.element_type == ViolationElementType.BUS and v.violation_type == LimitViolationType.HIGH_VOLTAGE}
+        self.assertIn(extra, buses(sweep.get_violations()[0]))   # live in the row that uses it
+        self.assertNotIn(extra, buses(sweep.get_violations()[1]))
+        self.assertNotIn(extra, buses(sweep.get_violations_n()))
+        self.assertEqual(buses(sweep.get_violations_n()), buses(sweep.get_violations()[1]))
+
     def test_isolated_bus_is_masked(self):
         """a load alone on busbar 2 is an island of one bus: masked, the row is solved
         without it -- the same as the load disconnected"""
