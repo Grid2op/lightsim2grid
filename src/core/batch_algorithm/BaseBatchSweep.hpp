@@ -2210,6 +2210,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                             for(const auto & g : gens_placed) if(g.first == gen_id) return false;
                             return this->_gen_off_in_row(i, gen_id);
                         },
+                        // a storage unit leaving its bus is disconnected (a row places no
+                        // regulating one)
+                        [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); },
                         _physical_violations_[i]);
                 }
             }
@@ -2932,8 +2935,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // topological action (set_bus -1, see _maybe_resolve_topology): the two
             // axes are read together through sbus_policy_.gen_off_in. The row's action
             // may also put a base-off generator back (topo_gens_on): its bus turns PV.
+            // And it may take out a storage unit that regulates its bus: one controller
+            // fewer there too.
             const bool has_gens_on = sbus_policy_.has_gens_on();
-            if(!sbus_policy_.has_gen_off() && !has_gens_on){
+            if(!sbus_policy_.has_gen_off() && !has_gens_on && !_has_regulating_storage_off()){
                 // No mask this time. _algo is a member and outlives the compute() that
                 // reserved slots for it, so it has to be told the set is empty again --
                 // otherwise a bus a PREVIOUS compute() made switchable would keep its Vm
@@ -3024,18 +3029,47 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 gens_of_bus[bus_solver].push_back(gen_id);
             }
 
+            // ... and the storage units regulating their bus, which pin it the same way
+            // (a storage unit only ever regulates its own, see LSGrid::check_grid). No row
+            // places one (refused by _maybe_resolve_topology): a row only takes one out.
+            const auto & storages = _grid_model.get_storages();
+            std::map<int, std::vector<int> > storages_of_bus;  // solver bus -> its regulating storage units
+            for(int storage_id = 0; storage_id < static_cast<int>(storages.nb()); ++storage_id){
+                if(!storages.is_local_voltage_controller(storage_id)) continue;
+                const int bus_id_me = storages.get_bus_id()(storage_id).cast_int();
+                if(bus_id_me == BaseConstants::_deactivated_bus_id) continue;
+                const int bus_solver = id_me_to_solver[bus_id_me].cast_int();
+                if(bus_solver == BaseConstants::_deactivated_bus_id) continue;
+                storages_of_bus[bus_solver].push_back(storage_id);
+            }
+
             // ---- 3. per row: the buses that lose EVERY one of their controllers ----
+            std::set<int> controlled_buses;
+            for(const auto & bus_gens : gens_of_bus) controlled_buses.insert(bus_gens.first);
+            for(const auto & bus_storages : storages_of_bus) controlled_buses.insert(bus_storages.first);
             _row_pv_to_pq_.assign(nb_steps, std::vector<int>());
             for(Eigen::Index step = 0; step < nb_rows; ++step){
-                for(const auto & bus_gens : gens_of_bus){
+                for(int bus_solver : controlled_buses){
                     bool all_off = true;
-                    for(int gen_id : bus_gens.second){
-                        if(!sbus_policy_.gen_off_in(step, gen_id)){
-                            all_off = false;
-                            break;
+                    const auto bus_gens = gens_of_bus.find(bus_solver);
+                    if(bus_gens != gens_of_bus.end()){
+                        for(int gen_id : bus_gens->second){
+                            if(!sbus_policy_.gen_off_in(step, gen_id)){
+                                all_off = false;
+                                break;
+                            }
                         }
                     }
-                    if(all_off) _row_pv_to_pq_[static_cast<size_t>(step)].push_back(bus_gens.first);
+                    const auto bus_storages = storages_of_bus.find(bus_solver);
+                    if(all_off && bus_storages != storages_of_bus.end()){
+                        for(int storage_id : bus_storages->second){
+                            if(!_storage_leaves_base_bus(static_cast<size_t>(step), storage_id)){
+                                all_off = false;
+                                break;
+                            }
+                        }
+                    }
+                    if(all_off) _row_pv_to_pq_[static_cast<size_t>(step)].push_back(bus_solver);
                 }
             }
 
@@ -3151,6 +3185,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // ---- 4. reserve the Jacobian slots, and start pinned ------------------
             _push_switchable_to_algo();
         }
+
+        // whether some row's action takes out a storage unit that regulates its bus
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _has_regulating_storage_off() const {
+            const auto & storages = _grid_model.get_storages();
+            for(const std::vector<int> & off : sbus_policy_.topo_storages_off){
+                for(int storage_id : off) if(storages.is_local_voltage_controller(storage_id)) return true;
+            }
+            return false;
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _has_regulating_storage_off() const { return false; }
 
         // Hand _switchable_buses_ to the member algorithm, pinned. Every switchable bus
         // is PV in the "n" case -- that is where its controller still stands -- so the

@@ -879,6 +879,69 @@ class TestScenarioSweepTopologyRedistributeSlackStorage(_RedistributeSlackBase):
         self._assert_rows(grid, sweep, [(actions[0], -p_load2)])
 
 
+class TestScenarioSweepTopologyStorage(_TopoSweepBase):
+    """storage units a row takes out that take part in the voltage control
+    (educ_case14_storage, whose action space has no set_bus: the rows are TopoAction)"""
+    env_name = "educ_case14_storage"
+
+    @staticmethod
+    def _topo_act(*elements):
+        act = TopoAction()
+        for el_type, el_id, bus in elements:
+            act.add_element(el_type, el_id, bus)
+        return act
+
+    def _regulating_storages(self, min_q=-50., max_q=50.):
+        """storage 0 the only regulator of a load bus (reactive range [min_q, max_q]),
+        storage 1 regulating the bus of generators 2 and 3 alongside them, at their
+        set-point"""
+        grid = copy.deepcopy(self.grid)
+        shared_bus = self.bus_of_gen[2]
+        self.assertEqual(self.bus_of_gen[3], shared_bus)
+        vm_shared = grid.get_generators()[2].target_vm_pu
+        load_bus = grid.get_loads()[2].bus_id
+        self.assertNotIn(load_bus, self.bus_of_gen)
+        grid.init_storages_full(np.array([5., 0.]), np.array([0., 0.]), [True, True],
+                                np.array([1.04, vm_shared]), np.array([min_q, -50.]), np.array([max_q, 50.]),
+                                np.array([load_bus, shared_bus], dtype=np.int32))
+        grid.set_storage_to_subid(np.array([load_bus, shared_bus], dtype=np.int32))
+        grid.tell_solver_need_reset()
+        return grid, load_bus, shared_bus, vm_shared
+
+    def test_regulating_storage_taken_out(self):
+        """a bus whose last regulator the row takes out turns PQ, a storage unit included;
+        and a bus a storage unit still holds stays PV when its generators go"""
+        grid, load_bus, shared_bus, vm_shared = self._regulating_storages()
+        actions = [self._topo_act((ElementType.storage, 0, -1)),
+                   self._topo_act((ElementType.gen, 2, -1), (ElementType.gen, 3, -1)),
+                   TopoAction()]
+        sweep = self._sweep(actions, grid=grid)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+        Vs = sweep.get_voltages()
+        self.assertNotAlmostEqual(abs(Vs[0][load_bus]), 1.04, places=4)
+        self.assertAlmostEqual(abs(Vs[2][load_bus]), 1.04, places=8)
+        self.assertAlmostEqual(abs(Vs[1][shared_bus]), vm_shared, places=8)
+
+    def test_regulating_storage_taken_out_leaves_the_reactive_check(self):
+        """compute_physical_violations: the reactive range of a storage unit the row takes
+        out is not its bus's any more -- given one that a bus solved as PQ (about 0 MVAr)
+        falls short of, a check still counting it would report that bus"""
+        grid, load_bus, _, _ = self._regulating_storages(min_q=10., max_q=20.)
+        sweep = ScenarioSweepCPP(grid)
+        sweep.compute_physical_violations = True
+        sweep.modify_load_p(self.load_p[:1])
+        sweep.set_topo_actions([self._topo_act((ElementType.storage, 0, -1))])
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+        q_buses = [v.element_id for v in sweep.get_physical_violations()[0]
+                   if v.element_type == ViolationElementType.BUS and
+                   v.violation_type in (LimitViolationType.LOW_Q, LimitViolationType.HIGH_Q)]
+        self.assertNotIn(load_bus, q_buses)
+
+
 class TestScenarioSweepTopologyPhysical(unittest.TestCase):
     """compute_physical_violations follows a row's generator placements: the reactive
     power a bus asks of its machines is checked where the row puts them"""

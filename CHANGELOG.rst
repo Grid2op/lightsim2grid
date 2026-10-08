@@ -214,6 +214,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``ScenarioSweep.set_contingency_gens``: masking every generator of a bus a
+  voltage-regulating storage unit also holds turned that bus PQ.
 - [FIXED] ``ScenarioSweep.modify_gen_v``: a generator a row disconnects no longer has to agree
   with the set-point of the generators left on its bus.
 - [ADDED] a documentation page for the light environment (``docs/light_env.rst``) and a
