@@ -2732,6 +2732,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _reset_topo_policy_state(){
             ybus_policy_.topo_branches_off.clear();
+            // the placements too: init_li_coeffs_from_masks replays whatever is left here,
+            // on a batch that registered no action as well
+            ybus_policy_.topo_branches_moved.clear();
             sbus_policy_.clear_topo();
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,

@@ -520,6 +520,25 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         self.assertNotEqual(amps[0, 3], 0.)
         self.assertEqual(amps[2, 3], 0.)
 
+    def test_clear_forgets_the_placements(self):
+        """clear() drops the actions and what they were resolved into: a batch registered
+        afterwards without any action is a plain batch, not one still putting back the
+        branch an earlier action reconnected"""
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_powerline(3)
+        sweep = self._sweep([self._act({"set_line_status": [(3, 1)]}), self._act()], grid=grid)
+        self.assertEqual(sweep.get_status(), 1)
+        sweep.clear()
+        plain = ScenarioSweepCPP(grid)
+        for computer in (sweep, plain):
+            computer.modify_gen_p(self.gen_p[:2])
+            computer.modify_load_p(self.load_p[:2])
+            computer.modify_load_q(self.load_q[:2])
+            computer.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+        np.testing.assert_allclose(sweep.get_voltages(), plain.get_voltages(), rtol=1e-10, atol=1e-10)
+        self.assertEqual(sweep.compute_flows()[0, 3], 0.)
+
     def test_isolated_bus_is_masked(self):
         """a load alone on busbar 2 is an island of one bus: masked, the row is solved
         without it -- the same as the load disconnected"""
