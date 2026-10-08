@@ -233,8 +233,9 @@ in either mode.
 
     Refused by ``compute`` for now: moving or reactivating a slack participant, a generator
     on a slack bus, a generator that regulates a remote bus or whose bus a control group
-    holds, a storage unit that regulates voltage; ``keep_jacobian`` on a batch that moves or
-    reactivates a generator; and the DC algorithm. See the TODO section of the changelog.
+    holds, a storage unit that regulates voltage; a branch with one end open in the base grid
+    put back on (taking it out works); ``keep_jacobian`` on a batch that moves or reactivates a
+    generator; and the DC algorithm. See the TODO section of the changelog.
     ``compute_physical_violations`` follows the row: a generator the row moves or reactivates
     is checked on the bus the row gives it.
 

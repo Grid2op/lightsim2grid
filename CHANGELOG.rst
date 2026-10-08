@@ -6,7 +6,8 @@ Change Log
 - ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
   element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
   slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
-  them works); the DC algorithm; ``keep_jacobian`` with a generator moved or reactivated.
+  them works); a branch with one end open put back on; the DC algorithm; ``keep_jacobian``
+  with a generator moved or reactivated.
 - OpenLoadFlow-style outer loops (reactive limits, slack limits, hvdc saturation) as a
   non-default ``NROuter_*`` algorithm, keeping one ``analyze`` per solve or batch: assessed in
   ``docs/dev_notes/outer_loops_fixed_sparsity.md``, nothing implemented.

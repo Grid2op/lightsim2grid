@@ -370,14 +370,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * Every action is checked against the grid here (the element and the busbar
          * exist, no contradiction -- see TopoAction::check_validity) and a
          * `std::invalid_argument` naming the row is raised, nothing registered, if one
-         * is invalid. What THIS version can play is settled at compute() (see
-         * _maybe_resolve_topology): disconnections only -- a branch (set_line_status
-         * -1, or set_bus -1 on one of its ends), a generator, a load or a storage unit
-         * (set_bus -1). A branch or a generator is disconnected exactly as the
-         * set_contingency_* masks do it -- same Ybus edit, same PV -> PQ handling, one
-         * symbolic analysis for the whole sweep -- and a row naming an element in both
-         * a mask and its action is refused. Moving an element to a busbar, reconnecting
-         * one, and the DC algorithm are refused for now (TODO in the changelog).
+         * is invalid. What a row plays is settled at compute() (see
+         * _maybe_resolve_topology): disconnections -- a branch (set_line_status -1, or
+         * set_bus -1 on one of its ends), a generator, a load or a storage unit (set_bus
+         * -1), a branch or a generator exactly as the set_contingency_* masks do it --
+         * and reconnections and moves between busbars, which create a bus or merge two.
+         * The whole sweep keeps one symbolic analysis: the solver labelling holds the
+         * union of the buses the rows use, the admittance entries a row writes are
+         * reserved up front, and a row is value edits only. A row naming an element in
+         * both a mask and its action is refused, and so, for now, are the cases listed
+         * at _maybe_resolve_topology (TODO in the changelog).
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -2508,16 +2510,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // (L2, before _prepare_ybus_varying): the branches each row disconnects
         // (ybus_policy_.topo_branches_off -- read wherever the masks are, so the Ybus
         // edit, the connectivity, the current checks and the flow cleaning all see
-        // them), the generators (sbus_policy_.topo_gen_off -- read wherever gen_off
-        // is, so the injection, the slack re-weighting and the PV -> PQ pinning all
-        // see them) and the loads / storage units (sbus_policy_.topo_loads_off /
-        // topo_storages_off, injection only).
+        // them) and the ones it places (topo_branches_moved: an end moved, a branch
+        // reconnected), the generators it takes off their bus (sbus_policy_.topo_gen_off
+        // -- read wherever gen_off is, so the injection, the slack re-weighting and the
+        // PV -> PQ pinning all see them) and the ones it places (topo_gens_on), the loads
+        // / storage units it takes off or places (topo_loads_off / _on, topo_storages_off
+        // / _on, injections only), and the base buses it leaves empty.
         //
-        // What is refused here, and why, is the frontier of this version: a row that
-        // MOVES an element (set_bus > 0) or reconnects one changes the bus set or the
-        // Ybus pattern, which the fixed solver layout cannot take yet (TODO in the
-        // changelog); a row naming an element in both a mask and its action is
-        // ambiguous; the DC path is not wired.
+        // What is refused here, and why, is the frontier of this version: a row naming
+        // an element in both a mask and its action is ambiguous; a slack participant
+        // moved or reactivated would change the slack set with the row, a regulating
+        // storage unit placed the PV set, with no slot reserved for either;
+        // keep_jacobian's gen_v gradient maps a generator to its base bus; the DC path
+        // is not wired. Refused elsewhere: a half-open branch put on (_maybe_topo_union),
+        // a generator reactivated on a slack bus or held remotely
+        // (_maybe_prepare_gen_contingency).
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _maybe_resolve_topology(size_t nb_steps){
