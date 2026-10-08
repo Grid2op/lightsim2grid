@@ -2644,13 +2644,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::set<int> used;
             std::set<std::pair<int, int> > edges;
             RowTopoPlan plan;
-            for(const TopoAction & act : topo_actions_){
-                resolve_row_topo(act, _grid_model, plan);
+            for(size_t row = 0; row < topo_actions_.size(); ++row){
+                resolve_row_topo(topo_actions_[row], _grid_model, plan);
                 for(const TopoElPlacement & el : plan.loads) if(el.row_bus_me >= 0) used.insert(el.row_bus_me);
                 for(const TopoElPlacement & el : plan.gens) if(el.row_bus_me >= 0) used.insert(el.row_bus_me);
                 for(const TopoElPlacement & el : plan.storages) if(el.row_bus_me >= 0) used.insert(el.row_bus_me);
                 for(const TopoBranchPlacement & br : plan.branches){
                     if(!br.row_on) continue;
+                    _check_branch_placement(row, br);
                     used.insert(br.row_bus1_me);
                     used.insert(br.row_bus2_me);
                     edges.insert(std::make_pair(std::min(br.row_bus1_me, br.row_bus2_me),
@@ -2659,6 +2660,33 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             _topo_used_buses_me_.assign(used.begin(), used.end());
             _union_edges_me_.assign(edges.begin(), edges.end());
+        }
+
+        // What a row cannot put a branch on yet. A branch with one end open in the base
+        // grid ("half-open"): the placement would stamp the closed-branch block, so the
+        // row would close that end, and whether it should is not decided -- the one-off
+        // TopoAction::apply_to_gridmodel closes it on the bus it was last on, even for a
+        // set_line_status the plan would otherwise read as a no-op. Taking such a branch
+        // out is well defined (its effective block goes) and stays allowed. And a branch
+        // with no bus recorded on an end it goes back to: there is no bus to stamp.
+        void _check_branch_placement(size_t row, const TopoBranchPlacement & br) const {
+            const bool is_trafo = br.branch_id >= static_cast<int>(n_line_);
+            const int local_id = is_trafo ? br.branch_id - static_cast<int>(n_line_) : br.branch_id;
+            const char * kind = is_trafo ? "transformer" : "powerline";
+            if(br.base_half_open()){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_topo_actions: the action of row " << row << " puts " << kind << " "
+                     << local_id << " on, one end of which is open in the base grid: closing that end is not "
+                        "supported yet. Disconnecting it is.";
+                throw std::runtime_error(exc_.str());
+            }
+            if(br.row_bus1_me < 0 || br.row_bus2_me < 0){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_topo_actions: the action of row " << row << " reconnects " << kind << " "
+                     << local_id << ", which has no bus recorded on side " << (br.row_bus1_me < 0 ? 1 : 2)
+                     << ": give that end a busbar in the action.";
+                throw std::runtime_error(exc_.str());
+            }
         }
 
         // once the cache is built (the element counts are then settled): which of the

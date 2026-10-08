@@ -37,9 +37,14 @@ struct TopoBranchPlacement {
     int base_bus1_me;  // the buses the branch stands on (kept while off: a reconnection
     int base_bus2_me;  // without set_bus goes back there)
     bool base_on;
+    bool base_on1;     // each end, in the base grid: a branch on with one end off is
+    bool base_on2;     // "half-open" (see base_half_open)
     int row_bus1_me;
     int row_bus2_me;
     bool row_on;
+    // on in the base grid with one end open: what a row that puts it on does with that
+    // end is not settled (see BaseBatchSweep::_maybe_topo_union)
+    bool base_half_open() const { return base_on && !(base_on1 && base_on2); }
 };
 struct RowTopoPlan {
     std::vector<TopoElPlacement> loads;
@@ -105,6 +110,8 @@ inline void resolve_row_topo(const TopoAction & action, const LSGrid & grid, Row
         p.base_bus1_me = container.get_bus_id_side_1()(internal_id).cast_int();
         p.base_bus2_me = container.get_bus_id_side_2()(internal_id).cast_int();
         p.base_on = container.get_status_global()[internal_id];
+        p.base_on1 = container.get_status_side_1()[internal_id];
+        p.base_on2 = container.get_status_side_2()[internal_id];
         p.row_bus1_me = p.base_bus1_me;
         p.row_bus2_me = p.base_bus2_me;
         p.row_on = p.base_on;
@@ -129,7 +136,9 @@ inline void resolve_row_topo(const TopoAction & action, const LSGrid & grid, Row
     }
     for(const auto & br : branches){
         const TopoBranchPlacement & p = br.second;
-        const bool same = (p.row_on == p.base_on) &&
+        // a half-open branch the row puts on is a change even on the same buses: the
+        // action asks for both ends (listed, so that it can be refused)
+        const bool same = (p.row_on == p.base_on) && !(p.row_on && p.base_half_open()) &&
                           (!p.row_on || (p.row_bus1_me == p.base_bus1_me && p.row_bus2_me == p.base_bus2_me));
         if(!same) out.branches.push_back(p);
     }

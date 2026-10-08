@@ -224,6 +224,34 @@ class TestScenarioSweepTopology(_TopoSweepBase):
         self.assertEqual(sweep.get_status(), 1)
         self._assert_row_matches(sweep, 0, self._act())
 
+    def test_half_open_branch_placement_refused(self):
+        """a branch with one end open in the base grid, which a row puts on (moves one of
+        its ends, or reconnects it): what becomes of the open end is not decided
+        (TopoAction.apply_to_gridmodel closes it on the bus it was last on), so the row is
+        refused rather than solved on a guess. Taking it out is well defined, and solved."""
+        half_open = 5
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_powerline_side2(half_open)
+        self.assertTrue(grid.get_lines_status()[half_open])
+        refused = {
+            "an end moved": self._act({"set_bus": {"lines_or_id": [(half_open, 2)], "loads_id": [(0, 2)]}}),
+            "reconnected": self._act({"set_line_status": [(half_open, 1)]}),
+        }
+        for name, action in refused.items():
+            with self.subTest(name=name):
+                with self.assertRaises(RuntimeError) as cm:
+                    self._sweep([self._act(), action], grid=grid)
+                self.assertIn("row 1", str(cm.exception))
+                self.assertIn(f"powerline {half_open}", str(cm.exception))
+        actions = [self._act({"set_line_status": [(half_open, -1)]}),
+                   self._act({"set_bus": {"lines_or_id": [(half_open, -1)]}}),
+                   self._act({"set_line_status": [(3, -1)]})]
+        sweep = self._sweep(actions, grid=grid)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+
     def test_slack_generator_move_refused(self):
         slack = [g for g in range(self.n_gen) if self.grid.get_generators()[g].is_slack]
         self.assertTrue(slack)
