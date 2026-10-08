@@ -276,9 +276,9 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
  * row disconnected that generator (a generator contingency): it produces nothing, so it
  * leaves the summed capability, and a bus whose every machine is gone is not checked at
  * all (it is an ordinary PQ bus in that row, and the residual there is nobody's reactive
- * output).
+ * output). `is_storage_off(storage_id)` is the same for a regulating storage unit.
  */
-template<class IsGenOff>
+template<class IsGenOff, class IsStorageOff>
 inline void check_bus_q_violations(const BusQPlan & plan,
                                    const LSGrid & grid_model,
                                    const Eigen::Ref<const CplxVect> & bus_mismatch,
@@ -288,6 +288,7 @@ inline void check_bus_q_violations(const BusQPlan & plan,
                                    real_type tol_mvar,
                                    const std::vector<int> * masked_solver_ids,
                                    IsGenOff is_gen_off,
+                                   IsStorageOff is_storage_off,
                                    std::vector<LimitViolation> & out)
 {
     if(plan.empty()) return;
@@ -318,8 +319,8 @@ inline void check_bus_q_violations(const BusQPlan & plan,
             q_max += generators.get_max_q(gen_id);
         }
         for(std::size_t s = 0; s < entry.storage_ids.size(); ++s){
-            // no row disconnects a storage unit: always live
             const int storage_id = entry.storage_ids[s];
+            if(is_storage_off(storage_id)) continue;  // disconnected by this row
             ++nb_live;
             q_min += storages.get_min_q(storage_id);
             q_max += storages.get_max_q(storage_id);
@@ -366,6 +367,23 @@ inline void check_bus_q_violations(const BusQPlan & plan,
                                          entry.sub_name});
         }
     }
+}
+
+/** The same, for a solve that disconnects no storage unit. **/
+template<class IsGenOff>
+inline void check_bus_q_violations(const BusQPlan & plan,
+                                   const LSGrid & grid_model,
+                                   const Eigen::Ref<const CplxVect> & bus_mismatch,
+                                   const Eigen::Ref<const CplxVect> & V,
+                                   const RealVect & controller_q,
+                                   real_type sn_mva,
+                                   real_type tol_mvar,
+                                   const std::vector<int> * masked_solver_ids,
+                                   IsGenOff is_gen_off,
+                                   std::vector<LimitViolation> & out)
+{
+    check_bus_q_violations(plan, grid_model, bus_mismatch, V, controller_q, sn_mva, tol_mvar,
+                           masked_solver_ids, is_gen_off, [](int){ return false; }, out);
 }
 
 }  // namespace bus_q_check

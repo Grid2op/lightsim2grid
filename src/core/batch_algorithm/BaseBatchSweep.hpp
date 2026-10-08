@@ -168,6 +168,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // mask that came with it, and the PV <-> PQ structure a generator contingency
         // reserved. The base drops the algorithm, whose sparsity that structure is.
         void clear_batch_inputs() override {
+            // not under the test below: the actions are resolved before the "n" solve,
+            // so a batch whose "n" case diverged (never valid) holds a resolution too
+            _topo_resolved_ = false;
             if(_batch_inputs_valid_){
                 // the workers go with the member algorithm the base drops: each holds a
                 // ledger, a Jacobian sparsity and a factorization built from exactly the
@@ -183,6 +186,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _row_vm_seed_.clear();
                 _pv_pinning_active_ = false;
                 _row_slack_gens_off_.clear();
+                _row_slack_storages_off_.clear();
                 _li_defaults_vect_cache_.clear();
                 _physical_violations_n_.clear();
                 // what the topological actions were resolved into for this batch
@@ -190,6 +194,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _row_topo_.clear();
                 _topology_active_ = false;
                 _base_masked_.clear();
+                _row_emptied_buses_.clear();
                 _reset_topo_policy_state();
                 _clear_slack_redistribution();
             }
@@ -365,14 +370,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * Every action is checked against the grid here (the element and the busbar
          * exist, no contradiction -- see TopoAction::check_validity) and a
          * `std::invalid_argument` naming the row is raised, nothing registered, if one
-         * is invalid. What THIS version can play is settled at compute() (see
-         * _maybe_resolve_topology): disconnections only -- a branch (set_line_status
-         * -1, or set_bus -1 on one of its ends), a generator, a load or a storage unit
-         * (set_bus -1). A branch or a generator is disconnected exactly as the
-         * set_contingency_* masks do it -- same Ybus edit, same PV -> PQ handling, one
-         * symbolic analysis for the whole sweep -- and a row naming an element in both
-         * a mask and its action is refused. Moving an element to a busbar, reconnecting
-         * one, and the DC algorithm are refused for now (TODO in the changelog).
+         * is invalid. What a row plays is settled at compute() (see
+         * _maybe_resolve_topology): disconnections -- a branch (set_line_status -1, or
+         * set_bus -1 on one of its ends), a generator, a load or a storage unit (set_bus
+         * -1), a branch or a generator exactly as the set_contingency_* masks do it --
+         * and reconnections and moves between busbars, which create a bus or merge two.
+         * The whole sweep keeps one symbolic analysis: the solver labelling holds the
+         * union of the buses the rows use, the admittance entries a row writes are
+         * reserved up front, and a row is value edits only. A row naming an element in
+         * both a mask and its action is refused, and so, for now, are the cases listed
+         * at _maybe_resolve_topology (TODO in the changelog).
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -415,7 +422,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                      << " does not exist, the batch has " << _nb_steps_locked << " rows.";
                 throw std::out_of_range(exc_.str());
             }
-            if(!topo_actions_.empty() && !_batch_inputs_valid_){
+            // resolved, not converged: a batch whose "n" case diverged still knows what
+            // each row disconnects (ScenarioSweep.run() reports it for that case too)
+            if(!topo_actions_.empty() && !_topo_resolved_){
                 std::ostringstream exc_;
                 exc_ << algo_name() << "::get_row_disconnected_branches: the topological actions "
                         "are resolved by compute(); call it first.";
@@ -1388,8 +1397,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _cont_connected_.assign(nb_cont, 1);
             const bool ac_solver_used = _algo.ac_solver_used();
             const real_type threshold = BusGraph::default_threshold();
-            if(ac_solver_used) bus_graph_.build(ac_cache_.mat, threshold);
-            else bus_graph_.build(dc_cache_.mat, threshold);
+            // the union layout's extra buses (_base_masked_) are isolated in the base
+            // matrix: left out of the tree, which would otherwise never be connected and
+            // send every row to the search below as soon as one action creates a bus
+            if(ac_solver_used) bus_graph_.build(ac_cache_.mat, threshold, _base_masked_);
+            else bus_graph_.build(dc_cache_.mat, threshold, _base_masked_);
 
             std::vector<std::pair<int, int> > edges;
             // the patched copy the fallback search walks, made on first need
@@ -1410,9 +1422,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     ? BusGraph::removed_edges(ac_cache_.mat, coeffs, threshold, edges)
                     : BusGraph::removed_edges(dc_cache_.mat, coeffs, threshold, edges));
                 if(settled) cut = bus_graph_.cut(edges);
-                if(cut.verdict == BusGraph::Verdict::Connected) continue;
+                // the tree answers for the buses it holds; the ones it leaves out are cut
+                // off in every row it settles (a row that places a branch is searched)
+                if(cut.verdict == BusGraph::Verdict::Connected){
+                    _li_masked[cont_id] = _base_masked_;
+                    continue;
+                }
                 if(cut.verdict == BusGraph::Verdict::Split){
                     bus_graph_.stranded_buses(cut, _li_masked[cont_id]);
+                    if(!_base_masked_.empty()){
+                        std::vector<int> merged;
+                        std::set_union(_li_masked[cont_id].begin(), _li_masked[cont_id].end(),
+                                       _base_masked_.begin(), _base_masked_.end(), std::back_inserter(merged));
+                        _li_masked[cont_id].swap(merged);
+                    }
                 } else if(ac_solver_used){
                     if(!work_ready){ ybus_work = ac_cache_.mat; work_ready = true; }
                     for(const auto & c: coeffs) ybus_work.coeffRef(c.row_id, c.col_id) -= c.value;
@@ -1424,16 +1447,25 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _li_masked[cont_id] = _disconnected_buses(bbus_work);
                     for(const auto & c: coeffs) bbus_work.coeffRef(c.row_id, c.col_id) += std::real(c.value);
                 }
-                // connected: nothing stranded beyond the buses masked in every row (the
-                // extra buses of the union layout a row does not use, see _base_masked_)
-                _cont_connected_[cont_id] = _only_base_masked(_li_masked[cont_id]) ? 1 : 0;
+                // connected: nothing stranded beyond the buses masked by design (see
+                // _only_masked_by_design)
+                _cont_connected_[cont_id] = _only_masked_by_design(cont_id, _li_masked[cont_id]) ? 1 : 0;
             }
         }
 
-        // whether `masked` (sorted) holds nothing but buses of _base_masked_ (sorted)
-        bool _only_base_masked(const std::vector<int> & masked) const {
-            if(masked.empty()) return true;
-            return std::includes(_base_masked_.begin(), _base_masked_.end(), masked.begin(), masked.end());
+        // whether `masked` (sorted), the buses row `row` cuts off, holds nothing but buses
+        // masked by design: the extra buses of the union layout (_base_masked_, in every
+        // row that does not use them) and the base buses the row's action leaves with no
+        // element at all (_row_emptied_buses_: a merge). Nothing stands on either, so
+        // nothing is stranded.
+        bool _only_masked_by_design(size_t row, const std::vector<int> & masked) const {
+            const std::vector<int> * emptied = row < _row_emptied_buses_.size() ? &_row_emptied_buses_[row] : nullptr;
+            for(int b : masked){
+                if(std::binary_search(_base_masked_.begin(), _base_masked_.end(), b)) continue;
+                if(emptied != nullptr && std::binary_search(emptied->begin(), emptied->end(), b)) continue;
+                return false;
+            }
+            return true;
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _prepare_connectivity(){}
@@ -1520,7 +1552,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // the masked loop runs for the topological actions' sake as well: without
                 // handle_disconnected_grid a row that strands a bus keeps its legacy
                 // answer, NOT_SIMULATED
-                if(!_handle_disconnected_grid && !_only_base_masked(_li_masked[cont_id])) _skip_mask[cont_id] = 1;
+                if(!_handle_disconnected_grid && !_only_masked_by_design(cont_id, _li_masked[cont_id])) _skip_mask[cont_id] = 1;
             }
         }
 
@@ -1649,8 +1681,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // Eigen::Ref<const RealVect> parameter without a copy (as _step_sbus)
             const Eigen::Map<const RealVect> target_vm_pu_row(sbus_policy_.gen_v.row(static_cast<Eigen::Index>(i)).data(),
                                                               sbus_policy_.gen_v.cols());
-            seed_vm_keeping(V, _vm_held_buses(), [this, &target_vm_pu_row](CplxVect & V_seed){
+            seed_vm_keeping(V, _vm_held_buses(), [this, i, &target_vm_pu_row](CplxVect & V_seed){
                 _grid_model.get_generators().set_vm(V_seed, active_layout().id_me_to_solver, target_vm_pu_row);
+                _reseat_shared_buses(i, target_vm_pu_row, V_seed);
             });
         }
 
@@ -1767,6 +1800,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // whatever this row likes: there is nothing to contradict
                 if(bus_and_gens.second.size() < 2 && !has_fixed) continue;
                 GenVConstraint c;
+                c.bus_solver = bus_and_gens.first;
                 c.gens = bus_and_gens.second;
                 c.has_fixed = has_fixed;
                 c.fixed_vm = has_fixed ? fixed->second : 0.;
@@ -1776,6 +1810,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         void _prepare_gen_v_constraints() {}
 
+        // The groups are those of the base placement: a generator the row takes off the
+        // bus (disconnected, or moved elsewhere -- see _maybe_resolve_topology) no longer
+        // writes it, so it has nothing to agree with there. Where it lands is checked
+        // against what stands there once, at compute() (_maybe_prepare_gen_contingency).
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         bool _row_gen_v_conflicts(size_t i) const {
             if(_gen_v_constraints_.empty()) return false;
@@ -1784,15 +1822,45 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(size_t c = 0; c < _gen_v_constraints_.size(); ++c){
                 const GenVConstraint & con = _gen_v_constraints_[c];
                 // whatever else is on the bus pins the value; otherwise the generators
-                // only have to agree among themselves
-                const real_type ref = con.has_fixed ? con.fixed_vm
-                                                    : sbus_policy_.gen_v(row, con.gens[0]);
-                for(size_t k = 0; k < con.gens.size(); ++k){
-                    if(std::abs(sbus_policy_.gen_v(row, con.gens[k]) - ref) >
-                       BaseConstants::_tol_equal_float) return true;
+                // left there only have to agree among themselves
+                bool has_ref = con.has_fixed;
+                real_type ref = con.fixed_vm;
+                for(int gen_id : con.gens){
+                    if(_gen_off_in_row(i, gen_id)) continue;
+                    const real_type vm = sbus_policy_.gen_v(row, gen_id);
+                    if(!has_ref){
+                        ref = vm;
+                        has_ref = true;
+                        continue;
+                    }
+                    if(std::abs(vm - ref) > BaseConstants::_tol_equal_float) return true;
                 }
             }
             return false;
+        }
+
+        // set_vm writes every generator at the bus of the base placement, the last one
+        // visited winning: on a shared bus row i takes one of them off, that may be the
+        // one that left. The bus is put back at what stays there asks for -- the
+        // generators left (they agree, _row_gen_v_conflicts), or the element whose
+        // set-point no row moves. A bus they all leave is the PV -> PQ path's.
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _reseat_shared_buses(size_t i, const Eigen::Ref<const RealVect> & target_vm_pu_row, CplxVect & V) const {
+            for(const GenVConstraint & con : _gen_v_constraints_){
+                bool some_off = false;
+                int live = -1;
+                for(int gen_id : con.gens){
+                    if(_gen_off_in_row(i, gen_id)) some_off = true;
+                    else if(live < 0) live = gen_id;
+                }
+                if(!some_off) continue;
+                const real_type target = con.has_fixed ? con.fixed_vm
+                                                       : (live >= 0 ? target_vm_pu_row(live) : std::numeric_limits<real_type>::quiet_NaN());
+                const int b = con.bus_solver;
+                if(!std::isfinite(target) || b < 0 || b >= V.size()) continue;
+                const real_type vm = std::abs(V(b));
+                V(b) = vm > 0. ? V(b) * (target / vm) : cplx_type(target, 0.);
+            }
         }
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         bool _row_gen_v_conflicts(size_t) const { return false; }
@@ -2159,6 +2227,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                             for(const auto & g : gens_placed) if(g.first == gen_id) return false;
                             return this->_gen_off_in_row(i, gen_id);
                         },
+                        // a storage unit leaving its bus is disconnected (a row places no
+                        // regulating one)
+                        [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); },
                         _physical_violations_[i]);
                 }
             }
@@ -2239,9 +2310,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(!_compute_limit_violations_) return;
             _converged_n_ = true;
             const std::vector<int> no_skip;
+            // the buses the "n" solve masks (the union layout's extra busbars, which no
+            // element of the base grid stands on) read their seed, not a solved voltage:
+            // skipped, as in a row that does not use them
+            const std::vector<int> * masked = _base_masked_.empty() ? nullptr : &_base_masked_;
             batch_sweep_detail::check_bus_voltage_violations(V_n, active_layout().id_me_to_solver, _grid_model.get_bus_vmin_kv(), _grid_model.get_bus_vmax_kv(),
                                          _grid_model.get_bus_vn_kv(), _grid_model.get_substations(),
-                                         _violation_threshold_, _violation_rel_tol_, nullptr, _violations_n_);
+                                         _violation_threshold_, _violation_rel_tol_, masked, _violations_n_);
             batch_sweep_detail::check_current_violations(_grid_model.get_powerlines_as_data(), ViolationElementType::LINE,
                                      V_n, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), _algo.ac_solver_used(), _grid_model.get_sn_mva(),
                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
@@ -2435,25 +2510,36 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // (L2, before _prepare_ybus_varying): the branches each row disconnects
         // (ybus_policy_.topo_branches_off -- read wherever the masks are, so the Ybus
         // edit, the connectivity, the current checks and the flow cleaning all see
-        // them), the generators (sbus_policy_.topo_gen_off -- read wherever gen_off
-        // is, so the injection, the slack re-weighting and the PV -> PQ pinning all
-        // see them) and the loads / storage units (sbus_policy_.topo_loads_off /
-        // topo_storages_off, injection only).
+        // them) and the ones it places (topo_branches_moved: an end moved, a branch
+        // reconnected), the generators it takes off their bus (sbus_policy_.topo_gen_off
+        // -- read wherever gen_off is, so the injection, the slack re-weighting and the
+        // PV -> PQ pinning all see them) and the ones it places (topo_gens_on), the loads
+        // / storage units it takes off or places (topo_loads_off / _on, topo_storages_off
+        // / _on, injections only), and the base buses it leaves empty.
         //
-        // What is refused here, and why, is the frontier of this version: a row that
-        // MOVES an element (set_bus > 0) or reconnects one changes the bus set or the
-        // Ybus pattern, which the fixed solver layout cannot take yet (TODO in the
-        // changelog); a row naming an element in both a mask and its action is
-        // ambiguous; the DC path is not wired.
+        // What is refused here, and why, is the frontier of this version: a row naming
+        // an element in both a mask and its action is ambiguous; a slack participant
+        // moved or reactivated would change the slack set with the row, a regulating
+        // storage unit placed the PV set, with no slot reserved for either;
+        // keep_jacobian's gen_v gradient maps a generator to its base bus; the DC path
+        // is not wired. Refused elsewhere: a half-open branch put on (_maybe_topo_union),
+        // a generator reactivated on a slack bus or held remotely
+        // (_maybe_prepare_gen_contingency).
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _maybe_resolve_topology(size_t nb_steps){
             _row_topo_.clear();
             _topology_active_ = false;
+            _topo_resolved_ = false;
             _base_masked_.clear();
+            _row_emptied_buses_.clear();
+            _row_slack_storages_off_.clear();
             _row_branch_overrides_.clear();
             _reset_topo_policy_state();
-            if(topo_actions_.empty()) return;
+            if(topo_actions_.empty()){
+                _topo_resolved_ = true;
+                return;
+            }
             if(topo_actions_.size() != nb_steps){
                 std::ostringstream exc_;
                 exc_ << algo_name() << "::set_topo_actions: " << topo_actions_.size()
@@ -2479,6 +2565,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 return res;
             };
             _row_topo_.resize(nb_steps);
+            _row_emptied_buses_.assign(nb_steps, std::vector<int>());
+            _row_slack_storages_off_.assign(nb_steps, std::vector<int>());
+            const std::vector<std::size_t> & base_count = _grid_model.get_substations().get_nb_elements_per_bus();
             ybus_policy_.topo_branches_off.assign(nb_steps, std::vector<int>());
             ybus_policy_.topo_branches_moved.assign(nb_steps, std::vector<typename YbusPolicy::Contingency::BranchPlacement>());
             sbus_policy_.topo_loads_off.assign(nb_steps, std::vector<int>());
@@ -2500,6 +2589,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 resolve_row_topo(topo_actions_[row], _grid_model, plan);
                 if(plan.empty()) continue;
                 _topology_active_ = true;
+                _row_emptied_buses_[row] = _emptied_buses(plan, base_count, solver_of, row);
                 if(!_algo.ac_solver_used()){
                     std::ostringstream exc_;
                     exc_ << algo_name() << "::set_topo_actions: row " << row << " carries a topological "
@@ -2587,6 +2677,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                              << " places storage unit " << st.el_id << ", which regulates voltage: not supported yet.";
                         throw std::runtime_error(exc_.str());
                     }
+                    // a share of the distributed slack: taken out, the row's weights are
+                    // re-derived without it (_row_slack_weights); placed, it would take
+                    // its share on another bus -- the slack set would change with the row,
+                    // refused as for a generator
+                    if(abs(storages.get_slack_weight(st.el_id)) > BaseConstants::_tol_equal_float){
+                        if(st.row_bus_me != BaseConstants::_deactivated_bus_id){
+                            const bool was_on = st.base_bus_me != BaseConstants::_deactivated_bus_id;
+                            std::ostringstream exc_;
+                            exc_ << algo_name() << "::set_topo_actions: the action of row " << row
+                                 << (was_on ? " moves" : " reactivates") << " storage unit " << st.el_id
+                                 << ", which takes part in the distributed slack. The slack set would change "
+                                    "with the row: not supported yet (see the TODO in the changelog).";
+                            throw std::runtime_error(exc_.str());
+                        }
+                        _row_slack_storages_off_[row].push_back(st.el_id);
+                    }
                     if(st.base_bus_me != BaseConstants::_deactivated_bus_id) sbus_policy_.topo_storages_off[row].push_back(st.el_id);
                     if(st.row_bus_me != BaseConstants::_deactivated_bus_id){
                         sbus_policy_.topo_storages_on[row].push_back(std::make_pair(st.el_id, solver_of(st.row_bus_me, row)));
@@ -2608,6 +2714,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // on the member algorithm from here on: compute() reset it just before this,
             // and the "n" solve runs with it (the workers set it themselves)
             _algo.set_masked_buses(_base_masked_);
+            _topo_resolved_ = true;
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<!(Y::supports_contingency && S::supports_vary), int>::type = 0>
@@ -2630,13 +2737,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::set<int> used;
             std::set<std::pair<int, int> > edges;
             RowTopoPlan plan;
-            for(const TopoAction & act : topo_actions_){
-                resolve_row_topo(act, _grid_model, plan);
+            for(size_t row = 0; row < topo_actions_.size(); ++row){
+                resolve_row_topo(topo_actions_[row], _grid_model, plan);
                 for(const TopoElPlacement & el : plan.loads) if(el.row_bus_me >= 0) used.insert(el.row_bus_me);
                 for(const TopoElPlacement & el : plan.gens) if(el.row_bus_me >= 0) used.insert(el.row_bus_me);
                 for(const TopoElPlacement & el : plan.storages) if(el.row_bus_me >= 0) used.insert(el.row_bus_me);
                 for(const TopoBranchPlacement & br : plan.branches){
                     if(!br.row_on) continue;
+                    _check_branch_placement(row, br);
                     used.insert(br.row_bus1_me);
                     used.insert(br.row_bus2_me);
                     edges.insert(std::make_pair(std::min(br.row_bus1_me, br.row_bus2_me),
@@ -2645,6 +2753,67 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             _topo_used_buses_me_.assign(used.begin(), used.end());
             _union_edges_me_.assign(edges.begin(), edges.end());
+        }
+
+        // What a row cannot put a branch on yet. A branch with one end open in the base
+        // grid ("half-open"): the placement would stamp the closed-branch block, so the
+        // row would close that end, and whether it should is not decided -- the one-off
+        // TopoAction::apply_to_gridmodel closes it on the bus it was last on, even for a
+        // set_line_status the plan would otherwise read as a no-op. Taking such a branch
+        // out is well defined (its effective block goes) and stays allowed. And a branch
+        // with no bus recorded on an end it goes back to: there is no bus to stamp.
+        void _check_branch_placement(size_t row, const TopoBranchPlacement & br) const {
+            const bool is_trafo = br.branch_id >= static_cast<int>(n_line_);
+            const int local_id = is_trafo ? br.branch_id - static_cast<int>(n_line_) : br.branch_id;
+            const char * kind = is_trafo ? "transformer" : "powerline";
+            if(br.base_half_open()){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_topo_actions: the action of row " << row << " puts " << kind << " "
+                     << local_id << " on, one end of which is open in the base grid: closing that end is not "
+                        "supported yet. Disconnecting it is.";
+                throw std::runtime_error(exc_.str());
+            }
+            if(br.row_bus1_me < 0 || br.row_bus2_me < 0){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_topo_actions: the action of row " << row << " reconnects " << kind << " "
+                     << local_id << ", which has no bus recorded on side " << (br.row_bus1_me < 0 ? 1 : 2)
+                     << ": give that end a busbar in the action.";
+                throw std::runtime_error(exc_.str());
+            }
+        }
+
+        // The base buses (solver ids, sorted) a row's action leaves with no element at all:
+        // the busbar a merge empties. Counted off the base grid's per-bus element counts,
+        // each element the plan takes off a bus and puts on another moved accordingly (a
+        // branch end counts where it is closed). Only the action's own moves count, so a
+        // row without one keeps the answer the masks always gave.
+        template<class SolverOf>
+        std::vector<int> _emptied_buses(const RowTopoPlan & plan, const std::vector<std::size_t> & base_count,
+                                        const SolverOf & solver_of, size_t row) const {
+            std::map<int, long> change;
+            auto move = [&change](int bus_me, long delta){ if(bus_me >= 0) change[bus_me] += delta; };
+            for(const TopoBranchPlacement & br : plan.branches){
+                if(br.base_on && br.base_on1) move(br.base_bus1_me, -1);
+                if(br.base_on && br.base_on2) move(br.base_bus2_me, -1);
+                if(br.row_on){
+                    move(br.row_bus1_me, 1);
+                    move(br.row_bus2_me, 1);
+                }
+            }
+            for(const std::vector<TopoElPlacement> * els : {&plan.loads, &plan.gens, &plan.storages}){
+                for(const TopoElPlacement & el : *els){
+                    move(el.base_bus_me, -1);
+                    move(el.row_bus_me, 1);
+                }
+            }
+            std::vector<int> res;
+            for(const auto & bus_change : change){
+                const std::size_t bus = static_cast<std::size_t>(bus_change.first);
+                if(bus >= base_count.size() || base_count[bus] == 0) continue;   // not a bus of the base grid
+                if(static_cast<long>(base_count[bus]) + bus_change.second == 0) res.push_back(solver_of(bus_change.first, row));
+            }
+            std::sort(res.begin(), res.end());
+            return res;
         }
 
         // once the cache is built (the element counts are then settled): which of the
@@ -2732,6 +2901,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _reset_topo_policy_state(){
             ybus_policy_.topo_branches_off.clear();
+            // the placements too: init_li_coeffs_from_masks replays whatever is left here,
+            // on a batch that registered no action as well
+            ybus_policy_.topo_branches_moved.clear();
             sbus_policy_.clear_topo();
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
@@ -2803,8 +2975,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // topological action (set_bus -1, see _maybe_resolve_topology): the two
             // axes are read together through sbus_policy_.gen_off_in. The row's action
             // may also put a base-off generator back (topo_gens_on): its bus turns PV.
+            // And it may take out a storage unit that regulates its bus: one controller
+            // fewer there too.
             const bool has_gens_on = sbus_policy_.has_gens_on();
-            if(!sbus_policy_.has_gen_off() && !has_gens_on){
+            if(!sbus_policy_.has_gen_off() && !has_gens_on && !_has_regulating_storage_off()){
                 // No mask this time. _algo is a member and outlives the compute() that
                 // reserved slots for it, so it has to be told the set is empty again --
                 // otherwise a bus a PREVIOUS compute() made switchable would keep its Vm
@@ -2895,18 +3069,47 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 gens_of_bus[bus_solver].push_back(gen_id);
             }
 
+            // ... and the storage units regulating their bus, which pin it the same way
+            // (a storage unit only ever regulates its own, see LSGrid::check_grid). No row
+            // places one (refused by _maybe_resolve_topology): a row only takes one out.
+            const auto & storages = _grid_model.get_storages();
+            std::map<int, std::vector<int> > storages_of_bus;  // solver bus -> its regulating storage units
+            for(int storage_id = 0; storage_id < static_cast<int>(storages.nb()); ++storage_id){
+                if(!storages.is_local_voltage_controller(storage_id)) continue;
+                const int bus_id_me = storages.get_bus_id()(storage_id).cast_int();
+                if(bus_id_me == BaseConstants::_deactivated_bus_id) continue;
+                const int bus_solver = id_me_to_solver[bus_id_me].cast_int();
+                if(bus_solver == BaseConstants::_deactivated_bus_id) continue;
+                storages_of_bus[bus_solver].push_back(storage_id);
+            }
+
             // ---- 3. per row: the buses that lose EVERY one of their controllers ----
+            std::set<int> controlled_buses;
+            for(const auto & bus_gens : gens_of_bus) controlled_buses.insert(bus_gens.first);
+            for(const auto & bus_storages : storages_of_bus) controlled_buses.insert(bus_storages.first);
             _row_pv_to_pq_.assign(nb_steps, std::vector<int>());
             for(Eigen::Index step = 0; step < nb_rows; ++step){
-                for(const auto & bus_gens : gens_of_bus){
+                for(int bus_solver : controlled_buses){
                     bool all_off = true;
-                    for(int gen_id : bus_gens.second){
-                        if(!sbus_policy_.gen_off_in(step, gen_id)){
-                            all_off = false;
-                            break;
+                    const auto bus_gens = gens_of_bus.find(bus_solver);
+                    if(bus_gens != gens_of_bus.end()){
+                        for(int gen_id : bus_gens->second){
+                            if(!sbus_policy_.gen_off_in(step, gen_id)){
+                                all_off = false;
+                                break;
+                            }
                         }
                     }
-                    if(all_off) _row_pv_to_pq_[static_cast<size_t>(step)].push_back(bus_gens.first);
+                    const auto bus_storages = storages_of_bus.find(bus_solver);
+                    if(all_off && bus_storages != storages_of_bus.end()){
+                        for(int storage_id : bus_storages->second){
+                            if(!_storage_leaves_base_bus(static_cast<size_t>(step), storage_id)){
+                                all_off = false;
+                                break;
+                            }
+                        }
+                    }
+                    if(all_off) _row_pv_to_pq_[static_cast<size_t>(step)].push_back(bus_solver);
                 }
             }
 
@@ -3023,6 +3226,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _push_switchable_to_algo();
         }
 
+        // whether some row's action takes out a storage unit that regulates its bus
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _has_regulating_storage_off() const {
+            const auto & storages = _grid_model.get_storages();
+            for(const std::vector<int> & off : sbus_policy_.topo_storages_off){
+                for(int storage_id : off) if(storages.is_local_voltage_controller(storage_id)) return true;
+            }
+            return false;
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _has_regulating_storage_off() const { return false; }
+
         // Hand _switchable_buses_ to the member algorithm, pinned. Every switchable bus
         // is PV in the "n" case -- that is where its controller still stands -- so the
         // base solve pins all of them and the per-row loop releases the ones that flip.
@@ -3056,7 +3271,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 for(const std::vector<int> & row : rows) if(!row.empty()) return true;
                 return false;
             };
-            return any_row(_row_slack_gens_off_) || any_row(_row_sat_gens_) || any_row(_row_sat_storages_);
+            return any_row(_row_slack_gens_off_) || any_row(_row_slack_storages_off_) ||
+                   any_row(_row_sat_gens_) || any_row(_row_sat_storages_);
         }
 
         // the buses to pin PV in row i: the switchable buses that are STILL PV there
@@ -3081,9 +3297,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         // row i's distributed-slack weights: the layout's own unless the row takes a
-        // participating generator out, in which case they are re-derived without it
-        // and renormalised (LSGrid::get_slack_weights_solver_without -- the storage
-        // units taking part in the slack stay in: no row disconnects one).
+        // participating generator or storage unit out, in which case they are
+        // re-derived without it and renormalised (LSGrid::get_slack_weights_solver_without).
         // Should a row somehow leave no participant at all, the reference slack bus
         // keeps the whole share -- the angle reference is a property of the batch,
         // picked once, and must not move from row to row.
@@ -3097,15 +3312,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // (see _prepare_slack_redistribution)
             const bool has_sat_gens = (i < _row_sat_gens_.size()) && !_row_sat_gens_[i].empty();
             const bool has_sat_storages = (i < _row_sat_storages_.size()) && !_row_sat_storages_[i].empty();
-            if(!has_gens_off && !has_sat_gens && !has_sat_storages) return base_w;
+            const bool has_storages_off = (i < _row_slack_storages_off_.size()) && !_row_slack_storages_off_[i].empty();
+            if(!has_gens_off && !has_sat_gens && !has_sat_storages && !has_storages_off) return base_w;
             const auto & generators = _grid_model.get_generators();
             std::vector<bool> gen_off(generators.nb(), false);
             if(has_gens_off) for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
             if(has_sat_gens) for(int gen_id : _row_sat_gens_[i]) gen_off[gen_id] = true;
             std::vector<bool> storage_off;
-            if(has_sat_storages){
+            if(has_sat_storages || has_storages_off){
                 storage_off.assign(_grid_model.get_storages().nb(), false);
-                for(int storage_id : _row_sat_storages_[i]) storage_off[storage_id] = true;
+                if(has_sat_storages) for(int storage_id : _row_sat_storages_[i]) storage_off[storage_id] = true;
+                if(has_storages_off) for(int storage_id : _row_slack_storages_off_[i]) storage_off[storage_id] = true;
             }
             scratch = _grid_model.get_slack_weights_solver_without(
                 static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off, storage_off);
@@ -3686,6 +3903,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<std::pair<int, real_type> > > _row_vm_seed_;
         bool _pv_pinning_active_ = false;
         std::vector<std::vector<int> > _row_slack_gens_off_;
+        // per row, the storage units taking part in the slack its topological action
+        // disconnects (_maybe_resolve_topology), for _row_slack_weights as well
+        std::vector<std::vector<int> > _row_slack_storages_off_;
         // topological actions (ScenarioSweep only; plain, always-present state like
         // the above). topo_actions_ is a registration (one checked TopoAction per
         // row, see set_topo_actions); _row_topo_ / _topology_active_ are what
@@ -3693,6 +3913,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<TopoAction> topo_actions_;
         std::vector<RowTopoPlan> _row_topo_;
         bool _topology_active_ = false;
+        // whether the policies hold the resolution of the registered actions (see
+        // get_row_disconnected_branches): set at the end of _maybe_resolve_topology,
+        // dropped with the batch inputs
+        bool _topo_resolved_ = false;
+        // L2, per row: the base buses its action leaves with no element (see
+        // _emptied_buses), masked without stranding anything
+        std::vector<std::vector<int> > _row_emptied_buses_;
         // L1: the buses the actions use (gridmodel ids, sorted), those of them empty in
         // the base grid, and the (bus, bus) pairs a row's branch placement writes
         std::vector<int> _topo_used_buses_me_;
@@ -3780,6 +4007,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // bus that can actually be contradicted. See _row_gen_v_conflicts.
         struct GenVConstraint
         {
+            int bus_solver;   // the bus they all write
             std::vector<int> gens;
             bool has_fixed;
             real_type fixed_vm;

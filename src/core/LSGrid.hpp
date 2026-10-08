@@ -856,9 +856,9 @@ class LS2G_API LSGrid final
         /**
          * The normalised per-solver-bus distributed-slack weights, in the labelling of
          * `id_me_to_solver`, evaluated as if the generators flagged in `gen_off` (sized by
-         * the number of generators) were disconnected -- what a batch sweep needs for a row
-         * whose contingency takes a participating machine out. The participating storage
-         * units always count: no row disconnects one.
+         * the number of generators) and the storage units flagged in `storage_off` (empty:
+         * none) were disconnected -- what a batch sweep needs for a row whose contingency
+         * or topological action takes a participant out.
          *
          * Same participation rule as the grid's own weights (see SlackParticipation), so
          * the two can never drift apart. Returns an ALL-ZERO vector when no participant

@@ -404,6 +404,20 @@ class TestLightEnvActions(unittest.TestCase):
         obs, info = self.step_both(act_sub, 1)
         self.assertFalse(info["is_illegal"])
 
+    def test_update_rho_time_is_cumulated(self):
+        """update_rho_time adds up over the episode, as the other timers of the protections
+        do, and starts again at reset"""
+        self.light_env.init_actions([self.do_nothing])
+        self.light_env.reset()
+        times = [self.light_env.protections.update_rho_time]
+        for _ in range(20):
+            self.light_env.step(0)
+            times.append(self.light_env.protections.update_rho_time)
+        self.assertTrue(all(after >= before for before, after in zip(times, times[1:])), times)
+        self.assertGreater(times[-1], times[0])
+        self.light_env.reset()
+        self.assertLess(self.light_env.protections.update_rho_time, times[-1])
+
     # --- observation ---
 
     def test_observation_is_a_view(self):

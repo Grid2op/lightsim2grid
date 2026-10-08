@@ -202,7 +202,7 @@ class Protections
 
             rho_.array() = (vect_or.array() / th_lim_or.array()).cwiseMax(vect_ex.array() / th_lim_ex.array());
             // std::cout << "\t\t\t after rho update \n";
-            timer_update_rho_ = timer_update_rho.duration();
+            timer_update_rho_ += timer_update_rho.duration();
         }
 
         CplxVect run_powerflow(LSGrid & grid, int max_iter, float tol){
@@ -231,6 +231,7 @@ class Protections
             timer_total_ = 0.;
             timer_check_overflow_ = 0.;
             timer_powerflow_ = 0.;
+            timer_update_rho_ = 0.;
         }
         
         void reset_cooldowns(){

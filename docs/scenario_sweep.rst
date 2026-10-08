@@ -225,14 +225,17 @@ a bus its last generator leaves is solved for), and the masking of the buses of 
 it does not use, exactly as ``handle_disconnected_grid`` masks a stranded bus. A row that
 leaves an element alone on a busbar (an island of one bus) has that bus masked and its
 injection left out, as the disconnected-grid mode would; without ``handle_disconnected_grid``
-a row that strands one of the base grid's buses is still ``NOT_SIMULATED``.
+a row that strands one of the base grid's buses is still ``NOT_SIMULATED``. A busbar the row
+leaves with no element at all (a merge) strands nothing: it is masked, and the row solved,
+in either mode.
 
 .. warning::
 
     Refused by ``compute`` for now: moving or reactivating a slack participant, a generator
     on a slack bus, a generator that regulates a remote bus or whose bus a control group
-    holds, a storage unit that regulates voltage; ``keep_jacobian`` on a batch that moves or
-    reactivates a generator; and the DC algorithm. See the TODO section of the changelog.
+    holds, a storage unit that regulates voltage; a branch with one end open in the base grid
+    put back on (taking it out works); ``keep_jacobian`` on a batch that moves or reactivates a
+    generator; and the DC algorithm. See the TODO section of the changelog.
     ``compute_physical_violations`` follows the row: a generator the row moves or reactivates
     is checked on the bus the row gives it.
 

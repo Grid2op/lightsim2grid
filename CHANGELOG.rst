@@ -6,7 +6,8 @@ Change Log
 - ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
   element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
   slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
-  them works); the DC algorithm; ``keep_jacobian`` with a generator moved or reactivated.
+  them works); a branch with one end open put back on; the DC algorithm; ``keep_jacobian``
+  with a generator moved or reactivated.
 - OpenLoadFlow-style outer loops (reactive limits, slack limits, hvdc saturation) as a
   non-default ``NROuter_*`` algorithm, keeping one ``analyze`` per solve or batch: assessed in
   ``docs/dev_notes/outer_loops_fixed_sparsity.md``, nothing implemented.
@@ -214,6 +215,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``ScenarioSweep.set_contingency_gens``: masking every generator of a bus a
+  voltage-regulating storage unit also holds turned that bus PQ.
+- [FIXED] ``ScenarioSweep.modify_gen_v``: a generator a row disconnects no longer has to agree
+  with the set-point of the generators left on its bus.
 - [ADDED] a documentation page for the light environment (``docs/light_env.rst``) and a
   benchmark against grid2op (``benchmarks/light_env.py``).
 - [FIXED] light environment: the ``Protections`` setters accept float32 and read-only arrays.

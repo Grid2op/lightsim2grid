@@ -102,13 +102,6 @@ class ScenarioSweep:
         self.grid2op_env = grid2op_env.copy()
         self.computer = type(self)._CPP_CLASS(self.grid2op_env.backend._grid)
         self.__computed = False
-        # ScenarioSweepCPP.set_contingency_lines/trafos are write-only (no getter) --
-        # run() needs each row's disconnected branch ids for
-        # ContingencyResult.element_ids/element_names, so this wrapper caches the last
-        # validated mask it sent down. Reset by clear() below.
-        self._line_mask = None
-        self._trafo_mask = None
-        self._has_topo_actions = False
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
         if AlgorithmType.NR_KLU in self.available_default_algorithms:
@@ -238,13 +231,8 @@ class ScenarioSweep:
             return  # no-op, matches the C++ side (which also no-ops and does not clear)
         self.computer.compute_limit_violations = val  # this clear()s the whole C++ object:
         # registered injections, contingency masks, handle_disconnected_grid, the
-        # row-count lock, everything -- not just computed results. Drop the Python-side
-        # mask cache too, or a stale non-None _line_mask/_trafo_mask survives this reset
-        # and the next run() derives element_ids/element_names from masks that no longer
-        # match what was actually registered C++-side.
+        # row-count lock, everything -- not just computed results
         self.__computed = False
-        self._line_mask = None
-        self._trafo_mask = None
 
     @property
     def violation_threshold(self):
@@ -446,7 +434,6 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of powerlines on the grid ({n_line}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_lines(mask)
-        self._line_mask = mask  # cached: see the note in __init__ (no C++-side getter)
         self.__computed = False
 
     def set_contingency_trafos(self, mask):
@@ -458,7 +445,6 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of trafos on the grid ({n_trafo}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_trafos(mask)
-        self._trafo_mask = mask  # cached: see the note in __init__ (no C++-side getter)
         self.__computed = False
 
     def set_contingency_gens(self, mask):
@@ -521,8 +507,8 @@ class ScenarioSweep:
         island of one: that bus is masked and its injection left out). Refused by
         :func:`compute` for now: moving or reactivating a slack participant, a generator
         on a slack bus or one that regulates a remote bus, a storage unit that regulates
-        voltage, ``keep_jacobian`` with a generator move or reactivation, and the DC
-        algorithm. :attr:`compute_physical_violations` follows the row: a generator the
+        voltage, a branch with one end open in the base grid put back on, ``keep_jacobian``
+        with a generator move or reactivation, and the DC algorithm. :attr:`compute_physical_violations` follows the row: a generator the
         row moves or reactivates is checked on the bus the row gives it.
         """
         from lightsim2grid.lightEnv import TopoAction, topo_action_from_grid2op
@@ -540,7 +526,6 @@ class ScenarioSweep:
                 raise ValueError(f"ScenarioSweep.set_topo_actions: action {i} is invalid: expected a grid2op "
                                  f"action or a TopoAction, got a {type(act)}")
         self.computer.set_topo_actions(converted)
-        self._has_topo_actions = len(converted) > 0
         self.__computed = False
 
     def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
@@ -688,8 +673,9 @@ class ScenarioSweep:
         since ``ScenarioSweep`` rows are independent scenarios, not a *set* of
         contingencies) -- and every ``ContingencyResult.contingency_name`` is
         ``None`` (no such concept on ``ScenarioSweep``); ``element_ids`` /
-        ``element_names`` are instead derived from that row's own
-        ``set_contingency_lines`` / ``set_contingency_trafos`` mask.
+        ``element_names`` are instead the branches that row disconnects, through its
+        ``set_contingency_lines`` / ``set_contingency_trafos`` masks and its topological
+        action together.
         """
         if not self.computer.compute_limit_violations:
             raise RuntimeError("`run` requires `compute_limit_violations=True`, set via "
@@ -742,9 +728,6 @@ class ScenarioSweep:
         """Clear everything, as if nothing had ever been set / computed."""
         self.computer.clear()
         self.__computed = False
-        self._line_mask = None
-        self._trafo_mask = None
-        self._has_topo_actions = False
 
     def close(self):
         """permanently close the object"""

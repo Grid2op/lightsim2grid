@@ -292,6 +292,7 @@ class LightEnv : protected LightEnvState
          * registered (the previous actions, if any, are kept).
          */
         void init_actions(const std::vector<TopoAction> & actions){
+            aux_check_not_moved_from("init_actions");
             std::vector<TopoAction> checked;
             checked.reserve(actions.size());
             for(size_t i = 0; i < actions.size(); ++i){
@@ -307,8 +308,8 @@ class LightEnv : protected LightEnvState
             }
             actions_ = std::make_shared<const std::vector<TopoAction> >(std::move(checked));
         }
-        int nb_actions() const {return static_cast<int>(actions_->size());}
-        const std::vector<TopoAction> & get_actions() const {return *actions_;}
+        int nb_actions() const {aux_check_not_moved_from("nb_actions"); return static_cast<int>(actions_->size());}
+        const std::vector<TopoAction> & get_actions() const {aux_check_not_moved_from("get_actions"); return *actions_;}
 
         const Protections & get_protections() const {return protections_;}
         const LSGrid & get_grid() const {aux_check_not_moved_from("get_grid"); return *grid_;}
