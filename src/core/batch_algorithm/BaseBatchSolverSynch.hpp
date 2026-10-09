@@ -408,6 +408,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             Eigen::Ref<const CplxVect> vect_yac_ft = structure_data.yac_eff_12();
             Eigen::Ref<const RealVect> vect_ydc_ff = structure_data.ydc_11();
             Eigen::Ref<const RealVect> vect_ydc_ft = structure_data.ydc_12();
+            Eigen::Ref<const RealVect> vect_ydc_tf = structure_data.ydc_21();
+            Eigen::Ref<const RealVect> vect_ydc_tt = structure_data.ydc_22();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             const size_t nb_el = structure_data.nb();
@@ -462,14 +464,16 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                         out(i, col) = 0.;
                         continue;
                     }
-                    // DC active flow from the bus angles (theta) directly, like the
-                    // gridmodel results: P = ydc_ff . theta_from + ydc_ft . theta_to
+                    // DC active flow from the bus angles (theta) directly, the phase
+                    // shift included: the model dc_pf publishes (see dc_branch_p_pu)
                     const real_type theta_from = dc_lazy ? theta_row[from_me] : std::arg(V_row[from_me]);
                     const real_type theta_to = dc_lazy ? theta_row[to_me] : std::arg(V_row[to_me]);
-                    const real_type y_ff = vect_ydc_ff(el_id);
-                    const real_type y_ft = vect_ydc_ft(el_id);
-                    res = (y_ff * theta_from + y_ft * theta_to) * sn_mva;
-                    if(is_trafo) res -= dc_x_tau_shift(el_id);
+                    real_type p_from, p_to;
+                    dc_branch_p_pu(vect_ydc_ff(el_id), vect_ydc_ft(el_id),
+                                   vect_ydc_tf(el_id), vect_ydc_tt(el_id),
+                                   is_trafo ? dc_x_tau_shift(el_id) : real_type(0.),
+                                   theta_from, theta_to, p_from, p_to);
+                    res = p_from * sn_mva;
                     if(amps){
                         res = std::abs(res);
                         // the magnitude: the row's reconstructed one on the fast path,

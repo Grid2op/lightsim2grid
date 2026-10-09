@@ -8,6 +8,8 @@
 
 #include "YbusPolicy.hpp"
 
+#include <cmath>
+
 namespace ls2g {
 
 std::vector<Coeff> YbusPolicy::Contingency::_coeffs_for_branch_ids(
@@ -15,10 +17,13 @@ std::vector<Coeff> YbusPolicy::Contingency::_coeffs_for_branch_ids(
     const LSGrid & grid_model,
     bool ac_solver_used,
     const SolverBusIdVect & id_me_to_solver,
-    size_t n_line)
+    size_t n_line,
+    std::vector<std::pair<int, real_type> > & dc_shift_dp)
 {
     const auto & powerlines = grid_model.get_powerlines_as_data();
     const auto & trafos = grid_model.get_trafos_as_data();
+    Eigen::Ref<const RealVect> dc_x_tau_shift = trafos.dc_x_tau_shift();
+    dc_shift_dp.clear();
     std::vector<Coeff> res;
     res.reserve(branch_ids.size() * 4);  // usually there are 4 coeffs per powerlines / trafos
     int bus_1_id, bus_2_id;
@@ -67,6 +72,13 @@ std::vector<Coeff> YbusPolicy::Contingency::_coeffs_for_branch_ids(
             if((bus_1_id != GenericContainer::_deactivated_bus_id) && (bus_2_id != GenericContainer::_deactivated_bus_id)){
                 res.push_back({bus_1_id, bus_2_id, y_ft});
                 res.push_back({bus_2_id, bus_1_id, y_tf});
+                // a DC phase shifter: undo its injection pair, the exact opposite of
+                // TrafoContainer::hack_Sbus_for_dc_phase_shifter (same test, same values)
+                if(!ac_solver_used && p_branch == &trafos &&
+                   std::abs(dc_x_tau_shift(el_id)) >= BaseConstants::_tol_equal_float){
+                    dc_shift_dp.push_back({bus_1_id, dc_x_tau_shift(el_id)});
+                    dc_shift_dp.push_back({bus_2_id, -dc_x_tau_shift(el_id)});
+                }
             }
         }
     }
@@ -81,9 +93,13 @@ void YbusPolicy::Contingency::init_li_coeffs(
 {
     li_coeffs.clear();
     li_coeffs.reserve(li_defaults.size());
+    li_dc_shift_dp.assign(li_defaults.size(), {});
+    size_t cont_id = 0;
     for(const auto & this_cont_id: li_defaults){
         const std::vector<int> branch_ids(this_cont_id.begin(), this_cont_id.end());
-        li_coeffs.push_back(_coeffs_for_branch_ids(branch_ids, grid_model, ac_solver_used, id_me_to_solver, n_line));
+        li_coeffs.push_back(_coeffs_for_branch_ids(branch_ids, grid_model, ac_solver_used, id_me_to_solver, n_line,
+                                                   li_dc_shift_dp[cont_id]));
+        ++cont_id;
     }
 }
 
@@ -112,8 +128,10 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
 {
     li_coeffs.clear();
     li_coeffs.reserve(static_cast<size_t>(nb_steps));
+    li_dc_shift_dp.assign(static_cast<size_t>(nb_steps), {});
     for(Eigen::Index row = 0; row < nb_steps; ++row){
-        li_coeffs.push_back(_coeffs_for_branch_ids(branch_ids_for_row(row, n_line), grid_model, ac_solver_used, id_me_to_solver, n_line));
+        li_coeffs.push_back(_coeffs_for_branch_ids(branch_ids_for_row(row, n_line), grid_model, ac_solver_used, id_me_to_solver, n_line,
+                                                   li_dc_shift_dp[static_cast<size_t>(row)]));
     }
 }
 
