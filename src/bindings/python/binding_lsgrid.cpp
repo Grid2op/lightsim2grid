@@ -448,6 +448,12 @@ void bind_gridmodel(py::module_& m) {
         .def("get_slack_ids", &LSGrid::get_slack_ids_numpy, DocLSGrid::get_slack_ids.c_str(), py::return_value_policy::reference)
         .def("get_slack_ids_dc", &LSGrid::get_slack_ids_dc_numpy, DocLSGrid::get_slack_ids_dc.c_str(), py::return_value_policy::reference)
         .def("get_slack_weights", &LSGrid::get_slack_weights, DocLSGrid::get_slack_weights.c_str(), py::return_value_policy::reference)
+        .def("get_gen_slack_shares", &LSGrid::get_gen_slack_shares,
+             "Each generator's share of the distributed slack: its weight over the total weight "
+             "of every connected participant (storage units included), so that "
+             "P = target_p + share * (slack absorbed). 0 for a generator that does not take part. "
+             "Read off the current weights, which change_p_gen does not update (see "
+             "update_slack_weights).")
         .def("get_pv_solver", &LSGrid::get_pv_solver_numpy, DocLSGrid::get_pv_solver.c_str(), py::return_value_policy::reference)
         .def("get_pq_solver", &LSGrid::get_pq_solver_numpy, DocLSGrid::get_pq_solver.c_str(), py::return_value_policy::reference)
         // per-family variants: the AC and the DC solver each keep their own split

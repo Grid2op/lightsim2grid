@@ -77,6 +77,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             if(conv){
                 _maybe_store_jacobian(i, algo);
                 _record_row_physical(i, algo, V, sw, sb);
+                _record_row_gen_results(i, algo, Ybus, V, sw, sb);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -104,6 +105,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             if(conv){
                 _maybe_store_jacobian(i, algo);
                 _record_row_physical(i, algo, V, sw, sb);
+                _record_row_gen_results(i, algo, Ybus, V, sw, sb);
             }
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }
@@ -493,6 +495,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _converged_mask_.assign(nb_steps, 0);
     _row_solve_time_.assign(nb_steps, 0.);
     _row_nb_iter_.assign(nb_steps, 0);
+    _gen_results_ = _compute_gen_results_ ?
+        RealMat::Zero(static_cast<Eigen::Index>(nb_steps), 2 * static_cast<Eigen::Index>(_grid_model.get_generators().nb())) :
+        RealMat();
 
     // limit-violation bookkeeping (ContingencyAnalysis only; no-op elsewhere)
     _refresh_defaults_vect_cache();

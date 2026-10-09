@@ -19,6 +19,8 @@ The grid (case14, built here with no pypowsybl) carries at once:
 * a storage unit regulating its bus (in the group) and one that does not;
 * a line open at side 2 and a transformer open at side 1 (half-open branches).
 
+Each row's generator P and Q (compute_gen_results) are compared too.
+
 Each row changes the injections (generator and load set-points) and disconnects
 branches and/or generators. Every converged row must equal a fresh powerflow of the
 grid with the same changes: complex voltages, P and Q at both ends of every branch, and
@@ -154,7 +156,8 @@ def _reference(gen_p, load_p, load_q, lines, trafos, gens, ac):
                     np.concatenate([l2[0], t2[0]]), np.concatenate([l2[1], t2[1]])], axis=1)
     ybus = (grid.get_Ybus() if ac else grid.get_dcYbus()).tocsr()
     ybus.sort_indices()
-    return np.asarray(V), res, ybus
+    gen_p, gen_q = grid.get_gen_res()[:2]
+    return np.asarray(V), res, ybus, np.stack([gen_p, gen_q], axis=1)
 
 
 def _algos(ac):
@@ -193,6 +196,7 @@ class TestScenarioSweepExotic(unittest.TestCase):
             sweep = ScenarioSweepCPP(grid)
             sweep.change_algorithm(algo)
             sweep.handle_disconnected_grid = handle_disconnected_grid
+            sweep.compute_gen_results = True
             sweep.modify_gen_p(gen_p)
             sweep.modify_load_p(load_p)
             sweep.modify_load_q(load_q)
@@ -203,6 +207,7 @@ class TestScenarioSweepExotic(unittest.TestCase):
             Vs = np.asarray(sweep.get_voltages())
             conv = np.asarray(sweep.converged_mask())
             res = sweep.compute_branch_results()
+            gen_res = sweep.get_gen_results()
             get_ybus = sweep.get_Ybus if ac else sweep.get_dcYbus
             for row in range(n_row):
                 msg = f"{algo}, handle_disconnected_grid={handle_disconnected_grid}, row {row}"
@@ -212,11 +217,14 @@ class TestScenarioSweepExotic(unittest.TestCase):
                 assert conv[row] == (ref is not None), f"{msg}: convergence differs"
                 if ref is None:
                     continue
-                V_ref, res_ref, ybus_ref = ref
+                V_ref, res_ref, ybus_ref, gen_ref = ref
                 err_v = np.abs(Vs[row] - V_ref).max()
                 assert err_v <= 1e-8, f"{msg}: voltage error {err_v}"
                 err_br = np.abs(res[row] - res_ref).max()
                 assert err_br <= 1e-6, f"{msg}: branch error {err_br}"
+                # generator P and Q, the reactive power of the group's members included
+                err_gen = np.abs(gen_res[row] - gen_ref).max()
+                assert err_gen <= 1e-6, f"{msg}: generator error {err_gen}"
                 ybus = get_ybus(row).tocsr()
                 ybus.sort_indices()
                 assert np.array_equal(ybus.indices, ybus_ref.indices), f"{msg}: Ybus pattern differs"

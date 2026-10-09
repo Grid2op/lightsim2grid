@@ -226,6 +226,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
 - [ADDED] Batch classes: ``compute_branch_results()``, P and Q at both ends of every branch per
   row, ``(nb_rows, nb_branch, 4)``; ``get_row_solve_times()`` / ``get_row_nb_iter()``.
+- [ADDED] Batch classes: ``compute_gen_results`` / ``get_gen_results()``, generator P and Q per row
+  by the rules of ``get_gen_res`` (shared with ``LSGrid.compute_results``, not reimplemented).
+- [ADDED] ``LSGrid.get_gen_slack_shares()``: each generator's share of the distributed slack.
 - [ADDED] ``ScenarioSweepCPP`` / ``ContingencyAnalysisCPP``: ``get_Ybus(row)`` / ``get_dcYbus(row)``,
   the admittance matrix a row was solved with.
 - [FIXED] DC batch: disconnecting a half-open branch edited Bbus, where DC never stamped it.

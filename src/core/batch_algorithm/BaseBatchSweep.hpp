@@ -190,6 +190,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _converged_mask_.clear();
             _row_solve_time_.clear();
             _row_nb_iter_.clear();
+            _gen_results_ = RealMat();
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
@@ -628,6 +629,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Setting this drops this batch's base case and results, but NOT its registrations
         // (the contingencies / injections), so unlike compute_limit_violations -- which
         // clear()s the whole object -- it can be set at any point before compute().
+        // ---- generator results per row (opt-in) ----------------------------------------
+        // Every converged row records the active and reactive output of every generator,
+        // by the rules LSGrid::compute_results publishes them with after a single solve
+        // (LSGrid::generator_results: the setpoint plus the share of the distributed slack,
+        // the reactive output the algorithm solved or the bus' residual split by reactive
+        // range). A generator the row disconnects, or strands on a bus it masks, reads 0.
+        // Off by default: it reads the row's mismatch and allocates per row. Takes effect
+        // at the next compute(); changes nothing a kept base case is made of.
+        bool get_compute_gen_results() const noexcept {return _compute_gen_results_;}
+        void set_compute_gen_results(bool val){ _compute_gen_results_ = val; }
+        // (nb_rows, 2 * nb_gen), row-major: generator g of row i at columns 2g (P, MW) and
+        // 2g + 1 (Q, MVAr). Empty if the last compute() did not record them.
+        const RealMat & get_gen_results() const { return _gen_results_; }
+
         bool get_compute_physical_violations() const noexcept {return _compute_physical_violations_;}
         void set_compute_physical_violations(bool val){
             if(val == _compute_physical_violations_) return;
@@ -2053,6 +2068,92 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // this thread's). `V_solver` is this row's converged complex voltage: a
         // voltage-mode SVC's capability is a susceptance range, so what it is worth in MVAr
         // depends on it.
+        // MUST be called while the row's own state is still installed on the algorithm,
+        // like _record_row_physical: the mismatch, the slack the solve absorbed and the
+        // controllers' reactive output are the ones of the system THIS row solved. `Ybus`
+        // is the row's matrix (its branch edits in place), read only when the algorithm
+        // leaves no mismatch behind.
+        void _record_row_gen_results(size_t i, AlgorithmSelector & algo,
+                                     const Eigen::SparseMatrix<cplx_type> & Ybus,
+                                     const Eigen::Ref<const CplxVect> & V_solver,
+                                     const Eigen::Ref<const RealVect> & slack_weights,
+                                     const Eigen::Ref<const CplxVect> & sbus_solver){
+            if(!_compute_gen_results_) return;
+            if(static_cast<Eigen::Index>(i) >= _gen_results_.rows()) return;
+            const real_type sn_mva = _grid_model.get_sn_mva();
+            const bool ac = algo.ac_solver_used();
+            const std::vector<int> * masked = _row_masked_ids(i);
+            const auto & generators = _grid_model.get_generators();
+            const int nb_gen = static_cast<int>(generators.nb());
+            const int nb_storage = static_cast<int>(_grid_model.get_storages().nb());
+            const SolverBusIdVect & me_to_solver = active_layout().id_me_to_solver;
+
+            // the generators this row has out -- its contingency, and the ones standing on
+            // a bus it strands -- and the units its slack pre-pass took out of the slack
+            std::vector<bool> gen_off(static_cast<std::size_t>(nb_gen), false);
+            std::vector<bool> no_share(static_cast<std::size_t>(nb_gen), false);
+            RealVect target_p(nb_gen);
+            const GlobalBusIdVect & gen_buses = generators.get_bus_id();
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+                bool off = _gen_off_in_row(i, gen_id);
+                if(!off && masked != nullptr){
+                    const int bus_me = gen_buses(gen_id).cast_int();
+                    const int bus_solver = bus_me == BaseConstants::_deactivated_bus_id ?
+                                           BaseConstants::_deactivated_bus_id : me_to_solver[bus_me].cast_int();
+                    off = bus_solver != BaseConstants::_deactivated_bus_id &&
+                          std::binary_search(masked->begin(), masked->end(), bus_solver);
+                }
+                gen_off[gen_id] = off;
+                no_share[gen_id] = _row_takes_no_share(i, ViolationElementType::GENERATOR, gen_id);
+                target_p(gen_id) = _row_target_p(i, ViolationElementType::GENERATOR, gen_id);
+            }
+            std::vector<bool> storage_no_share;
+            for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
+                if(!_row_takes_no_share(i, ViolationElementType::STORAGE, storage_id)) continue;
+                if(storage_no_share.empty()) storage_no_share.assign(static_cast<std::size_t>(nb_storage), false);
+                storage_no_share[storage_id] = true;
+            }
+
+            // what each bus produced beyond its setpoints: the same two sources
+            // LSGrid::_fill_bus_mismatch_ac / _dc read, for this row
+            RealVect active_mismatch, reactive_mismatch, ctrl_q;
+            IntVect ctrl_kind, ctrl_elem;
+            if(ac){
+                if(algo.fills_bus_mismatch()){
+                    const Eigen::Ref<const CplxVect> mis = algo.get_bus_mismatch();
+                    const real_type slack_absorbed = algo.get_slack_absorbed();
+                    reactive_mismatch = mis.imag() * sn_mva;
+                    active_mismatch = (mis.real().array() - slack_absorbed * slack_weights.array()) * sn_mva;
+                } else {
+                    const CplxVect ybus_v = Ybus * V_solver;
+                    const CplxVect & sb = sbus_solver.size() > 0 ? CplxVect(sbus_solver) : CplxVect(ac_cache_.inj);
+                    const CplxVect mismatch = V_solver.array() * ybus_v.array().conjugate() - sb.array();
+                    active_mismatch = mismatch.real() * sn_mva;
+                    reactive_mismatch = mismatch.imag() * sn_mva;
+                }
+                ctrl_q = algo.get_controller_q();
+                ctrl_kind = algo.get_controller_kind();
+                ctrl_elem = algo.get_controller_elem_id();
+            } else {
+                const Eigen::Index nb_bus = slack_weights.size();
+                active_mismatch = RealVect::Zero(nb_bus);
+                const real_type imbalance = _dc_imbalance_mw(sbus_solver, masked);
+                for(Eigen::Index k = 0; k < nb_bus; ++k){
+                    if(slack_weights(k) <= BaseConstants::my_zero_) continue;
+                    active_mismatch(k) = slack_weights(k) * imbalance;
+                }
+            }
+
+            RealVect p_mw, q_mvar;
+            _grid_model.generator_results(ac, target_p, gen_off, no_share, storage_no_share, me_to_solver,
+                                          active_mismatch, reactive_mismatch, ctrl_q, ctrl_kind, ctrl_elem,
+                                          p_mw, q_mvar);
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+                _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id) = p_mw(gen_id);
+                _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id + 1) = q_mvar(gen_id);
+            }
+        }
+
         void _record_row_physical(size_t i, AlgorithmSelector & algo,
                                   const Eigen::Ref<const CplxVect> & V_solver,
                                   const Eigen::Ref<const RealVect> & slack_weights,
@@ -2961,6 +3062,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         if(conv){
                             _maybe_store_jacobian(cont_id, algo);
                             _record_row_physical(cont_id, algo, V, sw, sb);
+                            _record_row_gen_results(cont_id, algo, Ybus, V, sw, sb);
                         }
                         if(!masked.empty()) algo.set_masked_buses(std::vector<int>());
                         if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
@@ -3194,6 +3296,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // the algorithm of THIS compute() can feed the reactive half at all (see
         // _prepare_physical_check): false in DC, where there is no reactive power to check.
         bool _compute_physical_violations_ = false;
+        // see set_compute_gen_results
+        bool _compute_gen_results_ = false;
+        RealMat _gen_results_;
         real_type _physical_tol_mva_ = 1e-4;
         real_type _physical_tol_vm_pu_ = 1e-4;
         bool _bus_q_check_on_ = false;

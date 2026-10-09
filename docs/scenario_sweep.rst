@@ -192,9 +192,17 @@ Python wrapper) reports, for every row of the last `compute()`:
   the pattern rather than stored as an explicit zero.
 - `get_row_solve_times()` / `get_row_nb_iter()`: what the algorithm reported for each
   row's solve, 0 for a row that never reached it.
+- `get_gen_results()`, once `compute_gen_results = True` was set before `compute()`: the
+  active and reactive output of every generator, shape `(n_simul, n_gen, 2)`, MW and
+  MVAr. The rules are the ones `get_gen_res` follows after a single powerflow: the
+  setpoint plus the generator's share of the distributed slack (re-weighted without the
+  participants the row disconnects); for Q, the setpoint of a machine that does not
+  regulate, the solver's own value for a controller it solved (a remote voltage control
+  group), or a share of its bus' reactive residual proportional to each machine's reactive
+  range. A generator the row disconnects reads 0. In DC, Q is 0.
 
-`compute_branch_results`, `get_row_solve_times` and `get_row_nb_iter` exist on every batch
-class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP` too); `get_Ybus` /
+`compute_branch_results`, `get_gen_results`, `get_row_solve_times` and `get_row_nb_iter`
+exist on every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP` too); `get_Ybus` /
 `get_dcYbus` only where the topology varies per row (`ScenarioSweepCPP`,
 `ContingencyAnalysisCPP`).
 
@@ -204,6 +212,14 @@ class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP` too); `get
     res = computer.compute_branch_results()   # (n_simul, n_branch, 4)
     p_or, q_or, p_ex, q_ex = res[..., 0], res[..., 1], res[..., 2], res[..., 3]
     ybus_row_3 = computer.get_Ybus(3)          # scipy.sparse, (total_bus, total_bus)
+
+    computer.compute_gen_results = True        # before compute()
+    computer.compute(v_init, max_iter, tol)
+    gen = computer.get_gen_results()           # (n_simul, n_gen, 2): P, Q
+
+Outside a batch, `LSGrid.get_gen_slack_shares()` gives each generator's share of the
+distributed slack (`P = target_p + share * slack absorbed`). The weights it reads are set
+when the grid is built and by `update_slack_weights`; `change_p_gen` does not update them.
 
 Handling disconnected grids and limit violations
 ------------------------------------------------------

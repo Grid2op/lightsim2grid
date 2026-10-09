@@ -285,22 +285,35 @@ class VoltageSourceContainer : public OneSideContainer_PQ
             }
             for(int el_id = 0; el_id < nb_el; ++el_id)
             {
-                if(!status_[el_id]){
-                    res_q_(el_id) = 0.;  // disconnected
-                    continue;
-                }
-                if (!voltage_regulator_on_[el_id]){
-                    // purposedly not pv, so output MVAr = input MVAr (just like a load)
-                    res_q_(el_id) = target_q_mvar_(el_id);
-                    continue;
-                }
-                if (leaf()._treated_as_off(el_id)) {
-                    // it's as if the element were turned off
-                    res_q_(el_id) = 0.;
-                    continue;
-                }
-                // a voltage-regulating element: left for LSGrid, see the note above
+                real_type q_mvar;
+                // a voltage-regulating element is left for LSGrid, see the note above
+                if(q_without_powerflow(el_id, q_mvar)) res_q_(el_id) = q_mvar;
             }
+        }
+
+        /**
+         * The AC reactive output (MVAr) of `el_id` when it is known without looking at the
+         * powerflow -- the rule set_q publishes by -- into `q_mvar`. False for a
+         * voltage-regulating element, whose value LSGrid computes (written back from the
+         * algorithm, or a share of its bus' reactive residual).
+         */
+        bool q_without_powerflow(int el_id, real_type & q_mvar) const
+        {
+            if(!status_[el_id]){
+                q_mvar = 0.;  // disconnected
+                return true;
+            }
+            if(!voltage_regulator_on_[el_id]){
+                // purposedly not pv, so output MVAr = input MVAr (just like a load)
+                q_mvar = target_q_mvar_(el_id);
+                return true;
+            }
+            if(leaf()._treated_as_off(el_id)){
+                // it's as if the element were turned off
+                q_mvar = 0.;
+                return true;
+            }
+            return false;
         }
 
     protected:
