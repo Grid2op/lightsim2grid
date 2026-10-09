@@ -45,6 +45,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     }
 
     _apply_step_gen_v(i, V);
+    _apply_step_dc_vm_reset(i, V);
     _apply_step_vc_v_set(i, algo);
 
     // the Ybus edit, and its timer, only where Ybus varies at all: the hooks compile
@@ -564,6 +565,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // magnitude-reconstruction helpers do not need to know about SbusPolicy at all).
     const bool use_dc_lazy_v = !ac_solver_used && !_handle_disconnected_grid;
     if(use_dc_lazy_v) _dc_gen_v_ = _sbus_gen_v();
+    _prepare_dc_row_vm_reset(Vinit, ac_solver_used, nb_steps);
 
     // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
     // factorization every row refactorizes into), plus this call's result buffers

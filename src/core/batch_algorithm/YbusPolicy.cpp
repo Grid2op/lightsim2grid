@@ -64,6 +64,11 @@ std::vector<Coeff> YbusPolicy::Contingency::_coeffs_for_branch_ids(
             y_tt = p_branch->ydc_22()[el_id];
         }
 
+        // DC: a branch open at one end is not in Bbus at all (see fillBdc: "disco on one
+        // side == disco on both sides"), so disconnecting it has nothing to remove. AC
+        // keeps its Kron-reduced side, which yac_eff_* already describes.
+        if(!ac_solver_used &&
+           (bus_1_id == GenericContainer::_deactivated_bus_id || bus_2_id == GenericContainer::_deactivated_bus_id)) continue;
         if(status)
         {
             // element is connected, update coeffs based on status of each powerlines

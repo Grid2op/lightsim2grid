@@ -1657,6 +1657,56 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return res;
         }
 
+        // ----- DC: the buses a row releases get the caller's magnitude back ----------
+        // (see _dc_row_vm_reset_). A bus is released by a row that disconnects every
+        // generator writing its magnitude when nothing else (SVC, HVDC station, storage
+        // unit) writes it too: the same walk set_vm does, so the magnitude is the one a
+        // dc_pf of that topology starts from. Rebuilt every compute(): the masks are a
+        // batch input, the starting voltage is this call's. Only ScenarioSweep takes
+        // generator contingencies.
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _prepare_dc_row_vm_reset(const Eigen::Ref<const CplxVect> &, bool, size_t){
+            _dc_row_vm_reset_.clear();
+        }
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _prepare_dc_row_vm_reset(const Eigen::Ref<const CplxVect> & Vinit, bool ac_solver_used, size_t nb_steps){
+            _dc_row_vm_reset_.clear();
+            const auto & gen_off = sbus_policy_.gen_off;
+            if(ac_solver_used || gen_off.rows() == 0) return;
+
+            std::map<int, std::vector<int> > gen_writers;  // grid bus -> generators writing it
+            std::set<int> other_writers;                   // grid buses something else writes
+            _grid_model.get_generators().for_each_vm_target(
+                [&gen_writers](int gen_id, int bus, real_type, const auto &){ gen_writers[bus].push_back(gen_id); });
+            const auto mark_other = [&other_writers](int, int bus, real_type, const auto &){ other_writers.insert(bus); };
+            _grid_model.get_svcs().for_each_vm_target(mark_other);
+            _grid_model.get_dclines().for_each_vm_target(mark_other);
+            _grid_model.get_storages().for_each_vm_target(mark_other);
+
+            const SolverBusIdVect & me_to_solver = active_layout().id_me_to_solver;
+            const Eigen::Index nb_cols = gen_off.cols();
+            _dc_row_vm_reset_.assign(nb_steps, std::vector<std::pair<int, real_type> >());
+            for(size_t row = 0; row < nb_steps && static_cast<Eigen::Index>(row) < gen_off.rows(); ++row){
+                for(const auto & bus_gens : gen_writers){
+                    if(other_writers.count(bus_gens.first)) continue;
+                    bool all_off = true;
+                    for(int gen_id : bus_gens.second){
+                        if(gen_id >= nb_cols || !gen_off(static_cast<Eigen::Index>(row), gen_id)){ all_off = false; break; }
+                    }
+                    if(!all_off) continue;
+                    const int bus_solver = me_to_solver[static_cast<size_t>(bus_gens.first)].cast_int();
+                    if(bus_solver == BaseConstants::_deactivated_bus_id) continue;
+                    _dc_row_vm_reset_[row].push_back({bus_solver, std::abs(Vinit(bus_gens.first))});
+                }
+            }
+        }
+        void _apply_step_dc_vm_reset(size_t i, CplxVect & V) const {
+            if(i >= _dc_row_vm_reset_.size()) return;
+            for(const std::pair<int, real_type> & bus_vm : _dc_row_vm_reset_[i]){
+                V(bus_vm.first) = std::polar(bus_vm.second, std::arg(V(bus_vm.first)));
+            }
+        }
+
         // ----- per-row solve statistics: written by the row loops, see get_row_nb_iter.
         // One slot per row, pre-sized by compute(): each worker thread writes its own
         // rows only, so no two threads touch one element.
@@ -2891,18 +2941,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(cont_id));
                         V = Vinit_solver;
                         _apply_step_gen_v(cont_id, V);
+                        _apply_step_dc_vm_reset(cont_id, V);
                         _apply_step_vc_v_set(cont_id, algo);
                         const RealVect & sw = _masked_slack_weights(masked, _row_slack_weights(cont_id, sw_scratch), sw_scratch);
                         const CplxVect & sb = _step_sbus_row(cont_id, sbus_scratch);
+                        // a DC row's Pbus is its own (injections, slack pre-pass, phase
+                        // shifters it disconnects), and the DC algorithm re-reads it only
+                        // when told to: before EVERY row, the first one included -- the
+                        // algorithm last saw the base case's
+                        if(!ac_solver_used) control.tell_recompute_sbus();
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         _record_row_solve_stats(cont_id, algo);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
-                        // as in _run_range: a DC row's Pbus is its own (injections, slack
-                        // pre-pass, phase shifters it disconnects), and the DC algorithm
-                        // re-reads it only when told to
-                        if(!ac_solver_used) control.tell_recompute_sbus();
                         // before the two restores below, and before the Ybus is put
                         // back: see _maybe_store_jacobian (and _record_row_physical, which
                         // reads the mismatch of the system this row solved)

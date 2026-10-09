@@ -228,13 +228,16 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   row, ``(nb_rows, nb_branch, 4)``; ``get_row_solve_times()`` / ``get_row_nb_iter()``.
 - [ADDED] ``ScenarioSweepCPP`` / ``ContingencyAnalysisCPP``: ``get_Ybus(row)`` / ``get_dcYbus(row)``,
   the admittance matrix a row was solved with.
+- [FIXED] DC batch: disconnecting a half-open branch edited Bbus, where DC never stamped it.
+- [FIXED] DC batch: a bus whose regulating generators a row disconnects kept their voltage
+  setpoint as its magnitude (``dc_pf`` gives the starting one), which skewed the currents.
 - [FIXED] A DC batch row that edits no admittance, right after one that did, was solved on the
   previous row's matrix: adding the branches back did not ask for a refactorization.
 - [FIXED] DC flows of a phase shifter in the batch flows and in the current-limit checks (batch and
   ``LSGrid.get_violations``): the shift term had the wrong sign and no ``sn_mva`` scaling.
 - [FIXED] A DC batch row disconnecting a phase shifter kept its shift injections in Pbus.
-- [FIXED] DC batch with ``handle_disconnected_grid``: rows after the first reused the first row's
-  Pbus (per-row injections, slack pre-pass).
+- [FIXED] DC batch with ``handle_disconnected_grid``: rows were solved with a stale Pbus (the base
+  case's, or the first row's), ignoring per-row injections and the slack pre-pass.
 - [FIXED] ``LSGrid`` pickling converts its state one element at a time: the single huge tuple cast
   overflowed MSVC (C1067) and OOM-killed gcc 8 on ``binding_lsgrid.cpp``.
 - [FIXED] ``bake_outer_loops`` no longer freezes a unit at its reactive limit whose bus still has a

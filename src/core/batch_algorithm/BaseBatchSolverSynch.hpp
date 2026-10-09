@@ -277,6 +277,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _dc_base_vm_solver_ = RealVect();
             _dc_base_vm_grid_ = RealVect();
             _dc_gen_v_ = RealMat();
+            _dc_row_vm_reset_.clear();
             _nb_solved = 0;
             _nb_converged = 0;
             _timer_compute_A = 0.;
@@ -899,14 +900,24 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 scratch = RealVect::Zero(_dc_base_vm_grid_.size());
                 return scratch;
             }
-            if(_dc_gen_v_.rows() == 0) return _dc_base_vm_grid_;
-            CplxVect tmp = _dc_base_vm_solver_.cast<cplx_type>();
-            const RealVect row = _dc_gen_v_.row(i);
-            seed_vm_keeping(tmp, _vm_held_buses(), [this, &row](CplxVect & V){
-                _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, row);
-            });
+            const bool has_reset = static_cast<size_t>(i) < _dc_row_vm_reset_.size() &&
+                                   !_dc_row_vm_reset_[static_cast<size_t>(i)].empty();
+            if(_dc_gen_v_.rows() == 0 && !has_reset) return _dc_base_vm_grid_;
             scratch = _dc_base_vm_grid_;
-            scratch(active_layout().id_solver_to_me.as_eigen()) = tmp.array().abs();
+            if(_dc_gen_v_.rows() != 0){
+                CplxVect tmp = _dc_base_vm_solver_.cast<cplx_type>();
+                const RealVect row = _dc_gen_v_.row(i);
+                seed_vm_keeping(tmp, _vm_held_buses(), [this, &row](CplxVect & V){
+                    _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, row);
+                });
+                scratch(active_layout().id_solver_to_me.as_eigen()) = tmp.array().abs();
+            }
+            if(has_reset){
+                const GlobalBusIdVect & solver_to_me = active_layout().id_solver_to_me;
+                for(const std::pair<int, real_type> & bus_vm : _dc_row_vm_reset_[static_cast<size_t>(i)]){
+                    scratch(solver_to_me[static_cast<size_t>(bus_vm.first)].cast_int()) = bus_vm.second;
+                }
+            }
             return scratch;
         }
 
@@ -1011,6 +1022,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // ContingencyAnalysis) -- kept here, generic, so the magnitude reconstruction
         // helpers above do not need to know about SbusPolicy at all.
         RealMat _dc_gen_v_;
+        // DC: per row, the buses (solver id) whose magnitude goes back to the caller's
+        // starting value, with that value. A row that disconnects every generator holding
+        // a bus leaves nothing to pin it, so it reads what dc_pf would: the magnitude it
+        // was given, not the setpoint the base case snapped it to. Filled by
+        // BaseBatchSweep, empty in AC (where such a bus is solved as PQ) and wherever no
+        // row releases a bus.
+        std::vector<std::vector<std::pair<int, real_type> > > _dc_row_vm_reset_;
 
 
         // timers
