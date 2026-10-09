@@ -1470,7 +1470,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // matrix they were read from. The contingencies themselves are registrations
         // and stay -- _prepare_ybus_varying rebuilds the coefficients for them.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
-        void _reset_ybus_coeffs() { ybus_policy_.li_coeffs.clear(); }
+        void _reset_ybus_coeffs() {
+            ybus_policy_.li_coeffs.clear();
+            ybus_policy_.li_dc_shift_dp.clear();
+        }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _reset_ybus_coeffs() {}
 
@@ -1479,6 +1482,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _reset_ybus_policy() {
             ybus_policy_.li_defaults.clear();
             ybus_policy_.li_coeffs.clear();
+            ybus_policy_.li_dc_shift_dp.clear();
             ybus_policy_.line_mask = BoolMat();
             ybus_policy_.trafo_mask = BoolMat();
         }
@@ -2494,17 +2498,34 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // would otherwise fall back to on an empty Sbus.
         const CplxVect & _step_sbus_row(size_t i, CplxVect & scratch) const {
             const CplxVect & base = _step_sbus(i, scratch);
-            if(i >= _row_slack_dp_pu_.size() || _row_slack_dp_pu_[i].empty()) return base;
+            const bool has_slack_dp = i < _row_slack_dp_pu_.size() && !_row_slack_dp_pu_[i].empty();
+            const std::vector<std::pair<int, real_type> > * shift_dp = _row_dc_shift_dp(i);
+            if(!has_slack_dp && shift_dp == nullptr) return base;
             if(&base != &scratch){
                 if(base.size() > 0) scratch = base;
                 else scratch = dc_cache_.inj.template cast<cplx_type>();
             }
-            for(const std::pair<int, real_type> & bus_dp : _row_slack_dp_pu_[i]){
-                if(bus_dp.first < 0 || bus_dp.first >= scratch.size()) continue;
-                scratch(bus_dp.first) += cplx_type(bus_dp.second, 0.);
-            }
+            const auto add_dp = [&scratch](const std::vector<std::pair<int, real_type> > & dps){
+                for(const std::pair<int, real_type> & bus_dp : dps){
+                    if(bus_dp.first < 0 || bus_dp.first >= scratch.size()) continue;
+                    scratch(bus_dp.first) += cplx_type(bus_dp.second, 0.);
+                }
+            };
+            if(has_slack_dp) add_dp(_row_slack_dp_pu_[i]);
+            if(shift_dp != nullptr) add_dp(*shift_dp);
             return scratch;
         }
+
+        // the injections of the DC phase shifters row i disconnects, to take off its
+        // Pbus (see YbusPolicy::Contingency::li_dc_shift_dp), or nullptr if there are
+        // none -- always the case in AC, and where Ybus does not vary at all
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        const std::vector<std::pair<int, real_type> > * _row_dc_shift_dp(size_t i) const {
+            if(i >= ybus_policy_.li_dc_shift_dp.size() || ybus_policy_.li_dc_shift_dp[i].empty()) return nullptr;
+            return &ybus_policy_.li_dc_shift_dp[i];
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        const std::vector<std::pair<int, real_type> > * _row_dc_shift_dp(size_t) const { return nullptr; }
 
         // The pre-pass itself, once per compute() and after the per-row injections are
         // known (_prepare_sbus_varying) and the masks / generator contingencies settled.
@@ -2733,6 +2754,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
+                        // as in _run_range: a DC row's Pbus is its own (injections, slack
+                        // pre-pass, phase shifters it disconnects), and the DC algorithm
+                        // re-reads it only when told to
+                        if(!ac_solver_used) control.tell_recompute_sbus();
                         // before the two restores below, and before the Ybus is put
                         // back: see _maybe_store_jacobian (and _record_row_physical, which
                         // reads the mismatch of the system this row solved)
