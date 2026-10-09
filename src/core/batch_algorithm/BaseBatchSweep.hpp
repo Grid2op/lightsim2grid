@@ -188,6 +188,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _adjoint_row_ok_.clear();
             _converged.clear();
             _converged_mask_.clear();
+            _row_solve_time_.clear();
+            _row_nb_iter_.clear();
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
@@ -1065,6 +1067,61 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return _active_power_flows;
         }
 
+        // P and Q at both ends of every branch, every row: see get_branch_results for the
+        // layout. A branch this row disconnects reads 0, like one out of service in the
+        // grid, and so does every branch of a row that did not converge.
+        const RealMat & compute_branch_results() {
+            _maybe_check_results_match_defaults("compute_branch_results");
+            compute_branch_results_from_Vs();
+            const std::vector<std::vector<int> > tripped = _rows_tripped_branch_ids();
+            const Eigen::Index nb_rows = _branch_results.rows();
+            for(Eigen::Index i = 0; i < nb_rows; ++i){
+                const size_t row = static_cast<size_t>(i);
+                if(row >= _converged_mask_.size() || !_converged_mask_[row]){
+                    _branch_results.row(i).setZero();
+                    continue;
+                }
+                if(row >= tripped.size()) continue;
+                for(int br_id : tripped[row]){
+                    _branch_results.row(i).segment(4 * static_cast<Eigen::Index>(br_id), 4).setZero();
+                }
+            }
+            return _branch_results;
+        }
+
+        // ---- the admittance matrix of one row -----------------------------------------
+        // The matrix row `row` was solved with: the base one, minus the branches that row
+        // disconnects. An entry those branches were the only contributors to is removed
+        // from the pattern rather than left as an explicit zero, so the result has the
+        // pattern a one-at-a-time solve of that topology builds (its values may differ in
+        // the last bits: removing a branch is a subtraction, not a rebuild). Grid bus
+        // numbering (size total_bus, like LSGrid.get_Ybus) unless `solver_numbering`.
+        // AC only for get_Ybus, DC only for get_dcYbus: the batch builds the one matrix
+        // its algorithm needs.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        Eigen::SparseMatrix<cplx_type> get_Ybus(Eigen::Index row, bool solver_numbering = false) const {
+            _maybe_check_results_match_defaults("get_Ybus");
+            _check_row_matrix_available(row, true, "get_Ybus");
+            return _row_matrix(ac_cache_.mat, static_cast<size_t>(row), solver_numbering);
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        Eigen::SparseMatrix<real_type> get_dcYbus(Eigen::Index row, bool solver_numbering = false) const {
+            _maybe_check_results_match_defaults("get_dcYbus");
+            _check_row_matrix_available(row, false, "get_dcYbus");
+            return _row_matrix(dc_cache_.mat, static_cast<size_t>(row), solver_numbering);
+        }
+
+        // ---- per-row solve statistics -------------------------------------------------
+        // What the algorithm reported for each row of the last compute(): its time (s, the
+        // algorithm's own get_computation_time) and its number of iterations. 0 for a row
+        // that was not handed to the solver (skipped before it, or never reached).
+        RealVect get_row_solve_times() const {
+            return RealVect::Map(_row_solve_time_.data(), static_cast<Eigen::Index>(_row_solve_time_.size()));
+        }
+        IntVect get_row_nb_iter() const {
+            return IntVect::Map(_row_nb_iter_.data(), static_cast<Eigen::Index>(_row_nb_iter_.size()));
+        }
+
         // timers
         double total_time() const {return _timer_total;}
         double preprocessing_time() const {return _timer_pre_proc;}
@@ -1521,6 +1578,93 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _patch_ybus_values(Eigen::SparseMatrix<cplx_type> &, size_t, bool) const {}
+
+        // ----- per-row Ybus, for get_Ybus / get_dcYbus -------------------------------
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _check_row_matrix_available(Eigen::Index row, bool ac, const char * fun_name) const {
+            std::ostringstream exc_;
+            if(_algo.ac_solver_used() != ac){
+                exc_ << algo_name() << "::" << fun_name << ": the last compute() used a "
+                     << (ac ? "DC" : "AC") << " algorithm, which builds no "
+                     << (ac ? "AC Ybus: use get_dcYbus." : "DC Bbus: use get_Ybus.");
+            } else if(row < 0 || static_cast<size_t>(row) >= ybus_policy_.li_coeffs.size()){
+                exc_ << algo_name() << "::" << fun_name << ": no row " << row << " (rows of the last "
+                     "compute(): " << ybus_policy_.li_coeffs.size() << "). Call compute() first.";
+            } else {
+                return;
+            }
+            throw std::runtime_error(exc_.str());
+        }
+        static real_type _as_scalar(const cplx_type & val, real_type) { return std::real(val); }
+        static cplx_type _as_scalar(const cplx_type & val, cplx_type) { return val; }
+
+        template<typename Scalar, class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        Eigen::SparseMatrix<Scalar> _row_matrix(const Eigen::SparseMatrix<Scalar> & base, size_t row,
+                                                bool solver_numbering) const {
+            using index_type = typename Eigen::SparseMatrix<Scalar>::StorageIndex;
+            // an entry the row's branches were the only contributors to comes out at 0, or
+            // within rounding of it: (a + b) - b need not be exactly a. Relative to what the
+            // entry held, that residual is at the level of the machine epsilon; a genuine
+            // remaining contribution is not.
+            const real_type rel_tol = 1e-12;
+            Eigen::SparseMatrix<Scalar> mat = base;
+            std::vector<std::pair<std::pair<int, int>, real_type> > touched;  // (row, col), |base value|
+            for(const Coeff & c : ybus_policy_.li_coeffs[row]){
+                const int r = static_cast<int>(c.row_id);
+                const int col = static_cast<int>(c.col_id);
+                touched.push_back({{r, col}, std::abs(base.coeff(r, col))});
+                mat.coeffRef(r, col) -= _as_scalar(c.value, Scalar());
+            }
+            std::sort(touched.begin(), touched.end());
+
+            const GlobalBusIdVect & id_solver_to_me = active_layout().id_solver_to_me;
+            const Eigen::Index size = solver_numbering ? mat.rows() : static_cast<Eigen::Index>(_grid_model.total_bus());
+            std::vector<Eigen::Triplet<Scalar> > triplets;
+            triplets.reserve(static_cast<size_t>(mat.nonZeros()));
+            for(Eigen::Index col_ = 0; col_ < mat.outerSize(); ++col_){
+                for(typename Eigen::SparseMatrix<Scalar>::InnerIterator it(mat, col_); it; ++it){
+                    const std::pair<int, int> key(static_cast<int>(it.row()), static_cast<int>(it.col()));
+                    const auto found = std::lower_bound(touched.begin(), touched.end(),
+                                                        std::make_pair(key, real_type(-1.)));
+                    if(found != touched.end() && found->first == key &&
+                       std::abs(it.value()) <= rel_tol * found->second) continue;
+                    const index_type r = solver_numbering ? static_cast<index_type>(it.row())
+                                                          : static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())].cast_int());
+                    const index_type c = solver_numbering ? static_cast<index_type>(it.col())
+                                                          : static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.col())].cast_int());
+                    triplets.push_back({r, c, it.value()});
+                }
+            }
+            Eigen::SparseMatrix<Scalar> res(size, size);
+            res.setFromTriplets(triplets.begin(), triplets.end());
+            res.makeCompressed();
+            return res;
+        }
+
+        // ----- per-row branches a row disconnects, all rows at once: 3-way ------------
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        std::vector<std::vector<int> > _rows_tripped_branch_ids() const { return {}; }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        std::vector<std::vector<int> > _rows_tripped_branch_ids() const { return my_defaults_vect(); }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        std::vector<std::vector<int> > _rows_tripped_branch_ids() const {
+            std::vector<std::vector<int> > res(static_cast<size_t>(_nb_result_rows()));
+            for(size_t row = 0; row < res.size(); ++row){
+                res[row] = ybus_policy_.branch_ids_for_row(static_cast<Eigen::Index>(row), n_line_);
+            }
+            return res;
+        }
+
+        // ----- per-row solve statistics: written by the row loops, see get_row_nb_iter.
+        // One slot per row, pre-sized by compute(): each worker thread writes its own
+        // rows only, so no two threads touch one element.
+        void _record_row_solve_stats(size_t i, const AlgorithmSelector & algo){
+            if(i >= _row_solve_time_.size()) return;
+            _row_solve_time_[i] = algo.get_computation_time();
+            _row_nb_iter_[i] = algo.get_nb_iter();
+        }
 
         // ----- per-step Sbus: 2-way (row of sbus_policy_ vs. the fixed member) ---
         // Row i's injection: built into `scratch` (one buffer per range: no row
@@ -2753,6 +2897,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
+                        _record_row_solve_stats(cont_id, algo);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
                         // as in _run_range: a DC row's Pbus is its own (injections, slack
                         // pre-pass, phase shifters it disconnects), and the DC algorithm
@@ -2963,6 +3108,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // the option, and the per-row data it builds at each compute()
         bool _redistribute_slack_ = false;
         std::vector<std::vector<std::pair<int, real_type> > > _row_slack_dp_pu_;
+
+        // per-row solve statistics of the last compute(): see get_row_nb_iter
+        std::vector<double> _row_solve_time_;
+        std::vector<int> _row_nb_iter_;
         std::vector<std::vector<std::pair<int, real_type> > > _row_gen_new_p_;
         std::vector<std::vector<std::pair<int, real_type> > > _row_sto_new_p_;
         std::vector<std::vector<int> > _row_sat_gens_;

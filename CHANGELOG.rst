@@ -224,6 +224,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid2op backend and ``init_from_pypowsybl`` do.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
   ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
+- [ADDED] Batch classes: ``compute_branch_results()``, P and Q at both ends of every branch per
+  row, ``(nb_rows, nb_branch, 4)``; ``get_row_solve_times()`` / ``get_row_nb_iter()``.
+- [ADDED] ``ScenarioSweepCPP`` / ``ContingencyAnalysisCPP``: ``get_Ybus(row)`` / ``get_dcYbus(row)``,
+  the admittance matrix a row was solved with.
 - [FIXED] A DC batch row that edits no admittance, right after one that did, was solved on the
   previous row's matrix: adding the branches back did not ask for a refactorization.
 - [FIXED] DC flows of a phase shifter in the batch flows and in the current-limit checks (batch and

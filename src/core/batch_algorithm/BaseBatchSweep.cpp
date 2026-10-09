@@ -69,6 +69,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            _record_row_solve_stats(i, algo);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
             // (and _record_row_bus_q, which reads the mismatch of the system this row
             // solved)
@@ -95,6 +96,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            _record_row_solve_stats(i, algo);
             // before the pinning is restored, and before the Ybus is put back: the
             // refreshed Jacobian has to describe the system THIS row solved, and so does
             // the state the physical-limit checks read
@@ -488,6 +490,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // next to it. Rows never reached this compute() (eg a TimeSeries chain that
     // aborts, or the diverging-"n"-case early return below) stay 0.
     _converged_mask_.assign(nb_steps, 0);
+    _row_solve_time_.assign(nb_steps, 0.);
+    _row_nb_iter_.assign(nb_steps, 0);
 
     // limit-violation bookkeeping (ContingencyAnalysis only; no-op elsewhere)
     _refresh_defaults_vect_cache();

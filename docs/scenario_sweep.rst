@@ -174,6 +174,37 @@ the change in the losses it causes is left to the powerflow's distributed slack.
     converter station). Those go through a different part of the Jacobian, with columns
     and rows of their own that this feature does not yet reserve and mask.
 
+Per-row results
+--------------------------
+
+Besides the voltages, the C++ object (`ScenarioSweepCPP`, or `sweep.computer` from the
+Python wrapper) reports, for every row of the last `compute()`:
+
+- `compute_branch_results()`: active and reactive power at both ends of every branch, as
+  an array of shape `(n_simul, n_branch, 4)` -- `P` and `Q` at side 1, then at side 2, in
+  MW and MVAr, branches numbered lines then transformers like `get_flows`. They are what
+  `get_line_res1/2` and `get_trafo_res1/2` would read after solving that row's topology
+  on its own. A branch the row disconnects reads 0, and so does a row that did not
+  converge. In DC, `Q` is 0 and side 2 carries the opposite of side 1.
+- `get_Ybus(row)` (AC) / `get_dcYbus(row)` (DC): the admittance matrix that row was
+  solved with, in grid bus numbering like `LSGrid.get_Ybus` (`solver_numbering=True` for
+  the solver one). An entry only the disconnected branches contributed to is removed from
+  the pattern rather than stored as an explicit zero.
+- `get_row_solve_times()` / `get_row_nb_iter()`: what the algorithm reported for each
+  row's solve, 0 for a row that never reached it.
+
+`compute_branch_results`, `get_row_solve_times` and `get_row_nb_iter` exist on every batch
+class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP` too); `get_Ybus` /
+`get_dcYbus` only where the topology varies per row (`ScenarioSweepCPP`,
+`ContingencyAnalysisCPP`).
+
+.. code-block:: python
+
+    computer = sweep.computer
+    res = computer.compute_branch_results()   # (n_simul, n_branch, 4)
+    p_or, q_or, p_ex, q_ex = res[..., 0], res[..., 1], res[..., 2], res[..., 3]
+    ybus_row_3 = computer.get_Ybus(3)          # scipy.sparse, (total_bus, total_bus)
+
 Handling disconnected grids and limit violations
 ------------------------------------------------------
 

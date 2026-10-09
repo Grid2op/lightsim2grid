@@ -266,6 +266,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _voltages = CplxMat();
             _amps_flows = RealMat();
             _active_power_flows = RealMat();
+            _branch_results = RealMat();
             // the DC fast path holds the same voltages as an angle plus a shared
             // magnitude (see _dc_vm_row_grid): one result in several pieces, so the
             // pieces go together -- a stale one would be reconstructed into a voltage
@@ -354,6 +355,16 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // tl;dr: const can make copies ! OR NOT I AM LOST
         const RealMat & get_flows() const {return _amps_flows;}
         const RealMat & get_power_flows() const {return _active_power_flows;}
+
+        /**
+         * The last compute_branch_results(): one row per batch row, four columns per
+         * branch (lines then trafos, the numbering of get_flows), in this order: active
+         * and reactive power entering the branch at side 1, then at side 2, in MW and
+         * MVAr. DC has no reactive power (0) and side 2 carries the opposite of side 1.
+         * RealMat is row-major, so one row's branches -- and one branch's four values --
+         * are contiguous: what Python reads as an (nb_rows, nb_branch, 4) array.
+         */
+        const RealMat & get_branch_results() const {return _branch_results;}
         // DC theta-only fast path (see BaseAlgo::set_lazy_v): when a compute() used
         // it, _voltages is left empty and _thetas (+ the small _dc_* inputs) holds
         // everything needed to rebuild it -- done here, lazily, on first request, and
@@ -538,6 +549,81 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                            real_type tol);
 
         void compute_flows_from_Vs(bool amps=true);
+        // fills _branch_results from the stored voltages (see get_branch_results). Every
+        // branch in service in the GRID gets its flows: a branch a row disconnects, and a
+        // row that did not converge, are the caller's to zero (only BaseBatchSweep knows
+        // either).
+        void compute_branch_results_from_Vs();
+
+        /**
+         * The P and Q at both ends of the branches of `structure_data` (lines or trafos)
+         * for row `i`, into `_branch_results.row(i)` from column `4 * lag_id`. The
+         * formulas are the ones the grid publishes after a single solve
+         * (BranchContainer::_compute_branch_results_no_amps, and dc_branch_p_pu for a DC
+         * phase shifter), so a row reports what a one-at-a-time solve would.
+         *
+         * Exactly one of `V_row` (complex voltages, grid numbering) and `theta_row` (the
+         * angles, grid numbering: the DC fast path) is non-null.
+         */
+        template<class T>
+        void _branch_results_of_row(const T & structure_data,
+                                    Eigen::Index i,
+                                    size_t lag_id,
+                                    bool is_trafo,
+                                    bool is_ac,
+                                    real_type sn_mva,
+                                    const cplx_type * V_row,
+                                    const real_type * theta_row)
+        {
+            const auto & el_status = structure_data.get_status_global();
+            const auto & status1 = structure_data.get_status_side_1();
+            const auto & status2 = structure_data.get_status_side_2();
+            const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
+            const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
+            Eigen::Ref<const CplxVect> yac_11 = structure_data.yac_eff_11();
+            Eigen::Ref<const CplxVect> yac_12 = structure_data.yac_eff_12();
+            Eigen::Ref<const CplxVect> yac_21 = structure_data.yac_eff_21();
+            Eigen::Ref<const CplxVect> yac_22 = structure_data.yac_eff_22();
+            Eigen::Ref<const RealVect> ydc_11 = structure_data.ydc_11();
+            Eigen::Ref<const RealVect> ydc_12 = structure_data.ydc_12();
+            Eigen::Ref<const RealVect> ydc_21 = structure_data.ydc_21();
+            Eigen::Ref<const RealVect> ydc_22 = structure_data.ydc_22();
+            Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift();  // empty for a line
+
+            real_type * out = _branch_results.row(i).data() + 4 * lag_id;
+            const size_t nb_el = structure_data.nb();
+            for(size_t el_id = 0; el_id < nb_el; ++el_id){
+                if(!el_status[el_id]) continue;
+                const bool s1 = status1[el_id];
+                const bool s2 = status2[el_id];
+                real_type * dst = out + 4 * el_id;
+                // a half-open branch has _deactivated_bus_id on its open side: never used
+                // to index the voltages, the open end is at 0 V (AC, where yac_eff_* is
+                // Kron-reduced for it) or the branch carries nothing (DC)
+                const int from_me = bus_from(el_id).cast_int();
+                const int to_me = bus_to(el_id).cast_int();
+                if(is_ac){
+                    const cplx_type Ef = s1 ? V_row[from_me] : cplx_type(0., 0.);
+                    const cplx_type Et = s2 ? V_row[to_me] : cplx_type(0., 0.);
+                    const cplx_type S_f = Ef * std::conj(yac_11(el_id) * Ef + yac_12(el_id) * Et);
+                    const cplx_type S_t = Et * std::conj(yac_22(el_id) * Et + yac_21(el_id) * Ef);
+                    dst[0] = std::real(S_f) * sn_mva;
+                    dst[1] = std::imag(S_f) * sn_mva;
+                    dst[2] = std::real(S_t) * sn_mva;
+                    dst[3] = std::imag(S_t) * sn_mva;
+                } else {
+                    if(!(s1 && s2)) continue;
+                    const real_type theta_f = theta_row != nullptr ? theta_row[from_me] : std::arg(V_row[from_me]);
+                    const real_type theta_t = theta_row != nullptr ? theta_row[to_me] : std::arg(V_row[to_me]);
+                    real_type p1, p2;
+                    dc_branch_p_pu(ydc_11(el_id), ydc_12(el_id), ydc_21(el_id), ydc_22(el_id),
+                                   is_trafo ? dc_x_tau_shift(el_id) : real_type(0.),
+                                   theta_f, theta_t, p1, p2);
+                    dst[0] = p1 * sn_mva;
+                    dst[2] = p2 * sn_mva;
+                }
+            }
+        }
 
         // ----- multi-threading helpers (shared by every batch algorithm) ------------
         // Build a solver for one worker thread. Deliberately a FRESH AlgorithmSelector
@@ -667,6 +753,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             }
             _amps_flows = RealMat::Zero(0, n_total_);
             _active_power_flows = RealMat::Zero(0, n_total_);
+            _branch_results = RealMat::Zero(0, 4 * n_total_);
         }
 
         // The "n" powerflow: the batch's base case (L2). Besides its own answer --
@@ -897,6 +984,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         mutable CplxMat _voltages;
         RealMat _amps_flows;
         RealMat _active_power_flows;
+        RealMat _branch_results;
 
         // ----- DC theta-only fast path (see BaseAlgo::set_lazy_v) -----------------
         // true for the duration of one compute() call using it: DC, and not the
