@@ -340,6 +340,81 @@ void bind_batch_shared(py::class_<T> & cls)
              "Linear-solver counters and timings of the last solve_JT(), summed over its "
              "worker threads: how much of the backward pass went into refactorizing each "
              "row's Jacobian versus into the transposed solves themselves.");
+
+    // ---- per-row results beyond the voltages ------------------------------------------
+    // (nb_rows, nb_branch, 4), a copy: the C++ matrix is (nb_rows, 4 * nb_branch), row-major
+    const auto branch_results_as_3d = [](const typename T::RealMat & mat){
+        const py::ssize_t nb_rows = static_cast<py::ssize_t>(mat.rows());
+        const py::ssize_t nb_branch = static_cast<py::ssize_t>(mat.cols() / 4);
+        py::array_t<real_type> res({nb_rows, nb_branch, static_cast<py::ssize_t>(4)});
+        if(mat.size() > 0) std::copy(mat.data(), mat.data() + mat.size(), res.mutable_data());
+        return res;
+    };
+    cls
+        .def("compute_branch_results",
+             [branch_results_as_3d](T & self){ return branch_results_as_3d(self.compute_branch_results()); },
+             "Active and reactive power at both ends of every branch, for every row of the last "
+             "compute(), as an array of shape (nb_rows, nb_branch, 4): ``[..., 0]`` and "
+             "``[..., 1]`` are P (MW) and Q (MVAr) entering the branch at side 1, ``[..., 2]`` "
+             "and ``[..., 3]`` the same at side 2. Branches are numbered like get_flows: the "
+             "lines, then the trafos.\n\n"
+             "Computed with the formulas the grid uses after a single powerflow, so a row reads "
+             "what get_line_res1/2 and get_trafo_res1/2 would after a one-at-a-time solve of "
+             "it. A branch out of service -- in the grid, or disconnected by the row's own "
+             "contingency -- reads 0, and so does every branch of a row that did not converge. "
+             "In DC, Q is 0 and side 2 carries the opposite of side 1.")
+        .def("get_branch_results",
+             [branch_results_as_3d](const T & self){ return branch_results_as_3d(self.get_branch_results()); },
+             "The array of the last compute_branch_results(), without computing it again.")
+        .def("get_row_solve_times", &T::get_row_solve_times,
+             "Per row of the last compute(): the time the algorithm reported for its solve, in "
+             "seconds. 0 for a row never handed to the solver (skipped before it, as an "
+             "islanding contingency is, or never reached).")
+        .def_property("compute_gen_results",
+                      [](const T & self){ return self.get_compute_gen_results(); },
+                      [](T & self, bool val){ self.set_compute_gen_results(val); },
+                      "Whether every converged row records the active and reactive output of every "
+                      "generator (read with get_gen_results). Off by default. They follow the rules the "
+                      "grid uses after a single powerflow: the setpoint plus the share of the "
+                      "distributed slack for P; for Q the setpoint of a non-regulating machine, the "
+                      "algorithm's own value for a controller it solved, or a share of the bus' "
+                      "reactive residual proportional to each machine's reactive range. A generator "
+                      "the row disconnects, or strands on a bus it masks, reads 0, and so does every "
+                      "generator of a row that did not converge. Takes effect at the next compute().")
+        .def("get_gen_results",
+             [](const T & self){
+                 const auto & mat = self.get_gen_results();
+                 const py::ssize_t nb_rows = static_cast<py::ssize_t>(mat.rows());
+                 const py::ssize_t nb_gen = static_cast<py::ssize_t>(mat.cols() / 2);
+                 py::array_t<real_type> res({nb_rows, nb_gen, static_cast<py::ssize_t>(2)});
+                 if(mat.size() > 0) std::copy(mat.data(), mat.data() + mat.size(), res.mutable_data());
+                 return res;
+             },
+             "Generator results of the last compute(), shape (nb_rows, nb_gen, 2): ``[..., 0]`` is "
+             "P (MW), ``[..., 1]`` is Q (MVAr, 0 in DC). Empty unless compute_gen_results was set "
+             "before that compute().")
+        .def("get_row_nb_iter", &T::get_row_nb_iter,
+             "Per row of the last compute(): the number of iterations the algorithm reported "
+             "(0 for a row never handed to the solver).");
+}
+
+/**
+ * get_Ybus / get_dcYbus of one row: only where the admittance matrix varies per row
+ * (ScenarioSweepCPP, ContingencyAnalysisCPP).
+ */
+template<class T>
+void bind_row_ybus(py::class_<T> & cls)
+{
+    cls
+        .def("get_Ybus", &T::template get_Ybus<>, py::arg("row"), py::arg("solver_numbering") = false,
+             "The admittance matrix row `row` of the last compute() was solved with (AC "
+             "algorithm only): the base one without the branches that row disconnects. An entry "
+             "only those branches contributed to is removed, not kept as an explicit zero, so "
+             "the pattern is the one a one-at-a-time solve of that topology builds. Grid bus "
+             "numbering, shape (total_bus, total_bus) like LSGrid.get_Ybus, or the solver one "
+             "with `solver_numbering=True`.")
+        .def("get_dcYbus", &T::template get_dcYbus<>, py::arg("row"), py::arg("solver_numbering") = false,
+             "The DC counterpart of get_Ybus (DC algorithm only): the real Bbus of row `row`.");
 }
 
 /**
@@ -831,6 +906,7 @@ void bind_batch(py::module_& m) {
         "'deactivate this branch for this simulation'; the two APIs are deliberately "
         "not unified, they serve different usages.");
     bind_batch_sweep_common(scenario_sweep);
+    bind_row_ybus(scenario_sweep);
     scenario_sweep
         .def("set_contingency_lines", &ScenarioSweep::set_contingency_lines<>, py::arg("mask"),
              "Per-step powerline contingency mask, shape (n_simul, n_line), dtype bool. "
@@ -967,6 +1043,7 @@ void bind_batch(py::module_& m) {
 
     py::class_<ContingencyAnalysis> contingency_analysis(m, "ContingencyAnalysisCPP", DocContingencyAnalysis::ContingencyAnalysis.c_str());
     bind_batch_shared(contingency_analysis);
+    bind_row_ybus(contingency_analysis);
     contingency_analysis
         .def(py::init<const LSGrid &, bool>(), py::arg("grid_model"), py::arg("compute_limit_violations") = false)
         .def_property("compute_limit_violations",

@@ -2088,6 +2088,106 @@ void LSGrid::compute_results(bool ac){
     }
 }
 
+RealVect LSGrid::get_gen_slack_shares() const
+{
+    const int nb_gen = static_cast<int>(generators_.nb());
+    const int nb_storage = static_cast<int>(storages_.nb());
+    const std::vector<bool> & gen_status = generators_.get_status();
+    const std::vector<bool> & storage_status = storages_.get_status();
+    RealVect res = RealVect::Zero(nb_gen);
+    real_type total = 0.;
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(!gen_status[gen_id] || !generators_.is_slack(gen_id)) continue;
+        const real_type w = generators_.get_gen_slack_weight(gen_id);
+        if(w <= BaseConstants::_tol_equal_float) continue;
+        res(gen_id) = w;
+        total += w;
+    }
+    for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
+        if(!storage_status[storage_id] || !storages_.is_slack(storage_id)) continue;
+        const real_type w = storages_.get_slack_weight(storage_id);
+        if(w > BaseConstants::_tol_equal_float) total += w;
+    }
+    if(total > BaseConstants::_tol_equal_float) res /= total;
+    return res;
+}
+
+void LSGrid::generator_results(bool ac,
+                               const Eigen::Ref<const RealVect> & target_p_mw,
+                               const std::vector<bool> & gen_off,
+                               const std::vector<bool> & no_slack_share,
+                               const std::vector<bool> & storage_no_slack_share,
+                               const SolverBusIdVect & id_me_to_solver,
+                               const Eigen::Ref<const RealVect> & active_mismatch_mw,
+                               const Eigen::Ref<const RealVect> & reactive_mismatch_mvar,
+                               const RealVect & ctrl_q,
+                               const IntVect & ctrl_kind,
+                               const IntVect & ctrl_elem,
+                               RealVect & p_mw,
+                               RealVect & q_mvar) const
+{
+    const int nb_gen = static_cast<int>(generators_.nb());
+    const auto check_size = [nb_gen](std::size_t size, const char * what){
+        if(size != 0 && size != static_cast<std::size_t>(nb_gen)){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::generator_results: '" << what << "' has " << size << " elements, expected "
+                 << nb_gen << " (one per generator) or none.";
+            throw std::runtime_error(exc_.str());
+        }
+    };
+    check_size(gen_off.size(), "gen_off");
+    check_size(no_slack_share.size(), "no_slack_share");
+    if(target_p_mw.size() != nb_gen){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::generator_results: 'target_p_mw' has " << target_p_mw.size()
+             << " elements, expected " << nb_gen << " (one per generator).";
+        throw std::runtime_error(exc_.str());
+    }
+    const auto is_off = [&gen_off](int gen_id){ return !gen_off.empty() && gen_off[gen_id]; };
+    const std::vector<bool> & status = generators_.get_status();
+
+    // ---- P: the setpoint, then the distributed slack (see compute_results) ----------
+    p_mw = RealVect::Zero(nb_gen);
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(status[gen_id] && !is_off(gen_id)) p_mw(gen_id) = target_p_mw(gen_id);
+    }
+    std::vector<bool> slack_off(static_cast<std::size_t>(nb_gen), false);
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        slack_off[gen_id] = is_off(gen_id) || (!no_slack_share.empty() && no_slack_share[gen_id]);
+    }
+    const RealVect raw_weights = _raw_slack_weights_solver(static_cast<size_t>(active_mismatch_mw.size()),
+                                                           id_me_to_solver, &slack_off,
+                                                           storage_no_slack_share.empty() ? nullptr : &storage_no_slack_share);
+    generators_.add_p_slack(p_mw, active_mismatch_mw, id_me_to_solver, raw_weights, slack_off);
+
+    // ---- Q: what needs no powerflow, the residual shares, the write-back -------------
+    q_mvar = RealVect::Zero(nb_gen);
+    if(!ac) return;
+    for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        real_type q;
+        if(is_off(gen_id)) continue;  // 0
+        if(generators_.q_without_powerflow(gen_id, q)) q_mvar(gen_id) = q;
+    }
+    std::vector<bool> gen_solved(static_cast<std::size_t>(nb_gen), false);
+    std::vector<bool> hvdc1_solved(hvdc_lines_.nb(), false);
+    std::vector<bool> hvdc2_solved(hvdc_lines_.nb(), false);
+    _mark_q_solved_by_algo(ctrl_kind, ctrl_elem, gen_solved, hvdc1_solved, hvdc2_solved);
+    if(reactive_mismatch_mvar.size() > 0){
+        const std::vector<QShare> shares = _collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved,
+                                                                      gen_off.empty() ? nullptr : &gen_off);
+        const std::vector<real_type> q_values = _q_residual_values(shares, reactive_mismatch_mvar, id_me_to_solver);
+        for(std::size_t k = 0; k < shares.size(); ++k){
+            if(shares[k].kind == VoltageControlSolverData::GEN) q_mvar(shares[k].elem_id) = q_values[k];
+        }
+    }
+    for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
+        if(ctrl_kind(i) != VoltageControlSolverData::GEN) continue;
+        const int gen_id = ctrl_elem(i);
+        if(gen_id < 0 || gen_id >= nb_gen || is_off(gen_id)) continue;
+        q_mvar(gen_id) = ctrl_q(i) * sn_mva_;
+    }
+}
+
 void LSGrid::_throw_unknown_controller_kind(const std::string & fun_name, int kind)
 {
     std::ostringstream exc_;
@@ -2203,7 +2303,8 @@ void LSGrid::_mark_q_solved_by_algo(const IntVect & ctrl_kind,
 
 std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector<bool> & gen_solved,
                                                                const std::vector<bool> & hvdc1_solved,
-                                                               const std::vector<bool> & hvdc2_solved) const
+                                                               const std::vector<bool> & hvdc2_solved,
+                                                               const std::vector<bool> * gen_off) const
 {
     // Everything else has already been published: set_q wrote the ones whose value
     // needs no powerflow, and the write-back writes the ones the algorithm solved for.
@@ -2218,6 +2319,7 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
     shares.reserve(static_cast<std::size_t>(nb_gen));
     const GlobalBusIdVect & gen_buses = generators_.get_bus_id();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
+        if(gen_off != nullptr && static_cast<std::size_t>(gen_id) < gen_off->size() && (*gen_off)[gen_id]) continue;
         if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
         shares.push_back({gen_buses(gen_id).cast_int(),
                           generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
@@ -2251,9 +2353,11 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
     return shares;
 }
 
-void LSGrid::_split_q_residual_per_bus(const std::vector<QShare> & shares,
-                                       const Eigen::Ref<const RealVect> & reactive_mismatch)
+std::vector<real_type> LSGrid::_q_residual_values(const std::vector<QShare> & shares,
+                                                 const Eigen::Ref<const RealVect> & reactive_mismatch,
+                                                 const SolverBusIdVect & id_me_to_solver)
 {
+    std::vector<real_type> res(shares.size(), 0.);
     // The only thing that cannot be decided one element at a time is how the machines
     // of one bus share its reactive residual when there is more than one of them.
     //
@@ -2276,7 +2380,7 @@ void LSGrid::_split_q_residual_per_bus(const std::vector<QShare> & shares,
         std::size_t last = first + 1;
         while((last < nb_shares) && ((by_bus[last] >> 32) == bus_key)) ++last;
         const int bus_id = static_cast<int>(bus_key);
-        const SolverBusId bus_solver = ac_cache_.id_me_to_solver[bus_id];
+        const SolverBusId bus_solver = id_me_to_solver[bus_id];
         const real_type q_to_absorb = reactive_mismatch[bus_solver.cast_int()];
         const std::size_t nb_here = last - first;
 
@@ -2306,22 +2410,35 @@ void LSGrid::_split_q_residual_per_bus(const std::vector<QShare> & shares,
             if(nb_here == 1) q = q_to_absorb;
             else if(!all_finite) q = q_to_absorb / nb_here_r;
             else q = q_to_absorb * (sh.span + eps_q) / (total_span + nb_here_r * eps_q);
-            switch(sh.kind){
-                case VoltageControlSolverData::GEN:
-                    generators_.set_voltage_control_q(sh.elem_id, q);
-                    break;
-                case VoltageControlSolverData::STORAGE:
-                    storages_.set_voltage_control_q(sh.elem_id, q);  // stored in the load convention there
-                    break;
-                case VoltageControlSolverData::HVDC_SIDE_1:
-                    hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 1, q);
-                    break;
-                default:
-                    hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 2, q);
-                    break;
-            }
+            res[by_bus[k] & 0xffffffffu] = q;
         }
         first = last;
+    }
+    return res;
+}
+
+
+void LSGrid::_split_q_residual_per_bus(const std::vector<QShare> & shares,
+                                       const Eigen::Ref<const RealVect> & reactive_mismatch)
+{
+    const std::vector<real_type> q_values = _q_residual_values(shares, reactive_mismatch, ac_cache_.id_me_to_solver);
+    for(std::size_t k = 0; k < shares.size(); ++k){
+        const QShare & sh = shares[k];
+        const real_type q = q_values[k];
+        switch(sh.kind){
+            case VoltageControlSolverData::GEN:
+                generators_.set_voltage_control_q(sh.elem_id, q);
+                break;
+            case VoltageControlSolverData::STORAGE:
+                storages_.set_voltage_control_q(sh.elem_id, q);  // stored in the load convention there
+                break;
+            case VoltageControlSolverData::HVDC_SIDE_1:
+                hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 1, q);
+                break;
+            default:
+                hvdc_lines_.set_station_voltage_control_q(sh.elem_id, 2, q);
+                break;
+        }
     }
 }
 

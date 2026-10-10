@@ -870,6 +870,53 @@ class LS2G_API LSGrid final
                                                                 const std::vector<bool> & gen_off,
                                                                 const std::vector<bool> & storage_off = std::vector<bool>()) const;
 
+        /**
+         * The active and reactive output of every generator (MW, MVAr) at a state the
+         * CALLER solved -- a batch row -- by the rules compute_results publishes them
+         * with, and without writing anything into this grid (several rows, several
+         * threads, one grid):
+         *
+         *   - P: the setpoint `target_p_mw` (one per generator) plus, for a participant of
+         *     the distributed slack, its share of its bus' active mismatch, split by raw
+         *     weight over every participant of that bus (storage units included);
+         *   - Q (AC only, 0 in DC): the setpoint for a machine that does not regulate, the
+         *     algorithm's own value for a controller it solved (`ctrl_q` / `ctrl_kind` /
+         *     `ctrl_elem`, as get_controller_q / _kind / _elem return them), and otherwise
+         *     a share of its bus' reactive residual, proportional to the reactive range of
+         *     every machine sharing it.
+         *
+         * `gen_off` (empty, or one entry per generator): generators out in that state, as
+         * if disconnected -- P = Q = 0, no share of anything. `no_slack_share` /
+         * `storage_no_slack_share` (empty, or one entry per element): units left out of
+         * the distributed slack only (the batch's slack pre-pass does that to one it
+         * saturated). The mismatches are per solver bus, in MW / MVAr, the active one with
+         * the slack the solve absorbed already taken out (see _fill_bus_mismatch_ac).
+         */
+        /**
+         * Each generator's share of the distributed slack (one per generator, summing to 1
+         * over the participants together with the storage units' shares): its weight over
+         * the total weight of every connected participant. That is the fraction of the
+         * slack a solve absorbs that it carries -- P = target_p + share * absorbed. 0 for
+         * a generator that does not take part (disconnected, not flagged, or no weight).
+         * Read off the CURRENT weights: they follow the setpoints only through
+         * update_slack_weights, not through change_p_gen.
+         */
+        [[nodiscard]] RealVect get_gen_slack_shares() const;
+
+        void generator_results(bool ac,
+                               const Eigen::Ref<const RealVect> & target_p_mw,
+                               const std::vector<bool> & gen_off,
+                               const std::vector<bool> & no_slack_share,
+                               const std::vector<bool> & storage_no_slack_share,
+                               const SolverBusIdVect & id_me_to_solver,
+                               const Eigen::Ref<const RealVect> & active_mismatch_mw,
+                               const Eigen::Ref<const RealVect> & reactive_mismatch_mvar,
+                               const RealVect & ctrl_q,
+                               const IntVect & ctrl_kind,
+                               const IntVect & ctrl_elem,
+                               RealVect & p_mw,
+                               RealVect & q_mvar) const;
+
         //pickle
         LSGrid::StateRes get_state() const ;
         // `restore_algorithm == true` (the default) also re-selects the AC / DC
@@ -2910,10 +2957,18 @@ class LS2G_API LSGrid final
                                     std::vector<bool> & hvdc1_solved,
                                     std::vector<bool> & hvdc2_solved) const;
 
-        /// the machines that take a share of their bus' reactive residual, as a flat list
+        /// the machines that take a share of their bus' reactive residual, as a flat list.
+        /// `gen_off` (null, or one entry per generator): generators to leave out as if
+        /// disconnected -- what a batch row that disconnected them needs
         std::vector<QShare> _collect_q_residual_shares(const std::vector<bool> & gen_solved,
                                                        const std::vector<bool> & hvdc1_solved,
-                                                       const std::vector<bool> & hvdc2_solved) const;
+                                                       const std::vector<bool> & hvdc2_solved,
+                                                       const std::vector<bool> * gen_off = nullptr) const;
+
+        /// each one's share of its bus' reactive residual (MVAr), in the order of `shares`
+        static std::vector<real_type> _q_residual_values(const std::vector<QShare> & shares,
+                                                         const Eigen::Ref<const RealVect> & reactive_mismatch,
+                                                         const SolverBusIdVect & id_me_to_solver);
 
         /// give each of them its share, one bus at a time
         void _split_q_residual_per_bus(const std::vector<QShare> & shares,

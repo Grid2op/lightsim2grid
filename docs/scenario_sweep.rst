@@ -239,6 +239,98 @@ in either mode.
     ``compute_physical_violations`` follows the row: a generator the row moves or reactivates
     is checked on the bus the row gives it.
 
+Per-row results
+--------------------------
+
+Besides the voltages, the C++ object (`ScenarioSweepCPP`, or `sweep.computer` from the
+Python wrapper) reports, for every row of the last `compute()`:
+
+- `compute_branch_results()`: active and reactive power at both ends of every branch, as
+  an array of shape `(n_simul, n_branch, 4)` -- `P` and `Q` at side 1, then at side 2, in
+  MW and MVAr, branches numbered lines then transformers like `get_flows`. They are what
+  `get_line_res1/2` and `get_trafo_res1/2` would read after solving that row's topology
+  on its own. A branch the row disconnects reads 0, and so does a row that did not
+  converge. In DC, `Q` is 0 and side 2 carries the opposite of side 1.
+- `get_Ybus(row)` (AC) / `get_dcYbus(row)` (DC): the admittance matrix that row was
+  solved with, in grid bus numbering like `LSGrid.get_Ybus` (`solver_numbering=True` for
+  the solver one). An entry only the disconnected branches contributed to is removed from
+  the pattern rather than stored as an explicit zero.
+- `get_row_solve_times()` / `get_row_nb_iter()`: what the algorithm reported for each
+  row's solve, 0 for a row that never reached it.
+- `get_gen_results()`, once `compute_gen_results = True` was set before `compute()`: the
+  active and reactive output of every generator, shape `(n_simul, n_gen, 2)`, MW and
+  MVAr. The rules are the ones `get_gen_res` follows after a single powerflow: the
+  setpoint plus the generator's share of the distributed slack (re-weighted without the
+  participants the row disconnects); for Q, the setpoint of a machine that does not
+  regulate, the solver's own value for a controller it solved (a remote voltage control
+  group), or a share of its bus' reactive residual proportional to each machine's reactive
+  range. A generator the row disconnects reads 0. In DC, Q is 0.
+
+`compute_branch_results`, `get_gen_results`, `get_row_solve_times` and `get_row_nb_iter`
+exist on every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP` too); `get_Ybus` /
+`get_dcYbus` only where the topology varies per row (`ScenarioSweepCPP`,
+`ContingencyAnalysisCPP`).
+
+.. code-block:: python
+
+    computer = sweep.computer
+    res = computer.compute_branch_results()   # (n_simul, n_branch, 4)
+    p_or, q_or, p_ex, q_ex = res[..., 0], res[..., 1], res[..., 2], res[..., 3]
+    ybus_row_3 = computer.get_Ybus(3)          # scipy.sparse, (total_bus, total_bus)
+
+    computer.compute_gen_results = True        # before compute()
+    computer.compute(v_init, max_iter, tol)
+    gen = computer.get_gen_results()           # (n_simul, n_gen, 2): P, Q
+
+Outside a batch, `LSGrid.get_gen_slack_shares()` gives each generator's share of the
+distributed slack (`P = target_p + share * slack absorbed`). The weights it reads are set
+when the grid is built and by `update_slack_weights`; `change_p_gen` does not update them.
+
+Many sweeps in a row
+--------------------------
+
+A sweep holds its own copy of the grid, taken at construction: changing the grid
+afterwards (`change_p_gen`, `change_p_load`, ...) does not reach it. A scenario that
+differs from the grid by its injections is therefore expressed through the sweep, not by
+editing the grid and building a new sweep:
+
+.. code-block:: python
+
+    computer = ScenarioSweepCPP(grid)
+    computer.set_contingency_lines(line_mask)       # the outages, once
+    for scenario in scenarios:
+        computer.modify_gen_p(scenario.gen_p)        # one row per simulation
+        computer.modify_load_p(scenario.load_p)
+        computer.modify_load_q(scenario.load_q)
+        computer.compute(v_init, max_iter, tol)
+        assert computer.base_case_was_reused()       # nothing rebuilt but the injections
+
+What one `compute()` builds is kept for the next, and only what an input changed is
+rebuilt:
+
+- new injections (`modify_*`) keep everything: the admittance matrix, the base-case
+  powerflow, the symbolic analysis of the Jacobian;
+- new contingency masks (`set_contingency_*`) rebuild the base case (which branches each
+  row disconnects is part of it) but keep what was read off the grid. A fixed outage
+  list across scenarios is the fastest way to use one sweep.
+
+Building a new sweep per scenario stays correct, only slower; it is what to do when the
+grid itself changes (its parameters, its topology).
+
+Threads and processes
+--------------------------
+
+`compute()` releases Python's GIL. Two ways to use several cores follow from that:
+
+- a pool of Python threads, each running its own sweep (one object per thread: a sweep
+  is not meant to be used by two threads at once). This works because the GIL is
+  released for the whole solve;
+- `nb_thread` on one sweep, which splits its rows over C++ threads. It defaults to 1.
+
+In a caller that already runs one process per core, keep `nb_thread = 1`: more threads
+than cores only adds contention. `nb_thread > 1` pays one symbolic analysis per thread,
+so it is worth it for many rows rather than for a few.
+
 Handling disconnected grids and limit violations
 ------------------------------------------------------
 
