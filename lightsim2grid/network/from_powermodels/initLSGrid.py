@@ -33,6 +33,7 @@ from ._aux_add_gen import _aux_add_gen
 from ._aux_add_slack import _aux_add_slack
 from ._aux_add_dc_line import _aux_add_dc_line
 from ._my_const import NONE
+from lightsim2grid.network._default_algorithms import use_fastest_default_algorithms
 
 
 def init(network: dict,
@@ -162,5 +163,7 @@ def init(network: dict,
     # This also covers grids loaded from matpower, which are converted to the
     # powermodels format and routed through this function.
     model.check_grid()
+    # KLU where this build has it (see use_fastest_default_algorithms)
+    use_fastest_default_algorithms(model)
 
     return model
