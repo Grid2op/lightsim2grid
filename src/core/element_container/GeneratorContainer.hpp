@@ -221,6 +221,29 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             slack_.split(res_p_, 1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
                          "GeneratorContainer::set_p_slack");
         }
+        /**
+         * set_p_slack, for a state the caller solved itself and keeps outside this
+         * container (a batch row): adds each participant's share to `res_p` instead of
+         * res_p_. `gen_off` (empty, or one entry per generator) takes generators out as if
+         * disconnected, the way that row did.
+         */
+        void add_p_slack(RealVect & res_p,
+                         const Eigen::Ref<const RealVect> & node_mismatch,
+                         const SolverBusIdVect & id_grid_to_solver,
+                         const Eigen::Ref<const RealVect> & bus_raw_total,
+                         const std::vector<bool> & gen_off) const{
+            if(gen_off.empty()){
+                slack_.split(res_p, 1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
+                             "GeneratorContainer::add_p_slack");
+                return;
+            }
+            std::vector<bool> status(status_);
+            for(std::size_t gen_id = 0; gen_id < status.size() && gen_id < gen_off.size(); ++gen_id){
+                if(gen_off[gen_id]) status[gen_id] = false;
+            }
+            slack_.split(res_p, 1., node_mismatch, bus_raw_total, status, bus_id_, id_grid_to_solver,
+                         "GeneratorContainer::add_p_slack");
+        }
 
         // modification
         void turnedoff_no_pv(DualAlgoControl & solver_control){

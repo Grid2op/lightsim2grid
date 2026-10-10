@@ -326,5 +326,145 @@ class TestRowSolveStats(unittest.TestCase):
         assert np.array_equal(out[0][1], out[1][1])
 
 
+def _make_multi_slack_grid():
+    """case118 with a second generator on the bus of generator 4 (a different reactive
+    range, so the two split their bus' Q unevenly) and the slack spread over several
+    units, two of them on that bus"""
+    import copy
+    import pandapower as pp
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        net = copy.deepcopy(_make_net())
+        gen4 = net.gen.iloc[4]
+        pp.create_gen(net, bus=gen4.bus, p_mw=120., vm_pu=gen4.vm_pu,
+                      min_q_mvar=-50., max_q_mvar=150.)
+        grid = init_from_pandapower(net)
+    n_gen = len(grid.get_generators())
+    extra = n_gen - 1
+    slack = np.zeros(n_gen, dtype=bool)
+    slack[[4, 5, 10, 11, extra]] = True
+    slack[[g.id for g in grid.get_generators() if g.is_slack]] = True
+    grid.update_slack_weights(slack)
+    return grid, extra
+
+
+@functools.lru_cache(maxsize=None)
+def _reference_gen(gen_p, line_off, gen_off, ac):
+    """one-at-a-time solve of the multi-slack grid: get_gen_res as (nb_gen, 2), or None"""
+    ref, _ = _make_multi_slack_grid()
+    for g_id, p in enumerate(gen_p):
+        ref.change_p_gen(g_id, float(p))
+    for l_id in line_off:
+        ref.deactivate_powerline(int(l_id))
+    for g_id in gen_off:
+        ref.deactivate_gen(int(g_id))
+    V0 = np.ones(ref.total_bus(), dtype=complex)
+    V = ref.ac_pf(V0, MAX_IT, TOL) if ac else ref.dc_pf(V0, MAX_IT, TOL)
+    if V.shape[0] == 0:
+        return None
+    p, q = ref.get_gen_res()[:2]
+    return np.stack([p, q], axis=1)
+
+
+class TestGenResults(unittest.TestCase):
+    """compute_gen_results: P and Q of every generator per row, against get_gen_res of a
+    one-at-a-time solve -- distributed slack over several units, two of them sharing a
+    bus, rows that take participants out (one of the pair, both, another one)"""
+
+    def _rows(self, grid, extra):
+        n_line, n_gen = len(grid.get_lines()), len(grid.get_generators())
+        rows = [([], []), ([7], []), ([], [4]), ([], [extra]), ([], [4, extra]),
+                ([20], [10]), ([], [5, 11]), ([33], [])]
+        line_mask = np.zeros((len(rows), n_line), dtype=bool)
+        gen_mask = np.zeros((len(rows), n_gen), dtype=bool)
+        for row, (lines, gens) in enumerate(rows):
+            line_mask[row, lines] = True
+            gen_mask[row, gens] = True
+        rng = np.random.default_rng(4)
+        gen_p = np.array(grid.get_gen_target_p()) * rng.uniform(0.9, 1.1, (len(rows), n_gen))
+        return line_mask, gen_mask, gen_p
+
+    def _check(self, ac):
+        grid, extra = _make_multi_slack_grid()
+        line_mask, gen_mask, gen_p = self._rows(grid, extra)
+        n_row = line_mask.shape[0]
+        for algo in _algos(ac):
+            sweep = ScenarioSweepCPP(grid)
+            sweep.change_algorithm(algo)
+            sweep.compute_gen_results = True
+            sweep.modify_gen_p(gen_p)
+            sweep.set_contingency_lines(line_mask)
+            sweep.set_contingency_gens(gen_mask)
+            sweep.compute(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
+            res = sweep.get_gen_results()
+            assert res.shape == (n_row, len(grid.get_generators()), 2)
+            conv = np.asarray(sweep.converged_mask())
+            nb_checked = 0
+            for row in range(n_row):
+                ref = _reference_gen(tuple(gen_p[row]), tuple(np.flatnonzero(line_mask[row]).tolist()),
+                                     tuple(np.flatnonzero(gen_mask[row]).tolist()), ac)
+                assert conv[row] == (ref is not None), f"{algo}: row {row}, convergence differs"
+                if ref is None:
+                    assert np.all(res[row] == 0.)
+                    continue
+                assert np.all(res[row, gen_mask[row]] == 0.), f"{algo}: row {row}, a disconnected generator produces"
+                err = np.abs(res[row] - ref).max()
+                assert err <= 1e-6, f"{algo}: row {row}, generator error {err} (MW / MVAr)"
+                if not ac:
+                    assert np.all(res[row, :, 1] == 0.)
+                nb_checked += 1
+            assert nb_checked >= n_row - 1
+
+    def test_ac(self):
+        self._check(ac=True)
+
+    def test_dc(self):
+        self._check(ac=False)
+
+    def test_pair_shares_its_bus(self):
+        """the guard of the test above: the two generators of one bus do split its slack
+        share by weight and its Q by reactive range, so the comparison is not vacuous"""
+        grid, extra = _make_multi_slack_grid()
+        grid.ac_pf(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
+        p, q = grid.get_gen_res()[:2]
+        target = np.array(grid.get_gen_target_p())
+        assert abs(p[4] - target[4]) > 1. and abs(p[extra] - target[extra]) > 1.
+        assert abs(q[4] - q[extra]) > 1.
+
+    def test_off_by_default(self):
+        grid, extra = _make_multi_slack_grid()
+        line_mask, gen_mask, gen_p = self._rows(grid, extra)
+        sweep = ScenarioSweepCPP(grid)
+        assert not sweep.compute_gen_results
+        sweep.set_contingency_lines(line_mask)
+        sweep.compute(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
+        assert sweep.get_gen_results().size == 0
+
+    def test_contingency_analysis(self):
+        grid, extra = _make_multi_slack_grid()
+        gen_p = tuple(np.array(grid.get_gen_target_p()))
+        for ac in (True, False):
+            ca = ContingencyAnalysisCPP(grid)
+            ca.change_algorithm(_algos(ac)[0])
+            ca.compute_gen_results = True
+            for l_id in (3, 20):
+                ca.add_n1(l_id)
+            ca.compute(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
+            res = ca.get_gen_results()
+            for row, l_id in enumerate((3, 20)):
+                ref = _reference_gen(gen_p, (l_id,), (), ac)
+                assert np.abs(res[row] - ref).max() <= 1e-6
+
+    def test_slack_shares(self):
+        """LSGrid.get_gen_slack_shares: P - target = share * (total slack absorbed)"""
+        grid, extra = _make_multi_slack_grid()
+        shares = np.asarray(grid.get_gen_slack_shares())
+        # update_slack_weights weighs by target P: a unit flagged with no target takes no part
+        assert abs(shares.sum() - 1.) <= 1e-12 and np.count_nonzero(shares) >= 4
+        grid.ac_pf(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
+        delta = np.asarray(grid.get_gen_res()[0]) - np.array(grid.get_gen_target_p())
+        assert np.abs(delta - shares * delta.sum()).max() <= 1e-6
+
+
 if __name__ == "__main__":
     unittest.main()

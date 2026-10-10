@@ -369,6 +369,29 @@ void bind_batch_shared(py::class_<T> & cls)
              "Per row of the last compute(): the time the algorithm reported for its solve, in "
              "seconds. 0 for a row never handed to the solver (skipped before it, as an "
              "islanding contingency is, or never reached).")
+        .def_property("compute_gen_results",
+                      [](const T & self){ return self.get_compute_gen_results(); },
+                      [](T & self, bool val){ self.set_compute_gen_results(val); },
+                      "Whether every converged row records the active and reactive output of every "
+                      "generator (read with get_gen_results). Off by default. They follow the rules the "
+                      "grid uses after a single powerflow: the setpoint plus the share of the "
+                      "distributed slack for P; for Q the setpoint of a non-regulating machine, the "
+                      "algorithm's own value for a controller it solved, or a share of the bus' "
+                      "reactive residual proportional to each machine's reactive range. A generator "
+                      "the row disconnects, or strands on a bus it masks, reads 0, and so does every "
+                      "generator of a row that did not converge. Takes effect at the next compute().")
+        .def("get_gen_results",
+             [](const T & self){
+                 const auto & mat = self.get_gen_results();
+                 const py::ssize_t nb_rows = static_cast<py::ssize_t>(mat.rows());
+                 const py::ssize_t nb_gen = static_cast<py::ssize_t>(mat.cols() / 2);
+                 py::array_t<real_type> res({nb_rows, nb_gen, static_cast<py::ssize_t>(2)});
+                 if(mat.size() > 0) std::copy(mat.data(), mat.data() + mat.size(), res.mutable_data());
+                 return res;
+             },
+             "Generator results of the last compute(), shape (nb_rows, nb_gen, 2): ``[..., 0]`` is "
+             "P (MW), ``[..., 1]`` is Q (MVAr, 0 in DC). Empty unless compute_gen_results was set "
+             "before that compute().")
         .def("get_row_nb_iter", &T::get_row_nb_iter,
              "Per row of the last compute(): the number of iterations the algorithm reported "
              "(0 for a row never handed to the solver).");
