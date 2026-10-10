@@ -266,6 +266,9 @@ Python wrapper) reports, for every row of the last `compute()`:
   group), or a share of its bus' reactive residual proportional to each machine's reactive
   range. A generator the row disconnects reads 0. In DC, Q is 0.
 
+With `set_topo_actions`, the branch and generator results follow the row's action: an
+element it moves, reconnects or reactivates is reported on the buses the row gives it.
+
 `compute_branch_results`, `get_gen_results`, `get_row_solve_times` and `get_row_nb_iter`
 exist on every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP` too); `get_Ybus` /
 `get_dcYbus` only where the topology varies per row (`ScenarioSweepCPP`,

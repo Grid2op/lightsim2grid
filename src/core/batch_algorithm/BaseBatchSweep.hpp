@@ -2246,6 +2246,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         std::vector<std::pair<int, int> > _row_gens_placed(size_t) const { return std::vector<std::pair<int, int> >(); }
+        // every (generator, solver bus) pair row i's topological action places, whether or
+        // not the generator pins its bus there (see _record_row_gen_results)
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        std::vector<std::pair<int, int> > _row_gens_placed_all(size_t i) const {
+            std::vector<std::pair<int, int> > res;
+            if(i >= sbus_policy_.topo_gens_on.size()) return res;
+            for(const auto & gen_on : sbus_policy_.topo_gens_on[i]) res.push_back(std::make_pair(gen_on.gen_id, gen_on.bus_solver));
+            return res;
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        std::vector<std::pair<int, int> > _row_gens_placed_all(size_t) const { return std::vector<std::pair<int, int> >(); }
 
         // ---- row i's topological action, as the slack pre-pass reads it (see
         // _prepare_slack_redistribution; nothing outside ScenarioSweep) ----------------
@@ -2446,6 +2457,19 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 no_share[gen_id] = _row_takes_no_share(i, ViolationElementType::GENERATOR, gen_id);
                 target_p(gen_id) = _row_target_p(i, ViolationElementType::GENERATOR, gen_id);
             }
+            // the generators this row's action places (moved, or reactivated): off their
+            // base bus, which is what gen_off said of a moved one, but on the row's --
+            // unless that bus is one the row masks
+            const std::vector<std::pair<int, int> > gen_placed = _row_gens_placed_all(i);
+            const GlobalBusIdVect & solver_to_me = active_layout().id_solver_to_me;
+            std::vector<std::pair<int, int> > gen_placed_me;
+            gen_placed_me.reserve(gen_placed.size());
+            for(const auto & gen_bus : gen_placed){
+                const bool in_island = gen_bus.second < 0 ||
+                                       (masked != nullptr && std::binary_search(masked->begin(), masked->end(), gen_bus.second));
+                gen_off[gen_bus.first] = in_island;
+                if(!in_island) gen_placed_me.push_back({gen_bus.first, solver_to_me[static_cast<size_t>(gen_bus.second)].cast_int()});
+            }
             std::vector<bool> storage_no_share;
             for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
                 if(!_row_takes_no_share(i, ViolationElementType::STORAGE, storage_id)) continue;
@@ -2486,7 +2510,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             RealVect p_mw, q_mvar;
             _grid_model.generator_results(ac, target_p, gen_off, no_share, storage_no_share, me_to_solver,
                                           active_mismatch, reactive_mismatch, ctrl_q, ctrl_kind, ctrl_elem,
-                                          p_mw, q_mvar);
+                                          p_mw, q_mvar, gen_placed_me);
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
                 _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id) = p_mw(gen_id);
                 _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id + 1) = q_mvar(gen_id);

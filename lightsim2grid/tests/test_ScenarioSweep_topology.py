@@ -709,6 +709,96 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
             self.assertAlmostEqual(got[(ViolationElementType.LINE, line_id, 1)], ref_flows[line_id], places=6)
 
 
+class TestScenarioSweepTopologyRowResults(_TopoSweepBase):
+    """compute_branch_results and get_gen_results follow the row's action: a branch or a
+    generator it moves is reported on the row's buses, one it reconnects or reactivates
+    is on, one it disconnects reads 0 -- as get_line_res1/2, get_trafo_res1/2 and
+    get_gen_res read after the one-off powerflow"""
+    def _sweep_results(self, actions, grid=None):
+        g = self.grid if grid is None else grid
+        sweep = ScenarioSweepCPP(g)
+        nb_rows = len(actions)
+        sweep.modify_gen_p(self.gen_p[:nb_rows])
+        sweep.modify_load_p(self.load_p[:nb_rows])
+        sweep.modify_load_q(self.load_q[:nb_rows])
+        sweep.set_topo_actions(self._topo(actions))
+        sweep.compute_gen_results = True
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+        branch = sweep.compute_branch_results()
+        gen = sweep.get_gen_results()
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self.assertTrue(sweep.converged_mask()[row], f"row {row} did not converge")
+                _, _, ref = self._reference(row, action, grid)
+                ref_branch = np.stack([np.concatenate([ref.get_line_res1()[0], ref.get_trafo_res1()[0]]),
+                                       np.concatenate([ref.get_line_res1()[1], ref.get_trafo_res1()[1]]),
+                                       np.concatenate([ref.get_line_res2()[0], ref.get_trafo_res2()[0]]),
+                                       np.concatenate([ref.get_line_res2()[1], ref.get_trafo_res2()[1]])], axis=1)
+                np.testing.assert_allclose(branch[row], ref_branch, rtol=1e-6, atol=1e-6,
+                                           err_msg=f"row {row}: branch results differ from the one-off powerflow")
+                ref_p, ref_q, _ = ref.get_gen_res()
+                np.testing.assert_allclose(gen[row, :, 0], ref_p, rtol=1e-6, atol=1e-6,
+                                           err_msg=f"row {row}: generator P differs from the one-off powerflow")
+                np.testing.assert_allclose(gen[row, :, 1], ref_q, rtol=1e-6, atol=1e-6,
+                                           err_msg=f"row {row}: generator Q differs from the one-off powerflow")
+        return branch, gen
+
+    def test_moves(self):
+        actions = [
+            # a bus split: two line ends and the load on busbar 2
+            self._act({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2), (3, 2)]}}),
+            self._act(),
+            # the generator moves with a line
+            self._act({"set_bus": {"generators_id": [(0, 2)], "lines_or_id": [(4, 2)]}}),
+            # a move and a disconnection by the action in one row
+            self._act({"set_bus": {"generators_id": [(0, 2)], "lines_or_id": [(4, 2)]},
+                       "set_line_status": [(7, -1)]}),
+        ]
+        branch, gen = self._sweep_results(actions)
+        self.assertNotEqual(gen[2, 0, 0], 0.)
+        np.testing.assert_array_equal(branch[3, 7], 0.)
+
+    def test_generator_leaves_a_shared_bus(self):
+        """generators 2 and 3 share a bus on case14: moved apart, each takes the whole
+        reactive residual of its own bus rather than a share of the base one"""
+        cls = type(self.env)
+        stays, moves = 2, 3
+        self.assertEqual(self.bus_of_gen[stays], self.bus_of_gen[moves])
+        at_sub = self.env.action_space.get_obj_connect_to(substation_id=int(cls.gen_to_subid[moves]))
+        line_end = ("lines_or_id", int(at_sub["lines_or_id"][0])) if len(at_sub["lines_or_id"]) \
+            else ("lines_ex_id", int(at_sub["lines_ex_id"][0]))
+        self._sweep_results([self._act({"set_bus": {"generators_id": [(moves, 2)], line_end[0]: [(line_end[1], 2)]}}),
+                             self._act()])
+
+    def test_branch_reconnection(self):
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_powerline(3)
+        actions = [
+            self._act({"set_line_status": [(3, 1)]}),
+            self._act(),
+            # back on a new busbar, with the load
+            self._act({"set_bus": {"lines_or_id": [(3, 2)], "loads_id": [(0, 2)]}}),
+        ]
+        branch, _ = self._sweep_results(actions, grid=grid)
+        self.assertNotEqual(branch[0, 3, 0], 0.)
+        np.testing.assert_array_equal(branch[1, 3], 0.)
+
+    def test_generator_reactivation(self):
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_gen(1)
+        actions = [
+            self._act({"set_bus": {"generators_id": [(1, 1)]}}),
+            self._act(),
+            # reactivated while another one goes out
+            self._act({"set_bus": {"generators_id": [(1, 1), (2, -1)]}}),
+        ]
+        _, gen = self._sweep_results(actions, grid=grid)
+        self.assertNotEqual(gen[0, 1, 0], 0.)
+        np.testing.assert_array_equal(gen[1, 1], 0.)
+        np.testing.assert_array_equal(gen[2, 2], 0.)
+
+
 class _RedistributeSlackBase(_TopoSweepBase):
     """``redistribute_slack`` with topological actions: the slack pre-pass shares what the
     row really loses, read off the row's own placement -- a generator moved still

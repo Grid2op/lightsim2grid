@@ -2124,7 +2124,8 @@ void LSGrid::generator_results(bool ac,
                                const IntVect & ctrl_kind,
                                const IntVect & ctrl_elem,
                                RealVect & p_mw,
-                               RealVect & q_mvar) const
+                               RealVect & q_mvar,
+                               const std::vector<std::pair<int, int> > & gen_placed) const
 {
     const int nb_gen = static_cast<int>(generators_.nb());
     const auto check_size = [nb_gen](std::size_t size, const char * what){
@@ -2145,15 +2146,27 @@ void LSGrid::generator_results(bool ac,
     }
     const auto is_off = [&gen_off](int gen_id){ return !gen_off.empty() && gen_off[gen_id]; };
     const std::vector<bool> & status = generators_.get_status();
+    // the generators placed on a bus of their own: on whatever their base status, and
+    // left out of everything below that reads their base bus
+    std::vector<bool> placed(static_cast<std::size_t>(nb_gen), false);
+    for(const auto & gen_bus : gen_placed){
+        if(gen_bus.first < 0 || gen_bus.first >= nb_gen){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::generator_results: 'gen_placed' names generator " << gen_bus.first
+                 << ", there are " << nb_gen << ".";
+            throw std::runtime_error(exc_.str());
+        }
+        placed[gen_bus.first] = true;
+    }
 
     // ---- P: the setpoint, then the distributed slack (see compute_results) ----------
     p_mw = RealVect::Zero(nb_gen);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(status[gen_id] && !is_off(gen_id)) p_mw(gen_id) = target_p_mw(gen_id);
+        if((status[gen_id] || placed[gen_id]) && !is_off(gen_id)) p_mw(gen_id) = target_p_mw(gen_id);
     }
     std::vector<bool> slack_off(static_cast<std::size_t>(nb_gen), false);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        slack_off[gen_id] = is_off(gen_id) || (!no_slack_share.empty() && no_slack_share[gen_id]);
+        slack_off[gen_id] = is_off(gen_id) || placed[gen_id] || (!no_slack_share.empty() && no_slack_share[gen_id]);
     }
     const RealVect raw_weights = _raw_slack_weights_solver(static_cast<size_t>(active_mismatch_mw.size()),
                                                            id_me_to_solver, &slack_off,
@@ -2165,7 +2178,7 @@ void LSGrid::generator_results(bool ac,
     if(!ac) return;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         real_type q;
-        if(is_off(gen_id)) continue;  // 0
+        if(is_off(gen_id) || placed[gen_id]) continue;  // 0, or below
         if(generators_.q_without_powerflow(gen_id, q)) q_mvar(gen_id) = q;
     }
     std::vector<bool> gen_solved(static_cast<std::size_t>(nb_gen), false);
@@ -2173,8 +2186,29 @@ void LSGrid::generator_results(bool ac,
     std::vector<bool> hvdc2_solved(hvdc_lines_.nb(), false);
     _mark_q_solved_by_algo(ctrl_kind, ctrl_elem, gen_solved, hvdc1_solved, hvdc2_solved);
     if(reactive_mismatch_mvar.size() > 0){
-        const std::vector<QShare> shares = _collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved,
-                                                                      gen_off.empty() ? nullptr : &gen_off);
+        // a placed generator is left out of its base bus' shares ...
+        std::vector<bool> share_off;
+        if(!gen_placed.empty()){
+            share_off = placed;
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id) if(is_off(gen_id)) share_off[gen_id] = true;
+        }
+        const std::vector<bool> * share_off_ptr = !share_off.empty() ? &share_off :
+                                                  (gen_off.empty() ? nullptr : &gen_off);
+        std::vector<QShare> shares = _collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved, share_off_ptr);
+        // ... and, when it pins the bus it is placed on, takes a share of that one. The
+        // others publish what needs no powerflow: their setpoint, or 0 for one treated
+        // as off (q_without_powerflow, without its base-status test).
+        for(const auto & gen_bus : gen_placed){
+            const int gen_id = gen_bus.first;
+            if(is_off(gen_id)) continue;
+            if(generators_.would_be_local_voltage_controller(gen_id)){
+                shares.push_back({gen_bus.second,
+                                  generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
+                                  VoltageControlSolverData::GEN, gen_id});
+            } else if(!generators_.get_voltage_regulator_on(gen_id)){
+                q_mvar(gen_id) = generators_.get_target_q_mvar(gen_id);
+            }
+        }
         const std::vector<real_type> q_values = _q_residual_values(shares, reactive_mismatch_mvar, id_me_to_solver);
         for(std::size_t k = 0; k < shares.size(); ++k){
             if(shares[k].kind == VoltageControlSolverData::GEN) q_mvar(shares[k].elem_id) = q_values[k];
@@ -2183,7 +2217,7 @@ void LSGrid::generator_results(bool ac,
     for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
         if(ctrl_kind(i) != VoltageControlSolverData::GEN) continue;
         const int gen_id = ctrl_elem(i);
-        if(gen_id < 0 || gen_id >= nb_gen || is_off(gen_id)) continue;
+        if(gen_id < 0 || gen_id >= nb_gen || is_off(gen_id) || placed[gen_id]) continue;
         q_mvar(gen_id) = ctrl_q(i) * sn_mva_;
     }
 }

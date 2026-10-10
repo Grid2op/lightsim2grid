@@ -891,6 +891,11 @@ class LS2G_API LSGrid final
          * the distributed slack only (the batch's slack pre-pass does that to one it
          * saturated). The mismatches are per solver bus, in MW / MVAr, the active one with
          * the slack the solve absorbed already taken out (see _fill_bus_mismatch_ac).
+         *
+         * `gen_placed` (generator, grid bus): generators that state puts on a bus of its
+         * own -- moved, or reactivated -- as a batch row's topological action does. One
+         * produces its setpoint, out of the distributed slack, and shares the reactive
+         * residual of THAT bus; `gen_off` must not flag it.
          */
         /**
          * Each generator's share of the distributed slack (one per generator, summing to 1
@@ -915,7 +920,8 @@ class LS2G_API LSGrid final
                                const IntVect & ctrl_kind,
                                const IntVect & ctrl_elem,
                                RealVect & p_mw,
-                               RealVect & q_mvar) const;
+                               RealVect & q_mvar,
+                               const std::vector<std::pair<int, int> > & gen_placed = std::vector<std::pair<int, int> >()) const;
 
         //pickle
         LSGrid::StateRes get_state() const ;

@@ -624,24 +624,53 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             Eigen::Ref<const RealVect> ydc_21 = structure_data.ydc_21();
             Eigen::Ref<const RealVect> ydc_22 = structure_data.ydc_22();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift();  // empty for a line
+            // the raw blocks, for a branch this row places itself (see below)
+            Eigen::Ref<const CplxVect> yac_raw_11 = structure_data.yac_11();
+            Eigen::Ref<const CplxVect> yac_raw_12 = structure_data.yac_12();
+            Eigen::Ref<const CplxVect> yac_raw_21 = structure_data.yac_21();
+            Eigen::Ref<const CplxVect> yac_raw_22 = structure_data.yac_22();
+            // this row's own placement of some branches (ScenarioSweep set_topo_actions),
+            // sorted by branch id: walked alongside the elements, as in _flows_of_row
+            const std::vector<BranchBusOverride> * overrides =
+                (static_cast<size_t>(i) < _row_branch_overrides_.size() && !_row_branch_overrides_[static_cast<size_t>(i)].empty())
+                ? &_row_branch_overrides_[static_cast<size_t>(i)] : nullptr;
+            size_t next_override = 0;
+            if(overrides != nullptr){
+                while(next_override < overrides->size() && (*overrides)[next_override].branch_id < static_cast<int>(lag_id)) ++next_override;
+            }
 
             real_type * out = _branch_results.row(i).data() + 4 * lag_id;
             const size_t nb_el = structure_data.nb();
             for(size_t el_id = 0; el_id < nb_el; ++el_id){
-                if(!el_status[el_id]) continue;
-                const bool s1 = status1[el_id];
-                const bool s2 = status2[el_id];
-                real_type * dst = out + 4 * el_id;
+                bool on = el_status[el_id];
+                bool s1 = status1[el_id];
+                bool s2 = status2[el_id];
                 // a half-open branch has _deactivated_bus_id on its open side: never used
                 // to index the voltages, the open end is at 0 V (AC, where yac_eff_* is
                 // Kron-reduced for it) or the branch carries nothing (DC)
-                const int from_me = bus_from(el_id).cast_int();
-                const int to_me = bus_to(el_id).cast_int();
+                int from_me = bus_from(el_id).cast_int();
+                int to_me = bus_to(el_id).cast_int();
+                bool own_placement = false;
+                if(overrides != nullptr && next_override < overrides->size() &&
+                   (*overrides)[next_override].branch_id == static_cast<int>(el_id + lag_id)){
+                    const BranchBusOverride & ov = (*overrides)[next_override];
+                    ++next_override;
+                    on = ov.connected;
+                    // a branch the row places has both ends closed on the row's buses:
+                    // its raw block applies (yac_eff_* is 0 for one off in the base grid)
+                    if(on){ s1 = true; s2 = true; from_me = ov.from_me; to_me = ov.to_me; own_placement = true; }
+                }
+                if(!on) continue;
+                real_type * dst = out + 4 * el_id;
                 if(is_ac){
                     const cplx_type Ef = s1 ? V_row[from_me] : cplx_type(0., 0.);
                     const cplx_type Et = s2 ? V_row[to_me] : cplx_type(0., 0.);
-                    const cplx_type S_f = Ef * std::conj(yac_11(el_id) * Ef + yac_12(el_id) * Et);
-                    const cplx_type S_t = Et * std::conj(yac_22(el_id) * Et + yac_21(el_id) * Ef);
+                    const cplx_type y11 = own_placement ? yac_raw_11(el_id) : yac_11(el_id);
+                    const cplx_type y12 = own_placement ? yac_raw_12(el_id) : yac_12(el_id);
+                    const cplx_type y21 = own_placement ? yac_raw_21(el_id) : yac_21(el_id);
+                    const cplx_type y22 = own_placement ? yac_raw_22(el_id) : yac_22(el_id);
+                    const cplx_type S_f = Ef * std::conj(y11 * Ef + y12 * Et);
+                    const cplx_type S_t = Et * std::conj(y22 * Et + y21 * Ef);
                     dst[0] = std::real(S_f) * sn_mva;
                     dst[1] = std::imag(S_f) * sn_mva;
                     dst[2] = std::real(S_t) * sn_mva;

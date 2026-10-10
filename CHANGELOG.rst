@@ -257,6 +257,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``LSGrid.get_gen_slack_shares()``: each generator's share of the distributed slack.
 - [ADDED] ``ScenarioSweepCPP`` / ``ContingencyAnalysisCPP``: ``get_Ybus(row)`` / ``get_dcYbus(row)``,
   the admittance matrix a row was solved with.
+- [FIXED] ``compute_branch_results`` / ``get_gen_results`` with ``set_topo_actions``: a branch or
+  generator the row moves, reconnects or reactivates was reported on its base bus, or as off.
 - [FIXED] DC batch: disconnecting a half-open branch edited Bbus, where DC never stamped it.
 - [FIXED] DC batch: a bus whose regulating generators a row disconnects kept their voltage
   setpoint as its magnitude (``dc_pf`` gives the starting one), which skewed the currents.
