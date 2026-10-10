@@ -36,6 +36,7 @@ from ._aux_add_hvdc import _aux_add_hvdc
 from ._aux_add_storage import _aux_add_storage
 from ._aux_add_slack import _aux_add_slack
 from ._olf_params import _olf_realistic_voltage_range
+from lightsim2grid.network._default_algorithms import use_fastest_default_algorithms
 
 
 def init(net : pypo.network.Network,
@@ -408,6 +409,8 @@ def init(net : pypo.network.Network,
     # make sure the grid we just built is internally consistent (bus / substation
     # / topology-vector indices in range, no NaN/Inf in the physical inputs)
     model.check_grid()
+    # KLU where this build has it (see use_fastest_default_algorithms)
+    use_fastest_default_algorithms(model)
 
     if not return_sub_id:
         return model

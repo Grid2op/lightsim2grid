@@ -221,6 +221,51 @@ Outside a batch, `LSGrid.get_gen_slack_shares()` gives each generator's share of
 distributed slack (`P = target_p + share * slack absorbed`). The weights it reads are set
 when the grid is built and by `update_slack_weights`; `change_p_gen` does not update them.
 
+Many sweeps in a row
+--------------------------
+
+A sweep holds its own copy of the grid, taken at construction: changing the grid
+afterwards (`change_p_gen`, `change_p_load`, ...) does not reach it. A scenario that
+differs from the grid by its injections is therefore expressed through the sweep, not by
+editing the grid and building a new sweep:
+
+.. code-block:: python
+
+    computer = ScenarioSweepCPP(grid)
+    computer.set_contingency_lines(line_mask)       # the outages, once
+    for scenario in scenarios:
+        computer.modify_gen_p(scenario.gen_p)        # one row per simulation
+        computer.modify_load_p(scenario.load_p)
+        computer.modify_load_q(scenario.load_q)
+        computer.compute(v_init, max_iter, tol)
+        assert computer.base_case_was_reused()       # nothing rebuilt but the injections
+
+What one `compute()` builds is kept for the next, and only what an input changed is
+rebuilt:
+
+- new injections (`modify_*`) keep everything: the admittance matrix, the base-case
+  powerflow, the symbolic analysis of the Jacobian;
+- new contingency masks (`set_contingency_*`) rebuild the base case (which branches each
+  row disconnects is part of it) but keep what was read off the grid. A fixed outage
+  list across scenarios is the fastest way to use one sweep.
+
+Building a new sweep per scenario stays correct, only slower; it is what to do when the
+grid itself changes (its parameters, its topology).
+
+Threads and processes
+--------------------------
+
+`compute()` releases Python's GIL. Two ways to use several cores follow from that:
+
+- a pool of Python threads, each running its own sweep (one object per thread: a sweep
+  is not meant to be used by two threads at once). This works because the GIL is
+  released for the whole solve;
+- `nb_thread` on one sweep, which splits its rows over C++ threads. It defaults to 1.
+
+In a caller that already runs one process per core, keep `nb_thread = 1`: more threads
+than cores only adds contention. `nb_thread > 1` pays one symbolic analysis per thread,
+so it is worth it for many rows rather than for a few.
+
 Handling disconnected grids and limit violations
 ------------------------------------------------------
 
