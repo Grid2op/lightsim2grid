@@ -271,6 +271,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         static constexpr bool IS_FDPF = false;
         static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = false;
         static constexpr bool FILLS_BUS_MISMATCH = false;
+        static constexpr bool DISTRIBUTES_SLACK = false;
 
         virtual bool is_dc() const noexcept { return IS_DC; }
         // Only the Newton-Raphson algorithms implement the hvdc angle-droop
@@ -302,6 +303,15 @@ class LS2G_API BaseAlgo : public BaseConstants
          * behaviour it has today: LSGrid falls back to deriving the mismatch itself.
          */
         virtual bool fills_bus_mismatch() const noexcept { return FILLS_BUS_MISMATCH; }
+        /**
+         * Does this algorithm share the imbalance on the slack buses by the
+         * `slack_weights` it is handed (a distributed slack)? A single-slack one
+         * (NRSing_*, Gauss-Seidel) leaves it all on the reference bus whatever the
+         * weights say, so a caller that moves set-points by those weights -- the batch
+         * algorithms' `redistribute_slack` -- would describe a state it did not solve.
+         * Defaults to false, the conservative answer for a plugin that does not say.
+         */
+        virtual bool distributes_slack() const noexcept { return DISTRIBUTES_SLACK; }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
@@ -500,7 +510,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         // bus fixes no |V| -- its set-point is the group's. See
         // VoltageControl::set_v_set_override. Default no-op: an algorithm without a
         // bordered block has no group to set.
-        virtual void set_voltage_control_v_set(const RealVect & /*v_set*/) {}
+        virtual void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & /*v_set*/) {}
 
         // Refactorize-failure fallback of the linear solver (see LinearSolverPolicy::
         // set_refactor_fallback). A value-level edit that changes a bus's role at

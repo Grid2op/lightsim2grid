@@ -10,6 +10,7 @@
 #include "batch_algorithm/BaseBatchSweep.hpp"
 #include "batch_algorithm/ContinuationSweep.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
+#include "light_env/topo_action.hpp"
 #include "help_fun_msg.hpp"
 
 using namespace ls2g;
@@ -915,6 +916,31 @@ void bind_batch(py::module_& m) {
         .def("set_contingency_trafos", &ScenarioSweep::set_contingency_trafos<>, py::arg("mask"),
              "Per-step trafo contingency mask, shape (n_simul, n_trafo), dtype bool. "
              "See set_contingency_lines().")
+        .def("set_topo_actions", &ScenarioSweep::set_topo_actions<>, py::arg("actions"),
+             "One topological action (TopoAction, grid2op semantics: set_bus on loads / "
+             "generators / storage units / line and trafo ends, set_line_status) per row, "
+             "played by that row on top of its injections and masks; an action changing "
+             "nothing is a plain row. Locks / checks the number of simulations. Every action "
+             "is checked against the grid here (element and busbar exist, no contradiction) "
+             "and a ValueError naming the row is raised, nothing registered, if one is "
+             "invalid.\n\n"
+             "A row plays disconnections (as set_contingency_lines / trafos / gens do it), "
+             "reconnections and moves between busbars: a bus created or merged. One symbolic "
+             "analysis for the whole sweep: the labelling is built for the union of the buses "
+             "the rows use, the Ybus entries a row writes are reserved as stored zeros, and a "
+             "row is value edits (coefficients, injections, PV pinning, masking of the union "
+             "buses it leaves empty). compute() refuses a row naming an element in both a "
+             "mask and its action, a slack participant or a remote / group-held controller "
+             "moved or reactivated, a regulating storage unit moved, a branch with one end "
+             "open in the base grid put on, keep_jacobian with a generator move or "
+             "reactivation, and the DC algorithm. compute_physical_violations "
+             "follows the row (a generator the row places is checked on that bus).")
+        .def("get_topo_actions", &ScenarioSweep::get_topo_actions<>,
+             "The (checked) actions registered with set_topo_actions.")
+        .def("get_row_disconnected_branches", &ScenarioSweep::get_row_disconnected_branches<>, py::arg("row"),
+             "The branches (gridmodel numbering, powerlines then transformers, sorted) row "
+             "`row` disconnects, by its masks and by its topological action together. Needs "
+             "a compute() when topological actions are registered.")
         .def("set_contingency_gens", &ScenarioSweep::set_contingency_gens<>, py::arg("mask"),
              "Per-step generator contingency mask, shape (n_simul, n_gen), dtype bool. "
              "True means 'disconnect this generator for this simulation'.\n\n"
@@ -980,7 +1006,8 @@ void bind_batch(py::module_& m) {
                       "(proportionally to their weight, each one clamped to its [min_p, max_p], a "
                       "clamped unit leaving the pool and the slack), the solve then only sharing "
                       "what is left (the change in the losses) on the units that can still move. "
-                      "Off by default. Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
+                      "Off by default; compute() refuses it with a single-slack algorithm "
+                      "(NRSing_*, Gauss-Seidel). Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
                       "clamp anything: without limits the converged state is unchanged. Same as "
                       "LSGrid.redistribute_active_power, row by row.")
         .def_property("handle_disconnected_grid",
@@ -1123,7 +1150,8 @@ void bind_batch(py::module_& m) {
                       "DistributedSlack outer loop does (proportionally to their weight, each one "
                       "clamped to its [min_p, max_p], a clamped unit leaving the pool and the "
                       "slack), the solve then only sharing what is left (the change in the losses) "
-                      "on the units that can still move. Off by default. Needs "
+                      "on the units that can still move. Off by default; compute() refuses it with "
+                      "a single-slack algorithm (NRSing_*, Gauss-Seidel). Needs "
                       "LSGrid.set_gen_p_limits / set_storage_p_limits to clamp anything: without "
                       "limits the converged state is unchanged. Same as "
                       "LSGrid.consider_only_main_component(redistribute_slack=True), contingency "

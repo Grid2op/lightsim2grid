@@ -174,6 +174,71 @@ the change in the losses it causes is left to the powerflow's distributed slack.
     converter station). Those go through a different part of the Jacobian, with columns
     and rows of their own that this feature does not yet reserve and mask.
 
+Topological actions
+---------------------
+
+A row can also carry a **topological action**, the same object the light environment plays
+(:class:`lightsim2grid.lightEnv.TopoAction`, grid2op semantics), given as a grid2op action or
+as a ``TopoAction``, one per row:
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import LightSimBackend
+    from lightsim2grid.scenarioSweep import ScenarioSweep
+
+    env = grid2op.make("l2rpn_case14_sandbox", backend=LightSimBackend())
+    obs = env.reset()
+
+    actions = [
+        env.action_space({}),                                   # a plain row
+        env.action_space({"set_line_status": [(3, -1)]}),       # line 3 off
+        env.action_space({"set_bus": {"loads_id": [(0, -1)]}}), # load 0 off
+        env.action_space({"set_bus": {"generators_id": [(1, -1)]}}),  # gen 1 off: its bus turns PQ
+    ]
+    sweep = ScenarioSweep(env)
+    sweep.set_topo_actions(actions)
+    sweep.compute()
+    Vs = sweep.get_voltages()
+
+Every action is checked against the grid when it is registered (the element exists, the
+busbar exists, no contradiction) and an invalid one raises a ``ValueError`` naming the row.
+
+A row plays:
+
+- **disconnections**: a line or a trafo (``set_line_status -1``, or ``set_bus -1`` on one of
+  its ends), a generator, a load or a storage unit (``set_bus -1``). A branch or a generator is
+  disconnected exactly as the ``set_contingency_*`` masks do it -- the same admittance edit,
+  the same PV -> PQ handling -- so a row is free to combine an action with injections and
+  masks, as long as it does not name one element in both a mask and its action (``compute``
+  refuses that);
+- **reconnections and moves**: an element put on a busbar (``set_bus`` to it), a branch
+  reconnected (``set_line_status 1``, or ``set_bus`` on its ends). This is what creates a bus
+  (a busbar nothing stood on, now used) or merges two (a busbar left empty).
+
+The whole sweep still runs on **one symbolic analysis**. The solver labelling is built once
+for the union of the buses any row uses, the admittance entries a row writes are reserved as
+stored zeros before the base case is solved, and each row is then a set of value edits: the
+coefficients of the branches it moves, the injections of the elements it moves, the PV pinning
+of the buses whose generators it moves (a bus a generator lands on is held at the set-point,
+a bus its last generator leaves is solved for), and the masking of the buses of the union
+it does not use, exactly as ``handle_disconnected_grid`` masks a stranded bus. A row that
+leaves an element alone on a busbar (an island of one bus) has that bus masked and its
+injection left out, as the disconnected-grid mode would; without ``handle_disconnected_grid``
+a row that strands one of the base grid's buses is still ``NOT_SIMULATED``. A busbar the row
+leaves with no element at all (a merge) strands nothing: it is masked, and the row solved,
+in either mode.
+
+.. warning::
+
+    Refused by ``compute`` for now: moving or reactivating a slack participant, a generator
+    on a slack bus, a generator that regulates a remote bus or whose bus a control group
+    holds, a storage unit that regulates voltage; a branch with one end open in the base grid
+    put back on (taking it out works); ``keep_jacobian`` on a batch that moves or reactivates a
+    generator; and the DC algorithm. See the TODO section of the changelog.
+    ``compute_physical_violations`` follows the row: a generator the row moves or reactivates
+    is checked on the bus the row gives it.
+
 Per-row results
 --------------------------
 
@@ -200,6 +265,9 @@ Python wrapper) reports, for every row of the last `compute()`:
   regulate, the solver's own value for a controller it solved (a remote voltage control
   group), or a share of its bus' reactive residual proportional to each machine's reactive
   range. A generator the row disconnects reads 0. In DC, Q is 0.
+
+With `set_topo_actions`, the branch and generator results follow the row's action: an
+element it moves, reconnects or reactivates is reported on the buses the row gives it.
 
 `compute_branch_results`, `get_gen_results`, `get_row_solve_times` and `get_row_nb_iter`
 exist on every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP` too); `get_Ybus` /

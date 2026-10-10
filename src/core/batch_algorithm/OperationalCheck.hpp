@@ -35,6 +35,15 @@
 
 namespace ls2g {
 
+// a row's own placement of one branch (see BaseBatchSolverSynch::_row_branch_overrides_),
+// read by check_current_violations
+struct BranchBusOverride {
+    int branch_id;   // gridmodel numbering, lines then trafos
+    int from_me;     // the row's bus of side 1 (gridmodel id), when connected
+    int to_me;       // ... of side 2
+    bool connected;
+};
+
 namespace batch_sweep_detail {
 
 // `violation_rel_tol` must be a finite number in [0, 1[ (1 would make low_eff * (1 -
@@ -152,7 +161,12 @@ inline void check_current_violations(
     real_type threshold,
     real_type rel_tol,
     const std::vector<int> & skip_ids,
-    std::vector<LimitViolation> & out)
+    std::vector<LimitViolation> & out,
+    // the row's own placement of some branches (see BaseBatchSolverSynch::
+    // _row_branch_overrides_), sorted by branch id, and the offset of this container's
+    // ids in that numbering (0 for lines, n_line for trafos); nullptr for none
+    const std::vector<BranchBusOverride> * overrides = nullptr,
+    size_t lag_id = 0)
 {
     if(limit1.size() == 0 && limit2.size() == 0) return;  // thermal limits never configured
 
@@ -167,6 +181,10 @@ inline void check_current_violations(
     Eigen::Ref<const CplxVect> yac_eff_12 = structure_data.yac_eff_12();
     Eigen::Ref<const CplxVect> yac_eff_21 = structure_data.yac_eff_21();
     Eigen::Ref<const CplxVect> yac_eff_22 = structure_data.yac_eff_22();
+    Eigen::Ref<const CplxVect> yac_raw_11 = structure_data.yac_11();
+    Eigen::Ref<const CplxVect> yac_raw_12 = structure_data.yac_12();
+    Eigen::Ref<const CplxVect> yac_raw_21 = structure_data.yac_21();
+    Eigen::Ref<const CplxVect> yac_raw_22 = structure_data.yac_22();
     Eigen::Ref<const RealVect> ydc_11 = structure_data.ydc_11();
     Eigen::Ref<const RealVect> ydc_12 = structure_data.ydc_12();
     Eigen::Ref<const RealVect> ydc_21 = structure_data.ydc_21();
@@ -185,8 +203,25 @@ inline void check_current_violations(
         }
     }
 
+    size_t next_override = 0;
+    if(overrides != nullptr){
+        while(next_override < overrides->size() && (*overrides)[next_override].branch_id < static_cast<int>(lag_id)) ++next_override;
+    }
     for(size_t el_id = 0; el_id < nb_el; ++el_id){
-        if(!el_status[el_id]) continue;
+        bool on = el_status[el_id];
+        bool s1 = status1[el_id];
+        bool s2 = status2[el_id];
+        int bus_from_me = BaseConstants::_deactivated_bus_id;
+        int bus_to_me = BaseConstants::_deactivated_bus_id;
+        bool own_placement = false;
+        if(overrides != nullptr && next_override < overrides->size() &&
+           (*overrides)[next_override].branch_id == static_cast<int>(el_id + lag_id)){
+            const BranchBusOverride & ov = (*overrides)[next_override];
+            ++next_override;
+            on = ov.connected;
+            if(on){ s1 = true; s2 = true; bus_from_me = ov.from_me; bus_to_me = ov.to_me; own_placement = true; }
+        }
+        if(!on) continue;
         if(!skip.empty() && skip[el_id]) continue;
 
         const Eigen::Index el_idx = static_cast<Eigen::Index>(el_id);
@@ -194,19 +229,15 @@ inline void check_current_violations(
         const bool has_lim2 = limit2.size() > 0 && !isnan(limit2(el_idx));
         if(!has_lim1 && !has_lim2) continue;
 
-        const bool s1 = status1[el_id];
-        const bool s2 = status2[el_id];
-        int bus_from_me = BaseConstants::_deactivated_bus_id;
-        int bus_to_me = BaseConstants::_deactivated_bus_id;
         int solver_from = BaseConstants::_deactivated_bus_id;
         int solver_to = BaseConstants::_deactivated_bus_id;
         if(s1){
-            bus_from_me = bus_from(static_cast<int>(el_id)).cast_int();
+            if(!own_placement) bus_from_me = bus_from(static_cast<int>(el_id)).cast_int();
             solver_from = id_me_to_solver(bus_from_me).cast_int();
             if(solver_from == BaseConstants::_deactivated_bus_id) continue;
         }
         if(s2){
-            bus_to_me = bus_to(static_cast<int>(el_id)).cast_int();
+            if(!own_placement) bus_to_me = bus_to(static_cast<int>(el_id)).cast_int();
             solver_to = id_me_to_solver(bus_to_me).cast_int();
             if(solver_to == BaseConstants::_deactivated_bus_id) continue;
         }
@@ -219,11 +250,16 @@ inline void check_current_violations(
         real_type amps1 = 0.;
         real_type amps2 = 0.;
         if(ac_solver_used){
-            const cplx_type I_from = std::conj(yac_eff_11(el_idx) * Efrom + yac_eff_12(el_idx) * Eto);
+            // a branch the row placed itself has both ends closed: its raw block
+            const cplx_type y11 = own_placement ? yac_raw_11(el_idx) : yac_eff_11(el_idx);
+            const cplx_type y12 = own_placement ? yac_raw_12(el_idx) : yac_eff_12(el_idx);
+            const cplx_type y21 = own_placement ? yac_raw_21(el_idx) : yac_eff_21(el_idx);
+            const cplx_type y22 = own_placement ? yac_raw_22(el_idx) : yac_eff_22(el_idx);
+            const cplx_type I_from = std::conj(y11 * Efrom + y12 * Eto);
             const cplx_type S_from = Efrom * I_from;
             amps1 = std::abs(S_from) * sn_mva / (sqrt_3 * v_from_kv);
 
-            const cplx_type I_to = std::conj(yac_eff_22(el_idx) * Eto + yac_eff_21(el_idx) * Efrom);
+            const cplx_type I_to = std::conj(y22 * Eto + y21 * Efrom);
             const cplx_type S_to = Eto * I_to;
             amps2 = std::abs(S_to) * sn_mva / (sqrt_3 * v_to_kv);
         } else if(s1 && s2){

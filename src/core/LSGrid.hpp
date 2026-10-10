@@ -856,9 +856,9 @@ class LS2G_API LSGrid final
         /**
          * The normalised per-solver-bus distributed-slack weights, in the labelling of
          * `id_me_to_solver`, evaluated as if the generators flagged in `gen_off` (sized by
-         * the number of generators) were disconnected -- what a batch sweep needs for a row
-         * whose contingency takes a participating machine out. The participating storage
-         * units always count: no row disconnects one.
+         * the number of generators) and the storage units flagged in `storage_off` (empty:
+         * none) were disconnected -- what a batch sweep needs for a row whose contingency
+         * or topological action takes a participant out.
          *
          * Same participation rule as the grid's own weights (see SlackParticipation), so
          * the two can never drift apart. Returns an ALL-ZERO vector when no participant
@@ -891,6 +891,11 @@ class LS2G_API LSGrid final
          * the distributed slack only (the batch's slack pre-pass does that to one it
          * saturated). The mismatches are per solver bus, in MW / MVAr, the active one with
          * the slack the solve absorbed already taken out (see _fill_bus_mismatch_ac).
+         *
+         * `gen_placed` (generator, grid bus): generators that state puts on a bus of its
+         * own -- moved, or reactivated -- as a batch row's topological action does. One
+         * produces its setpoint, out of the distributed slack, and shares the reactive
+         * residual of THAT bus; `gen_off` must not flag it.
          */
         /**
          * Each generator's share of the distributed slack (one per generator, summing to 1
@@ -915,7 +920,8 @@ class LS2G_API LSGrid final
                                const IntVect & ctrl_kind,
                                const IntVect & ctrl_elem,
                                RealVect & p_mw,
-                               RealVect & q_mvar) const;
+                               RealVect & q_mvar,
+                               const std::vector<std::pair<int, int> > & gen_placed = std::vector<std::pair<int, int> >()) const;
 
         //pickle
         LSGrid::StateRes get_state() const ;
@@ -2534,12 +2540,14 @@ class LS2G_API LSGrid final
          */
         CplxVect build_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
                                     AcSolverCache & out,
-                                    const AlgoControl & solver_control);
+                                    const AlgoControl & solver_control,
+                                    const std::vector<int> * extra_buses_me = nullptr);
 
         /// DC counterpart of `build_solver_input`: real Bbus / Pbus into `out`.
         CplxVect build_dc_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
                                        DcSolverCache & out,
-                                       const AlgoControl & solver_control);
+                                       const AlgoControl & solver_control,
+                                       const std::vector<int> * extra_buses_me = nullptr);
 
         //for FDPF
         void fillBp_Bpp(Eigen::SparseMatrix<real_type> & Bp, 
@@ -2590,8 +2598,14 @@ class LS2G_API LSGrid final
                        int nb_bus_solver);
         void init_Bbus(Eigen::SparseMatrix<real_type> & Bbus,
                        int nb_bus_solver);  // DC: real admittance matrix
+        // `keep_also`: gridmodel buses to keep in the solved system although no element
+        // stands on them (a batch sweep whose rows move elements onto them, see
+        // ScenarioSweep::set_topo_actions). Nullptr, the default, keeps the non-empty
+        // buses only. Such a bus has an all-zero row and column in the matrix: the
+        // caller masks it wherever it is unused.
         void init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
-                                   GlobalBusIdVect& id_solver_to_me);
+                                   GlobalBusIdVect& id_solver_to_me,
+                                   const std::vector<int> * keep_also = nullptr);
 
         // converts the slack_bus_id from gridmodel ordering into solver ordering
         // the slack bus set, grid labelling: the generators' buses, then the storage
@@ -2769,7 +2783,8 @@ class LS2G_API LSGrid final
                                    const AlgoControl & solver_control,
                                    bool force_full_rebuild,
                                    bool init_pv_vm_targets,
-                                   bool supports_voltage_control);
+                                   bool supports_voltage_control,
+                                   const std::vector<int> * extra_buses_me = nullptr);
 
         /**
          * `pre_process_solver` / `pre_process_dc_solver` for either family: the reuse
@@ -2820,7 +2835,8 @@ class LS2G_API LSGrid final
         template<class MatScalar>
         CplxVect _build_foreign_cache(const Eigen::Ref<const CplxVect> & Vinit,
                                       SolverSideCache<MatScalar> & out,
-                                      const AlgoControl & solver_control);
+                                      const AlgoControl & solver_control,
+                                      const std::vector<int> * extra_buses_me = nullptr);
 
         // Is `cache` this grid's own cache for its family, or someone else's?
         // No longer a dispatch -- which entry point you called is what decides that

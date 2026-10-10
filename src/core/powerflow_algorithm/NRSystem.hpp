@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstring>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 #include <set>
 #include <stdexcept>
@@ -836,7 +837,7 @@ class LS2G_API VoltageControl
         // the regulated bus only moves the starting point, the voltage row then puts it
         // back at the grid's own target. Caller-set, NOT reset by clear() or
         // update_state(), like the pinning above.
-        void set_v_set_override(const RealVect& v_set) { v_set_override_ = v_set; }
+        void set_v_set_override(const Eigen::Ref<const RealVect> & v_set) { v_set_override_ = v_set; }
 
         // J row of each group's voltage constraint (group order), what the gradient of
         // a loss with respect to that group's v_set is read from (dF_v/dv_set = -1).
@@ -1141,10 +1142,20 @@ class LS2G_API VoltageControl
  * contributions may resolve to the same J position, so fill_J zeroes J then
  * accumulates (+=).
  */
+// whether T is one of Ts (a recursive trait: the core stays C++14)
+template <class T, class... Ts>
+struct nr_is_one_of : std::false_type {};
+template <class T, class U, class... Ts>
+struct nr_is_one_of<T, U, Ts...>
+    : std::conditional<std::is_same<T, U>::value, std::true_type, nr_is_one_of<T, Ts...> >::type {};
+
 template <typename... Rest>
 class NRSystem<Base, Rest...>
 {
 public:
+    // whether the slack is distributed (the MultiSlack extension is in Rest...)
+    static constexpr bool HAS_MULTI_SLACK = nr_is_one_of<MultiSlack, Rest...>::value;
+
     NRSystem() noexcept:
         timer_dSbus_(0.),
         timer_fillJ_(0.),
@@ -1238,7 +1249,7 @@ public:
 
     // Per-solve group set-points of the VoltageControl extension (NaN = the grid's
     // own), see VoltageControl::set_v_set_override. No-op without the extension.
-    void set_voltage_control_v_set(const RealVect& v_set) {
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_v_set_override(v_set);
     }

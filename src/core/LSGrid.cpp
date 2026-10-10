@@ -1248,7 +1248,8 @@ CplxVect LSGrid::_build_into_cache(
     const AlgoControl & solver_control,
     bool force_full_rebuild,
     bool init_pv_vm_targets,
-    bool supports_voltage_control)
+    bool supports_voltage_control,
+    const std::vector<int> * extra_buses_me)
 {
     bool redo_all =
             force_full_rebuild ||
@@ -1316,7 +1317,7 @@ CplxVect LSGrid::_build_into_cache(
 
     bool converter_changed = false;
     if (redo_all || solver_control.ybus_change_sparsity_pattern()){
-        init_converter_bus_id(cache.id_me_to_solver, cache.id_solver_to_me);
+        init_converter_bus_id(cache.id_me_to_solver, cache.id_solver_to_me, extra_buses_me);
         const int nb_bus_solver = static_cast<int>(cache.id_solver_to_me.size());
         init_solver_matrix(cache.mat, nb_bus_solver);
         converter_changed = true;
@@ -1612,24 +1613,27 @@ void LSGrid::_check_vm_targets_agree() const
 CplxVect LSGrid::build_solver_input(
     const Eigen::Ref<const CplxVect> & Vinit,
     AcSolverCache & out,
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    const std::vector<int> * extra_buses_me)
 {
-    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control);
+    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control, extra_buses_me);
 }
 
 CplxVect LSGrid::build_dc_solver_input(
     const Eigen::Ref<const CplxVect> & Vinit,
     DcSolverCache & out,
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    const std::vector<int> * extra_buses_me)
 {
-    return _build_foreign_cache<real_type>(Vinit, out, solver_control);
+    return _build_foreign_cache<real_type>(Vinit, out, solver_control, extra_buses_me);
 }
 
 template<class MatScalar>
 CplxVect LSGrid::_build_foreign_cache(
     const Eigen::Ref<const CplxVect> & Vinit,
     SolverSideCache<MatScalar> & out,
-    const AlgoControl & solver_control)
+    const AlgoControl & solver_control,
+    const std::vector<int> * extra_buses_me)
 {
     // Our own cache is not a foreign one: taking this path with it would rebuild
     // it while telling our algorithm nothing, then retire what was just built.
@@ -1653,7 +1657,8 @@ CplxVect LSGrid::_build_foreign_cache(
     CplxVect V = _build_into_cache(Vinit, out, solver_control,
                                    /*force_full_rebuild=*/true,
                                    /*init_pv_vm_targets=*/true,
-                                   /*supports_voltage_control=*/true);
+                                   /*supports_voltage_control=*/true,
+                                   extra_buses_me);
 
     // `_algo` / `_dc_algo` are deliberately untouched: they are THIS grid's, they
     // hold a factorization of THIS grid's cache, and the caller solves `out` with
@@ -1878,17 +1883,32 @@ bool LSGrid::_check_solver_output(bool ac)
 }
 
 void LSGrid::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
-                                      GlobalBusIdVect& id_solver_to_me){
+                                      GlobalBusIdVect& id_solver_to_me,
+                                      const std::vector<int> * keep_also){
 
     //TODO get disconnected bus !!! (and have some conversion for it)
     //1. init the conversion bus
     const int nb_bus_init = static_cast<int>(substations_.nb_bus());
+    std::vector<char> kept_empty;
+    if(keep_also != nullptr && !keep_also->empty()){
+        kept_empty.assign(static_cast<size_t>(nb_bus_init), 0);
+        for(int b : *keep_also){
+            if(b < 0 || b >= nb_bus_init){
+                std::ostringstream exc_;
+                exc_ << "LSGrid::init_converter_bus_id: asked to keep bus " << b
+                     << " in the solved system, but the grid has " << nb_bus_init << " buses.";
+                throw std::out_of_range(exc_.str());
+            }
+            kept_empty[static_cast<size_t>(b)] = 1;
+        }
+    }
     id_me_to_solver = SolverBusIdVect(nb_bus_init, SolverBusId(BaseConstants::_deactivated_bus_id));  // by default, if a bus is disconnected, then it has a -1 there
     id_solver_to_me = GlobalBusIdVect();
     id_solver_to_me.reserve(nb_bus_init);
     int bus_id_solver = 0;
     for(int bus_id_me=0; bus_id_me < nb_bus_init; ++bus_id_me){
-        if(substations_.is_bus_connected(GlobalBusId(bus_id_me))){
+        if(substations_.is_bus_connected(GlobalBusId(bus_id_me)) ||
+           (!kept_empty.empty() && kept_empty[static_cast<size_t>(bus_id_me)])){
             // bus is connected
             id_solver_to_me.push_back(GlobalBusId(bus_id_me));
             id_me_to_solver[bus_id_me] = SolverBusId(bus_id_solver);
@@ -2104,7 +2124,8 @@ void LSGrid::generator_results(bool ac,
                                const IntVect & ctrl_kind,
                                const IntVect & ctrl_elem,
                                RealVect & p_mw,
-                               RealVect & q_mvar) const
+                               RealVect & q_mvar,
+                               const std::vector<std::pair<int, int> > & gen_placed) const
 {
     const int nb_gen = static_cast<int>(generators_.nb());
     const auto check_size = [nb_gen](std::size_t size, const char * what){
@@ -2125,15 +2146,27 @@ void LSGrid::generator_results(bool ac,
     }
     const auto is_off = [&gen_off](int gen_id){ return !gen_off.empty() && gen_off[gen_id]; };
     const std::vector<bool> & status = generators_.get_status();
+    // the generators placed on a bus of their own: on whatever their base status, and
+    // left out of everything below that reads their base bus
+    std::vector<bool> placed(static_cast<std::size_t>(nb_gen), false);
+    for(const auto & gen_bus : gen_placed){
+        if(gen_bus.first < 0 || gen_bus.first >= nb_gen){
+            std::ostringstream exc_;
+            exc_ << "LSGrid::generator_results: 'gen_placed' names generator " << gen_bus.first
+                 << ", there are " << nb_gen << ".";
+            throw std::runtime_error(exc_.str());
+        }
+        placed[gen_bus.first] = true;
+    }
 
     // ---- P: the setpoint, then the distributed slack (see compute_results) ----------
     p_mw = RealVect::Zero(nb_gen);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        if(status[gen_id] && !is_off(gen_id)) p_mw(gen_id) = target_p_mw(gen_id);
+        if((status[gen_id] || placed[gen_id]) && !is_off(gen_id)) p_mw(gen_id) = target_p_mw(gen_id);
     }
     std::vector<bool> slack_off(static_cast<std::size_t>(nb_gen), false);
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-        slack_off[gen_id] = is_off(gen_id) || (!no_slack_share.empty() && no_slack_share[gen_id]);
+        slack_off[gen_id] = is_off(gen_id) || placed[gen_id] || (!no_slack_share.empty() && no_slack_share[gen_id]);
     }
     const RealVect raw_weights = _raw_slack_weights_solver(static_cast<size_t>(active_mismatch_mw.size()),
                                                            id_me_to_solver, &slack_off,
@@ -2145,7 +2178,7 @@ void LSGrid::generator_results(bool ac,
     if(!ac) return;
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         real_type q;
-        if(is_off(gen_id)) continue;  // 0
+        if(is_off(gen_id) || placed[gen_id]) continue;  // 0, or below
         if(generators_.q_without_powerflow(gen_id, q)) q_mvar(gen_id) = q;
     }
     std::vector<bool> gen_solved(static_cast<std::size_t>(nb_gen), false);
@@ -2153,8 +2186,29 @@ void LSGrid::generator_results(bool ac,
     std::vector<bool> hvdc2_solved(hvdc_lines_.nb(), false);
     _mark_q_solved_by_algo(ctrl_kind, ctrl_elem, gen_solved, hvdc1_solved, hvdc2_solved);
     if(reactive_mismatch_mvar.size() > 0){
-        const std::vector<QShare> shares = _collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved,
-                                                                      gen_off.empty() ? nullptr : &gen_off);
+        // a placed generator is left out of its base bus' shares ...
+        std::vector<bool> share_off;
+        if(!gen_placed.empty()){
+            share_off = placed;
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id) if(is_off(gen_id)) share_off[gen_id] = true;
+        }
+        const std::vector<bool> * share_off_ptr = !share_off.empty() ? &share_off :
+                                                  (gen_off.empty() ? nullptr : &gen_off);
+        std::vector<QShare> shares = _collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved, share_off_ptr);
+        // ... and, when it pins the bus it is placed on, takes a share of that one. The
+        // others publish what needs no powerflow: their setpoint, or 0 for one treated
+        // as off (q_without_powerflow, without its base-status test).
+        for(const auto & gen_bus : gen_placed){
+            const int gen_id = gen_bus.first;
+            if(is_off(gen_id)) continue;
+            if(generators_.would_be_local_voltage_controller(gen_id)){
+                shares.push_back({gen_bus.second,
+                                  generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
+                                  VoltageControlSolverData::GEN, gen_id});
+            } else if(!generators_.get_voltage_regulator_on(gen_id)){
+                q_mvar(gen_id) = generators_.get_target_q_mvar(gen_id);
+            }
+        }
         const std::vector<real_type> q_values = _q_residual_values(shares, reactive_mismatch_mvar, id_me_to_solver);
         for(std::size_t k = 0; k < shares.size(); ++k){
             if(shares[k].kind == VoltageControlSolverData::GEN) q_mvar(shares[k].elem_id) = q_values[k];
@@ -2163,7 +2217,7 @@ void LSGrid::generator_results(bool ac,
     for(int i = 0; i < static_cast<int>(ctrl_q.size()); ++i){
         if(ctrl_kind(i) != VoltageControlSolverData::GEN) continue;
         const int gen_id = ctrl_elem(i);
-        if(gen_id < 0 || gen_id >= nb_gen || is_off(gen_id)) continue;
+        if(gen_id < 0 || gen_id >= nb_gen || is_off(gen_id) || placed[gen_id]) continue;
         q_mvar(gen_id) = ctrl_q(i) * sn_mva_;
     }
 }

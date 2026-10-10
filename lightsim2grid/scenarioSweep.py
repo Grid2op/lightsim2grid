@@ -102,12 +102,6 @@ class ScenarioSweep:
         self.grid2op_env = grid2op_env.copy()
         self.computer = type(self)._CPP_CLASS(self.grid2op_env.backend._grid)
         self.__computed = False
-        # ScenarioSweepCPP.set_contingency_lines/trafos are write-only (no getter) --
-        # run() needs each row's disconnected branch ids for
-        # ContingencyResult.element_ids/element_names, so this wrapper caches the last
-        # validated mask it sent down. Reset by clear() below.
-        self._line_mask = None
-        self._trafo_mask = None
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
         if AlgorithmType.NR_KLU in self.available_default_algorithms:
@@ -201,7 +195,8 @@ class ScenarioSweep:
         can still move. A line / trafo contingency that leaves the grid connected loses no
         injection: the change in the losses it causes is left to the powerflow.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
-        clamp anything. Same name/semantics as
+        clamp anything. Needs an algorithm with a distributed slack: ``compute`` refuses it
+        with a single-slack one (``NRSing_*``, Gauss-Seidel). Same name/semantics as
         :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
         """
         return self.computer.redistribute_slack
@@ -236,13 +231,8 @@ class ScenarioSweep:
             return  # no-op, matches the C++ side (which also no-ops and does not clear)
         self.computer.compute_limit_violations = val  # this clear()s the whole C++ object:
         # registered injections, contingency masks, handle_disconnected_grid, the
-        # row-count lock, everything -- not just computed results. Drop the Python-side
-        # mask cache too, or a stale non-None _line_mask/_trafo_mask survives this reset
-        # and the next run() derives element_ids/element_names from masks that no longer
-        # match what was actually registered C++-side.
+        # row-count lock, everything -- not just computed results
         self.__computed = False
-        self._line_mask = None
-        self._trafo_mask = None
 
     @property
     def violation_threshold(self):
@@ -444,7 +434,6 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of powerlines on the grid ({n_line}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_lines(mask)
-        self._line_mask = mask  # cached: see the note in __init__ (no C++-side getter)
         self.__computed = False
 
     def set_contingency_trafos(self, mask):
@@ -456,7 +445,6 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of trafos on the grid ({n_trafo}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_trafos(mask)
-        self._trafo_mask = mask  # cached: see the note in __init__ (no C++-side getter)
         self.__computed = False
 
     def set_contingency_gens(self, mask):
@@ -488,6 +476,56 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_gens(mask)
+        self.__computed = False
+
+    def set_topo_actions(self, actions):
+        """One topological action per row, played by that row on top of its injections
+        and contingency masks.
+
+        ``actions`` is a list (one entry per simulation) of grid2op actions -- ``set_bus``
+        and ``set_line_status`` only, see
+        :func:`lightsim2grid.lightEnv.topo_action_from_grid2op` -- or of
+        :class:`lightsim2grid.lightEnv.TopoAction`; mixing both is fine, and an action
+        that changes nothing is a plain row. Every action is checked against the grid:
+        an element that does not exist, a busbar that does not exist (eg ``-2``), an
+        unsupported modification (``change_bus``, ``redispatch``, ...) or a contradiction
+        raises a ``ValueError`` naming the action, and nothing is registered.
+
+        A row plays disconnections (a line or trafo by ``set_line_status`` ``-1`` or
+        ``set_bus`` ``-1`` on one of its ends, a generator, a load or a storage unit by
+        ``set_bus`` ``-1``), reconnections and moves between busbars (``set_bus`` to a
+        busbar, ``set_line_status`` ``1``): a bus created or merged. A disconnection is
+        played exactly as :func:`set_contingency_lines` / :func:`set_contingency_trafos`
+        / :func:`set_contingency_gens` do it, and :func:`compute` raises if a row names
+        an element in both a mask and its action.
+
+        The whole sweep keeps running on one symbolic analysis: the solver labelling is
+        built for the union of the buses the rows use, the admittance entries a row
+        writes are reserved up front, and a row is value edits only -- its coefficients,
+        its injections, the PV pinning of the buses whose generators it moves, and the
+        masking of the union buses it leaves empty (an element alone on a busbar is an
+        island of one: that bus is masked and its injection left out). Refused by
+        :func:`compute` for now: moving or reactivating a slack participant, a generator
+        on a slack bus or one that regulates a remote bus, a storage unit that regulates
+        voltage, a branch with one end open in the base grid put back on, ``keep_jacobian``
+        with a generator move or reactivation, and the DC algorithm. :attr:`compute_physical_violations` follows the row: a generator the
+        row moves or reactivates is checked on the bus the row gives it.
+        """
+        from lightsim2grid.lightEnv import TopoAction, topo_action_from_grid2op
+        from grid2op.Action import BaseAction
+        converted = []
+        for i, act in enumerate(actions):
+            if isinstance(act, TopoAction):
+                converted.append(act)
+            elif isinstance(act, BaseAction):
+                try:
+                    converted.append(topo_action_from_grid2op(act))
+                except (ValueError, TypeError) as exc_:
+                    raise ValueError(f"ScenarioSweep.set_topo_actions: action {i} is invalid: {exc_}") from exc_
+            else:
+                raise ValueError(f"ScenarioSweep.set_topo_actions: action {i} is invalid: expected a grid2op "
+                                 f"action or a TopoAction, got a {type(act)}")
+        self.computer.set_topo_actions(converted)
         self.__computed = False
 
     def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
@@ -635,8 +673,9 @@ class ScenarioSweep:
         since ``ScenarioSweep`` rows are independent scenarios, not a *set* of
         contingencies) -- and every ``ContingencyResult.contingency_name`` is
         ``None`` (no such concept on ``ScenarioSweep``); ``element_ids`` /
-        ``element_names`` are instead derived from that row's own
-        ``set_contingency_lines`` / ``set_contingency_trafos`` mask.
+        ``element_names`` are instead the branches that row disconnects, through its
+        ``set_contingency_lines`` / ``set_contingency_trafos`` masks and its topological
+        action together.
         """
         if not self.computer.compute_limit_violations:
             raise RuntimeError("`run` requires `compute_limit_violations=True`, set via "
@@ -666,18 +705,15 @@ class ScenarioSweep:
             physical_violations=phys_n,
         )
 
-        n_line = len(self.grid2op_env.backend._grid.get_lines())
         violations = self.computer.get_violations()
         nb_steps = len(violations)
-        line_mask = self._line_mask if self._line_mask is not None else np.zeros((nb_steps, n_line), dtype=bool)
-        trafo_mask = self._trafo_mask if self._trafo_mask is not None else np.zeros(
-            (nb_steps, len(self.grid2op_env.backend._grid.get_trafos())), dtype=bool)
 
         post_contingency_results = []
         for row_id in range(nb_steps):
             row_violations = list(violations[row_id])
-            element_ids = [int(el_id) for el_id in np.nonzero(line_mask[row_id])[0]]
-            element_ids += [n_line + int(el_id) for el_id in np.nonzero(trafo_mask[row_id])[0]]
+            # the masks and the row's topological action together (the C++ side merges
+            # them; it needs the compute() that just ran)
+            element_ids = [int(el_id) for el_id in self.computer.get_row_disconnected_branches(row_id)]
             post_contingency_results.append(ContingencyResult(
                 element_ids=element_ids,
                 element_names=[str(self.grid2op_env.name_line[el_id]) for el_id in element_ids],
@@ -692,8 +728,6 @@ class ScenarioSweep:
         """Clear everything, as if nothing had ever been set / computed."""
         self.computer.clear()
         self.__computed = False
-        self._line_mask = None
-        self._trafo_mask = None
 
     def close(self):
         """permanently close the object"""

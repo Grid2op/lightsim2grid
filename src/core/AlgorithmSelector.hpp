@@ -142,6 +142,9 @@ class LS2G_API AlgorithmSelector final
         bool supports_remote_voltage_control() const {
             return get_prt_solver("supports_remote_voltage_control", false)->supports_remote_voltage_control();
         }
+        bool distributes_slack() const {
+            return get_prt_solver("distributes_slack", false)->distributes_slack();
+        }
         // The no-argument form of is_fdpf(AlgorithmType) above. The type-keyed one
         // cannot answer for a solver selected BY NAME -- an FDPF built-in reached
         // through the registry, or a plugin implementing the method -- because their
@@ -276,7 +279,7 @@ class LS2G_API AlgorithmSelector final
         void set_may_mask_voltage_control(bool val) {
             get_prt_solver("set_may_mask_voltage_control", false)->set_may_mask_voltage_control(val);
         }
-        void set_voltage_control_v_set(const RealVect & v_set) {
+        void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) {
             get_prt_solver("set_voltage_control_v_set", false)->set_voltage_control_v_set(v_set);
         }
         void set_refactor_fallback(bool val) {

@@ -296,6 +296,8 @@ they compare holds every row's voltages (or flows) with 17 significant digits.
 | `ca_ac_mask` / `ca_dc_mask` | idem with `handle_disconnected_grid` |
 | `ca_flows` | the flows of a `ca_ac` run |
 | `ca_construct` | a fresh `ContingencyAnalysis` from a solved grid, 8 contingencies, `compute()`: what a grid2op loop pays per step |
+| `ss_ac` | `ScenarioSweep::compute()` over the rows of `ts_ac`, each from the same seed |
+| `ss_topo_ac` | idem with one topological action per row, all plain but the first, which moves a load and a line end to busbar 2: one bus created for the whole batch. Needs the `_2bb` grids (`make_grids.py --two-busbars`) |
 
 ### Baseline: instructions per row, before any batch-side change
 
@@ -364,6 +366,36 @@ The first version of the change built the tree unconditionally and cost a plain 
 row +1.3% to +8.3% (the verdict computed, then never read); that is why the tree is
 now built only where AC or the masked mode consumes it: `ca_dc` then reads +0.0% on
 the pegase cases and +0.5% on case30 (a bounds check per row).
+
+### The tree when a topological action creates a bus
+
+A `ScenarioSweep` whose topological actions put an element on a busbar the base grid
+leaves empty builds its solver layout for the union of the buses the rows use: that
+busbar is in the base admittance matrix, with no edge to it. The base graph was then
+not connected, the tree settled nothing, and **every** row -- the plain ones included
+-- went to the breadth-first search of a patched copy of the matrix. `BusGraph` now
+leaves those buses out of the tree (they are isolated by construction, and cut off in
+every row that does not use them, which is what the search reported for them).
+
+`ss_topo_ac` is the case that exposes it: one row creates a bus, every other row is
+plain. `ss_ac`, the same rows with no action at all, is the floor. A/B, KLU, 200 /
+50 rows, every row's voltages compared bit for bit (`identical` on all four):
+
+```bash
+python make_grids.py grids_2bb --two-busbars
+DRIVER=batch ./ab_test.sh grids_2bb ab_out my_patch.py ss_ac ss_topo_ac
+```
+
+| grid | `ss_ac` /row | `ss_topo_ac` /row before | `ss_topo_ac` /row after | |
+|---|---:|---:|---:|---:|
+| illinois200_2bb | 1,101,442 | 1,154,578 | 1,120,767 | -2.9% |
+| case1354pegase_2bb | 9,910,034 | 10,291,717 | 10,071,328 | -2.1% |
+
+The difference is the connectivity pre-pass (`_prepare_connectivity`, inclusive, for
+the whole batch): 6,979,995 -> 216,579 instructions on illinois200, 11,966,529 ->
+946,436 on case1354pegase. What a row with an action still costs over a plain sweep
+(+1.6% to +1.8%) is the masked row loop, which the batch takes as soon as an action
+does something. `ss_ac` does not move (-0.01% / -0.02%).
 
 ### The row loop without its copies
 

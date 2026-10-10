@@ -181,4 +181,5 @@ PYBIND11_MODULE(lightsim2grid_cpp, m)
     bind_misc(m);
     bind_gridmodel(m);
     bind_batch(m);
+    bind_light_env(m);
 }

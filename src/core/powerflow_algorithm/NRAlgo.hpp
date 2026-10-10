@@ -74,6 +74,10 @@ public:
     static constexpr bool FILLS_BUS_MISMATCH = true;
     bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
 
+    // MultiSlackNRSystem distributes the slack, SingleSlackNRSystem (NRSing_*) does not
+    static constexpr bool DISTRIBUTES_SLACK = NRSystem::HAS_MULTI_SLACK;
+    bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
+
     // ----- Jacobian accessor ---------------------------------------------------
 
     Eigen::Ref<const Eigen::SparseMatrix<real_type>> get_J() const override {
@@ -186,7 +190,7 @@ public:
     void set_may_mask_voltage_control(bool val) override {
         _system.set_may_mask_voltage_control(val);
     }
-    void set_voltage_control_v_set(const RealVect & v_set) override {
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override {
         _system.set_voltage_control_v_set(v_set);
     }
     void set_refactor_fallback(bool val) override {

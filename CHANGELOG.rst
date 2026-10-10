@@ -3,6 +3,11 @@ Change Log
 
 [TODO]
 --------
+- ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
+  element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
+  slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
+  them works); a branch with one end open put back on; the DC algorithm; ``keep_jacobian``
+  with a generator moved or reactivated.
 - OpenLoadFlow-style outer loops (reactive limits, slack limits, hvdc saturation) as a
   non-default ``NROuter_*`` algorithm, keeping one ``analyze`` per solve or batch: assessed in
   ``docs/dev_notes/outer_loops_fixed_sparsity.md``, nothing implemented.
@@ -210,6 +215,24 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [FIXED] ``ScenarioSweep.set_contingency_gens``: masking every generator of a bus a
+  voltage-regulating storage unit also holds turned that bus PQ.
+- [FIXED] ``ScenarioSweep.modify_gen_v``: a generator a row disconnects no longer has to agree
+  with the set-point of the generators left on its bus.
+- [ADDED] a documentation page for the light environment (``docs/light_env.rst``) and a
+  benchmark against grid2op (``benchmarks/light_env.py``).
+- [FIXED] light environment: the ``Protections`` setters accept float32 and read-only arrays.
+- [ADDED] ``ScenarioSweep.set_topo_actions``: one topological action per row (disconnections,
+  reconnections, a bus split or merged), still on one symbolic analysis. Refusals under [TODO].
+- [ADDED] light environment: ``LightEnv.init_actions`` registers checked topological actions,
+  which ``step(act_id)`` plays with grid2op-like cooldowns.
+- [FIXED] light environment: the protections looped for ever after an overflow disconnection,
+  and never reset the overflow counter of a line back in its limits.
+- [ADDED] light environment: ``LightEnvObservation``, read-only views on the env's state with no
+  copy, returned by ``reset`` / ``step``.
+- [ADDED] light environment: ``LightEnv`` can be copied cheaply (``copy`` / ``deepcopy``), and
+  moved in C++.
+- [FIXED] light environment: the reward and ``info["survival_time"]`` were integer divisions.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 18: ``SvcContainer`` serializes the standby automaton
   and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
   in the slack" weight and overshoot, the converter stations their ``can_be_pv`` flag, the hvdc
@@ -234,6 +257,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``LSGrid.get_gen_slack_shares()``: each generator's share of the distributed slack.
 - [ADDED] ``ScenarioSweepCPP`` / ``ContingencyAnalysisCPP``: ``get_Ybus(row)`` / ``get_dcYbus(row)``,
   the admittance matrix a row was solved with.
+- [FIXED] ``compute_branch_results`` / ``get_gen_results`` with ``set_topo_actions``: a branch or
+  generator the row moves, reconnects or reactivates was reported on its base bus, or as off.
 - [FIXED] DC batch: disconnecting a half-open branch edited Bbus, where DC never stamped it.
 - [FIXED] DC batch: a bus whose regulating generators a row disconnects kept their voltage
   setpoint as its magnitude (``dc_pf`` gives the starting one), which skewed the currents.
@@ -879,6 +904,11 @@ DCLineInfo                       res_theta_ex_deg         res_theta2_deg
 - [IMPROVED] refactoring of the c++ side container element to reduce
   code (for "one end" elements such as loads, generators, static generators and shunts)
 
+[0.10.1.post1] 2025-02-xx
+----------------------------
+- [FIXED] compatibility issue with pypowsybl 1.10.0 version
+  ("rho" attribute is now computed directly by pypowsybl in the trafo dataframe).
+  
 [0.10.1] 2025-01-04
 ----------------------------
 - [FIXED] some timings on the benchmarks were not measured at the right time

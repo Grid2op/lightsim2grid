@@ -248,7 +248,7 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         /// add every participating unit's raw weight to its solver bus (`storage_off`,
         /// when non-null, is a nb()-sized mask of units to leave out on top: a batch row
         /// whose slack pre-pass saturated them, see LSGrid::get_slack_weights_solver_without)
-        void accumulate_slack_weights_solver(RealVect & res, const SolverBusIdVect & id_grid_to_solver,
+        void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res, const SolverBusIdVect & id_grid_to_solver,
                                              const std::vector<bool> * storage_off = nullptr) const {
             slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, storage_off, _element_name());
         }
