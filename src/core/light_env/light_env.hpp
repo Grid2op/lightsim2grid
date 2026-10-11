@@ -351,9 +351,10 @@ class LightEnv : protected LightEnvState
             if(!has_been_checked_){
                 perform_internal_checks();
                 has_been_checked_ = true;
-            }else{
-                protections_.reset_episode();
             }
+            // on both paths: the previous episode may have ended (has_been_checked_ is
+            // then false) right after its protections tripped a line
+            protections_.reset_episode();
 
             current_step_ = 0;
 

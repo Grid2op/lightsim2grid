@@ -387,6 +387,24 @@ class TestLightEnvActions(unittest.TestCase):
         self.assertFalse(light_env.grid.get_lines_status()[line_id])
         self.assertEqual(light_env.time_before_cooldown_line[line_id], NB_TS_RECO)
 
+    def test_reset_forgets_the_last_episode_trips(self):
+        """an episode ending on the step its protections tripped a line: the next reset
+        starts an episode in which nothing has tripped yet"""
+        line_id = 0
+        thermal_limit = np.full(self.env.n_line, 1e9)
+        thermal_limit[line_id] = 0.1
+        light_env = self.make_light_env(thermal_limit_ka=thermal_limit, max_overflow=0, nb_ts=2)
+        light_env.reset()
+        obs, reward, done, truncated, info = light_env.step(0)
+        self.assertFalse(done)
+        self.assertEqual(list(light_env.protections.lines_disconnected_this_step()), [line_id])
+        obs, reward, done, truncated, info = light_env.step(0)
+        self.assertTrue(done)   # the end of the time series: no powerflow, the trip is the last one
+        light_env.reset()
+        self.assertTrue(light_env.grid.get_lines_status()[line_id])
+        self.assertEqual(list(light_env.protections.lines_disconnected_this_step()), [])
+        self.assertEqual(list(light_env.protections.line_disconnected), [])
+
     def test_reset_diverging(self):
         """the powerflow of the initial state diverges: there is no episode to play, reset
         says so (as grid2op does) and the env cannot be stepped"""
