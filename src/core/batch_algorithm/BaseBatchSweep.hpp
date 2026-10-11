@@ -3526,27 +3526,42 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         // the magnitude this generator asks of the bus
                         const real_type vm = gen_vm_in_row(step, gen_id);
                         const auto base_gens = gens_of_bus.find(bus_solver);
-                        const bool base_pv = base_gens != gens_of_bus.end();
+                        const auto base_storages = storages_of_bus.find(bus_solver);
+                        const bool base_pv = base_gens != gens_of_bus.end() || base_storages != storages_of_bus.end();
                         if(base_pv){
                             // a base-PV bus: kept PV whatever the row does to its own
                             // controllers. The first one the row leaves there holds it
-                            // (they agree among themselves, _row_gen_v_conflicts); one
-                            // the row takes off or moves away holds nothing.
+                            // (they agree among themselves, _row_gen_v_conflicts), a
+                            // generator or else a regulating storage unit; one the row
+                            // takes off or moves away holds nothing.
                             std::vector<int>::iterator it = std::find(to_pq.begin(), to_pq.end(), bus_solver);
                             if(it != to_pq.end()) to_pq.erase(it);
+                            const char * holder_kind = "generator";
                             int holder = -1;
-                            for(int other : base_gens->second){
-                                if(sbus_policy_.gen_off_in(static_cast<Eigen::Index>(step), other)) continue;
-                                holder = other;
-                                break;
+                            real_type bus_vm = 0.;
+                            if(base_gens != gens_of_bus.end()){
+                                for(int other : base_gens->second){
+                                    if(sbus_policy_.gen_off_in(static_cast<Eigen::Index>(step), other)) continue;
+                                    holder = other;
+                                    bus_vm = gen_vm_in_row(step, other);
+                                    break;
+                                }
+                            }
+                            if(holder < 0 && base_storages != storages_of_bus.end()){
+                                for(int storage_id : base_storages->second){
+                                    if(_storage_leaves_base_bus(step, storage_id)) continue;
+                                    holder_kind = "storage unit";
+                                    holder = storage_id;
+                                    bus_vm = storages.get_target_vm_pu(storage_id);
+                                    break;
+                                }
                             }
                             if(holder >= 0){
-                                const real_type bus_vm = gen_vm_in_row(step, holder);
                                 if(std::abs(bus_vm - vm) > BaseConstants::_tol_equal_float){
                                     std::ostringstream exc_;
                                     exc_ << algo_name() << "::set_topo_actions: the action of row " << step
                                          << " reactivates generator " << gen_id << " (set-point " << vm
-                                         << " pu) on a bus generator " << holder << " holds at " << bus_vm
+                                         << " pu) on a bus " << holder_kind << " " << holder << " holds at " << bus_vm
                                          << " pu. A bus has one magnitude: give them the same set-point.";
                                     throw std::runtime_error(exc_.str());
                                 }

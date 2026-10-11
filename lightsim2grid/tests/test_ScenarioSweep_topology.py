@@ -1063,6 +1063,39 @@ class TestScenarioSweepTopologyStorage(_TopoSweepBase):
         self.assertAlmostEqual(abs(Vs[2][load_bus]), 1.04, places=8)
         self.assertAlmostEqual(abs(Vs[1][shared_bus]), vm_shared, places=8)
 
+    def test_generator_reactivated_on_a_storage_held_bus(self):
+        """a row reactivating a generator on a bus only a storage unit holds: the bus has
+        one magnitude, so the generator must ask the storage unit's -- refused otherwise,
+        as on a bus a generator holds; matched against a one-off powerflow when it does"""
+        gen_id = 4
+        bus = self.bus_of_gen[gen_id]
+        self.assertEqual(self.bus_of_gen.count(bus), 1)
+        vm_gen = self.grid.get_generators()[gen_id].target_vm_pu
+        other_bus = self.grid.get_storages()[1].bus_id
+        self.assertGreaterEqual(other_bus, 0)
+        for vm_sto, refused in ((vm_gen - 0.05, True), (vm_gen, False)):
+            with self.subTest(vm_storage=vm_sto):
+                grid = copy.deepcopy(self.grid)
+                grid.deactivate_gen(gen_id)
+                grid.init_storages_full(np.array([5., 0.]), np.array([0., 0.]), [True, False],
+                                        np.array([vm_sto, 1.0]), np.array([-50., -50.]), np.array([50., 50.]),
+                                        np.array([bus, other_bus], dtype=np.int32))
+                grid.set_storage_to_subid(np.array([bus, other_bus], dtype=np.int32))
+                grid.tell_solver_need_reset()
+                actions = [self._topo_act((ElementType.gen, gen_id, 1)), TopoAction()]
+                if refused:
+                    with self.assertRaises(RuntimeError) as cm:
+                        self._sweep(actions, grid=grid)
+                    self.assertIn("row 0", str(cm.exception))
+                    self.assertIn(f"generator {gen_id}", str(cm.exception))
+                    self.assertIn("storage unit 0", str(cm.exception))
+                    continue
+                sweep = self._sweep(actions, grid=grid)
+                self.assertEqual(sweep.get_status(), 1)
+                for row, action in enumerate(actions):
+                    self._assert_row_matches(sweep, row, action, grid=grid)
+                self.assertAlmostEqual(abs(sweep.get_voltages()[0][bus]), vm_sto, places=8)
+
     def test_regulating_storage_taken_out_leaves_the_reactive_check(self):
         """compute_physical_violations: the reactive range of a storage unit the row takes
         out is not its bus's any more -- given one that a bus solved as PQ (about 0 MVAr)
