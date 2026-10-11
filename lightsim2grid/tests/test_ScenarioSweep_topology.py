@@ -593,6 +593,24 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         np.testing.assert_allclose(sweep.get_voltages(), plain.get_voltages(), rtol=1e-10, atol=1e-10)
         self.assertEqual(sweep.compute_flows()[0, 3], 0.)
 
+    def test_clear_after_a_diverged_base_case(self):
+        """clear() drops what the actions were resolved into even when the base case
+        diverged (the batch inputs never became valid): a batch registered afterwards
+        with masks only reports the branches its masks take out"""
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_topo_actions(self._topo([self._act({"set_line_status": [(7, -1)]}), self._act()]))
+        # a flat start and one iteration: the base case diverges
+        sweep.compute(np.ones(self.Vinit.shape[0], dtype=complex), 1, self.tol)
+        self.assertNotEqual(sweep.get_status(), 1)
+        self.assertEqual(list(sweep.get_row_disconnected_branches(0)), [7])
+        sweep.clear()
+        line_mask = np.zeros((2, self.n_line), dtype=bool)
+        line_mask[0, 3] = True
+        sweep.set_contingency_lines(line_mask)
+        self.assertEqual(list(sweep.get_row_disconnected_branches(0)), [3])
+        self.assertEqual(list(sweep.get_row_disconnected_branches(1)), [])
+
     def test_merge_needs_no_disconnected_grid_mode(self):
         """a row merging back a busbar the base grid splits leaves that busbar with no
         element at all: nothing is stranded, so the row is solved without

@@ -169,8 +169,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // reserved. The base drops the algorithm, whose sparsity that structure is.
         void clear_batch_inputs() override {
             // not under the test below: the actions are resolved before the "n" solve,
-            // so a batch whose "n" case diverged (never valid) holds a resolution too
+            // so a batch whose "n" case diverged (never valid) holds a resolution too --
+            // what the actions were resolved into (the actions themselves are a
+            // registration and stay)
             _topo_resolved_ = false;
+            _row_topo_.clear();
+            _topology_active_ = false;
+            _base_masked_.clear();
+            _row_emptied_buses_.clear();
+            _row_placed_buses_.clear();
+            _reset_topo_policy_state();
             if(_batch_inputs_valid_){
                 // the workers go with the member algorithm the base drops: each holds a
                 // ledger, a Jacobian sparsity and a factorization built from exactly the
@@ -189,14 +197,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _row_slack_storages_off_.clear();
                 _li_defaults_vect_cache_.clear();
                 _physical_violations_n_.clear();
-                // what the topological actions were resolved into for this batch
-                // (the actions themselves are a registration and stay)
-                _row_topo_.clear();
-                _topology_active_ = false;
-                _base_masked_.clear();
-                _row_emptied_buses_.clear();
-                _row_placed_buses_.clear();
-                _reset_topo_policy_state();
                 _clear_slack_redistribution();
             }
             BaseBatchSolverSynch::clear_batch_inputs();
