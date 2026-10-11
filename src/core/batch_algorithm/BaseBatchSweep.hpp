@@ -195,6 +195,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _topology_active_ = false;
                 _base_masked_.clear();
                 _row_emptied_buses_.clear();
+                _row_placed_buses_.clear();
                 _reset_topo_policy_state();
                 _clear_slack_redistribution();
             }
@@ -1495,9 +1496,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     : BusGraph::removed_edges(dc_cache_.mat, coeffs, threshold, edges));
                 if(settled) cut = bus_graph_.cut(edges);
                 // the tree answers for the buses it holds; the ones it leaves out are cut
-                // off in every row it settles (a row that places a branch is searched)
+                // off in every row it settles (a row that places a branch is searched),
+                // stranding whatever the row puts on them
                 if(cut.verdict == BusGraph::Verdict::Connected){
                     _li_masked[cont_id] = _base_masked_;
+                    _cont_connected_[cont_id] = _only_masked_by_design(cont_id, _li_masked[cont_id]) ? 1 : 0;
                     continue;
                 }
                 if(cut.verdict == BusGraph::Verdict::Split){
@@ -1529,11 +1532,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // masked by design: the extra buses of the union layout (_base_masked_, in every
         // row that does not use them) and the base buses the row's action leaves with no
         // element at all (_row_emptied_buses_: a merge). Nothing stands on either, so
-        // nothing is stranded.
+        // nothing is stranded. An extra bus the row puts an element on
+        // (_row_placed_buses_) is not one of them: that element is stranded.
         bool _only_masked_by_design(size_t row, const std::vector<int> & masked) const {
             const std::vector<int> * emptied = row < _row_emptied_buses_.size() ? &_row_emptied_buses_[row] : nullptr;
+            const std::vector<int> * placed = row < _row_placed_buses_.size() ? &_row_placed_buses_[row] : nullptr;
             for(int b : masked){
-                if(std::binary_search(_base_masked_.begin(), _base_masked_.end(), b)) continue;
+                if(std::binary_search(_base_masked_.begin(), _base_masked_.end(), b) &&
+                   (placed == nullptr || !std::binary_search(placed->begin(), placed->end(), b))) continue;
                 if(emptied != nullptr && std::binary_search(emptied->begin(), emptied->end(), b)) continue;
                 return false;
             }
@@ -2856,6 +2862,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _topo_resolved_ = false;
             _base_masked_.clear();
             _row_emptied_buses_.clear();
+            _row_placed_buses_.clear();
             _row_slack_storages_off_.clear();
             _row_branch_overrides_.clear();
             _reset_topo_policy_state();
@@ -2889,6 +2896,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             };
             _row_topo_.resize(nb_steps);
             _row_emptied_buses_.assign(nb_steps, std::vector<int>());
+            _row_placed_buses_.assign(nb_steps, std::vector<int>());
             _row_slack_storages_off_.assign(nb_steps, std::vector<int>());
             const std::vector<std::size_t> & base_count = _grid_model.get_substations().get_nb_elements_per_bus();
             ybus_policy_.topo_branches_off.assign(nb_steps, std::vector<int>());
@@ -2913,6 +2921,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(plan.empty()) continue;
                 _topology_active_ = true;
                 _row_emptied_buses_[row] = _emptied_buses(plan, base_count, solver_of, row);
+                _row_placed_buses_[row] = _placed_buses(plan, solver_of, row);
                 if(!_algo.ac_solver_used()){
                     std::ostringstream exc_;
                     exc_ << algo_name() << "::set_topo_actions: row " << row << " carries a topological "
@@ -3136,6 +3145,27 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(static_cast<long>(base_count[bus]) + bus_change.second == 0) res.push_back(solver_of(bus_change.first, row));
             }
             std::sort(res.begin(), res.end());
+            return res;
+        }
+
+        // The buses (solver ids, sorted) a row's action puts an element or a branch end on:
+        // an extra bus of the union layout is masked by design only in the rows that do
+        // not use it (see _only_masked_by_design).
+        template<class SolverOf>
+        std::vector<int> _placed_buses(const RowTopoPlan & plan, const SolverOf & solver_of, size_t row) const {
+            std::vector<int> res;
+            for(const TopoBranchPlacement & br : plan.branches){
+                if(!br.row_on) continue;
+                res.push_back(solver_of(br.row_bus1_me, row));
+                res.push_back(solver_of(br.row_bus2_me, row));
+            }
+            for(const std::vector<TopoElPlacement> * els : {&plan.loads, &plan.gens, &plan.storages}){
+                for(const TopoElPlacement & el : *els){
+                    if(el.row_bus_me != BaseConstants::_deactivated_bus_id) res.push_back(solver_of(el.row_bus_me, row));
+                }
+            }
+            std::sort(res.begin(), res.end());
+            res.erase(std::unique(res.begin(), res.end()), res.end());
             return res;
         }
 
@@ -4268,6 +4298,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // L2, per row: the base buses its action leaves with no element (see
         // _emptied_buses), masked without stranding anything
         std::vector<std::vector<int> > _row_emptied_buses_;
+        // L2, per row: the buses its action puts something on (see _placed_buses)
+        std::vector<std::vector<int> > _row_placed_buses_;
         // L1: the buses the actions use (gridmodel ids, sorted), those of them empty in
         // the base grid, and the (bus, bus) pairs a row's branch placement writes
         std::vector<int> _topo_used_buses_me_;
