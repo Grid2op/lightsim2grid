@@ -627,6 +627,32 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         self.assertAlmostEqual(abs(V[self.bus_of_gen[stays]]), target_vm[stays], places=8)
         self.assertAlmostEqual(abs(V[self.bus_of_gen[moves] + n_sub]), gen_v[0, moves], places=8)
 
+    def test_generators_swapping_busbars(self):
+        """a row swapping two generators between the busbars of a split substation, each
+        busbar at the set-point of the generator that leaves it: each busbar is held at the
+        set-point of the generator the row puts there, which it does not have to share
+        with the one that leaves"""
+        cls = type(self.env)
+        self.assertEqual(list(cls.gen_to_subid[[2, 3]]), [5, 5])
+        grid = copy.deepcopy(self.grid)
+        split = self._topo([self._act({"set_bus": {"generators_id": [(3, 2)], "lines_or_id": [(8, 2), (9, 2)]}})])[0]
+        split.check_validity(grid)
+        split.apply_to_gridmodel(grid)
+        vm_2 = grid.get_generators()[2].target_vm_pu
+        vm_3 = vm_2 - 0.05
+        grid.change_v_gen(3, vm_3)
+        actions = [self._act({"set_bus": {"generators_id": [(2, 2), (3, 1)]}}), self._act()]
+        sweep = self._sweep(actions, grid=grid)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+        n_sub = cls.n_sub
+        V = sweep.get_voltages()
+        self.assertAlmostEqual(abs(V[0][5 + n_sub]), vm_2, places=8)
+        self.assertAlmostEqual(abs(V[0][5]), vm_3, places=8)
+        self.assertAlmostEqual(abs(V[1][5 + n_sub]), vm_3, places=8)
+
     def test_extra_busbar_not_checked_in_the_n_case(self):
         """the extra busbars of the union layout do not exist in the base grid: masked in
         the "n" case, they are not voltage-checked there either -- as in a plain row"""

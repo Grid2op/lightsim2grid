@@ -3471,11 +3471,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // see _maybe_resolve_topology) regulating that bus locally makes it PV for
             // the row. A base-PQ bus already owns a Vm unknown and a Q equation, so
             // nothing is reserved: the row pins its Q row (set_pv_pinned_buses) and
-            // seeds |V| there at the set-point (_row_vm_seed_). A base-PV bus whose own
-            // controllers the row takes out stays PV through it -- provided both ask
-            // the same magnitude.
+            // seeds |V| there at the set-point (_row_vm_seed_). A base-PV bus stays PV
+            // through it, held by the controllers the row leaves there -- provided they
+            // ask the same magnitude -- or, when the row takes them all off, at the
+            // incoming set-point.
             std::vector<std::set<int> > extra_pv(nb_steps);
             _row_vm_seed_.assign(nb_steps, std::vector<std::pair<int, real_type> >());
+            // the magnitude a generator asks in a row: the row's own (modify_gen_v) or
+            // the grid's
+            auto gen_vm_in_row = [&](size_t step, int gen_id){
+                real_type res = generators.get_target_vm_pu(gen_id);
+                if(sbus_policy_.gen_v.rows() > 0 && static_cast<Eigen::Index>(step) < sbus_policy_.gen_v.rows()){
+                    const real_type own = sbus_policy_.gen_v(static_cast<Eigen::Index>(step), gen_id);
+                    if(std::isfinite(own)) res = own;
+                }
+                return res;
+            };
             if(has_gens_on){
                 const std::vector<int> & slack_solver = active_layout().slack_bus_id_solver.to_int_vector();
                 for(size_t step = 0; step < nb_steps && step < sbus_policy_.topo_gens_on.size(); ++step){
@@ -3512,35 +3523,40 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                  << " reactivates generator " << gen_id << " on a slack bus: not supported yet.";
                             throw std::runtime_error(exc_.str());
                         }
-                        // the magnitude this generator asks of the bus: the row's own
-                        // (modify_gen_v) or the grid's
-                        real_type vm = generators.get_target_vm_pu(gen_id);
-                        if(sbus_policy_.gen_v.rows() > 0 && static_cast<Eigen::Index>(step) < sbus_policy_.gen_v.rows()){
-                            const real_type own = sbus_policy_.gen_v(static_cast<Eigen::Index>(step), gen_id);
-                            if(std::isfinite(own)) vm = own;
-                        }
+                        // the magnitude this generator asks of the bus
+                        const real_type vm = gen_vm_in_row(step, gen_id);
                         const auto base_gens = gens_of_bus.find(bus_solver);
-                        if(base_gens != gens_of_bus.end()){
+                        const bool base_pv = base_gens != gens_of_bus.end();
+                        if(base_pv){
                             // a base-PV bus: kept PV whatever the row does to its own
-                            // controllers, whose set-point it must share
-                            real_type bus_vm = generators.get_target_vm_pu(base_gens->second[0]);
-                            if(sbus_policy_.gen_v.rows() > 0 && static_cast<Eigen::Index>(step) < sbus_policy_.gen_v.rows()){
-                                const real_type own = sbus_policy_.gen_v(static_cast<Eigen::Index>(step), base_gens->second[0]);
-                                if(std::isfinite(own)) bus_vm = own;
-                            }
-                            if(std::abs(bus_vm - vm) > BaseConstants::_tol_equal_float){
-                                std::ostringstream exc_;
-                                exc_ << algo_name() << "::set_topo_actions: the action of row " << step
-                                     << " reactivates generator " << gen_id << " (set-point " << vm
-                                     << " pu) on a bus another generator holds at " << bus_vm
-                                     << " pu. A bus has one magnitude: give them the same set-point.";
-                                throw std::runtime_error(exc_.str());
-                            }
+                            // controllers. The first one the row leaves there holds it
+                            // (they agree among themselves, _row_gen_v_conflicts); one
+                            // the row takes off or moves away holds nothing.
                             std::vector<int>::iterator it = std::find(to_pq.begin(), to_pq.end(), bus_solver);
                             if(it != to_pq.end()) to_pq.erase(it);
-                            continue;
+                            int holder = -1;
+                            for(int other : base_gens->second){
+                                if(sbus_policy_.gen_off_in(static_cast<Eigen::Index>(step), other)) continue;
+                                holder = other;
+                                break;
+                            }
+                            if(holder >= 0){
+                                const real_type bus_vm = gen_vm_in_row(step, holder);
+                                if(std::abs(bus_vm - vm) > BaseConstants::_tol_equal_float){
+                                    std::ostringstream exc_;
+                                    exc_ << algo_name() << "::set_topo_actions: the action of row " << step
+                                         << " reactivates generator " << gen_id << " (set-point " << vm
+                                         << " pu) on a bus generator " << holder << " holds at " << bus_vm
+                                         << " pu. A bus has one magnitude: give them the same set-point.";
+                                    throw std::runtime_error(exc_.str());
+                                }
+                                continue;
+                            }
                         }
-                        // a base-PQ bus: PV for this row, at this magnitude
+                        // a bus nothing else holds in this row: at this magnitude. A
+                        // base-PQ bus turns PV for the row; a base-PV bus whose own
+                        // controllers the row all takes off is pinned already (kept off
+                        // to_pq above), only its |V| is seeded
                         bool seeded = false;
                         for(const auto & seed : _row_vm_seed_[step]){
                             if(seed.first != bus_solver) continue;
@@ -3554,7 +3570,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                             }
                         }
                         if(!seeded) _row_vm_seed_[step].push_back(std::make_pair(bus_solver, vm));
-                        extra_pv[step].insert(bus_solver);
+                        if(!base_pv) extra_pv[step].insert(bus_solver);
                     }
                 }
             }
