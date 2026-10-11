@@ -2384,23 +2384,27 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                  return a.el_id < b.el_id; });
         }
 
-        // the reactive-capability plan of a row that places generators: the batch's plan
-        // with each placed generator taken off the bus it holds in the base grid and put
-        // on the bus the row gives it -- an entry of its own where no controller of the
-        // base grid stands there
-        void _row_bus_q_plan(const std::vector<std::pair<int, int> > & gens_placed,
-                             bus_q_check::BusQPlan & out) const {
-            out = _bus_q_plan_;
+        // the reactive-capability entries of a row that places generators, on top of the
+        // batch's plan: one for each bus a placed generator stands on that no machine of
+        // the base grid holds. The plan itself is not copied: check_bus_q_violations
+        // counts a placed generator on the plan's entry for its new bus, and on no other
+        // (its `placed` argument).
+        void _row_bus_q_entries(const std::vector<std::pair<int, int> > & gens_placed,
+                                bus_q_check::BusQPlan & out) const {
+            out.clear();
             const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
             const SubstationContainer & subs = _grid_model.get_substations();
             const std::vector<std::string> & sub_names = subs.get_sub_names();
             for(const auto & g : gens_placed){
                 const int gen_id = g.first;
                 const int bus_solver = g.second;
+                bool in_plan = false;
+                for(const auto & entry : _bus_q_plan_.buses){
+                    if(entry.bus_solver == bus_solver){ in_plan = true; break; }
+                }
+                if(in_plan) continue;
                 bus_q_check::BusQEntry * target = nullptr;
                 for(auto & entry : out.buses){
-                    std::vector<int> & ids = entry.gen_ids;
-                    ids.erase(std::remove(ids.begin(), ids.end(), gen_id), ids.end());
                     if(entry.bus_solver == bus_solver) target = &entry;
                 }
                 if(target == nullptr){
@@ -2532,34 +2536,32 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const std::vector<int> * masked = _row_masked_ids(i);
             // the generators this row's topological action places on a bus (moved there,
             // or reactivated): the plan, built from the base placement, lists each of
-            // them on the bus it left, or not at all -- this row's plan lists them where
-            // they stand (see _row_bus_q_plan). Empty on every other row.
+            // them on the bus it left, or not at all -- the check counts them where they
+            // stand instead (see _row_bus_q_entries). Empty on every other row.
             const std::vector<std::pair<int, int> > gens_placed = _row_gens_placed(i);
             if(_bus_q_check_on_){
-                const bus_q_check::BusQPlan * plan = &_bus_q_plan_;
-                bus_q_check::BusQPlan row_plan;
-                if(!gens_placed.empty()){
-                    _row_bus_q_plan(gens_placed, row_plan);
-                    plan = &row_plan;
-                }
-                if(!plan->empty()){
+                bus_q_check::BusQPlan row_entries;
+                if(!gens_placed.empty()) _row_bus_q_entries(gens_placed, row_entries);
+                if(!_bus_q_plan_.empty() || !row_entries.empty()){
                     // get_controller_q() returns by value: asked for only where a bus' reactive
                     // power actually needs it (see BusQPlan::needs_controller_q), so an ordinary
-                    // grid of local PV machines pays no per-row allocation.
-                    const RealVect ctrl_q = plan->needs_controller_q ? algo.get_controller_q()
-                                                                     : RealVect();
+                    // grid of local PV machines pays no per-row allocation. A row's own
+                    // entries hold no controller of the plan.
+                    const RealVect ctrl_q = _bus_q_plan_.needs_controller_q ? algo.get_controller_q()
+                                                                            : RealVect();
                     bus_q_check::check_bus_q_violations(
-                        *plan, _grid_model, algo.get_bus_mismatch(), V_solver, ctrl_q,
+                        _bus_q_plan_, _grid_model, algo.get_bus_mismatch(), V_solver, ctrl_q,
                         _grid_model.get_sn_mva(), _physical_tol_mva_, masked,
                         [this, i, &gens_placed](int gen_id){
-                            // a generator the row placed stands where this plan lists it
+                            // a generator the row placed is live on the bus it stands on
+                            // (the check counts it there only)
                             for(const auto & g : gens_placed) if(g.first == gen_id) return false;
                             return this->_gen_off_in_row(i, gen_id);
                         },
                         // a storage unit leaving its bus is disconnected (a row places no
                         // regulating one)
                         [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); },
-                        _physical_violations_[i]);
+                        _physical_violations_[i], &gens_placed, &row_entries);
                 }
             }
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
