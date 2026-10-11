@@ -387,6 +387,38 @@ class TestLightEnvActions(unittest.TestCase):
         self.assertFalse(light_env.grid.get_lines_status()[line_id])
         self.assertEqual(light_env.time_before_cooldown_line[line_id], NB_TS_RECO)
 
+    def test_reset_diverging(self):
+        """the powerflow of the initial state diverges: there is no episode to play, reset
+        says so (as grid2op does) and the env cannot be stepped"""
+        light_env = self.make_light_env(nb_ts=3)
+        data = self.env.chronics_handler.real_data.data
+        nb_ts = 3
+        load_p = data.load_p[:nb_ts].astype(float)
+        load_p[0] *= 100.   # far beyond what the grid can carry
+        light_env.assign_time_series(
+            load_p,
+            data.load_q[:nb_ts].astype(float),
+            data.prod_p[:nb_ts].astype(float),
+            (data.prod_v[:nb_ts] / self.env.backend.prod_pu_to_kv).astype(float),
+            np.full((nb_ts, self.env.n_storage), np.nan),
+            np.full((nb_ts, self.env.n_shunt), np.nan),
+            np.full((nb_ts, self.env.n_shunt), np.nan),
+            np.full((nb_ts, 0), np.nan),
+            np.full((nb_ts, 0), np.nan),
+        )
+        # the premise: a one-off powerflow of that state diverges
+        grid = copy.deepcopy(self.env.backend._grid)
+        for load_id in range(self.env.n_load):
+            grid.change_p_load(load_id, float(load_p[0, load_id]))
+        V = grid.ac_pf(1.0 * self.env.backend.V, 10, 1e-8)
+        self.assertEqual(V.shape[0], 0)
+
+        with self.assertRaises(RuntimeError) as cm:
+            light_env.reset()
+        self.assertIn("diverge", str(cm.exception))
+        with self.assertRaises(RuntimeError):
+            light_env.step(0)
+
     def test_reset_restores_topology_and_cooldowns(self):
         act_sub = self.env.action_space({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2)]}})
         disco = self.env.action_space({"set_line_status": [(3, -1)]})

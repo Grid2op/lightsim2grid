@@ -365,8 +365,14 @@ class LightEnv : protected LightEnvState
 
             // run the powerflow
             V_ = protections_.run_powerflow(*grid_, max_iter_, tol_);
-            // TODO if divergence !!!!
-            if(V_.size() != 0) protections_.update_rho(*grid_);
+            if(V_.size() == 0){
+                // no initial state, no episode: as grid2op, which cannot reset either
+                has_been_checked_ = false;
+                timer_reset_ += timer_reset.duration();
+                throw std::runtime_error("LightEnv::reset: the powerflow of the initial state (the first "
+                                         "row of the time series) diverged, there is no episode to play.");
+            }
+            protections_.update_rho(*grid_);
 
             // extract the observation
             extract_observation();

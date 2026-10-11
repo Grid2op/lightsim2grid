@@ -140,7 +140,8 @@ Playing an episode
 ``reset()`` restores the initial topology, the overflow counters and the cooldowns, applies
 the first row of the time series, runs a powerflow and returns ``(obs, info)``. It must be
 called before the first step, and again after ``assign_time_series`` or a change of the
-protections.
+protections. If that powerflow diverges there is no episode to play: ``reset`` raises a
+``RuntimeError`` and the env cannot be stepped.
 
 ``step(act_id)`` returns ``(obs, reward, done, truncated, info)``:
 
