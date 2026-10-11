@@ -2961,8 +2961,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // ---- generators: off (the generator-contingency path), or placed ------
                 for(const TopoElPlacement & g : plan.gens){
                     const bool was_on = g.base_bus_me != BaseConstants::_deactivated_bus_id;
-                    if(was_on && sbus_policy_.gen_off.rows() > 0 && sbus_policy_.gen_off(static_cast<Eigen::Index>(row), g.el_id)){
-                        _throw_topo_overlap(row, "generator", g.el_id, "set_contingency_gens");
+                    if(sbus_policy_.gen_off.rows() > 0 && sbus_policy_.gen_off(static_cast<Eigen::Index>(row), g.el_id)){
+                        if(was_on) _throw_topo_overlap(row, "generator", g.el_id, "set_contingency_gens");
+                        // off in the base grid: the mask alone changes nothing, but the
+                        // action puts it back on
+                        std::ostringstream exc_;
+                        exc_ << algo_name() << "::set_topo_actions: row " << row << " reactivates generator "
+                             << g.el_id << " through its topological action while set_contingency_gens "
+                                "takes it out. Name it in one of the two only.";
+                        throw std::runtime_error(exc_.str());
                     }
                     if(g.row_bus_me == BaseConstants::_deactivated_bus_id){
                         gen_off_in_row(row, g.el_id);

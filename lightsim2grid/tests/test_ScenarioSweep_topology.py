@@ -420,6 +420,25 @@ class TestScenarioSweepGenReactivation(TestScenarioSweepTopology):
         return self._act({"set_bus": {"generators_id": [(self.gen_off, 1)]}})
 
     # the stage 1 tests run again on this base grid (inherited); on top of them:
+    def test_mask_on_a_reactivated_generator_refused(self):
+        """set_contingency_gens takes the generator out of a row whose action puts it back:
+        the two contradict each other, refused as for a generator on in the base grid"""
+        actions = [self._reco(), self._act()]
+        gen_mask = np.zeros((2, self.n_gen), dtype=bool)
+        gen_mask[0, self.gen_off] = True
+        with self.assertRaises(RuntimeError) as cm:
+            self._sweep(actions, set_contingency_gens=gen_mask)
+        self.assertIn("row 0", str(cm.exception))
+        self.assertIn(f"generator {self.gen_off}", str(cm.exception))
+        self.assertIn("set_contingency_gens", str(cm.exception))
+        # the mask alone on a generator off in the base grid changes nothing
+        gen_mask[0, self.gen_off] = False
+        gen_mask[1, self.gen_off] = True
+        sweep = self._sweep(actions, set_contingency_gens=gen_mask)
+        self.assertEqual(sweep.get_status(), 1)
+        self._assert_row_matches(sweep, 0, actions[0])
+        self._assert_row_matches(sweep, 1, actions[1])
+
     def test_reactivation_matches_reference(self):
         shared = [g for g in range(self.n_gen) if self.bus_of_gen.count(self.bus_of_gen[g]) > 1]
         actions = [
