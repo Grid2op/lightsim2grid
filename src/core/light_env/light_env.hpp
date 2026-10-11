@@ -523,17 +523,13 @@ class LightEnv : protected LightEnvState
 
         void apply_injections(int step_id){
             const TimeSeries & ts = *time_series_;
-            const InjAction inj_action(ts.load_p.row(step_id),
-                                       ts.load_q.row(step_id),
-                                       ts.gen_p.row(step_id),
-                                       ts.gen_v.row(step_id),
-                                       ts.storage_p.row(step_id),
-                                       ts.shunt_p.row(step_id),
-                                       ts.shunt_q.row(step_id),
-                                       ts.sgen_p.row(step_id),
-                                       ts.sgen_q.row(step_id)
-                                       );
-            inj_action.apply_to_gridmodel(*grid_);
+            // the rows are read in place: an InjAction would copy all nine of them, every
+            // step, to apply four (see InjAction::apply_to_gridmodel)
+            InjAction::apply_to_gridmodel(*grid_,
+                                          ts.load_p.row(step_id).transpose(),
+                                          ts.load_q.row(step_id).transpose(),
+                                          ts.gen_p.row(step_id).transpose(),
+                                          ts.gen_v.row(step_id).transpose());
         }
 
         // fraction of the episode survived, in [0, 1]: the reward of a step and the
