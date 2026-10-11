@@ -209,6 +209,17 @@ class TestLightEnvActions(unittest.TestCase):
         ambiguous = TopoAction()
         ambiguous.set_line_status(2, -1)
         ambiguous.add_element(ElementType.line_or, 2, 1)
+        # contradiction: one end disconnected, the other connected to a busbar (grid2op
+        # refuses it too, InvalidLineStatus), both ways round, on a line and on a trafo
+        ends_or_off = TopoAction()
+        ends_or_off.add_element(ElementType.line_or, 2, -1)
+        ends_or_off.add_element(ElementType.line_ex, 2, 2)
+        ends_ex_off = TopoAction()
+        ends_ex_off.add_element(ElementType.line_or, 2, 2)
+        ends_ex_off.add_element(ElementType.line_ex, 2, -1)
+        trafo_ends = TopoAction()
+        trafo_ends.add_element(ElementType.trafo_hv, 0, -1)
+        trafo_ends.add_element(ElementType.trafo_lv, 0, 1)
         # what the light env does not model
         change_bus = self.env.action_space({"change_bus": {"loads_id": [0]}})
         change_status = self.env.action_space({"change_line_status": [0]})
@@ -217,6 +228,8 @@ class TestLightEnvActions(unittest.TestCase):
         invalid = {"bus -2": bus_m2, "bus 3": bus_3, "load 18": load_18, "load -1": load_m1,
                    "line 25 (set_bus)": line_25_bus, "line 25 (set_line_status)": line_25_status,
                    "trafo 5": trafo_5, "status 2": status_2, "ambiguous": ambiguous,
+                   "or off, ex on": ends_or_off, "or on, ex off": ends_ex_off,
+                   "trafo hv off, lv on": trafo_ends,
                    "change_bus": change_bus, "change_line_status": change_status,
                    "redispatch": redisp, "not an action": 1}
         for name, act in invalid.items():
