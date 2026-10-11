@@ -155,10 +155,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void clear_grid_results() override {
             if(_grid_cache_valid_){
                 _reset_ybus_coeffs();
-                // the union layout the topological actions asked for (see _maybe_topo_union)
+                // the union layout the topological actions asked for, and each row's
+                // action resolved against the grid (see _maybe_topo_union)
                 _topo_used_buses_me_.clear();
                 _extra_buses_me_.clear();
                 _union_edges_me_.clear();
+                _row_topo_.clear();
             }
             BaseBatchSolverSynch::clear_grid_results();
         }
@@ -173,7 +175,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // what the actions were resolved into (the actions themselves are a
             // registration and stay)
             _topo_resolved_ = false;
-            _row_topo_.clear();
             _topology_active_ = false;
             _base_masked_.clear();
             _row_emptied_buses_.clear();
@@ -2859,7 +2860,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _maybe_resolve_topology(size_t nb_steps){
-            _row_topo_.clear();
             _topology_active_ = false;
             _topo_resolved_ = false;
             _base_masked_.clear();
@@ -2896,7 +2896,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
                 return res;
             };
-            _row_topo_.resize(nb_steps);
+            if(_row_topo_.size() != nb_steps){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::set_topo_actions: internal error, " << _row_topo_.size()
+                     << " actions were resolved with the grid for a batch of " << nb_steps << " rows.";
+                throw std::runtime_error(exc_.str());
+            }
             _row_emptied_buses_.assign(nb_steps, std::vector<int>());
             _row_placed_buses_.assign(nb_steps, std::vector<int>());
             _row_slack_storages_off_.assign(nb_steps, std::vector<int>());
@@ -2918,8 +2923,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 sbus_policy_.topo_gen_off(static_cast<Eigen::Index>(row), gen_id) = true;
             };
             for(size_t row = 0; row < nb_steps; ++row){
-                RowTopoPlan & plan = _row_topo_[row];
-                resolve_row_topo(topo_actions_[row], _grid_model, plan);
+                // resolved by _maybe_topo_union, with the grid
+                const RowTopoPlan & plan = _row_topo_[row];
                 if(plan.empty()) continue;
                 _topology_active_ = true;
                 _row_emptied_buses_[row] = _emptied_buses(plan, base_count, solver_of, row);
@@ -3074,11 +3079,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _topo_used_buses_me_.clear();
             _union_edges_me_.clear();
             _extra_buses_me_.clear();
+            _row_topo_.clear();
             if(topo_actions_.empty()) return;
             std::set<int> used;
             std::set<std::pair<int, int> > edges;
-            RowTopoPlan plan;
+            // kept: _maybe_resolve_topology reads the same plans (both levels are rebuilt
+            // with the grid or the actions, see set_topo_actions)
+            _row_topo_.resize(topo_actions_.size());
             for(size_t row = 0; row < topo_actions_.size(); ++row){
+                RowTopoPlan & plan = _row_topo_[row];
                 resolve_row_topo(topo_actions_[row], _grid_model, plan);
                 for(const TopoElPlacement & el : plan.loads) if(el.row_bus_me >= 0) used.insert(el.row_bus_me);
                 for(const TopoElPlacement & el : plan.gens) if(el.row_bus_me >= 0) used.insert(el.row_bus_me);
@@ -4326,8 +4335,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<int> > _row_slack_storages_off_;
         // topological actions (ScenarioSweep only; plain, always-present state like
         // the above). topo_actions_ is a registration (one checked TopoAction per
-        // row, see set_topo_actions); _row_topo_ / _topology_active_ are what
-        // _maybe_resolve_topology made of it for this batch (L2).
+        // row, see set_topo_actions); _row_topo_ is each action resolved against the
+        // grid (L1, _maybe_topo_union) and _topology_active_ what
+        // _maybe_resolve_topology made of them for this batch (L2).
         std::vector<TopoAction> topo_actions_;
         std::vector<RowTopoPlan> _row_topo_;
         bool _topology_active_ = false;
