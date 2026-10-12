@@ -57,10 +57,13 @@ class LS2G_API VoltageMonitoringLoop final : public BaseOuterLoop
 
     private:
         /// the SVCs the voltage-control plan of `grid` holds (its monitors), by SVC id
-        static std::vector<int> _held_svcs(const LSGrid & grid);
+        static std::vector<int> _held_svcs(const OuterGridView & view);
 
         // per solve (see _initialize): the monitors, as svc_standby_check entries
         svc_standby_check::SvcStandbyPlan monitors_;
+        // the SVCs this loop switched on, at their set-point, pu: what a resumed solve starts
+        // with (see OuterContext::resume)
+        std::vector<std::pair<int, real_type> > switched_on_;
 };
 
 }  // namespace ls2g

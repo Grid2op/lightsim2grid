@@ -48,8 +48,8 @@ Constraints:
 
 Out of scope for this pass: secondary voltage control, area interchange control, automation
 systems, three-winding transformers, loops written in Python (the interface keeps a pybind11
-trampoline easy to add later), the batch classes *running* the loops (they keep detection;
-`clone()` and per-solve state keep the door open), gpusim2grid.
+trampoline easy to add later), gpusim2grid. The batch classes run the loops since (see "In
+the batches" below).
 
 ## Reference
 
@@ -66,6 +66,16 @@ ones this work targets:
 | engine | `maxOuterLoopIterations` = 30, `maxNewtonRaphsonIterations` = 30, `newtonRaphsonConvEpsPerEq` = 1e-4 (UNIFORM), `MAX_VOLTAGE_CHANGE` scaling (0.4 pu, 1 rad), `voltageInitMode` = DC_VALUES, realistic voltage [0.8, 1.2] pu checked on buses of nominal voltage >= 180 kV |
 | network loading | `extrapolateReactiveLimits`, `forceTargetQInReactiveLimits`, `disableInconsistentVoltageControls`, `generatorsWithZeroMwTargetAreNotStarted`, plausible target voltage [0.8, 1.2] pu above 20 kV, `reactiveRangeCheckMode` = MAX, `plausibleActivePowerLimit` = 10000 MW |
 | slack | `slackBusSelectionMode` = MOST_MESHED, `maxSlackBusCount` = 1, `referenceBusSelectionMode` = FIRST_SLACK |
+
+lightsim2grid hard-codes none of these. Its C++ defaults (the loops' `Params`,
+`OuterLoopDriverParams`) are OpenLoadFlow's own source defaults at v2.3.0. A grid loaded with
+`init_from_pypowsybl` runs instead what the installed OpenLoadFlow would run: `olf_outer_loops`
+reads the list, its order and every parameter off a `pypowsybl.loadflow.Parameters` (the
+installed defaults when none is given), with OpenLoadFlow's rules of `AbstractAcOuterLoopConfig`.
+The order of `DefaultAcOuterLoopConfig` has not changed since OpenLoadFlow 1.4 (versions only
+insert their new loops), and `outerLoopNames` gives its own. A test comparing with OpenLoadFlow
+passes the same parameters to both sides (`olf_parameters=` of `init_from_pypowsybl`), built
+with `tests/_olf_reference.py`, so that it compares like with like whatever build runs it.
 
 Grid snapshots are loaded with `pypowsybl.network.load(path, {"iidm.die.with-extensions": "all"})`.
 
@@ -403,6 +413,48 @@ convention). Each loop's parameters carry OLF's parameter names and the defaults
 above. A grid copy, a pickle or a batch thread only carries the algorithm name and its
 `AlgoConfig`, so the loop list is kept as descriptors (type + parameters) next to it and
 rebuilt with `clone()`.
+
+## In the batches
+
+A batch whose algorithm is an `NROuter_*` one solves each row with the grid's loops: the
+batch hands its row to `OuterLoopAlgo::compute_pf` as `LSGrid::ac_pf` does, and nothing else
+runs the loops. What a row changes compared with the grid reaches the loops through an
+`OuterRowView` (`outer_loop/OuterRowView.hpp`), set with `BaseAlgo::set_outer_row_view`:
+the batch's labelling and stranded buses, and, per element kind, the units it disconnects or
+places elsewhere, its targets, the branches it opens or moves. Plain data, refilled per row
+by the worker from what the row's Sbus and Ybus are built from. The loops, and the check
+headers they build on, read element state through `OuterGridView` (the grid with the row on
+top), never off the containers directly.
+
+- **One analysis.** The loop list goes to the algorithm before the base solve and to every
+  worker (`_install_outer_loops`): what the loops reserve is declared on the base solve's
+  rebuild, against the batch's labelling. A batch's switchable buses are bus controls like the
+  loops' own (`OuterControls::set_caller_switchable`), resting PV or PQ as the batch pins them
+  for the row. A row that turns an element off leaves its slot unused by value.
+- **A row restarts from the grid, but a TimeSeries row.** The controls and the loops restart
+  from the grid's state on every row, as OpenLoadFlow's security analysis restarts each
+  contingency. A TimeSeries row (chained on the previous one) starts from the previous row's
+  equations instead (`OuterRowView::resume`, `OuterLoopDriverParams::resume_outer_state` for a
+  sequence of single solves): `ReactiveLimits` re-freezes the buses it had frozen, at their
+  limit for the new row's target P; `VoltageMonitoring` keeps its SVCs switched on;
+  `HvdcAcEmulationLimits` keeps its regimes; the driver asks the controls for the taps and
+  sections the previous row settled on. `DistributedSlack` restarts from the row's own targets
+  (an injection, not an equation). A loop undoes its own switch when the row calls for it. With
+  the frozen buses still PQ, the voltages of the previous row are a valid start as they are.
+- **Results.** Per row, `OuterRowResult` (status, iterations, and what differs from the grid:
+  moved targets, hvdc regimes, taps, sections). The moved targets are the row's targets for its
+  generator results and its P checks; a moved tap is the row's transformer block in its flows.
+  A row its loops leave UNSTABLE or FAILED does not converge.
+- **Not yet:** `keep_jacobian` (which inner Jacobian the adjoint should read is not settled);
+  `redistribute_slack` is refused anyway (the inner Newton is single-slack).
+
+Detection is the loops' first check, without the action (`outer_detect`): each loop is
+initialized on a clone and detects, on the row as its view shows it, for `LSGrid` and every
+batch alike. `ReactiveLimits` reports there what `BusQCheck` and `RemoteVoltageControlCheck`
+used to (its own tolerance, limits at the target P, the robust mode by its own parameters).
+Two checks stay outside the loops, because no OpenLoadFlow loop has their trigger: the release
+of a unit the caller froze (`GenPvReleaseCheck`, a unit loaded without voltage control is never
+released by OpenLoadFlow) and a unit past its P limit under an in-Newton slack (`GenPCheck`).
 
 ## Reuse
 

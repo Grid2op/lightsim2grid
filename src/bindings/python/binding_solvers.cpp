@@ -117,37 +117,74 @@ void bind_fdpf_linear_solver_stats(py::class_<Solver>& cls) {
         ;
 }
 
-// Bind what the NROuter_* algorithms add to an NRAlgo: the outer-loop statistics and the
-// driver's parameters (OpenLoadFlow's names, see OuterLoopDriverParams).
+// Bind what the NROuter_* algorithms add to an NRAlgo: the outer-loop statistics and
+// whether to resume. The driver's OpenLoadFlow parameters are the grid's
+// (LSGrid.set_outer_loop_driver_params), handed over before each solve.
 template<typename Solver>
 void bind_outer_algo(py::class_<Solver>& cls) {
     cls
         .def("get_outer_loop_stats", &Solver::get_outer_loop_stats, DocSolver::OuterLoopStats.c_str())
-        .def_property("max_outer_iterations",
-            [](const Solver & self){ return self.get_driver_params().max_outer_iterations; },
-            [](Solver & self, int v){ auto p = self.get_driver_params(); p.max_outer_iterations = v; self.set_driver_params(p); },
-            "OpenLoadFlow's maxOuterLoopIterations: cap on the outer iterations of one solve, over every loop")
-        .def_property("voltage_remote_control_robust_mode",
-            [](const Solver & self){ return self.get_driver_params().voltage_remote_control_robust_mode; },
-            [](Solver & self, bool v){ auto p = self.get_driver_params(); p.voltage_remote_control_robust_mode = v; self.set_driver_params(p); },
-            "OpenLoadFlow's voltageRemoteControlRobustMode: defer the unrealistic-voltage check until after the last loop able to fix it")
-        .def_property("min_realistic_voltage",
-            [](const Solver & self){ return self.get_driver_params().min_realistic_voltage; },
-            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.min_realistic_voltage = v; self.set_driver_params(p); },
-            "OpenLoadFlow's minRealisticVoltage, pu")
-        .def_property("max_realistic_voltage",
-            [](const Solver & self){ return self.get_driver_params().max_realistic_voltage; },
-            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.max_realistic_voltage = v; self.set_driver_params(p); },
-            "OpenLoadFlow's maxRealisticVoltage, pu")
-        .def_property("min_nominal_voltage_realistic_check",
-            [](const Solver & self){ return self.get_driver_params().min_nominal_voltage_realistic_check; },
-            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.min_nominal_voltage_realistic_check = v; self.set_driver_params(p); },
-            "OpenLoadFlow's minNominalVoltageRealisticVoltageCheck, kV: buses below it are not checked")
+        .def("get_outer_loop_driver_params", [](const Solver & self){ return self.get_driver_params(); },
+            "The driver's parameters of the last solve: those the grid handed over "
+            "(see LSGrid.set_outer_loop_driver_params)")
+        .def_property("resume_outer_state",
+            [](const Solver & self){ return self.get_driver_params().resume_outer_state; },
+            [](Solver & self, bool v){ auto p = self.get_driver_params(); p.resume_outer_state = v; self.set_driver_params(p); },
+            "Whether a solve starts its loops from where the last converged solve left them (buses "
+            "frozen PQ, controllers held, standby SVCs switched on, hvdc regimes, taps, sections) "
+            "rather than from the grid: a sequence of solves of a time series. Not OpenLoadFlow's. "
+            "Off by default. A TimeSeries batch does it on its own rows.")
         ;
 }
 
 void bind_solvers(py::module_& m) {
     // ---- outer loops (NROuter_*) ----
+    py::class_<OuterLoopDriverParams>(m, "OuterLoopDriverParams", DocSolver::OuterLoopDriverParams.c_str())
+        .def(py::init([](int max_outer_iterations, bool voltage_remote_control_robust_mode,
+                         real_type min_realistic_voltage, real_type max_realistic_voltage,
+                         real_type min_nominal_voltage_realistic_check){
+                 OuterLoopDriverParams res;
+                 res.max_outer_iterations = max_outer_iterations;
+                 res.voltage_remote_control_robust_mode = voltage_remote_control_robust_mode;
+                 res.min_realistic_voltage = min_realistic_voltage;
+                 res.max_realistic_voltage = max_realistic_voltage;
+                 res.min_nominal_voltage_realistic_check = min_nominal_voltage_realistic_check;
+                 check_driver_params(res);
+                 return res;
+             }),
+             py::arg("max_outer_iterations") = OuterLoopDriverParams().max_outer_iterations,
+             py::arg("voltage_remote_control_robust_mode") = OuterLoopDriverParams().voltage_remote_control_robust_mode,
+             py::arg("min_realistic_voltage") = OuterLoopDriverParams().min_realistic_voltage,
+             py::arg("max_realistic_voltage") = OuterLoopDriverParams().max_realistic_voltage,
+             py::arg("min_nominal_voltage_realistic_check") = OuterLoopDriverParams().min_nominal_voltage_realistic_check)
+        .def_readwrite("max_outer_iterations", &OuterLoopDriverParams::max_outer_iterations,
+                       "OpenLoadFlow's maxOuterLoopIterations: cap on the outer iterations of one solve, over every loop")
+        .def_readwrite("voltage_remote_control_robust_mode", &OuterLoopDriverParams::voltage_remote_control_robust_mode,
+                       "OpenLoadFlow's voltageRemoteControlRobustMode: defer the unrealistic-voltage check until "
+                       "after the last loop able to fix it")
+        .def_readwrite("min_realistic_voltage", &OuterLoopDriverParams::min_realistic_voltage,
+                       "OpenLoadFlow's minRealisticVoltage, pu")
+        .def_readwrite("max_realistic_voltage", &OuterLoopDriverParams::max_realistic_voltage,
+                       "OpenLoadFlow's maxRealisticVoltage, pu")
+        .def_readwrite("min_nominal_voltage_realistic_check", &OuterLoopDriverParams::min_nominal_voltage_realistic_check,
+                       "OpenLoadFlow's minNominalVoltageRealisticVoltageCheck, kV: buses below it are not checked")
+        .def("__eq__", [](const OuterLoopDriverParams & a, const OuterLoopDriverParams & b){
+            return a.max_outer_iterations == b.max_outer_iterations &&
+                   a.voltage_remote_control_robust_mode == b.voltage_remote_control_robust_mode &&
+                   a.min_realistic_voltage == b.min_realistic_voltage &&
+                   a.max_realistic_voltage == b.max_realistic_voltage &&
+                   a.min_nominal_voltage_realistic_check == b.min_nominal_voltage_realistic_check;
+        })
+        .def("__repr__", [](const OuterLoopDriverParams & self){
+            std::ostringstream out;
+            out << "OuterLoopDriverParams(max_outer_iterations=" << self.max_outer_iterations
+                << ", voltage_remote_control_robust_mode=" << (self.voltage_remote_control_robust_mode ? "True" : "False")
+                << ", min_realistic_voltage=" << self.min_realistic_voltage
+                << ", max_realistic_voltage=" << self.max_realistic_voltage
+                << ", min_nominal_voltage_realistic_check=" << self.min_nominal_voltage_realistic_check << ")";
+            return out.str();
+        });
+
     py::enum_<OuterLoopStatus>(m, "OuterLoopStatus", DocSolver::OuterLoopStatus.c_str())
         .value("STABLE", OuterLoopStatus::STABLE)
         .value("UNSTABLE", OuterLoopStatus::UNSTABLE)

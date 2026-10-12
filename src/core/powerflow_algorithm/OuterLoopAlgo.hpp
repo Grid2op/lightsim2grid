@@ -10,6 +10,7 @@
 #define OUTER_LOOP_ALGO_H
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -70,12 +71,19 @@ public:
 
     bool supports_outer_loops() const noexcept override { return true; }
 
-    void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops) override {
+    void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops,
+                         const OuterLoopDriverParams & driver) override {
+        // the grid's driver parameters; whether to resume is this algorithm's own
+        check_driver_params(driver);
+        const bool resume = params_.resume_outer_state;
+        params_ = driver;
+        params_.resume_outer_state = resume;
         std::vector<std::string> signature;
         signature.reserve(loops.size());
         for(const auto & loop : loops) signature.push_back(_signature(*loop));
         if(signature == signature_) return;  // same list: keep the loops (and the sparsity)
         loops_.clear();
+        has_carry_ = false;  // new loops: nothing to resume from
         loops_.reserve(loops.size());
         for(const auto & loop : loops) loops_.push_back(loop->clone());
         signature_ = signature;
@@ -83,6 +91,7 @@ public:
         inner_.request_rebuild();
     }
 
+    void set_outer_row_view(const OuterRowView * row) override { row_ = row; }
     OuterLoopStats get_outer_loop_stats() const override { return stats_; }
 
     void get_outer_target_p(std::vector<real_type> & gen_p_mw,
@@ -98,8 +107,9 @@ public:
     void get_outer_ratio_tap(std::vector<int> & positions) const override { inner_.ratio_tap(positions); }
 
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
+    // a grid solving with this algorithm hands its own over before each solve (set_outer_loops)
     void set_driver_params(const OuterLoopDriverParams & params) {
-        _check_driver_params(params);
+        check_driver_params(params);
         params_ = params;
     }
 
@@ -107,7 +117,8 @@ public:
     // A caller (a batch's generator contingencies) and the loops may both reserve
     // switchable buses: the controls hold the caller's next to the loops' own.
     void set_switchable_vm_buses(const std::vector<int> & solver_bus_ids) override {
-        inner_.controls().set_caller_switchable(solver_bus_ids);
+        // they become bus controls at the next reservation, which a new set requires
+        if (inner_.controls().set_caller_switchable(solver_bus_ids)) inner_.request_rebuild();
         inner_.algo().set_switchable_vm_buses(solver_bus_ids);
     }
     void set_pv_pinned_buses(const std::vector<int> & solver_bus_ids) override {
@@ -117,37 +128,23 @@ public:
     // shrink a pivot the fixed pivot sequence then finds at zero (see NROuterInner)
     void set_refactor_fallback(bool /*val*/) override {}
 
-    // ----- AlgoConfig: the inner algorithm's parameters, then the driver's ------------
-    // int_params:  [the Newton's 4], max_outer_iterations, robust_mode
-    // real_params: [the Newton's 6], min_realistic_voltage, max_realistic_voltage,
-    //              min_nominal_voltage_realistic_check
+    // ----- AlgoConfig: the inner algorithm's parameters, then whether to resume --------
+    // int_params:  [the Newton's 4], resume_outer_state
+    // real_params: [the Newton's 6]
+    // The driver's OpenLoadFlow parameters are the grid's (LSGrid::set_outer_loop_driver_params),
+    // handed over with the loops before each solve: not part of the algorithm's configuration.
     AlgoConfig get_config() const override {
         AlgoConfig cfg = inner_.algo().get_config();
-        cfg.int_params.push_back(params_.max_outer_iterations);
-        cfg.int_params.push_back(params_.voltage_remote_control_robust_mode ? 1 : 0);
-        cfg.real_params.push_back(static_cast<double>(params_.min_realistic_voltage));
-        cfg.real_params.push_back(static_cast<double>(params_.max_realistic_voltage));
-        cfg.real_params.push_back(static_cast<double>(params_.min_nominal_voltage_realistic_check));
+        cfg.int_params.push_back(params_.resume_outer_state ? 1 : 0);
         return cfg;
     }
 
     void set_config(const AlgoConfig & cfg) override {
-        // a config of a plain NR_* (shorter) leaves the driver's parameters as they are
-        OuterLoopDriverParams params = params_;
-        if(cfg.int_params.size() >= 6){
-            params.max_outer_iterations = cfg.int_params[4];
-            params.voltage_remote_control_robust_mode = cfg.int_params[5] != 0;
-        }
-        if(cfg.real_params.size() >= 9){
-            params.min_realistic_voltage = static_cast<real_type>(cfg.real_params[6]);
-            params.max_realistic_voltage = static_cast<real_type>(cfg.real_params[7]);
-            params.min_nominal_voltage_realistic_check = static_cast<real_type>(cfg.real_params[8]);
-        }
-        // all or nothing, like NRAlgo::set_config: validate the driver's part, apply the
-        // inner algorithm's (which validates itself before writing anything), then the driver's
-        _check_driver_params(params);
+        // a config of a plain NR_* (shorter) leaves the flag as it is; the inner algorithm
+        // validates its own part before writing anything
+        const std::size_t nb_inner = inner_.algo().get_config().int_params.size();
         inner_.algo().set_config(cfg);
-        params_ = params;
+        if(cfg.int_params.size() > nb_inner) params_.resume_outer_state = cfg.int_params[nb_inner] != 0;
     }
 
     // ----- powerflow -------------------------------------------------------------
@@ -167,6 +164,7 @@ public:
     void reset() override {
         BaseAlgo::reset();
         inner_.algo().reset();
+        has_carry_ = false;
         err_ = inner_.algo().get_error();
         stats_.clear();
     }
@@ -250,16 +248,9 @@ private:
     void _declare();
     // OuterContext on the algorithm's current state
     OuterContext _context();
-
-    static void _check_driver_params(const OuterLoopDriverParams & params) {
-        if(params.max_outer_iterations < 0){
-            throw std::runtime_error("NROuterAlgo: max_outer_iterations must be >= 0.");
-        }
-        if(!(params.min_realistic_voltage < params.max_realistic_voltage)){
-            throw std::runtime_error("NROuterAlgo: min_realistic_voltage must be lower than "
-                                     "max_realistic_voltage.");
-        }
-    }
+    // resuming: the taps and sections the last solve settled on, asked of the controls
+    // before the loops initialize (one place for every loop that moves them)
+    void _apply_carried_positions();
 
     // the loop's name and its parameters, exactly: the only way to tell a loop from the one
     // already held (parameters are set at construction), so a decimal rendering, which loses
@@ -290,6 +281,13 @@ private:
     Eigen::SparseMatrix<cplx_type> Ybus_;  // the grid's, its values patched by the phase shifters
     RealVect controller_q_;  // the context's copy, refreshed with it
     int slack_bus_ = -1;     // solver id of the slack bus of the current solve
+    const OuterRowView * row_ = nullptr;  // the caller's, see set_outer_row_view
+    // what a resumed solve starts from: the positions the last converged solve settled on
+    // (INT_MIN where nothing handled them), and whether there is such a solve
+    std::vector<int> carried_phase_tap_;
+    std::vector<int> carried_ratio_tap_;
+    std::vector<int> carried_sections_;
+    bool has_carry_ = false;
     OuterInjections injections_;  // what the loops inject; kept after the solve for its results
 };
 

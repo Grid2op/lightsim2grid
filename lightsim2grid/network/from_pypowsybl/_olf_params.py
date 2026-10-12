@@ -133,19 +133,6 @@ def _olf_provider_params():
     return result
 
 
-
-_OLF_REALISTIC_VOLTAGE = None
-
-
-def _olf_realistic_voltage_range():
-    """``(min_vm_pu, max_vm_pu)``: the controller-bus voltage range out of which the installed
-    OpenLoadFlow's robust remote voltage control switches a remote controller to PQ -- its
-    default ``minRealisticVoltage`` / ``maxRealisticVoltage`` with the margin of its loop.
-    Those defaults changed between OLF versions, so they are read off the OLF pypowsybl
-    ships; the constants of ``_olf_const`` stand in when it does not expose them."""
-    global _OLF_REALISTIC_VOLTAGE
-    if _OLF_REALISTIC_VOLTAGE is not None:
-        return _OLF_REALISTIC_VOLTAGE
     from ._olf_const import (
         _OLF_MAX_REALISTIC_VOLTAGE_PU,
         _OLF_MIN_REALISTIC_VOLTAGE_PU,

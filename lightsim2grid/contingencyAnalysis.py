@@ -17,6 +17,7 @@ import numpy as np
 from collections.abc import Iterable
 
 from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid._batch_defaults import use_default_batch_algorithm
 from .lightsim2grid_cpp import (ContingencyAnalysisCPP, LimitViolation,
                                  ViolationElementType, LimitViolationType,
                                  ViolationCategory)
@@ -185,9 +186,8 @@ class ContingencyAnalysis(object):
         self._mws = None
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
-        if AlgorithmType.NR_KLU in self.available_default_algorithms:
-            # use the faster KLU if available
-            self.computer.change_algorithm(AlgorithmType.NR_KLU)
+        # the faster KLU if available, the grid's own algorithm if it runs outer loops
+        use_default_batch_algorithm(self.computer, self._ls_backend._grid)
 
     @property
     def all_contingencies(self):
@@ -444,11 +444,10 @@ class ContingencyAnalysis(object):
           ``MonitoringVoltageOuterLoop``. ``value`` and ``limit`` in kV, compared with
           :attr:`physical_violation_tol_vm_pu`. A grid with no flagged SVC reports nothing
           here.
-        * the **own bus** of every generator regulating a remote bus, when a realistic range
-          is set (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the
-          ``GENERATOR``, see
-          :func:`lightsim2grid.network.LSGrid.set_remote_voltage_control_vm_range`): does
-          holding the remote target take it outside that range? OpenLoadFlow's
+        * the **own bus** of every generator regulating a remote bus
+          (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the
+          ``GENERATOR``): does holding the remote target take it outside the realistic range
+          of the ``ReactiveLimits`` loop? OpenLoadFlow's
           ``ReactiveLimits``, in its robust remote voltage control mode. ``value`` and
           ``limit`` in kV, compared with :attr:`physical_violation_tol_vm_pu`.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
@@ -562,6 +561,14 @@ class ContingencyAnalysis(object):
         """Same as :func:`get_physical_violations`, for the pre-contingency ("n") case.
         Requires :attr:`compute_physical_violations` to be ``True`` (raises otherwise)."""
         return self.computer.get_physical_violations_n()
+
+    def get_outer_results(self):
+        """Per row of the last computation, what the outer loops did (a list of
+        ``OuterRowResult``: status, iteration counts, and the targets, hvdc regimes, taps and
+        sections the loops settled on where they differ from the grid). Only when the batch
+        runs outer loops -- the grid's algorithm is an ``NROuter_*`` one, kept by the batch --
+        empty otherwise. A row its loops leave ``UNSTABLE`` or ``FAILED`` did not converge."""
+        return self.computer.get_outer_results()
 
     @property
     def nb_thread(self):

@@ -302,8 +302,12 @@ class LS2G_API AlgorithmSelector final
         bool supports_outer_loops() const {
             return get_prt_solver("supports_outer_loops", false)->supports_outer_loops();
         }
-        void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops) {
-            get_prt_solver("set_outer_loops", false)->set_outer_loops(loops);
+        void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops,
+                             const OuterLoopDriverParams & driver) {
+            get_prt_solver("set_outer_loops", false)->set_outer_loops(loops, driver);
+        }
+        void set_outer_row_view(const OuterRowView * row) {
+            get_prt_solver("set_outer_row_view", false)->set_outer_row_view(row);
         }
         OuterLoopStats get_outer_loop_stats() const {
             return get_prt_solver("get_outer_loop_stats", false)->get_outer_loop_stats();

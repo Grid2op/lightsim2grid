@@ -8,6 +8,8 @@
 
 #include "OuterControls.hpp"
 
+#include <algorithm>
+
 namespace ls2g {
 
 namespace {
@@ -183,11 +185,47 @@ void OuterControls::clear_reservations()
     shunt_groups_.clear();
     shunt_controller_of_.clear();
     shunt_controller_store_.clear();
+    // the caller's switchable buses are bus controls whatever the loops declare
+    for (int b : caller_switchable_) reserve_bus_voltage(b);
+}
+
+namespace {
+
+std::vector<int> sorted_unique(std::vector<int> v)
+{
+    std::sort(v.begin(), v.end());
+    v.erase(std::unique(v.begin(), v.end()), v.end());
+    return v;
+}
+
+bool contains(const std::vector<int> & sorted, int x)
+{
+    return std::binary_search(sorted.begin(), sorted.end(), x);
+}
+
+}  // namespace
+
+bool OuterControls::set_caller_switchable(const std::vector<int> & buses)
+{
+    std::vector<int> v = sorted_unique(buses);
+    if (v == caller_switchable_) return false;
+    caller_switchable_.swap(v);
+    return true;
+}
+
+void OuterControls::set_caller_pinned(const std::vector<int> & buses)
+{
+    caller_pinned_ = sorted_unique(buses);
 }
 
 void OuterControls::reset_states()
 {
-    for (auto & control : bus_voltage_store_) control._reset();
+    // a caller's switchable bus rests where the caller pins it for this solve, PQ otherwise;
+    // a bus only the loops reserved is PV, as the labelling has it
+    for (auto & control : bus_voltage_store_) {
+        const int b = control.bus();
+        control._reset(contains(caller_switchable_, b) && !contains(caller_pinned_, b));
+    }
     for (auto & hold : controller_hold_store_) hold.release();
     for (auto & svc : standby_svc_store_) svc._reset();
     for (auto & regime : hvdc_regime_store_) regime._reset();
@@ -211,14 +249,15 @@ void OuterControls::take_pending_vm(std::vector<int> & buses, std::vector<real_t
 
 std::vector<int> OuterControls::switchable_buses() const
 {
-    std::vector<int> res = caller_switchable_;
-    for (const auto & bc : bus_voltage_of_) res.push_back(bc.first);
+    std::vector<int> res;
+    res.reserve(bus_voltage_of_.size());
+    for (const auto & bc : bus_voltage_of_) res.push_back(bc.first);  // a map: sorted
     return res;
 }
 
 std::vector<int> OuterControls::pinned_buses() const
 {
-    std::vector<int> res = caller_pinned_;
+    std::vector<int> res;
     for (const auto & bc : bus_voltage_of_) {
         if (!bc.second->is_pq()) res.push_back(bc.first);
     }

@@ -39,7 +39,7 @@ class LS2G_API BusVoltageControl final
     private:
         friend class OuterControls;
         explicit BusVoltageControl(int bus) : bus_(bus) {}
-        void _reset() { pq_ = false; }
+        void _reset(bool pq) { pq_ = pq; }
 
         int bus_;
         bool pq_ = false;
@@ -260,7 +260,9 @@ class LS2G_API ShuntSectionControl final
  * supports; a control it does not support is never handed out (nullptr).
  *
  * Solver bus ids throughout. The controls live until the next reservation (a rebuild of the
- * solver input), and are reset to "as the grid has it" at the start of every solve.
+ * solver input), and are reset to "as the grid has it" at the start of every solve -- "as the
+ * solved row has it" in a batch, whose switchable buses (set_caller_switchable) are bus
+ * controls like the loops' own, resting PV or PQ as the caller pins them for the row.
  */
 class LS2G_API OuterControls
 {
@@ -330,18 +332,21 @@ class LS2G_API OuterControls
         bool suspended(int bus) const { return suspended_.count(bus) > 0; }
 
         // ----- the driver's side -------------------------------------------------------------
-        /// forget every reservation, before the loops declare again
+        /// forget every reservation, before the loops declare again; the caller's switchable
+        /// buses are reserved again right away
         void clear_reservations();
-        /// every control back to "as the grid has it", at the start of a solve
+        /// every control back to "as the grid has it" (a caller's switchable bus: PV iff it
+        /// pins it), at the start of a solve
         void reset_states();
 
         /// the PV buses a caller (a batch) may switch, and those it keeps PV in the next solve,
-        /// see BaseAlgo::set_switchable_vm_buses / set_pv_pinned_buses
-        void set_caller_switchable(const std::vector<int> & buses) { caller_switchable_ = buses; }
-        void set_caller_pinned(const std::vector<int> & buses) { caller_pinned_ = buses; }
-        /// the caller's switchable buses, then the reserved ones (sorted)
+        /// see BaseAlgo::set_switchable_vm_buses / set_pv_pinned_buses. The switchable ones are
+        /// bus controls from the next reservation on; whether they changed is returned.
+        bool set_caller_switchable(const std::vector<int> & buses);
+        void set_caller_pinned(const std::vector<int> & buses);
+        /// every reserved bus (the caller's and the loops'), sorted
         std::vector<int> switchable_buses() const;
-        /// the caller's pinned buses, then the reserved ones that are PV (sorted)
+        /// the reserved buses that are PV now, sorted
         std::vector<int> pinned_buses() const;
 
         // ----- the inner algorithm's side ------------------------------------------------
@@ -421,8 +426,8 @@ class LS2G_API OuterControls
         std::vector<ShuntGroup> shunt_groups_;
         std::deque<ShuntSectionControl> shunt_controller_store_;
         std::map<int, ShuntSectionControl *> shunt_controller_of_;
-        std::vector<int> caller_switchable_;
-        std::vector<int> caller_pinned_;
+        std::vector<int> caller_switchable_;  // sorted, unique
+        std::vector<int> caller_pinned_;      // sorted, unique
         std::vector<std::pair<int, real_type> > pending_vm_;
         std::set<int> suspended_;
 };

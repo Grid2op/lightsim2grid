@@ -22,6 +22,7 @@
 #include "AlgoConfig.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
 #include "OuterControls.hpp"
+#include "OuterRowView.hpp"
 
 #include "Eigen/Core"
 
@@ -128,11 +129,14 @@ struct OuterContext
     /// whether the voltage magnitudes are the solve's: false after a DC solve, or in a
     /// batch whose algorithm cannot feed the reactive checks
     bool vm_checks = true;
-    /// the solver buses this solve left out (a batch row's stranded buses), sorted; may be null
-    const std::vector<int> * masked = nullptr;
-    /// the grid -> solver bus map of the solve (null: the grid's AC one); a DC solve, a
-    /// batch's own labelling, have theirs
-    const SolverBusIdVect * id_me_to_solver = nullptr;
+    /// what the solved row changes compared with the grid -- a batch row's overrides, its
+    /// labelling, its stranded buses -- (null: the grid as it is, solved in its AC labelling).
+    /// Read the per-row element state through view(), never off `grid` directly.
+    const OuterRowView * row = nullptr;
+    /// initialize() only: start from the state the previous solve left this loop in (see
+    /// OuterLoopDriverParams::resume_outer_state) -- re-apply its switches to the new solve --
+    /// rather than from the grid's. V / Va / Vm are then the previous solve's.
+    bool resume = false;
     /// how many times THIS loop was unstable so far in the solve (OpenLoadFlow's
     /// `context.getIteration()`: 0 means it has not changed anything yet)
     int iteration = 0;
@@ -144,6 +148,8 @@ struct OuterContext
     std::vector<OuterDecision> * trace = nullptr;
 
     bool is_detection() const { return injections == nullptr; }
+    /// the grid as this solve sees it (see OuterGridView)
+    OuterGridView view() const { return OuterGridView(*grid, row); }
     /// the voltage magnitude of solver bus `bus`, pu: Vm's, |V| when there is none
     real_type vm(int bus) const { return Vm != nullptr ? (*Vm)(bus) : std::abs((*V)(bus)); }
 

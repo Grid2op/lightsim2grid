@@ -56,7 +56,7 @@ class LS2G_API ShuntVoltageControlLoop final : public BaseOuterLoop
         };
         /// the shunt voltage controls of `grid`, `transformer_buses` the buses (solver ids)
         /// transformers regulate, see the class comment
-        static std::vector<Group> groups(const LSGrid & grid, const std::set<int> & transformer_buses);
+        static std::vector<Group> groups(const OuterGridView & view, const std::set<int> & transformer_buses);
 
     protected:
         std::string _name() const override { return "ShuntVoltageControl"; }

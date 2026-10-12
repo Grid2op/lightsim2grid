@@ -6,6 +6,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+#include <sstream>
+
 #include "binding_declarations.hpp"
 #include "batch_algorithm/BaseBatchSweep.hpp"
 #include "batch_algorithm/ContinuationSweep.hpp"
@@ -87,10 +89,10 @@ void bind_batch_shared(py::class_<T> & cls)
                       "automaton's voltage thresholds? OpenLoadFlow's "
                       "``MonitoringVoltageOuterLoop``. `value` and `limit` in kV, compared "
                       "with physical_violation_tol_vm_pu.\n"
-                      "* the OWN BUS of every generator regulating a remote bus, when a realistic "
-                      "range is set (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on "
-                      "the GENERATOR, see LSGrid.set_remote_voltage_control_vm_range): does "
-                      "holding the remote target take it outside that range? OpenLoadFlow's "
+                      "* the OWN BUS of every generator regulating a remote bus "
+                      "(LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the "
+                      "GENERATOR): does holding the remote target take it outside the realistic "
+                      "range of the ReactiveLimits loop? OpenLoadFlow's "
                       "``ReactiveLimits``, in its robust remote voltage control mode. `value` and "
                       "`limit` in kV, compared with physical_violation_tol_vm_pu.\n"
                       "* the ACTIVE POWER of every angle-droop (\"AC emulation\") hvdc line "
@@ -398,7 +400,13 @@ void bind_batch_shared(py::class_<T> & cls)
              "before that compute().")
         .def("get_row_nb_iter", &T::get_row_nb_iter,
              "Per row of the last compute(): the number of iterations the algorithm reported "
-             "(0 for a row never handed to the solver).");
+             "(0 for a row never handed to the solver).")
+        .def("get_outer_results", &T::get_outer_results,
+             "Per row of the last compute(), what the outer loops did (an OuterRowResult): "
+             "only with an algorithm that runs them (NROuter_*), empty otherwise. Such an "
+             "algorithm solves each row with the grid's outer loops (LSGrid.get_outer_loops), "
+             "restarting them from the grid's own state; a row they leave UNSTABLE or FAILED "
+             "does not converge.");
 }
 
 /**
@@ -574,6 +582,35 @@ void bind_legacy_compute_vs(py::class_<T> & cls)
 }  // namespace
 
 void bind_batch(py::module_& m) {
+    py::class_<OuterRowResult>(m, "OuterRowResult",
+        "What the outer loops did on one row of a batch (see get_outer_results): how it ended, "
+        "and, by element id, what it settled on that the grid does not say -- only what differs "
+        "from the grid is listed.")
+        .def_readonly("status", &OuterRowResult::status)
+        .def_readonly("unrealistic_state", &OuterRowResult::unrealistic_state)
+        .def_readonly("failed_loop", &OuterRowResult::failed_loop)
+        .def_readonly("nb_outer_iterations", &OuterRowResult::nb_outer_iterations)
+        .def_readonly("nb_nr_iterations", &OuterRowResult::nb_nr_iterations,
+                      "Newton iterations over every inner solve of the row.")
+        .def_readonly("gen_target_p", &OuterRowResult::gen_target_p,
+                      "(generator id, MW): the target a loop (DistributedSlack) moved it to.")
+        .def_readonly("storage_target_p", &OuterRowResult::storage_target_p,
+                      "(storage id, MW, load convention): the same for the storage units.")
+        .def_readonly("hvdc_regime", &OuterRowResult::hvdc_regime,
+                      "(hvdc line id, regime) where AcHvdcAcEmulationLimits changed it.")
+        .def_readonly("phase_tap", &OuterRowResult::phase_tap,
+                      "(transformer id, position) of the phase taps PhaseControl moved.")
+        .def_readonly("ratio_tap", &OuterRowResult::ratio_tap,
+                      "(transformer id, position) of the ratio taps TransformerVoltageControl moved.")
+        .def_readonly("shunt_sections", &OuterRowResult::shunt_sections,
+                      "(shunt id, section count) ShuntVoltageControl settled on.")
+        .def("__repr__", [](const OuterRowResult & self){
+            std::ostringstream out;
+            out << "OuterRowResult(status=" << static_cast<int>(self.status)
+                << ", nb_outer_iterations=" << self.nb_outer_iterations
+                << ", nb_nr_iterations=" << self.nb_nr_iterations << ")";
+            return out.str();
+        });
     py::enum_<ViolationElementType>(m, "ViolationElementType", DocContingencyAnalysis::ViolationElementType.c_str())
         .value("BUS", ViolationElementType::BUS)
         .value("LINE", ViolationElementType::LINE)
@@ -689,7 +726,7 @@ void bind_batch(py::module_& m) {
                "compute_physical_violations, never enforced.")
         .value("LOW_VOLTAGE_REMOTE_CONTROL", LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL,
                "A generator regulating a REMOTE bus whose own bus sits BELOW the realistic range "
-               "set with LSGrid.set_remote_voltage_control_vm_range (element_type is "
+               "of the ReactiveLimits loop (element_type is "
                "ViolationElementType.GENERATOR): OpenLoadFlow's ReactiveLimits loop, in its "
                "robust remote voltage control mode, would switch it to PQ at its target "
                "reactive power. Category PHYSICAL: a controller's own bus at that voltage is a "
@@ -1118,9 +1155,9 @@ void bind_batch(py::module_& m) {
                       "carrying a standby automaton whose regulated bus sits outside its "
                       "thresholds (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY on the "
                       "SVC, see LSGrid.set_svc_standby), the own bus of every generator "
-                      "regulating a remote bus, when a realistic range is set "
-                      "(LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the GENERATOR, "
-                      "see LSGrid.set_remote_voltage_control_vm_range), the "
+                      "regulating a remote bus, against the realistic range of the ReactiveLimits "
+                      "loop (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the "
+                      "GENERATOR), the "
                       "active power of every angle-droop hvdc line in the linear regime "
                       "(HIGH_P on the HVDC, against pmax_1to2_mw / pmax_2to1_mw), the release "
                       "of every angle-droop hvdc line flagged as frozen at its active power "

@@ -55,14 +55,21 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     injections_.gen_target_p.clear();
     injections_.storage_target_p.clear();
     inner_.controls().reset_states();
+    // a resumed solve (a time series' next step) starts from where the last one left the
+    // loops; any other from the grid
+    const bool resume = has_carry_ && (row_ != nullptr ? row_->resume : params_.resume_outer_state);
+    if (resume) _apply_carried_positions();
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
     std::vector<BaseOuterLoop *> active;
     {
         OuterContext ctx = _context();
-        ctx.V = nullptr;  // nothing solved yet
-        ctx.Va = nullptr;
-        ctx.Vm = nullptr;
+        ctx.resume = resume;
+        if (!resume) {
+            ctx.V = nullptr;  // nothing solved yet (resuming: the previous solve's)
+            ctx.Va = nullptr;
+            ctx.Vm = nullptr;
+        }
         for (auto & loop : loops_) {
             if (loop->is_needed(ctx)) active.push_back(loop.get());
         }
@@ -148,6 +155,13 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     stats_.unrealistic_state = unrealistic_;
 
     bool res = solver_ok && stats_.status == OuterLoopStatus::STABLE;
+    // what the next solve may resume from
+    has_carry_ = res;
+    if (res) {
+        inner_.phase_tap(carried_phase_tap_);
+        inner_.ratio_tap(carried_ratio_tap_);
+        inner_.shunt_sections(carried_sections_);
+    }
     if (solver_ok) {
         if (stats_.status == OuterLoopStatus::FAILED) err_ = ErrorType::OuterLoopFailed;
         else if (stats_.status == OuterLoopStatus::UNSTABLE) err_ = ErrorType::TooManyIterations;
@@ -215,6 +229,33 @@ void OuterLoopAlgo<Inner>::_declare()
 }
 
 template<class Inner>
+void OuterLoopAlgo<Inner>::_apply_carried_positions()
+{
+    OuterControls & controls = inner_.controls();
+    const int none = std::numeric_limits<int>::min();
+    auto carried = [none](const std::vector<int> & v, int id) {
+        return (id >= 0 && static_cast<std::size_t>(id) < v.size()) ? v[static_cast<std::size_t>(id)] : none;
+    };
+    for (const auto & ts : controls.phase_shifters()) {
+        const int pos = carried(carried_phase_tap_, ts.first);
+        if (pos != none) ts.second->move_tap(pos);
+    }
+    for (const auto & tr : controls.ratio_taps()) {
+        const int pos = carried(carried_ratio_tap_, tr.first);
+        if (pos != none) tr.second->move_tap(pos);
+    }
+    for (const auto & g : controls.shunt_groups()) {
+        for (std::size_t c = 0; c < g.controller_buses.size() && c < g.shunts.size(); ++c) {
+            ShuntSectionControl * shunt = controls.shunt_controller(g.controller_buses[c]);
+            if (shunt == nullptr) continue;
+            std::vector<int> counts;
+            for (int s : g.shunts[c]) counts.push_back(carried(carried_sections_, s));
+            if (std::find(counts.begin(), counts.end(), none) == counts.end()) shunt->set_sections(counts);
+        }
+    }
+}
+
+template<class Inner>
 OuterContext OuterLoopAlgo<Inner>::_context()
 {
     OuterContext ctx;
@@ -227,6 +268,7 @@ OuterContext OuterLoopAlgo<Inner>::_context()
     ctx.injections = &injections_;
     ctx.controls = &inner_.controls();
     ctx.trace = &stats_.decisions;
+    ctx.row = row_;
     inner_.fill_context(ctx, controller_q_);
     return ctx;
 }

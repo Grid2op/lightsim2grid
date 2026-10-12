@@ -23,6 +23,7 @@ except ImportError as exc_:  # noqa: F841
     GRID2OP_INSTALLED = False
 
 from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid._batch_defaults import use_default_batch_algorithm
 from .lightsim2grid_cpp import ScenarioSweepCPP
 # reused as-is, not duplicated: both ContingencyAnalysis.run() and ScenarioSweep.run()
 # (below) return these same dataclasses / the same pybind11-bound LimitViolation type,
@@ -104,9 +105,8 @@ class ScenarioSweep:
         self.__computed = False
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
-        if AlgorithmType.NR_KLU in self.available_default_algorithms:
-            # use the faster KLU if available
-            self.computer.change_algorithm(AlgorithmType.NR_KLU)
+        # the faster KLU if available, the grid's own algorithm if it runs outer loops
+        use_default_batch_algorithm(self.computer, self.grid2op_env.backend._grid)
 
     @property
     def nb_thread(self):
@@ -642,6 +642,14 @@ class ScenarioSweep:
         that solve did not converge. Requires :attr:`compute_physical_violations` to be
         ``True``."""
         return self.computer.get_physical_violations_n()
+
+    def get_outer_results(self):
+        """Per row of the last computation, what the outer loops did (a list of
+        ``OuterRowResult``: status, iteration counts, and the targets, hvdc regimes, taps and
+        sections the loops settled on where they differ from the grid). Only when the batch
+        runs outer loops -- the grid's algorithm is an ``NROuter_*`` one, kept by the batch --
+        empty otherwise. A row its loops leave ``UNSTABLE`` or ``FAILED`` did not converge."""
+        return self.computer.get_outer_results()
 
     @staticmethod
     def _row_converged(limit_violations) -> bool:

@@ -676,7 +676,11 @@ const std::string DocSolver::NROuter = R"mydelimiter(
     ``NROuter_*`` family: ``NROuter_SparseLU``, ``NROuter_KLU``, ...).
 
     The loops are the grid's (:func:`lightsim2grid.network.LSGrid.add_outer_loop`); without
-    any edit it is OpenLoadFlow's default list, in its order. The driver follows
+    any edit it is OpenLoadFlow's default list, in its order. So are the driver's parameters
+    (:func:`lightsim2grid.network.LSGrid.set_outer_loop_driver_params`): the grid hands both
+    over before each solve. A grid loaded from pypowsybl runs the loops, and the driver
+    parameters, of the OpenLoadFlow it ships (see
+    :func:`lightsim2grid.network.olf_outer_loops`). The driver follows
     OpenLoadFlow's: passes over the loops, a re-solve after every loop that changed
     something, a cap on the total number of outer iterations, and the check that no
     voltage ended up outside the realistic band.
@@ -687,6 +691,20 @@ const std::string DocSolver::NROuter = R"mydelimiter(
     `get_linear_solver_stats()`).
 
     `get_outer_loop_stats()` tells what the last solve's loops did.
+
+)mydelimiter";
+
+const std::string DocSolver::OuterLoopDriverParams = R"mydelimiter(
+    The parameters of the outer-loop driver of the ``NROuter_*`` algorithms, with OpenLoadFlow's
+    names: ``maxOuterLoopIterations``, ``voltageRemoteControlRobustMode``,
+    ``minRealisticVoltage`` / ``maxRealisticVoltage`` and
+    ``minNominalVoltageRealisticVoltageCheck``. They belong to the grid
+    (:func:`LSGrid.set_outer_loop_driver_params`), which hands them to its algorithm with its
+    outer loops before each solve.
+
+    The defaults are OpenLoadFlow's own. A grid loaded with
+    :func:`lightsim2grid.network.init_from_pypowsybl` takes those of the OpenLoadFlow pypowsybl
+    ships instead (see :func:`lightsim2grid.network.olf_outer_loops`).
 
 )mydelimiter";
 
@@ -4387,9 +4405,10 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       ``MonitoringVoltageOuterLoop`` would switch it to voltage control
       (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the ``SVC``, ``value`` the
       regulated voltage and ``limit`` the threshold, in kV; AC only);
-    - a generator regulating a remote bus whose own bus leaves the realistic range set with
-      :func:`set_remote_voltage_control_vm_range` by more than ``tol_vm_pu``: OpenLoadFlow's
-      robust remote voltage control would switch it to PQ (``LOW_VOLTAGE_REMOTE_CONTROL`` /
+    - a generator regulating a remote bus whose own bus leaves the realistic range of the
+      ``ReactiveLimits`` loop (``min_realistic_voltage`` / ``max_realistic_voltage``, with its
+      margin) by more than ``tol_vm_pu``: OpenLoadFlow's robust remote voltage control would
+      switch it to PQ (``LOW_VOLTAGE_REMOTE_CONTROL`` /
       ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the ``GENERATOR``, ``value`` its own bus voltage and
       ``limit`` the bound, in kV; AC only);
     - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
@@ -6144,35 +6163,20 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
 
 )mydelimiter";
 
-const std::string DocLSGrid::set_remote_voltage_control_vm_range = R"mydelimiter(
-    Set the range of voltage (pu of its own bus' nominal voltage) a generator regulating a
-    REMOTE bus may sit at, for the physical checks: a remote controller whose own bus ends up
-    below ``min_vm_pu`` or above ``max_vm_pu`` is reported as ``LOW_VOLTAGE_REMOTE_CONTROL`` /
-    ``HIGH_VOLTAGE_REMOTE_CONTROL`` (on the ``GENERATOR``, ``value`` its own bus voltage and
-    ``limit`` the bound, both in kV) by :func:`get_physical_violations` and every batch's
-    ``compute_physical_violations``.
+const std::string DocLSGrid::set_outer_loop_driver_params = R"mydelimiter(
+    Set the parameters of the outer-loop driver an ``NROuter_*`` algorithm runs this grid's
+    outer loops with (see :class:`lightsim2grid.algorithm.OuterLoopDriverParams`). They are
+    handed to the algorithm with the loops before each solve, by a single solve and by the
+    batch algorithms alike.
 
-    This mirrors PowSyBl OpenLoadFlow's "robust" remote voltage control
-    (``voltageRemoteControlRobustMode``), which switches such a controller to PQ at its target
-    reactive power: there the range is ``[minRealisticVoltage * 1.02, maxRealisticVoltage / 1.02]``.
-    :func:`lightsim2grid.network.init_from_pypowsybl` sets it to OpenLoadFlow's defaults.
-
-    Never read by a powerflow. ``NaN`` (the default) on both sides: no check; ``NaN`` on one
-    side only checks the other. Copied with the grid, so a batch algorithm built from it
-    inherits it, and kept by a pickle and by :func:`save_binary`.
+    OpenLoadFlow's own defaults until set. :func:`lightsim2grid.network.init_from_pypowsybl`
+    sets those of the OpenLoadFlow pypowsybl ships. Copied with the grid, and kept by a pickle
+    and by :func:`save_binary`, as the list of outer loops is.
 
     Parameters
     ----------
-    min_vm_pu: ``float``
-        Lowest realistic voltage of a remote controller's own bus, pu (``NaN``: not checked)
-    max_vm_pu: ``float``
-        Highest realistic voltage of a remote controller's own bus, pu (``NaN``: not checked)
-
-)mydelimiter";
-
-const std::string DocLSGrid::get_remote_voltage_control_vm_range = R"mydelimiter(
-    One bound of the range set by :func:`set_remote_voltage_control_vm_range` (``NaN`` by
-    default: not checked).
+    params: :class:`lightsim2grid.algorithm.OuterLoopDriverParams`
+        The driver's parameters
 
 )mydelimiter";
 

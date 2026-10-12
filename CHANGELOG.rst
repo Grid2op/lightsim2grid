@@ -223,6 +223,22 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [ADDED] The batch classes run the outer loops: with an ``NROuter_*`` algorithm each row is solved with
+  the grid's loops, as a single solve of the row's grid, still with one symbolic analysis per thread.
+  ``get_outer_results()`` tells what they did per row. A TimeSeries row resumes from the previous
+  row's loops (frozen buses, held controllers, switched SVCs, hvdc regimes, taps, sections).
+- [ADDED] ``resume_outer_state`` (``NROuter_*``): a solve starts its loops from where the last one
+  left them, for a sequence of solves of a time series.
+- [IMPROVED] The batch wrappers keep the grid's algorithm when it runs outer loops, instead of ``NR_KLU``.
+- [BREAKING] ``get_physical_violations`` (grid and batches) reports a bus out of its reactive range, and a
+  remote controller at an unrealistic voltage, with ``ReactiveLimits``' own test (OpenLoadFlow's tolerance,
+  limits at the target P, robust mode by the loop's parameters).
+- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtual ``set_outer_row_view()``, and ``set_outer_loops()``
+  takes the driver's parameters: plugins must be rebuilt.
+- [ADDED] ``init_from_pypowsybl`` gives the grid the outer loops and driver parameters of the installed
+  OpenLoadFlow (or of ``olf_parameters``), read by ``olf_outer_loops``; elsewhere OpenLoadFlow's own defaults.
+- [ADDED] ``LSGrid.set_outer_loop_driver_params``: the driver's parameters are the grid's; its loops and
+  driver parameters survive a copy, a pickle and ``save_binary``.
 - [FIXED] ``init_from_pypowsybl``: a battery with a capability curve was left without reactive limits (the
   curve at target P was not read); with ``olf_rules`` the curve is extrapolated as OpenLoadFlow's.
 - [FIXED] ``consider_only_main_component`` keeps the largest component, as OpenLoadFlow, not the slack's;
@@ -447,10 +463,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``redistribute_slack`` after a computation returned the previous results.
 - [ADDED] ``LSGrid.set_hvdc_ac_emulation_frozen``: an hvdc line frozen at its AC-emulation limit is
   reported (``HVDC_AC_EMULATION_RELEASE``) when its droop asks for less (from the bake).
-- [ADDED] ``LSGrid.set_remote_voltage_control_vm_range``: a generator holding a remote bus from an
-  unrealistic own-bus voltage is reported (``LOW_VOLTAGE_REMOTE_CONTROL`` /
-  ``HIGH_VOLTAGE_REMOTE_CONTROL``), as OpenLoadFlow's robust remote voltage control switches it to
-  PQ; ``init_from_pypowsybl`` sets the range of the installed OpenLoadFlow (it differs by version).
+- [ADDED] A generator holding a remote bus from an unrealistic own-bus voltage is reported
+  (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``), where OpenLoadFlow's robust
+  remote voltage control switches it to PQ.
 - [ADDED] ``bake_outer_loops(bake_hvdc_ac_emulation_limits=True)`` freezes an AC-emulation hvdc line
   OpenLoadFlow saturated to a fixed setpoint at its limit.
 - [ADDED] ``LSGrid.cap_slack_at_active_limits``: OpenLoadFlow's slack rule on a solved grid -- a unit

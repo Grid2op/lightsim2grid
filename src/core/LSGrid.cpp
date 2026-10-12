@@ -20,7 +20,6 @@
 #include "batch_algorithm/GenPCheck.hpp"
 #include "batch_algorithm/GenPvReleaseCheck.hpp"
 #include "batch_algorithm/SvcStandbyCheck.hpp"
-#include "batch_algorithm/RemoteVoltageControlCheck.hpp"
 #include "batch_algorithm/HvdcPCheck.hpp"
 // ... and the operational ones (LSGrid::get_violations)
 #include "batch_algorithm/OperationalCheck.hpp"
@@ -39,8 +38,6 @@ LSGrid::LSGrid(const LSGrid & other)
     init_vm_pu_ = other.init_vm_pu_;
     keep_vinit_group_controlled_ = other.keep_vinit_group_controlled_;
     hold_frozen_regulators_ = other.hold_frozen_regulators_;
-    remote_vc_min_vm_pu_ = other.remote_vc_min_vm_pu_;
-    remote_vc_max_vm_pu_ = other.remote_vc_max_vm_pu_;
     sn_mva_ = other.sn_mva_;
     compute_results_ = other.compute_results_;
     ac_cache_.allow_reuse = other.ac_cache_.allow_reuse;
@@ -111,6 +108,7 @@ LSGrid::LSGrid(const LSGrid & other)
     outer_loops_default_ = other.outer_loops_default_;
     outer_loops_.clear();
     for (const auto & loop : other.outer_loops_) outer_loops_.push_back(loop->clone());
+    outer_driver_params_ = other.outer_driver_params_;
 }
 
 void LSGrid::add_outer_loop(const std::shared_ptr<BaseOuterLoop> & loop)
@@ -182,6 +180,25 @@ LSGrid::StateRes LSGrid::get_state() const
     }
     std::vector<int> bus_fusion_rep(_bus_fusion_rep.begin(), _bus_fusion_rep.end());
 
+    // the outer loops: a list of its own is saved loop by loop, the default one as a flag
+    std::vector<std::string> outer_loop_names;
+    std::vector<std::vector<int> > outer_loop_int_params;
+    std::vector<std::vector<double> > outer_loop_real_params;
+    if (!outer_loops_default_) {
+        for (const auto & loop : outer_loops_) {
+            const AlgoConfig cfg = loop->get_params();
+            outer_loop_names.push_back(loop->name());
+            outer_loop_int_params.push_back(cfg.int_params);
+            outer_loop_real_params.push_back(cfg.real_params);
+        }
+    }
+    const OuterLoopDriverParams & driver = outer_driver_params_;
+    std::vector<int> outer_driver_int_params = {driver.max_outer_iterations,
+                                                driver.voltage_remote_control_robust_mode ? 1 : 0};
+    std::vector<double> outer_driver_real_params = {static_cast<double>(driver.min_realistic_voltage),
+                                                    static_cast<double>(driver.max_realistic_voltage),
+                                                    static_cast<double>(driver.min_nominal_voltage_realistic_check)};
+
     LSGrid::StateRes res(version_major,
                             version_medium,
                             version_minor,
@@ -205,8 +222,12 @@ LSGrid::StateRes LSGrid::get_state() const
                             init_kwargs_keys,
                             init_kwargs_values,
                             bus_fusion_rep,
-                            remote_vc_min_vm_pu_,
-                            remote_vc_max_vm_pu_
+                            outer_loops_default_,
+                            outer_loop_names,
+                            outer_loop_int_params,
+                            outer_loop_real_params,
+                            outer_driver_int_params,
+                            outer_driver_real_params
                             );
     return res;
 };
@@ -344,10 +365,45 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // above, same reasoning as set_ls_to_orig() (validates against total_bus()).
     set_bus_fusion_rep(IntVect::Map(bus_fusion_rep.data(), bus_fusion_rep.size()));
 
-    // the remote voltage control range of the physical checks: through the setter, which
-    // refuses what a crafted file could hold (an empty or non-positive range)
-    set_remote_voltage_control_vm_range(std::get<REMOTE_VC_MIN_VM_PU_ID>(my_state),
-                                        std::get<REMOTE_VC_MAX_VM_PU_ID>(my_state));
+    // the outer loops and the driver's parameters, through the same checks as the setters
+    // (a crafted file may hold anything): the vectors are parallel, every name known
+    {
+        const std::vector<std::string> & names = std::get<OUTER_LOOP_NAMES_ID>(my_state);
+        const std::vector<std::vector<int> > & int_params = std::get<OUTER_LOOP_INT_PARAMS_ID>(my_state);
+        const std::vector<std::vector<double> > & real_params = std::get<OUTER_LOOP_REAL_PARAMS_ID>(my_state);
+        const std::vector<int> & driver_int = std::get<OUTER_DRIVER_INT_PARAMS_ID>(my_state);
+        const std::vector<double> & driver_real = std::get<OUTER_DRIVER_REAL_PARAMS_ID>(my_state);
+        if (names.size() != int_params.size() || names.size() != real_params.size() ||
+            driver_int.size() != 2 || driver_real.size() != 3) {
+            throw std::runtime_error("LSGrid::set_state: the serialized outer loops are inconsistent "
+                                     "(the loop names and their parameters must be parallel, the "
+                                     "driver's parameters 2 integers and 3 reals).");
+        }
+        std::vector<std::shared_ptr<BaseOuterLoop> > loops;
+        for (std::size_t i = 0; i < names.size(); ++i) {
+            AlgoConfig cfg;
+            cfg.int_params = int_params[i];
+            cfg.real_params = real_params[i];
+            loops.push_back(make_outer_loop(names[i], cfg));
+        }
+        OuterLoopDriverParams driver;
+        driver.max_outer_iterations = driver_int[0];
+        driver.voltage_remote_control_robust_mode = driver_int[1] != 0;
+        driver.min_realistic_voltage = static_cast<real_type>(driver_real[0]);
+        driver.max_realistic_voltage = static_cast<real_type>(driver_real[1]);
+        driver.min_nominal_voltage_realistic_check = static_cast<real_type>(driver_real[2]);
+        set_outer_loop_driver_params(driver);
+        if (std::get<OUTER_LOOPS_DEFAULT_ID>(my_state)) {
+            if (!loops.empty()) {
+                throw std::runtime_error("LSGrid::set_state: the serialized outer loops are inconsistent "
+                                         "(the default list holds no loop of its own).");
+            }
+            reset_outer_loops();
+        } else {
+            clear_outer_loops();
+            for (const auto & loop : loops) add_outer_loop(loop);
+        }
+    }
 
     // Now that every container has been restored, validate the whole grid: a
     // pickle or binary file is only length-checked while being read, so an
@@ -865,7 +921,8 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
 
     if (_algo.supports_outer_loops()) {
         const std::vector<std::shared_ptr<BaseOuterLoop> > loops = get_outer_loops();
-        _algo.set_outer_loops(std::vector<std::shared_ptr<const BaseOuterLoop> >(loops.begin(), loops.end()));
+        _algo.set_outer_loops(std::vector<std::shared_ptr<const BaseOuterLoop> >(loops.begin(), loops.end()),
+                              outer_driver_params_);
     }
 
     // start the solver
@@ -3387,20 +3444,6 @@ slack_redistribution::Report LSGrid::redistribute_active_power(real_type mismatc
     return report;
 }
 
-void LSGrid::set_remote_voltage_control_vm_range(real_type min_vm_pu, real_type max_vm_pu){
-    // NaN switches a side off; a finite bound must be positive, and the range not empty
-    if((std::isfinite(min_vm_pu) && min_vm_pu <= 0.) || (std::isfinite(max_vm_pu) && max_vm_pu <= 0.) ||
-       std::isinf(min_vm_pu) || std::isinf(max_vm_pu) ||
-       (std::isfinite(min_vm_pu) && std::isfinite(max_vm_pu) && min_vm_pu >= max_vm_pu)){
-        std::ostringstream exc_;
-        exc_ << "LSGrid::set_remote_voltage_control_vm_range: expected 0 < min_vm_pu < max_vm_pu "
-                "(or NaN to switch a side off), got [" << min_vm_pu << ", " << max_vm_pu << "].";
-        throw std::runtime_error(exc_.str());
-    }
-    remote_vc_min_vm_pu_ = min_vm_pu;
-    remote_vc_max_vm_pu_ = max_vm_pu;
-}
-
 std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type tol_mva, real_type tol_vm_pu) const{
     const char * fun_name = "LSGrid::get_physical_violations";
     const SolverBusLayout & layout = ac ? static_cast<const SolverBusLayout &>(ac_cache_)
@@ -3429,39 +3472,10 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
     std::vector<LimitViolation> out;
     // nothing is masked and nothing is disconnected "for this row": the grid IS the row
     const std::vector<int> * no_mask = nullptr;
-    if(ac){
-        bus_q_check::BusQPlan plan;
-        bus_q_check::build_bus_q_plan(*this, layout.id_me_to_solver,
-                                      ac_cache_.voltage_control.controllers(), plan);
-        if(!plan.empty()){
-            const RealVect ctrl_q = plan.needs_controller_q ? algo.get_controller_q() : RealVect();
-            bus_q_check::check_bus_q_violations(
-                plan, *this, algo.get_bus_mismatch(), algo.get_V(), ctrl_q, sn_mva_, tol_mva,
-                no_mask, [](int){ return false; }, out);
-        }
-        // the PQ -> PV direction, on the machines the caller flagged (same order as the
-        // batch: bus Q, then this, then hvdc, then gen P)
-        gen_pv_release_check::GenPvReleasePlan release_plan;
-        gen_pv_release_check::build_gen_pv_release_plan(*this, layout.id_me_to_solver, release_plan);
-        if(!release_plan.empty()){
-            gen_pv_release_check::check_gen_pv_release_violations(
-                release_plan, algo.get_V(), tol_vm_pu, no_mask,
-                [this](int gen_id){ return generators_.get_target_vm_pu(gen_id); },
-                [](int){ return false; }, out);
-        }
-        // the generators holding a remote bus from an unrealistic voltage of their own
-        remote_voltage_control_check::RemoteVoltageControlPlan remote_plan;
-        remote_voltage_control_check::build_remote_voltage_control_plan(
-            *this, layout.id_me_to_solver, ac_cache_.voltage_control.controllers(), remote_plan);
-        if(!remote_plan.empty()){
-            remote_voltage_control_check::check_remote_voltage_control_violations(
-                remote_plan, algo.get_V(), tol_vm_pu, no_mask, [](int){ return false; }, out);
-        }
-    }
-    // the outer loops' own triggers (detection mode): what the grid's outer loops would still
-    // do after this solve -- the hvdc droop limits, the slack left on a single slack bus (with
-    // several, the Newton shared the imbalance already and gen_p_check below reads what that
-    // left), the idle standby SVCs whose automaton would switch them on
+    // the outer loops' own triggers (detection mode, see outer_detect): what the grid's loops
+    // would do after this solve -- a bus whose machines left their reactive range, a remote
+    // controller at an unrealistic voltage (ReactiveLimits), the hvdc droop limits, the slack
+    // left on a single slack bus, the idle standby SVCs whose automaton would switch them on
     {
         const CplxVect V = algo.get_V();
         const RealVect Va = algo.get_Va();
@@ -3478,9 +3492,24 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         ctx.tol_mw = tol_mva;
         ctx.tol_vm_pu = tol_vm_pu;
         ctx.vm_checks = ac;
-        ctx.masked = no_mask;
-        ctx.id_me_to_solver = &layout.id_me_to_solver;
-        for(const auto & loop : get_outer_loops()) loop->detect(ctx, out);
+        OuterRowView as_solved;
+        as_solved.layout = &layout;
+        as_solved.masked = no_mask;
+        ctx.row = &as_solved;
+        outer_detect(get_outer_loops(), ctx, out);
+    }
+    // the PQ -> PV release of the machines the caller froze at a reactive limit
+    // (set_gen_can_be_pv): no OpenLoadFlow loop releases a unit loaded without voltage
+    // control, so this one is a check of its own
+    if(ac){
+        gen_pv_release_check::GenPvReleasePlan release_plan;
+        gen_pv_release_check::build_gen_pv_release_plan(*this, layout.id_me_to_solver, release_plan);
+        if(!release_plan.empty()){
+            gen_pv_release_check::check_gen_pv_release_violations(
+                release_plan, algo.get_V(), tol_vm_pu, no_mask,
+                [this](int gen_id){ return generators_.get_target_vm_pu(gen_id); },
+                [](int){ return false; }, out);
+        }
     }
     gen_p_check::GenPPlan gen_plan;
     gen_p_check::build_gen_p_plan(*this, layout.id_me_to_solver, gen_plan);
