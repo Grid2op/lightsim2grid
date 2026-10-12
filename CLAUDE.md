@@ -285,6 +285,20 @@ fallback is a switch on every `LinearSolverPolicy` (`set_refactor_fallback`), an
 algorithms turn it on whenever they mask buses or switch PV / PQ, because those edits can
 move a pivot that KLU's fixed pivot sequence then finds at zero.
 
+### `BaseAlgo` is a plugin interface
+
+External solvers are loaded at run time as plugins deriving from `BaseAlgo`
+(`docs/solver_plugin.rst`), and the plugin ABI tag only checks Eigen's configuration, not
+`BaseAlgo`'s layout. So a change to its virtual methods (one added, removed, or re-signed)
+comes with, in the same PR:
+
+- the three example plugins in `examples/` (`external_algorithm`, `lm_algorithm`,
+  `dist_slack_algorithm`) brought up to date -- a new capability hook overridden where the
+  plugin has the capability, a new forwarding hook forwarded -- built against the installed
+  package and their `test_plugin.py` run, as the `test_plugin_against_installed` CI job does;
+- `docs/solver_plugin.rst` describing the hook, if a plugin author has to act on it;
+- a `[BREAKING] (C++ / plugins)` changelog entry.
+
 ### Batch algorithms
 
 `src/core/batch_algorithm/BaseBatchSweep.hpp` is one class template with **four**
