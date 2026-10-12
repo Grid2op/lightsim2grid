@@ -140,7 +140,8 @@ Playing an episode
 ``reset()`` restores the initial topology, the overflow counters and the cooldowns, applies
 the first row of the time series, runs a powerflow and returns ``(obs, info)``. It must be
 called before the first step, and again after ``assign_time_series`` or a change of the
-protections.
+protections. If that powerflow diverges there is no episode to play: ``reset`` raises a
+``RuntimeError`` and the env cannot be stepped.
 
 ``step(act_id)`` returns ``(obs, reward, done, truncated, info)``:
 
@@ -188,10 +189,10 @@ A :class:`lightsim2grid.lightEnv.LightEnv` can be copied (``env.copy()``, ``copy
 ``copy.deepcopy``, or ``LightEnv(env)``, all the same). The copy is an independent environment
 at the same point of the same episode, with its own observation. What does not change during
 an episode -- the initial grid, the time series and the registered actions -- is shared
-read-only between the copies, so a copy is cheap (about 0.015 ms on ``l2rpn_case14_sandbox``).
-The first step of a copy is slower than a step of the original, about 0.05 ms instead of
-0.02 ms: a copied grid starts with a cold solver (no cached ``Ybus`` nor factorisation) and
-rebuilds it. This is the light environment's counterpart of grid2op's ``obs.simulate``:
+read-only between the copies, so a copy is cheap: it costs less than a step. The first step of
+a copy is slower than a step of the original: a copied grid starts with a cold solver (no
+cached ``Ybus`` nor factorisation) and rebuilds it. This is the light environment's
+counterpart of grid2op's ``obs.simulate``:
 
 .. code-block:: python
 
@@ -299,13 +300,13 @@ LightEnv copy + step        17220   0           12160       0.082
 =========================== ======= =========== =========== ===========
 
 In short, over three runs: a step is 25 to 50 times faster, and a one-step lookahead about 20
-times faster. Most of a grid2op step is spent outside the powerflow (0.19 ms of 0.87 ms here):
-applying the action, the rules, building the observation. The light environment spends
-almost all of its time in the powerflow, and the python binding adds about 1 µs per step (the
-gap between "ms / step" and "ms / step (in env)"). A step with a topological change is
-slower than a do nothing one (0.03 ms vs 0.02 ms), as the admittance matrix has to be rebuilt,
-and the lookahead is dominated by the first step of each copy, which starts from a cold
-solver (see `Copying: lookahead and search`_).
+times faster. Most of a grid2op step is spent outside the powerflow (compare the last two
+columns): applying the action, the rules, building the observation. The light environment
+spends almost all of its time in the powerflow, and the python binding adds little per step
+(the gap between "ms / step" and "ms / step (in env)"). A step with a topological change is
+slower than a do nothing one, as the admittance matrix has to be rebuilt, and the lookahead is
+dominated by the first step of each copy, which starts from a cold solver (see
+`Copying: lookahead and search`_).
 
 Detailed usage
 --------------------------

@@ -209,6 +209,17 @@ class TestLightEnvActions(unittest.TestCase):
         ambiguous = TopoAction()
         ambiguous.set_line_status(2, -1)
         ambiguous.add_element(ElementType.line_or, 2, 1)
+        # contradiction: one end disconnected, the other connected to a busbar (grid2op
+        # refuses it too, InvalidLineStatus), both ways round, on a line and on a trafo
+        ends_or_off = TopoAction()
+        ends_or_off.add_element(ElementType.line_or, 2, -1)
+        ends_or_off.add_element(ElementType.line_ex, 2, 2)
+        ends_ex_off = TopoAction()
+        ends_ex_off.add_element(ElementType.line_or, 2, 2)
+        ends_ex_off.add_element(ElementType.line_ex, 2, -1)
+        trafo_ends = TopoAction()
+        trafo_ends.add_element(ElementType.trafo_hv, 0, -1)
+        trafo_ends.add_element(ElementType.trafo_lv, 0, 1)
         # what the light env does not model
         change_bus = self.env.action_space({"change_bus": {"loads_id": [0]}})
         change_status = self.env.action_space({"change_line_status": [0]})
@@ -217,6 +228,8 @@ class TestLightEnvActions(unittest.TestCase):
         invalid = {"bus -2": bus_m2, "bus 3": bus_3, "load 18": load_18, "load -1": load_m1,
                    "line 25 (set_bus)": line_25_bus, "line 25 (set_line_status)": line_25_status,
                    "trafo 5": trafo_5, "status 2": status_2, "ambiguous": ambiguous,
+                   "or off, ex on": ends_or_off, "or on, ex off": ends_ex_off,
+                   "trafo hv off, lv on": trafo_ends,
                    "change_bus": change_bus, "change_line_status": change_status,
                    "redispatch": redisp, "not an action": 1}
         for name, act in invalid.items():
@@ -373,6 +386,56 @@ class TestLightEnvActions(unittest.TestCase):
         self.assertEqual(list(light_env.protections.lines_disconnected_this_step()), [line_id])
         self.assertFalse(light_env.grid.get_lines_status()[line_id])
         self.assertEqual(light_env.time_before_cooldown_line[line_id], NB_TS_RECO)
+
+    def test_reset_forgets_the_last_episode_trips(self):
+        """an episode ending on the step its protections tripped a line: the next reset
+        starts an episode in which nothing has tripped yet"""
+        line_id = 0
+        thermal_limit = np.full(self.env.n_line, 1e9)
+        thermal_limit[line_id] = 0.1
+        light_env = self.make_light_env(thermal_limit_ka=thermal_limit, max_overflow=0, nb_ts=2)
+        light_env.reset()
+        obs, reward, done, truncated, info = light_env.step(0)
+        self.assertFalse(done)
+        self.assertEqual(list(light_env.protections.lines_disconnected_this_step()), [line_id])
+        obs, reward, done, truncated, info = light_env.step(0)
+        self.assertTrue(done)   # the end of the time series: no powerflow, the trip is the last one
+        light_env.reset()
+        self.assertTrue(light_env.grid.get_lines_status()[line_id])
+        self.assertEqual(list(light_env.protections.lines_disconnected_this_step()), [])
+        self.assertEqual(list(light_env.protections.line_disconnected), [])
+
+    def test_reset_diverging(self):
+        """the powerflow of the initial state diverges: there is no episode to play, reset
+        says so (as grid2op does) and the env cannot be stepped"""
+        light_env = self.make_light_env(nb_ts=3)
+        data = self.env.chronics_handler.real_data.data
+        nb_ts = 3
+        load_p = data.load_p[:nb_ts].astype(float)
+        load_p[0] *= 100.   # far beyond what the grid can carry
+        light_env.assign_time_series(
+            load_p,
+            data.load_q[:nb_ts].astype(float),
+            data.prod_p[:nb_ts].astype(float),
+            (data.prod_v[:nb_ts] / self.env.backend.prod_pu_to_kv).astype(float),
+            np.full((nb_ts, self.env.n_storage), np.nan),
+            np.full((nb_ts, self.env.n_shunt), np.nan),
+            np.full((nb_ts, self.env.n_shunt), np.nan),
+            np.full((nb_ts, 0), np.nan),
+            np.full((nb_ts, 0), np.nan),
+        )
+        # the premise: a one-off powerflow of that state diverges
+        grid = copy.deepcopy(self.env.backend._grid)
+        for load_id in range(self.env.n_load):
+            grid.change_p_load(load_id, float(load_p[0, load_id]))
+        V = grid.ac_pf(1.0 * self.env.backend.V, 10, 1e-8)
+        self.assertEqual(V.shape[0], 0)
+
+        with self.assertRaises(RuntimeError) as cm:
+            light_env.reset()
+        self.assertIn("diverge", str(cm.exception))
+        with self.assertRaises(RuntimeError):
+            light_env.step(0)
 
     def test_reset_restores_topology_and_cooldowns(self):
         act_sub = self.env.action_space({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2)]}})

@@ -215,6 +215,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtual ``distributes_slack()`` (false unless
+  overridden, which ``redistribute_slack`` requires) and ``set_voltage_control_v_set`` takes an
+  ``Eigen::Ref``: plugins must be rebuilt, and update their overrides.
 - [FIXED] ``ScenarioSweep.set_contingency_gens``: masking every generator of a bus a
   voltage-regulating storage unit also holds turned that bus PQ.
 - [FIXED] ``ScenarioSweep.modify_gen_v``: a generator a row disconnects no longer has to agree

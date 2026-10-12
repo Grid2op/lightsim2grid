@@ -28,6 +28,8 @@ class Protections
         // TODO
         Protections():
             has_been_checked_(false),
+            nb_line_(0),
+            nb_line_trafo_(0),
             nb_iter_(0),
             timer_total_(0.),
             timer_check_overflow_(0.),

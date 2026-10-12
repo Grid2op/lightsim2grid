@@ -57,6 +57,12 @@ using TimerPTDFLODFType = std::tuple<double, double, double>;
 This class represents a algorithm to compute powerflow.
 
 It can be derived for different usecase, for example for DC powerflow, AC powerflow using Newton Raphson method etc.
+
+It is also the interface of the algorithm plugins (docs/solver_plugin.rst). Adding,
+removing or re-signing a virtual method here breaks every plugin built against the
+previous headers: update the example plugins in examples/ (external_algorithm,
+lm_algorithm, dist_slack_algorithm) in the same change, and the changelog with a
+[BREAKING] (C++ / plugins) entry.
 **/
 class LS2G_API BaseAlgo : public BaseConstants
 {

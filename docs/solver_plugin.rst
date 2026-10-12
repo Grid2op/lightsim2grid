@@ -327,6 +327,31 @@ and leaving the buffer empty or the wrong size raises a ``RuntimeError`` rather
 than reading out of bounds. Leave the flag alone if you are unsure — the default
 costs you nothing but a sparse product.
 
+Optional: a distributed slack
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The batch classes' ``redistribute_slack`` moves set-points by the ``slack_weights``
+your ``compute_pf`` is handed, so it is refused unless the algorithm says it shares
+the imbalance by those weights. A single-slack solver keeps the default (``false``);
+one that distributes the slack says so:
+
+.. code-block:: cpp
+
+    static constexpr bool DISTRIBUTES_SLACK = true;
+    bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
+
+Optional: a batch row's voltage-control set-points
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A solver that holds remote voltage control (``supports_remote_voltage_control()``
+returns ``true``) is handed a batch row's set-points before the solve, through
+``set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set)``: one entry
+per voltage-control group, NaN for the grid's own, empty for none. The built-in
+Newton-Raphson forwards it to its ``NRSystem``, and a plugin built on one should do
+the same (see the ``lm_algorithm`` and ``dist_slack_algorithm`` examples): without
+it, a row's ``modify_gen_v`` on a generator that holds a bus remotely is solved at
+the grid's own set-point.
+
 
 Writing a solver plugin
 ------------------------

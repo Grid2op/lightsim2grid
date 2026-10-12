@@ -344,11 +344,10 @@ TEST_CASE("elements moved between busbars: a bus created or merged, at constant 
         actions[4].add_element(ElementType::load, 0, 2);          // a split and a disconnection together
         actions[4].add_element(ElementType::line_ex, 3, 2);       // (line 1 off would island 2-3: the
         actions[4].add_element(ElementType::gen, 1, -1);          // generator goes instead)
-        actions[5].add_element(ElementType::load, 0, 2);          // a load alone: an island of one, masked
+        actions[5].add_element(ElementType::load, 0, 2);          // a load alone: an island of one
         ScenarioSweep sweep(grid);
         sweep.set_topo_actions(actions);
         sweep.compute(flat_start(grid), 30, 1e-10);
-        REQUIRE(sweep.get_status() == 1);
         for(int row = 0; row < 5; ++row) require_row_matches(sweep, row, grid, actions[static_cast<size_t>(row)]);
         REQUIRE(sweep.get_linear_solver_stats().nb_analyze == 1);
         const auto & Vs = sweep.get_voltages();
@@ -356,12 +355,9 @@ TEST_CASE("elements moved between busbars: a bus created or merged, at constant 
         REQUIRE(std::abs(Vs(1, bus_2b)) == 0.);
         REQUIRE(std::abs(Vs(3, bus_2b)) == Approx(1.02).margin(1e-8));
         REQUIRE(std::abs(Vs(3, 2)) != Approx(1.02).margin(1e-4));
-        // the island of one: masked, the row solved without the load
-        REQUIRE(sweep.converged_mask()[5]);
-        REQUIRE(std::abs(Vs(5, bus_2b)) == 0.);
-        TopoAction load_off;
-        load_off.add_element(ElementType::load, 0, -1);
-        require_row_matches(sweep, 5, grid, load_off);
+        // the island of one strands the load: not simulated, as a contingency stranding
+        // a bus ...
+        REQUIRE_FALSE(sweep.converged_mask()[5]);
         // the flows of a moved line are read with the row's buses: the reference agrees
         {
             LSGrid ref(grid);
@@ -376,6 +372,15 @@ TEST_CASE("elements moved between busbars: a bus created or merged, at constant 
                 REQUIRE(amps(0, l) == Approx(std::get<3>(res)(l)).margin(1e-8));
             }
         }
+        // ... and solved without the load, its bus masked, in the disconnected-grid mode
+        sweep.set_handle_disconnected_grid(true);
+        sweep.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(sweep.get_status() == 1);
+        REQUIRE(sweep.converged_mask()[5]);
+        REQUIRE(std::abs(sweep.get_voltages()(5, bus_2b)) == 0.);
+        TopoAction load_off;
+        load_off.add_element(ElementType::load, 0, -1);
+        require_row_matches(sweep, 5, grid, load_off);
     }
     SECTION("a branch disconnected in the base grid, reconnected: where it was, or on a new busbar") {
         LSGrid off = make_grid();
