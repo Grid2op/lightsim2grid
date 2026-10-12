@@ -77,6 +77,10 @@ public:
     bool supports_hvdc_droop() const noexcept override { return SUPPORTS_HVDC_DROOP; }
     static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = true;
     bool supports_remote_voltage_control() const noexcept override { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
+    // as NRAlgo: a distributed slack exactly when the system carries the MultiSlack
+    // extension (the registered NR_LM_* use SingleSlackNRSystem)
+    static constexpr bool DISTRIBUTES_SLACK = NRSystemT::HAS_MULTI_SLACK;
+    bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
 
     // ----- Jacobian / VoltageControl introspection: forward to _system, same as NRAlgo -----
     Eigen::Ref<const Eigen::SparseMatrix<real_type>> get_J() const override { return _system.J(); }
@@ -122,6 +126,11 @@ public:
     bool supports_bus_masking() const override { return true; }
     void set_masked_buses(const std::vector<int>& solver_bus_ids) override {
         _system.set_masked_buses(solver_bus_ids);
+    }
+    // a batch row's set-points of the voltage-control groups (modify_gen_v on a
+    // generator that holds a bus remotely), as NRAlgo forwards them
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override {
+        _system.set_voltage_control_v_set(v_set);
     }
 
     // ----- powerflow -------------------------------------------------------------

@@ -102,6 +102,11 @@ public:
     void set_masked_buses(const std::vector<int>& solver_bus_ids) override {
         inner_.set_masked_buses(solver_bus_ids);
     }
+    // a batch row's set-points of the voltage-control groups (modify_gen_v on a
+    // generator that holds a bus remotely): the inner solve is the one holding them
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override {
+        inner_.set_voltage_control_v_set(v_set);
+    }
 
     // int_params[0] = max outer rounds; real_params[0] = outer active-power
     // mismatch tolerance (same units as Sbus, i.e. per-unit on Sn). Delegates
