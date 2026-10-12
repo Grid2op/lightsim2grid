@@ -1000,6 +1000,29 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
         FDPFCoeffsContainer XB_fpdf_coeffs_;
 };
 
+/**
+ * The DC active power, per unit, entering a branch at side 1 (`p1`) and at side 2 (`p2`),
+ * from the angles of its two buses:
+ *
+ *     p1 = ydc_11 . theta_1 + ydc_12 . theta_2 + x_tau_shift
+ *     p2 = ydc_22 . theta_2 + ydc_21 . theta_1 - x_tau_shift
+ *
+ * `x_tau_shift` is `TrafoContainer::dc_x_tau_shift`, ie `-shift / (x . tau)`, and 0 for a
+ * line, so a phase shifter gives `p1 = (theta_1 - theta_2 - shift) / (x . tau)`. This is
+ * the model `dc_pf` solves (`TrafoContainer::hack_Sbus_for_dc_phase_shifter`) and
+ * publishes (`TrafoContainer::compute_results`); a batch reading a DC flow off its own
+ * angles goes through here so that it reports the same number.
+ */
+inline void dc_branch_p_pu(real_type ydc_11, real_type ydc_12,
+                           real_type ydc_21, real_type ydc_22,
+                           real_type x_tau_shift,
+                           real_type theta_1, real_type theta_2,
+                           real_type & p1, real_type & p2)
+{
+    p1 = ydc_11 * theta_1 + ydc_12 * theta_2 + x_tau_shift;
+    p2 = ydc_22 * theta_2 + ydc_21 * theta_1 - x_tau_shift;
+}
+
 } // namespace ls2g
 
 #endif  // BRANCH_CONTAINER_H

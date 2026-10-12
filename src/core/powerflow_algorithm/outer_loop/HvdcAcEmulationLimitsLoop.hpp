@@ -26,7 +26,7 @@ namespace ls2g {
  * inside the limit of the direction it now flows in goes back to its linear regime; one whose
  * flow reversed beyond the other direction's limit is saturated on that side instead.
  *
- * The regime is the algorithm's (OuterState::hvdc_status), handed to the Newton's Hvdc
+ * The regime is a HvdcRegimeControl the loop reserves for each line, handed to the Newton's Hvdc
  * extension by value -- its entries are declared in every regime -- and used to publish the
  * line's flows; the line's own status_droop is not modified.
  *
@@ -38,6 +38,7 @@ class LS2G_API HvdcAcEmulationLimitsLoop final : public BaseOuterLoop
 {
     protected:
         std::string _name() const override { return "AcHvdcAcEmulationLimits"; }
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;

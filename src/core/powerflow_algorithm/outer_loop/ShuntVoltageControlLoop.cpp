@@ -14,7 +14,6 @@
 #include <numeric>
 
 #include "LSGrid.hpp"
-#include "powerflow_algorithm/NRSystem.hpp"
 
 namespace ls2g {
 
@@ -86,16 +85,15 @@ std::vector<ShuntVoltageControlLoop::Group> ShuntVoltageControlLoop::groups(cons
     return res;
 }
 
-void ShuntVoltageControlLoop::_declare(const OuterContext & ctx, OuterDeclaration & decl) const
+void ShuntVoltageControlLoop::_declare(const OuterContext & ctx) const
 {
     // the buses the transformers regulate: a transformer voltage control declared before this
     // loop (OpenLoadFlow's order) hides a shunt one
-    transformer_buses_.clear();
-    for (const auto & g : decl.ratio_groups()) transformer_buses_.insert(g.bus_solver);
+    transformer_buses_ = ctx.controls->ratio_group_buses();
     // a hidden group never acts (OpenLoadFlow's getControllerElements keeps the visible
     // controls only): nothing to reserve for it
     for (const Group & g : groups(*ctx.grid, transformer_buses_)) {
-        if (!g.hidden) decl.add_shunt_group(g.bus_solver, g.target, g.controller_buses, g.shunts, true);
+        if (!g.hidden) ctx.controls->reserve_shunt_group(g.bus_solver, g.target, g.controller_buses, g.shunts, true);
     }
 }
 
@@ -110,12 +108,13 @@ bool ShuntVoltageControlLoop::_is_needed(const OuterContext & ctx) const
 void ShuntVoltageControlLoop::_initialize(OuterContext & ctx)
 {
     groups_ = groups(*ctx.grid, transformer_buses_);
-    OuterState & st = *ctx.state;
-    st.shunt_control.assign(static_cast<std::size_t>(ctx.grid->id_ac_solver_to_me().size()), -1);
     // every controller on for the first solve
     for (const Group & g : groups_) {
         if (g.hidden) continue;
-        for (int bus : g.controller_buses) st.shunt_control[static_cast<std::size_t>(bus)] = 1;
+        for (int bus : g.controller_buses) {
+            ShuntSectionControl * shunt = ctx.controls->shunt_controller(bus);
+            if (shunt != nullptr) shunt->set_control(true);
+        }
     }
 }
 
@@ -158,20 +157,25 @@ std::vector<int> ShuntVoltageControlLoop::_dispatch(const LSGrid & grid, const s
 
 OuterLoopStatus ShuntVoltageControlLoop::_check(OuterContext & ctx)
 {
-    if (ctx.iteration != 0 || groups_.empty() || ctx.shunt_control == nullptr) return OuterLoopStatus::STABLE;
-    OuterState & st = *ctx.state;
-    const ShuntControl & shunt = *ctx.shunt_control;
+    if (ctx.iteration != 0 || groups_.empty()) return OuterLoopStatus::STABLE;
+    // nothing to do without a controller the inner algorithm can act on
+    bool supported = false;
+    for (const Group & g : groups_) {
+        for (int bus : g.controller_buses) supported = supported || ctx.controls->shunt_controller(bus) != nullptr;
+    }
+    if (!supported) return OuterLoopStatus::STABLE;
     bool any = false;
     for (const Group & g : groups_) {
         if (g.hidden) continue;
         for (std::size_t c = 0; c < g.controller_buses.size(); ++c) {
             const int bus = g.controller_buses[c];
-            if (!shunt.handles(bus)) continue;
-            st.shunt_control[static_cast<std::size_t>(bus)] = 0;
-            st.shunt_sections.emplace_back(bus, _dispatch(*ctx.grid, g.shunts[c], shunt.b(bus)));
+            ShuntSectionControl * shunt = ctx.controls->shunt_controller(bus);
+            if (shunt == nullptr || !shunt->handled()) continue;
+            shunt->set_control(false);
+            shunt->set_sections(_dispatch(*ctx.grid, g.shunts[c], shunt->b()));
             // the susceptance the Newton solved for (pu), rounded to sections
             ctx.record_bus("ROUND_SECTIONS", true, bus, LimitViolationType::SHUNT_VOLTAGE_CONTROL,
-                           shunt.b(bus), std::numeric_limits<real_type>::quiet_NaN());
+                           shunt->b(), std::numeric_limits<real_type>::quiet_NaN());
             any = true;
         }
     }

@@ -31,10 +31,12 @@
 #include "TaggedIdVec.hpp"
 #include "Utils.hpp"
 #include "LimitViolation.hpp"
+#include "element_container/BranchContainer.hpp"
 
 namespace ls2g {
 
-// see BaseBatchSolverSynch::_row_branch_overrides_
+// a row's own placement of one branch (see BaseBatchSolverSynch::_row_branch_overrides_),
+// read by check_current_violations
 struct BranchBusOverride {
     int branch_id;   // gridmodel numbering, lines then trafos
     int from_me;     // the row's bus of side 1 (gridmodel id), when connected
@@ -263,13 +265,13 @@ inline void check_current_violations(
         } else if(s1 && s2){
             const real_type theta_from = std::arg(Efrom);
             const real_type theta_to = std::arg(Eto);
-            real_type p_from = (ydc_11(el_idx) * theta_from + ydc_12(el_idx) * theta_to) * sn_mva;
-            if(has_tau_shift) p_from -= dc_x_tau_shift(el_idx);
-            amps1 = std::abs(p_from) / (sqrt_3 * v_from_kv);
-
-            real_type p_to = (ydc_22(el_idx) * theta_to + ydc_21(el_idx) * theta_from) * sn_mva;
-            if(has_tau_shift) p_to += dc_x_tau_shift(el_idx);
-            amps2 = std::abs(p_to) / (sqrt_3 * v_to_kv);
+            // the phase shift included: the model dc_pf publishes (see dc_branch_p_pu)
+            real_type p_from, p_to;
+            dc_branch_p_pu(ydc_11(el_idx), ydc_12(el_idx), ydc_21(el_idx), ydc_22(el_idx),
+                           has_tau_shift ? dc_x_tau_shift(el_idx) : real_type(0.),
+                           theta_from, theta_to, p_from, p_to);
+            amps1 = std::abs(p_from) * sn_mva / (sqrt_3 * v_from_kv);
+            amps2 = std::abs(p_to) * sn_mva / (sqrt_3 * v_to_kv);
         }
 
         // the name is copied only into a violation: one std::string per element

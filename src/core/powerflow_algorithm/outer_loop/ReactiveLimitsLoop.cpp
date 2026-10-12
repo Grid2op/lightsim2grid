@@ -27,6 +27,26 @@ const SolverBusIdVect & solver_map(const OuterContext & ctx)
 
 }  // namespace
 
+ReactiveLimitsLoop::ReactiveLimitsLoop() : ReactiveLimitsLoop(Params()) {}
+
+ReactiveLimitsLoop::ReactiveLimitsLoop(const Params & params) : params_(params)
+{
+    if (params.max_pq_pv_switch < 0) throw std::runtime_error("ReactiveLimitsLoop: max_pq_pv_switch must be >= 0.");
+    if (!(params.max_reactive_power_mismatch >= 0.)) {
+        throw std::runtime_error("ReactiveLimitsLoop: max_reactive_power_mismatch must be >= 0.");
+    }
+    if (!(params.mismatch_base_mva > 0.)) throw std::runtime_error("ReactiveLimitsLoop: mismatch_base_mva must be > 0.");
+    if (!(params.min_realistic_voltage < params.max_realistic_voltage)) {
+        throw std::runtime_error("ReactiveLimitsLoop: min_realistic_voltage must be lower than max_realistic_voltage.");
+    }
+    if (!(params.realistic_voltage_margin > 0.)) {
+        throw std::runtime_error("ReactiveLimitsLoop: realistic_voltage_margin must be > 0.");
+    }
+    if (!(params.robust_restart_vm_pu > 0.)) {
+        throw std::runtime_error("ReactiveLimitsLoop: robust_restart_vm_pu must be > 0.");
+    }
+}
+
 bus_q_check::BusQPlan ReactiveLimitsLoop::_plan(const OuterContext & ctx)
 {
     bus_q_check::BusQPlan plan;
@@ -35,17 +55,21 @@ bus_q_check::BusQPlan ReactiveLimitsLoop::_plan(const OuterContext & ctx)
     return plan;
 }
 
-void ReactiveLimitsLoop::_declare(const OuterContext & ctx, OuterDeclaration & decl) const
+void ReactiveLimitsLoop::_declare(const OuterContext & ctx) const
 {
     // every bus holding its own voltage through the PV path may become PQ
+    OuterControls & controls = *ctx.controls;
     const bus_q_check::BusQPlan plan = _plan(ctx);
     for (const auto & entry : plan.buses) {
-        if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) decl.add_switchable_vm_bus(entry.bus_solver);
+        if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) controls.reserve_bus_voltage(entry.bus_solver);
         // ... and the controllers of a group may be held at a limit
-        else decl.hold_voltage_controllers();
+        for (int c : entry.ctrl_pos) controls.reserve_controller_hold(c);
     }
     // so may a voltage monitor, once switched on (see _initialize)
-    if (_has_monitor(ctx)) decl.hold_voltage_controllers();
+    const VoltageControlSolverData & ctrl = ctx.grid->get_ac_voltage_control_plan().controllers();
+    for (int c = 0; c < ctrl.n_controllers(); ++c) {
+        if (ctrl.is_held(c) && ctrl.kind(c) == VoltageControlSolverData::SVC) controls.reserve_controller_hold(c);
+    }
 }
 
 bool ReactiveLimitsLoop::_has_monitor(const OuterContext & ctx)
@@ -94,6 +118,7 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
         bus.entry = static_cast<int>(k);
         bus.bus_solver = entry.bus_solver;
         bus.local = entry.ctrl_pos.empty() && entry.svc_ids.empty();
+        if (bus.local && ctx.controls != nullptr) bus.voltage = ctx.controls->bus_voltage(entry.bus_solver);
         bus.monitor_svc = monitor_of_entry[k];
         bus.reg_bus_solver = entry.bus_solver;
         bus.nominal_v = vn_kv(entry.bus_grid);
@@ -162,7 +187,7 @@ void ReactiveLimitsLoop::_limits(const OuterContext & ctx, const ControllerBus &
     const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
     // a generator: its curve at the target P an outer loop gave it, its fixed limits otherwise
     static const std::vector<real_type> none;
-    const std::vector<real_type> & target_p = ctx.state != nullptr ? ctx.state->gen_target_p : none;
+    const std::vector<real_type> & target_p = ctx.injections != nullptr ? ctx.injections->gen_target_p : none;
     for (int gen_id : entry.gen_ids) {
         real_type lo, hi;
         ctx.grid->gen_limits_at_outer_target(gen_id, target_p, lo, hi);
@@ -188,7 +213,7 @@ real_type ReactiveLimitsLoop::_controller_limit(const OuterContext & ctx, int ct
         case VoltageControlSolverData::GEN: {
             static const std::vector<real_type> none;
             real_type lo, hi;
-            grid.gen_limits_at_outer_target(el, ctx.state != nullptr ? ctx.state->gen_target_p : none, lo, hi);
+            grid.gen_limits_at_outer_target(el, ctx.injections != nullptr ? ctx.injections->gen_target_p : none, lo, hi);
             return max ? hi : lo;
         }
         case VoltageControlSolverData::SVC: {
@@ -211,19 +236,16 @@ std::vector<char> ReactiveLimitsLoop::_groups_holding(const OuterContext & ctx) 
     const VoltageControlSolverData & ctrl = ctx.grid->get_ac_voltage_control_plan().controllers();
     std::vector<char> holding(static_cast<std::size_t>(ctrl.n_groups()), 0);
     std::vector<char> sloped(holding.size(), 0);
-    static const std::vector<real_type> none;
-    const std::vector<real_type> & hold_q = ctx.state != nullptr ? ctx.state->controller_hold_q : none;
-    const std::vector<real_type> & svc_on = ctx.state != nullptr ? ctx.state->svc_target_vm : none;
     for (int c = 0; c < ctrl.n_controllers(); ++c) {
         const std::size_t g = static_cast<std::size_t>(ctrl.group(c));
         if (ctrl.slope(c) != 0.) sloped[g] = 1;
         // held at a limit by this loop
-        if (static_cast<std::size_t>(c) < hold_q.size() && std::isfinite(hold_q[static_cast<std::size_t>(c)])) continue;
+        if (ctx.controls != nullptr && ctx.controls->is_held(c)) continue;
         // held by the plan: a frozen regulator, or a voltage monitor not switched on
         if (ctrl.is_held(c)) {
-            const std::size_t svc = static_cast<std::size_t>(ctrl.elem_id(c));
+            const StandbySvcControl * standby = ctx.controls != nullptr ? ctx.controls->standby_svc(ctrl.elem_id(c)) : nullptr;
             const bool switched_on = ctrl.kind(c) == VoltageControlSolverData::SVC &&
-                                     svc < svc_on.size() && std::isfinite(svc_on[svc]);
+                                     standby != nullptr && standby->is_on();
             if (!switched_on) continue;
         }
         holding[g] = 1;
@@ -237,7 +259,7 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
                                    std::vector<Switch> & to_pv, std::vector<int> & moved,
                                    int & remaining_pv, std::vector<Switch> * kept) const
 {
-    const real_type eps = max_reactive_power_mismatch * OLF_SB_MVA;
+    const real_type eps = params_.max_reactive_power_mismatch * params_.mismatch_base_mva;
     remaining_pv = 0;
     const std::vector<char> groups_holding = _groups_holding(ctx);
     for (std::size_t k = 0; k < buses_.size(); ++k) {
@@ -246,14 +268,12 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
         // a bus whose voltage control another loop suspended (TransformerVoltageControl): neither
         // a PV bus to check nor one this loop switched, as OpenLoadFlow's (a frozen bus with no
         // reactive limit type)
-        if (ctx.state != nullptr && ctx.state->suspended_buses.count(bus.bus_solver)) continue;
+        if (ctx.controls != nullptr && ctx.controls->suspended(bus.bus_solver)) continue;
         real_type target_vm = bus.target_vm;
         if (bus.monitor_svc >= 0) {
-            static const std::vector<real_type> none;
-            const std::vector<real_type> & on = ctx.state != nullptr ? ctx.state->svc_target_vm : none;
-            const std::size_t svc = static_cast<std::size_t>(bus.monitor_svc);
-            if (svc >= on.size() || !std::isfinite(on[svc])) continue;  // still idle
-            target_vm = on[svc];  // the set-point it was switched on at
+            const StandbySvcControl * standby = ctx.controls != nullptr ? ctx.controls->standby_svc(bus.monitor_svc) : nullptr;
+            if (standby == nullptr || !standby->is_on()) continue;  // still idle
+            target_vm = standby->target_vm();  // the set-point it was switched on at
         }
         real_type q_min, q_max;
         _limits(ctx, bus, q_min, q_max);
@@ -264,12 +284,12 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
                 to_pq.push_back(Switch{ki, LimitViolationType::LOW_Q, q, q_min});
             } else if (q > q_max + eps) {
                 to_pq.push_back(Switch{ki, LimitViolationType::HIGH_Q, q, q_max});
-            } else if (robust_mode && bus.reg_bus_solver != bus.bus_solver) {
+            } else if (params_.robust_mode && bus.reg_bus_solver != bus.bus_solver) {
                 // a remote controller within its limits, but its own bus' voltage unrealistic
                 const real_type v = ctx.vm(bus.bus_solver);
-                if (v < min_realistic_voltage * REALISTIC_VOLTAGE_MARGIN) {
+                if (v < params_.min_realistic_voltage * params_.realistic_voltage_margin) {
                     to_pq.push_back(Switch{ki, LimitViolationType::LOW_Q, q, bus.target_q, true});
-                } else if (v > max_realistic_voltage / REALISTIC_VOLTAGE_MARGIN) {
+                } else if (v > params_.max_realistic_voltage / params_.realistic_voltage_margin) {
                     to_pq.push_back(Switch{ki, LimitViolationType::HIGH_Q, q, bus.target_q, true});
                 } else {
                     ++remaining_pv;
@@ -329,20 +349,19 @@ void ReactiveLimitsLoop::_freeze(OuterContext & ctx, ControllerBus & bus, real_t
 {
     // its units now inject their limit, on top of what the bus' Sbus held already (their
     // own Q is not in it while they regulate)
-    OuterState & st = *ctx.state;
+    OuterInjections & st = *ctx.injections;
     const real_type sn = ctx.grid->get_sn_mva();
     if (!bus.local) {
         // each of its controllers held at its own limit: the bus' at that limit
         const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
-        const int nc = ctx.grid->get_ac_voltage_control_plan().controllers().n_controllers();
-        if (st.controller_hold_q.empty()) st.controller_hold_q.assign(static_cast<std::size_t>(nc), std::numeric_limits<real_type>::quiet_NaN());
         const VoltageControlSolverData & ctrl = ctx.grid->get_ac_voltage_control_plan().controllers();
         for (int c : entry.ctrl_pos) {
             real_type q = _controller_limit(ctx, c, state > 0);
             if (bus.realistic && ctrl.kind(c) == VoltageControlSolverData::GEN) {
                 q = ctx.grid->get_generators().get_target_q()(ctrl.elem_id(c));  // the robust mode's
             }
-            st.controller_hold_q[static_cast<std::size_t>(c)] = q / sn;
+            VoltageControllerHold * hold = ctx.controls->controller_hold(c);
+            if (hold != nullptr) hold->hold(q / sn);
         }
         bus.state = state;
         bus.frozen_q = q_mvar;
@@ -351,20 +370,19 @@ void ReactiveLimitsLoop::_freeze(OuterContext & ctx, ControllerBus & bus, real_t
     CplxVect & Sbus = *st.Sbus;
     const real_type q_init = std::imag((*st.Sbus_target)(bus.bus_solver));
     Sbus(bus.bus_solver) = cplx_type(std::real(Sbus(bus.bus_solver)), q_init + q_mvar / sn);
-    st.pq_buses.insert(bus.bus_solver);
+    if (bus.voltage != nullptr) bus.voltage->set_pq();
     bus.state = state;
     bus.frozen_q = q_mvar;
 }
 
 void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
 {
-    OuterState & st = *ctx.state;
+    OuterInjections & st = *ctx.injections;
     if (!bus.local) {
         const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
         for (int c : entry.ctrl_pos) {
-            if (static_cast<std::size_t>(c) < st.controller_hold_q.size()) {
-                st.controller_hold_q[static_cast<std::size_t>(c)] = std::numeric_limits<real_type>::quiet_NaN();
-            }
+            VoltageControllerHold * hold = ctx.controls->controller_hold(c);
+            if (hold != nullptr) hold->release();
         }
         bus.state = 0;
         bus.realistic = false;
@@ -373,9 +391,9 @@ void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
     }
     CplxVect & Sbus = *st.Sbus;
     Sbus(bus.bus_solver) = cplx_type(std::real(Sbus(bus.bus_solver)), std::imag((*st.Sbus_target)(bus.bus_solver)));
-    st.pq_buses.erase(bus.bus_solver);
+    if (bus.voltage != nullptr) bus.voltage->set_pv();
     // a pinned row keeps the magnitude the bus has: back at its set-point
-    st.vm_set.push_back(std::make_pair(bus.bus_solver, bus.target_vm));
+    ctx.controls->reset_vm(bus.bus_solver, bus.target_vm);
     bus.state = 0;
     bus.realistic = false;
     bus.frozen_q = 0.;
@@ -415,11 +433,11 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
         ++bus.nb_pv_pq;
         // the robust mode: a remote controller with an unrealistic voltage of its own
         // restarts from 1 pu
-        if (robust_mode && bus.reg_bus_solver != bus.bus_solver) {
+        if (params_.robust_mode && bus.reg_bus_solver != bus.bus_solver) {
             const real_type v = ctx.vm(bus.bus_solver);
-            if (sw.realistic || v < min_realistic_voltage * REALISTIC_VOLTAGE_MARGIN ||
-                v > max_realistic_voltage / REALISTIC_VOLTAGE_MARGIN) {
-                ctx.state->vm_set.push_back(std::make_pair(bus.bus_solver, static_cast<real_type>(1.)));
+            if (sw.realistic || v < params_.min_realistic_voltage * params_.realistic_voltage_margin ||
+                v > params_.max_realistic_voltage / params_.realistic_voltage_margin) {
+                ctx.controls->reset_vm(bus.bus_solver, params_.robust_restart_vm_pu);
             }
         }
         changed = true;
@@ -427,7 +445,7 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
     // PQ -> PV, but not past max_pq_pv_switch
     for (const Switch & sw : to_pv) {
         ControllerBus & bus = buses_[static_cast<std::size_t>(sw.k)];
-        if (bus.nb_pv_pq >= max_pq_pv_switch) {
+        if (bus.nb_pv_pq >= params_.max_pq_pv_switch) {
             record("KEPT_PQ_MAX_SWITCH", false, sw);
             continue;
         }
@@ -451,26 +469,11 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
 AlgoConfig ReactiveLimitsLoop::_get_params() const
 {
     AlgoConfig res;
-    res.int_params = {max_pq_pv_switch, robust_mode ? 1 : 0};
-    res.real_params = {max_reactive_power_mismatch, min_realistic_voltage, max_realistic_voltage};
+    res.int_params = {params_.max_pq_pv_switch, params_.robust_mode ? 1 : 0};
+    res.real_params = {params_.max_reactive_power_mismatch, params_.mismatch_base_mva,
+                       params_.min_realistic_voltage, params_.max_realistic_voltage,
+                       params_.realistic_voltage_margin, params_.robust_restart_vm_pu};
     return res;
-}
-
-void ReactiveLimitsLoop::_set_params(const AlgoConfig & params)
-{
-    if (params.int_params.size() != 2 || params.real_params.size() != 3) {
-        throw std::runtime_error("ReactiveLimitsLoop::set_params: expects 2 int and 3 real parameters.");
-    }
-    if (params.int_params[0] < 0) throw std::runtime_error("ReactiveLimitsLoop: max_pq_pv_switch must be >= 0.");
-    if (!(params.real_params[0] >= 0.)) throw std::runtime_error("ReactiveLimitsLoop: max_reactive_power_mismatch must be >= 0.");
-    if (!(params.real_params[1] < params.real_params[2])) {
-        throw std::runtime_error("ReactiveLimitsLoop: min_realistic_voltage must be lower than max_realistic_voltage.");
-    }
-    max_pq_pv_switch = params.int_params[0];
-    robust_mode = params.int_params[1] != 0;
-    max_reactive_power_mismatch = params.real_params[0];
-    min_realistic_voltage = params.real_params[1];
-    max_realistic_voltage = params.real_params[2];
 }
 
 }  // namespace ls2g

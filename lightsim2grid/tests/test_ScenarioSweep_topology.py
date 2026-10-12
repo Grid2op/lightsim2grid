@@ -36,12 +36,14 @@ from lightsim2grid.lightEnv import TopoAction, ElementType, topo_action_from_gri
 
 class _TopoSweepBase(unittest.TestCase):
     """the grid, the chronics and the reference / comparison helpers"""
+    env_name = "l2rpn_case14_sandbox"
+
     def setUp(self):
         param = Parameters()
         param.NO_OVERFLOW_DISCONNECTION = True
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            self.env = grid2op.make("l2rpn_case14_sandbox", backend=LightSimBackend(),
+            self.env = grid2op.make(self.env_name, backend=LightSimBackend(),
                                     param=param, test=True)
         self.env.reset(seed=0, options={"time serie id": 0})
         self.grid = self.env.backend._grid
@@ -222,6 +224,34 @@ class TestScenarioSweepTopology(_TopoSweepBase):
         self.assertEqual(sweep.get_status(), 1)
         self._assert_row_matches(sweep, 0, self._act())
 
+    def test_half_open_branch_placement_refused(self):
+        """a branch with one end open in the base grid, which a row puts on (moves one of
+        its ends, or reconnects it): what becomes of the open end is not decided
+        (TopoAction.apply_to_gridmodel closes it on the bus it was last on), so the row is
+        refused rather than solved on a guess. Taking it out is well defined, and solved."""
+        half_open = 5
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_powerline_side2(half_open)
+        self.assertTrue(grid.get_lines_status()[half_open])
+        refused = {
+            "an end moved": self._act({"set_bus": {"lines_or_id": [(half_open, 2)], "loads_id": [(0, 2)]}}),
+            "reconnected": self._act({"set_line_status": [(half_open, 1)]}),
+        }
+        for name, action in refused.items():
+            with self.subTest(name=name):
+                with self.assertRaises(RuntimeError) as cm:
+                    self._sweep([self._act(), action], grid=grid)
+                self.assertIn("row 1", str(cm.exception))
+                self.assertIn(f"powerline {half_open}", str(cm.exception))
+        actions = [self._act({"set_line_status": [(half_open, -1)]}),
+                   self._act({"set_bus": {"lines_or_id": [(half_open, -1)]}}),
+                   self._act({"set_line_status": [(3, -1)]})]
+        sweep = self._sweep(actions, grid=grid)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+
     def test_slack_generator_move_refused(self):
         slack = [g for g in range(self.n_gen) if self.grid.get_generators()[g].is_slack]
         self.assertTrue(slack)
@@ -257,6 +287,34 @@ class TestScenarioSweepTopology(_TopoSweepBase):
         sweep.set_topo_actions(self._topo([self._act(), self._act()]))
         sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
         self.assertEqual(sweep.get_status(), 1)
+
+    def test_algorithm_without_bus_masking_refused(self):
+        """Gauss-Seidel cannot mask a bus: the error is about the topological actions, not
+        about handle_disconnected_grid, which nobody turned on"""
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(AlgorithmType.GaussSeidel)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_topo_actions(self._topo([self._act(), self._act({"set_line_status": [(3, -1)]})]))
+        self.assertFalse(sweep.handle_disconnected_grid)
+        with self.assertRaises(RuntimeError) as cm:
+            sweep.compute(1.0 * self.Vinit, 10000, self.tol)
+        self.assertIn("set_topo_actions", str(cm.exception))
+        self.assertNotIn("handle_disconnected_grid", str(cm.exception))
+
+    def test_do_nothing_rows_without_bus_masking(self):
+        """a do-nothing action is a plain row on an algorithm that cannot mask a bus too
+        (as on the DC one, see test_dc_refused): nothing is ever masked"""
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(AlgorithmType.GaussSeidel)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_topo_actions(self._topo([self._act(), self._act()]))
+        sweep.compute(1.0 * self.Vinit, 10000, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+        plain = ScenarioSweepCPP(self.grid)
+        plain.change_algorithm(AlgorithmType.GaussSeidel)
+        plain.modify_load_p(self.load_p[:2])
+        plain.compute(1.0 * self.Vinit, 10000, self.tol)
+        np.testing.assert_array_equal(sweep.get_voltages(), plain.get_voltages())
 
     def test_do_nothing_rows_are_bit_identical(self):
         actions = [self._act() for _ in range(self.nb_steps)]
@@ -305,12 +363,15 @@ class TestScenarioSweepTopology(_TopoSweepBase):
         np.testing.assert_allclose(four.get_voltages(), one.get_voltages(), rtol=1e-10, atol=1e-10)
 
     def test_row_splitting_the_grid(self):
-        """trafo 3 out strands a bus (with generator 4 alone on it, taken out too): the
-        row is NOT_SIMULATED by default, solved on the main component in the
-        handle_disconnected_grid mode -- as the masks do it"""
-        action = self._act({"set_line_status": [(self.n_line + 3, -1)],
-                            "set_bus": {"generators_id": [(4, -1)]}})
-        ref_V, _, ref_grid = self._reference(0, action)
+        """trafo 3 out strands a bus with generator 4 alone on it: the row is NOT_SIMULATED
+        by default, solved on the main component in the handle_disconnected_grid mode -- as
+        the masks do it. Taking generator 4 out as well leaves that bus with no element at
+        all: nothing is stranded then, and the row is solved in either mode. Both answers
+        are the grid without the island (a one-off powerflow does not solve one)."""
+        split = self._act({"set_line_status": [(self.n_line + 3, -1)]})
+        emptied = self._act({"set_line_status": [(self.n_line + 3, -1)],
+                             "set_bus": {"generators_id": [(4, -1)]}})
+        ref_V, _, ref_grid = self._reference(0, emptied)
         live = np.asarray(ref_grid.id_ac_solver_to_me(), dtype=int)
         # the base grid's own solved buses, off a solve (a copy modified since its
         # last powerflow answers with a stale labelling)
@@ -321,21 +382,25 @@ class TestScenarioSweepTopology(_TopoSweepBase):
 
         sweep = ScenarioSweepCPP(self.grid)
         sweep.compute_limit_violations = True
-        sweep.modify_load_p(self.load_p[:1])
-        sweep.modify_load_q(self.load_q[:1])
-        sweep.modify_gen_p(self.gen_p[:1])
-        sweep.set_topo_actions(self._topo([action]))
+        # both rows with the injections of the reference
+        sweep.modify_load_p(np.repeat(self.load_p[:1], 2, axis=0))
+        sweep.modify_load_q(np.repeat(self.load_q[:1], 2, axis=0))
+        sweep.modify_gen_p(np.repeat(self.gen_p[:1], 2, axis=0))
+        sweep.set_topo_actions(self._topo([split, emptied]))
         sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
         self.assertFalse(sweep.converged_mask()[0])
         self.assertEqual(sweep.get_violations()[0][0].violation_type, LimitViolationType.NOT_SIMULATED)
+        self.assertTrue(sweep.converged_mask()[1])
 
         sweep.handle_disconnected_grid = True
         sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
-        self.assertTrue(sweep.converged_mask()[0])
-        V = sweep.get_voltages()[0]
-        for b in stranded:
-            self.assertEqual(abs(V[b]), 0., f"stranded bus {b} should read 0")
-        np.testing.assert_allclose(V[live], ref_V[live], rtol=1e-6, atol=1e-6)
+        for row in range(2):
+            with self.subTest(row=row):
+                self.assertTrue(sweep.converged_mask()[row])
+                V = sweep.get_voltages()[row]
+                for b in stranded:
+                    self.assertEqual(abs(V[b]), 0., f"stranded bus {b} should read 0")
+                np.testing.assert_allclose(V[live], ref_V[live], rtol=1e-6, atol=1e-6)
 
 
 class TestScenarioSweepGenReactivation(TestScenarioSweepTopology):
@@ -355,6 +420,25 @@ class TestScenarioSweepGenReactivation(TestScenarioSweepTopology):
         return self._act({"set_bus": {"generators_id": [(self.gen_off, 1)]}})
 
     # the stage 1 tests run again on this base grid (inherited); on top of them:
+    def test_mask_on_a_reactivated_generator_refused(self):
+        """set_contingency_gens takes the generator out of a row whose action puts it back:
+        the two contradict each other, refused as for a generator on in the base grid"""
+        actions = [self._reco(), self._act()]
+        gen_mask = np.zeros((2, self.n_gen), dtype=bool)
+        gen_mask[0, self.gen_off] = True
+        with self.assertRaises(RuntimeError) as cm:
+            self._sweep(actions, set_contingency_gens=gen_mask)
+        self.assertIn("row 0", str(cm.exception))
+        self.assertIn(f"generator {self.gen_off}", str(cm.exception))
+        self.assertIn("set_contingency_gens", str(cm.exception))
+        # the mask alone on a generator off in the base grid changes nothing
+        gen_mask[0, self.gen_off] = False
+        gen_mask[1, self.gen_off] = True
+        sweep = self._sweep(actions, set_contingency_gens=gen_mask)
+        self.assertEqual(sweep.get_status(), 1)
+        self._assert_row_matches(sweep, 0, actions[0])
+        self._assert_row_matches(sweep, 1, actions[1])
+
     def test_reactivation_matches_reference(self):
         shared = [g for g in range(self.n_gen) if self.bus_of_gen.count(self.bus_of_gen[g]) > 1]
         actions = [
@@ -490,16 +574,179 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         self.assertNotEqual(amps[0, 3], 0.)
         self.assertEqual(amps[2, 3], 0.)
 
-    def test_isolated_bus_is_masked(self):
-        """a load alone on busbar 2 is an island of one bus: masked, the row is solved
-        without it -- the same as the load disconnected"""
-        actions = [self._act({"set_bus": {"loads_id": [(0, 2)]}})]
-        sweep = self._sweep(actions)
+    def test_clear_forgets_the_placements(self):
+        """clear() drops the actions and what they were resolved into: a batch registered
+        afterwards without any action is a plain batch, not one still putting back the
+        branch an earlier action reconnected"""
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_powerline(3)
+        sweep = self._sweep([self._act({"set_line_status": [(3, 1)]}), self._act()], grid=grid)
         self.assertEqual(sweep.get_status(), 1)
-        self.assertTrue(sweep.converged_mask()[0])
+        sweep.clear()
+        plain = ScenarioSweepCPP(grid)
+        for computer in (sweep, plain):
+            computer.modify_gen_p(self.gen_p[:2])
+            computer.modify_load_p(self.load_p[:2])
+            computer.modify_load_q(self.load_q[:2])
+            computer.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+        np.testing.assert_allclose(sweep.get_voltages(), plain.get_voltages(), rtol=1e-10, atol=1e-10)
+        self.assertEqual(sweep.compute_flows()[0, 3], 0.)
+
+    def test_clear_after_a_diverged_base_case(self):
+        """clear() drops what the actions were resolved into even when the base case
+        diverged (the batch inputs never became valid): a batch registered afterwards
+        with masks only reports the branches its masks take out"""
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_topo_actions(self._topo([self._act({"set_line_status": [(7, -1)]}), self._act()]))
+        # a flat start and one iteration: the base case diverges
+        sweep.compute(np.ones(self.Vinit.shape[0], dtype=complex), 1, self.tol)
+        self.assertNotEqual(sweep.get_status(), 1)
+        self.assertEqual(list(sweep.get_row_disconnected_branches(0)), [7])
+        sweep.clear()
+        line_mask = np.zeros((2, self.n_line), dtype=bool)
+        line_mask[0, 3] = True
+        sweep.set_contingency_lines(line_mask)
+        self.assertEqual(list(sweep.get_row_disconnected_branches(0)), [3])
+        self.assertEqual(list(sweep.get_row_disconnected_branches(1)), [])
+
+    def test_merge_needs_no_disconnected_grid_mode(self):
+        """a row merging back a busbar the base grid splits leaves that busbar with no
+        element at all: nothing is stranded, so the row is solved without
+        handle_disconnected_grid, as the split itself is"""
+        grid = copy.deepcopy(self.grid)
+        split = self._topo([self._act({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2), (3, 2)]}})])[0]
+        split.check_validity(grid)
+        split.apply_to_gridmodel(grid)
+        actions = [self._act({"set_bus": {"loads_id": [(0, 1)], "lines_or_id": [(2, 1), (3, 1)]}}),
+                   self._act()]
+        sweep = self._sweep(actions, grid=grid)
+        self.assertFalse(sweep.handle_disconnected_grid)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+        # the busbar emptied by the merge reads 0, the one the base grid uses does not
         n_sub = type(self.env).n_sub
         self.assertEqual(abs(sweep.get_voltages()[0][1 + n_sub]), 0.)
-        self._assert_row_matches(sweep, 0, self._act({"set_bus": {"loads_id": [(0, -1)]}}))
+        self.assertNotEqual(abs(sweep.get_voltages()[1][1 + n_sub]), 0.)
+
+    def test_moved_generator_leaves_its_gen_v_group(self):
+        """modify_gen_v: a generator the row moves off a bus it shares no longer has to agree
+        with the generator left there, nor writes its set-point there (generators 2 and 3
+        share a bus on case14; 3 is the one set_vm visits last)"""
+        cls = type(self.env)
+        stays, moves = 2, 3
+        self.assertEqual(self.bus_of_gen[stays], self.bus_of_gen[moves])
+        at_sub = self.env.action_space.get_obj_connect_to(substation_id=int(cls.gen_to_subid[moves]))
+        line_end = ("lines_or_id", int(at_sub["lines_or_id"][0])) if len(at_sub["lines_or_id"]) \
+            else ("lines_ex_id", int(at_sub["lines_ex_id"][0]))
+        moved = self._act({"set_bus": {"generators_id": [(moves, 2)], line_end[0]: [(line_end[1], 2)]}})
+        actions = [moved, self._act()]
+        target_vm = np.array([g.target_vm_pu for g in self.grid.get_generators()])
+        gen_v = np.tile(target_vm, (len(actions), 1))
+        gen_v[0, moves] += 0.02
+        sweep = self._sweep(actions, modify_gen_v=gen_v)
+        self.assertEqual(sweep.get_status(), 1)
+        # the reference: the move first (a grid refuses two set-points on one bus), then
+        # the moved generator's own
+        ref_grid = copy.deepcopy(self.grid)
+        move = self._topo([moved])[0]
+        move.check_validity(ref_grid)
+        move.apply_to_gridmodel(ref_grid)
+        ref_grid.change_v_gen(moves, float(gen_v[0, moves]))
+        self._assert_row_matches(sweep, 0, self._act(), grid=ref_grid)
+        self._assert_row_matches(sweep, 1, actions[1])
+        # each bus at the magnitude of the generator that stands on it in the row
+        n_sub = cls.n_sub
+        V = sweep.get_voltages()[0]
+        self.assertAlmostEqual(abs(V[self.bus_of_gen[stays]]), target_vm[stays], places=8)
+        self.assertAlmostEqual(abs(V[self.bus_of_gen[moves] + n_sub]), gen_v[0, moves], places=8)
+
+    def test_generators_swapping_busbars(self):
+        """a row swapping two generators between the busbars of a split substation, each
+        busbar at the set-point of the generator that leaves it: each busbar is held at the
+        set-point of the generator the row puts there, which it does not have to share
+        with the one that leaves"""
+        cls = type(self.env)
+        self.assertEqual(list(cls.gen_to_subid[[2, 3]]), [5, 5])
+        grid = copy.deepcopy(self.grid)
+        split = self._topo([self._act({"set_bus": {"generators_id": [(3, 2)], "lines_or_id": [(8, 2), (9, 2)]}})])[0]
+        split.check_validity(grid)
+        split.apply_to_gridmodel(grid)
+        vm_2 = grid.get_generators()[2].target_vm_pu
+        vm_3 = vm_2 - 0.05
+        grid.change_v_gen(3, vm_3)
+        actions = [self._act({"set_bus": {"generators_id": [(2, 2), (3, 1)]}}), self._act()]
+        sweep = self._sweep(actions, grid=grid)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+        n_sub = cls.n_sub
+        V = sweep.get_voltages()
+        self.assertAlmostEqual(abs(V[0][5 + n_sub]), vm_2, places=8)
+        self.assertAlmostEqual(abs(V[0][5]), vm_3, places=8)
+        self.assertAlmostEqual(abs(V[1][5 + n_sub]), vm_3, places=8)
+
+    def test_extra_busbar_not_checked_in_the_n_case(self):
+        """the extra busbars of the union layout do not exist in the base grid: masked in
+        the "n" case, they are not voltage-checked there either -- as in a plain row"""
+        from test_ContingencyAnalysis_limit_violations import _set_tight_limits
+        grid = copy.deepcopy(self.grid)
+        _set_tight_limits(grid)
+        extra = 1 + type(self.env).n_sub
+        # a limit the extra busbar breaks wherever it is checked
+        vn = grid.get_bus_vn_kv()
+        vmax = 1. * vn
+        vmax[extra] = 0.5 * vn[extra]
+        grid.set_bus_voltage_limits(np.full(vn.shape[0], np.nan), vmax)
+        actions = [self._act({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2), (3, 2)]}}),
+                   self._act()]
+        sweep = ScenarioSweepCPP(grid)
+        sweep.compute_limit_violations = True
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_topo_actions(self._topo(actions))
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+
+        def buses(violations):
+            return {v.element_id for v in violations
+                    if v.element_type == ViolationElementType.BUS and v.violation_type == LimitViolationType.HIGH_VOLTAGE}
+        self.assertIn(extra, buses(sweep.get_violations()[0]))   # live in the row that uses it
+        self.assertNotIn(extra, buses(sweep.get_violations()[1]))
+        self.assertNotIn(extra, buses(sweep.get_violations_n()))
+        self.assertEqual(buses(sweep.get_violations_n()), buses(sweep.get_violations()[1]))
+
+    def test_isolated_bus_is_masked(self):
+        """a load (or a generator) alone on busbar 2 is an island of one bus, as is the bus
+        a trafo trip leaves a generator alone on (test_row_splitting_the_grid): the row is
+        NOT_SIMULATED by default, and solved without the element -- the same as the
+        element disconnected -- in the handle_disconnected_grid mode. A busbar of the
+        union layout is masked by design only in the rows that put nothing on it."""
+        n_sub = type(self.env).n_sub
+        cases = [("loads_id", 0), ("generators_id", 0)]
+        for key, el_id in cases:
+            with self.subTest(element=key):
+                alone = self._act({"set_bus": {key: [(el_id, 2)]}})
+                off = self._act({"set_bus": {key: [(el_id, -1)]}})
+                sweep = ScenarioSweepCPP(self.grid)
+                sweep.compute_limit_violations = True
+                sweep.modify_gen_p(self.gen_p[:2])
+                sweep.modify_load_p(self.load_p[:2])
+                sweep.modify_load_q(self.load_q[:2])
+                sweep.set_topo_actions(self._topo([alone, self._act()]))
+                sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+                self.assertFalse(sweep.converged_mask()[0])
+                self.assertEqual(sweep.get_violations()[0][0].violation_type, LimitViolationType.NOT_SIMULATED)
+                self.assertTrue(sweep.converged_mask()[1])
+
+                sweep.handle_disconnected_grid = True
+                sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+                self.assertTrue(sweep.converged_mask()[0])
+                self.assertEqual(abs(sweep.get_voltages()[0][1 + n_sub]), 0.)
+                self._assert_row_matches(sweep, 0, off)
 
     def test_threads_agree_and_plain_rows_match(self):
         actions = [self._act({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2), (3, 2)]}}),
@@ -541,6 +788,394 @@ class TestScenarioSweepTopologyMoves(_TopoSweepBase):
         for line_id in (2, 3):
             self.assertIn((ViolationElementType.LINE, line_id, 1), got)
             self.assertAlmostEqual(got[(ViolationElementType.LINE, line_id, 1)], ref_flows[line_id], places=6)
+
+
+class TestScenarioSweepTopologyRowResults(_TopoSweepBase):
+    """compute_branch_results and get_gen_results follow the row's action: a branch or a
+    generator it moves is reported on the row's buses, one it reconnects or reactivates
+    is on, one it disconnects reads 0 -- as get_line_res1/2, get_trafo_res1/2 and
+    get_gen_res read after the one-off powerflow"""
+    def _sweep_results(self, actions, grid=None):
+        g = self.grid if grid is None else grid
+        sweep = ScenarioSweepCPP(g)
+        nb_rows = len(actions)
+        sweep.modify_gen_p(self.gen_p[:nb_rows])
+        sweep.modify_load_p(self.load_p[:nb_rows])
+        sweep.modify_load_q(self.load_q[:nb_rows])
+        sweep.set_topo_actions(self._topo(actions))
+        sweep.compute_gen_results = True
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+        branch = sweep.compute_branch_results()
+        gen = sweep.get_gen_results()
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self.assertTrue(sweep.converged_mask()[row], f"row {row} did not converge")
+                _, _, ref = self._reference(row, action, grid)
+                ref_branch = np.stack([np.concatenate([ref.get_line_res1()[0], ref.get_trafo_res1()[0]]),
+                                       np.concatenate([ref.get_line_res1()[1], ref.get_trafo_res1()[1]]),
+                                       np.concatenate([ref.get_line_res2()[0], ref.get_trafo_res2()[0]]),
+                                       np.concatenate([ref.get_line_res2()[1], ref.get_trafo_res2()[1]])], axis=1)
+                np.testing.assert_allclose(branch[row], ref_branch, rtol=1e-6, atol=1e-6,
+                                           err_msg=f"row {row}: branch results differ from the one-off powerflow")
+                ref_p, ref_q, _ = ref.get_gen_res()
+                np.testing.assert_allclose(gen[row, :, 0], ref_p, rtol=1e-6, atol=1e-6,
+                                           err_msg=f"row {row}: generator P differs from the one-off powerflow")
+                np.testing.assert_allclose(gen[row, :, 1], ref_q, rtol=1e-6, atol=1e-6,
+                                           err_msg=f"row {row}: generator Q differs from the one-off powerflow")
+        return branch, gen
+
+    def test_moves(self):
+        actions = [
+            # a bus split: two line ends and the load on busbar 2
+            self._act({"set_bus": {"loads_id": [(0, 2)], "lines_or_id": [(2, 2), (3, 2)]}}),
+            self._act(),
+            # the generator moves with a line
+            self._act({"set_bus": {"generators_id": [(0, 2)], "lines_or_id": [(4, 2)]}}),
+            # a move and a disconnection by the action in one row
+            self._act({"set_bus": {"generators_id": [(0, 2)], "lines_or_id": [(4, 2)]},
+                       "set_line_status": [(7, -1)]}),
+        ]
+        branch, gen = self._sweep_results(actions)
+        self.assertNotEqual(gen[2, 0, 0], 0.)
+        np.testing.assert_array_equal(branch[3, 7], 0.)
+
+    def test_generator_leaves_a_shared_bus(self):
+        """generators 2 and 3 share a bus on case14: moved apart, each takes the whole
+        reactive residual of its own bus rather than a share of the base one"""
+        cls = type(self.env)
+        stays, moves = 2, 3
+        self.assertEqual(self.bus_of_gen[stays], self.bus_of_gen[moves])
+        at_sub = self.env.action_space.get_obj_connect_to(substation_id=int(cls.gen_to_subid[moves]))
+        line_end = ("lines_or_id", int(at_sub["lines_or_id"][0])) if len(at_sub["lines_or_id"]) \
+            else ("lines_ex_id", int(at_sub["lines_ex_id"][0]))
+        self._sweep_results([self._act({"set_bus": {"generators_id": [(moves, 2)], line_end[0]: [(line_end[1], 2)]}}),
+                             self._act()])
+
+    def test_branch_reconnection(self):
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_powerline(3)
+        actions = [
+            self._act({"set_line_status": [(3, 1)]}),
+            self._act(),
+            # back on a new busbar, with the load
+            self._act({"set_bus": {"lines_or_id": [(3, 2)], "loads_id": [(0, 2)]}}),
+        ]
+        branch, _ = self._sweep_results(actions, grid=grid)
+        self.assertNotEqual(branch[0, 3, 0], 0.)
+        np.testing.assert_array_equal(branch[1, 3], 0.)
+
+    def test_generator_reactivation(self):
+        grid = copy.deepcopy(self.grid)
+        grid.deactivate_gen(1)
+        actions = [
+            self._act({"set_bus": {"generators_id": [(1, 1)]}}),
+            self._act(),
+            # reactivated while another one goes out
+            self._act({"set_bus": {"generators_id": [(1, 1), (2, -1)]}}),
+        ]
+        _, gen = self._sweep_results(actions, grid=grid)
+        self.assertNotEqual(gen[0, 1, 0], 0.)
+        np.testing.assert_array_equal(gen[1, 1], 0.)
+        np.testing.assert_array_equal(gen[2, 2], 0.)
+
+
+class _RedistributeSlackBase(_TopoSweepBase):
+    """``redistribute_slack`` with topological actions: the slack pre-pass shares what the
+    row really loses, read off the row's own placement -- a generator moved still
+    injects, a load the action disconnects (or leaves alone on a busbar, an island the
+    handle_disconnected_grid mode masks) is gone, the
+    elements moved off a busbar the row leaves empty are not stranded, and a unit that
+    takes a share takes it on the bus the row gives it. The oracle is a one-off grid with
+    the action applied and that lost power redistributed."""
+    def setUp(self):
+        super().setUp()
+        self.grid = copy.deepcopy(self.grid)
+        # a distributed slack (the environment's default algorithm is single-slack)
+        self.grid.change_algorithm(AlgorithmType.NR_KLU)
+
+    def _two_slack_units(self, grid, tight):
+        """generator 5 (the slack of case14) and `tight`, which can only move 2 MW: every
+        row losing power saturates it"""
+        grid.add_gen_slackbus(tight, 1.)
+        target = grid.get_generators()[tight].target_p_mw
+        min_p = np.full(self.n_gen, -np.inf)
+        max_p = np.full(self.n_gen, np.inf)
+        min_p[tight] = target - 2.
+        max_p[tight] = target + 2.
+        grid.set_gen_p_limits(min_p, max_p)
+
+    def _sweep_redistribute(self, grid, actions, redistribute=True, handle_disconnected_grid=False):
+        sweep = ScenarioSweepCPP(grid)
+        sweep.change_algorithm(AlgorithmType.NR_KLU)
+        sweep.set_topo_actions(self._topo(actions))
+        sweep.redistribute_slack = redistribute
+        sweep.handle_disconnected_grid = handle_disconnected_grid
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        return sweep
+
+    def _reference_redistributed(self, grid, action, lost_mw):
+        ref = copy.deepcopy(grid)
+        topo = self._topo([action])[0]
+        topo.check_validity(ref)
+        topo.apply_to_gridmodel(ref)
+        if lost_mw != 0.:
+            report = ref.redistribute_active_power(lost_mw)
+            self.assertGreater(report.nb_saturated, 0, "the tight unit should saturate")
+        V = ref.ac_pf(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertGreater(V.shape[0], 0, "the one-off reference diverged")
+        return V, np.asarray(ref.id_ac_solver_to_me(), dtype=int)
+
+    def _assert_rows(self, grid, sweep, rows):
+        for row, (ref_action, lost_mw) in enumerate(rows):
+            with self.subTest(row=row):
+                self.assertTrue(sweep.converged_mask()[row], f"row {row} did not converge")
+                ref_V, buses = self._reference_redistributed(grid, ref_action, lost_mw)
+                got = sweep.get_voltages()[row]
+                np.testing.assert_allclose(np.abs(got[buses]), np.abs(ref_V[buses]), rtol=0., atol=1e-6)
+                np.testing.assert_allclose(np.angle(got[buses]) - np.angle(got[0]),
+                                           np.angle(ref_V[buses]) - np.angle(ref_V[0]), rtol=0., atol=1e-6)
+
+
+
+class TestScenarioSweepTopologyRedistributeSlack(_RedistributeSlackBase):
+    def test_rows_lose_what_their_action_takes_out(self):
+        grid = self.grid
+        self._two_slack_units(grid, tight=1)
+        at_sub4 = self.env.action_space.get_obj_connect_to(substation_id=4)
+        p_load = [l.target_p_mw for l in grid.get_loads()]
+        p_gen = [g.target_p_mw for g in grid.get_generators()]
+        empty_sub4 = {"loads_id": [(int(l), 2) for l in at_sub4["loads_id"]],
+                      "lines_or_id": [(int(l), 2) for l in at_sub4["lines_or_id"]],
+                      "lines_ex_id": [(int(l), 2) for l in at_sub4["lines_ex_id"]]}
+        actions = [
+            # generator 0 moved with a line: it still injects, nothing is lost
+            self._act({"set_bus": {"generators_id": [(0, 2)], "lines_or_id": [(4, 2)]}}),
+            # a load disconnected by the action: its consumption is gone
+            self._act({"set_bus": {"loads_id": [(2, -1)]}}),
+            # a load alone on busbar 2: an island of one bus, masked (handle_disconnected_grid),
+            # as good as disconnected
+            self._act({"set_bus": {"loads_id": [(0, 2)]}}),
+            # every element of substation 4 moved to busbar 2: busbar 1 is left empty
+            # (masked), nothing stands on it any more and nothing is lost
+            self._act({"set_bus": empty_sub4}),
+            # a generator disconnected by the action
+            self._act({"set_bus": {"generators_id": [(2, -1)]}}),
+            self._act(),
+        ]
+        rows = [(actions[0], 0.),
+                (actions[1], -p_load[2]),
+                (self._act({"set_bus": {"loads_id": [(0, -1)]}}), -p_load[0]),
+                (actions[3], 0.),
+                (actions[4], p_gen[2]),
+                (actions[5], 0.)]
+        sweep = self._sweep_redistribute(grid, actions, handle_disconnected_grid=True)
+        self.assertEqual(sweep.get_status(), 1)
+        self._assert_rows(grid, sweep, rows)
+        # not a vacuous check: where power is lost, the redistribution changes the answer
+        plain = self._sweep_redistribute(grid, actions, redistribute=False, handle_disconnected_grid=True)
+        self.assertGreater(np.max(np.abs(plain.get_voltages()[1] - sweep.get_voltages()[1])), 1e-6)
+
+    def test_reactivated_generator_is_a_gain(self):
+        grid = self.grid
+        self._two_slack_units(grid, tight=0)
+        grid.deactivate_gen(1)
+        p_gen1 = grid.get_generators()[1].target_p_mw
+        actions = [self._act({"set_bus": {"generators_id": [(1, 1)]}}), self._act()]
+        sweep = self._sweep_redistribute(grid, actions)
+        self.assertEqual(sweep.get_status(), 1)
+        self._assert_rows(grid, sweep, [(actions[0], -p_gen1), (actions[1], 0.)])
+
+    def test_moved_participant_takes_its_share_where_it_lands(self):
+        # generator 0 only "can participate in the slack", with a tight range: moved with a
+        # line in a row that loses a load, it takes its share on busbar 2
+        grid = self.grid
+        self._two_slack_units(grid, tight=1)
+        target = [g.target_p_mw for g in grid.get_generators()]
+        min_p = np.array([g.min_p_mw for g in grid.get_generators()])
+        max_p = np.array([g.max_p_mw for g in grid.get_generators()])
+        min_p[0] = target[0] - 1.
+        max_p[0] = target[0] + 1.
+        grid.set_gen_p_limits(min_p, max_p)
+        grid.set_gen_can_participate_slack([g == 0 for g in range(self.n_gen)],
+                                           np.array([1. if g == 0 else 0. for g in range(self.n_gen)]))
+        p_load2 = grid.get_loads()[2].target_p_mw
+        actions = [self._act({"set_bus": {"generators_id": [(0, 2)], "lines_or_id": [(4, 2)],
+                                          "loads_id": [(2, -1)]}})]
+        sweep = self._sweep_redistribute(grid, actions)
+        self.assertEqual(sweep.get_status(), 1)
+        self._assert_rows(grid, sweep, [(actions[0], -p_load2)])
+
+
+class TestScenarioSweepTopologyRedistributeSlackStorage(_RedistributeSlackBase):
+    """the same with storage units (educ_case14_storage: storage 0 on substation 5, with
+    the origin of line 7). Its action space has no set_bus: the rows are TopoAction."""
+    env_name = "educ_case14_storage"
+
+    @staticmethod
+    def _topo_act(*elements):
+        act = TopoAction()
+        for el_type, el_id, bus in elements:
+            act.add_element(el_type, el_id, bus)
+        return act
+
+    def test_storage_taken_out_is_lost(self):
+        grid = self.grid
+        self._two_slack_units(grid, tight=1)
+        grid.change_p_storage(0, 10.)  # consuming
+        off = self._topo_act((ElementType.storage, 0, -1))
+        actions = [
+            off,
+            # alone on busbar 2: an island of one bus, masked (handle_disconnected_grid)
+            self._topo_act((ElementType.storage, 0, 2)),
+            # moved with a line: still consuming
+            self._topo_act((ElementType.storage, 0, 2), (ElementType.line_or, 7, 2)),
+        ]
+        sweep = self._sweep_redistribute(grid, actions, handle_disconnected_grid=True)
+        self.assertEqual(sweep.get_status(), 1)
+        self._assert_rows(grid, sweep, [(off, -10.), (off, -10.), (actions[2], 0.)])
+
+    def test_moved_participant_takes_its_share_where_it_lands(self):
+        # storage 0 only "can participate in the slack", 1 MW of room each way, moved with a
+        # line in a row that loses a load
+        grid = self.grid
+        self._two_slack_units(grid, tight=1)
+        n_storage = len(grid.get_storages())
+        grid.set_storage_p_limits(np.array([-1.] + [np.nan] * (n_storage - 1)),
+                                  np.array([1.] + [np.nan] * (n_storage - 1)))
+        grid.set_storage_can_participate_slack([s == 0 for s in range(n_storage)],
+                                               np.array([1. if s == 0 else 0. for s in range(n_storage)]))
+        p_load2 = grid.get_loads()[2].target_p_mw
+        actions = [self._topo_act((ElementType.storage, 0, 2), (ElementType.line_or, 7, 2),
+                                  (ElementType.load, 2, -1))]
+        sweep = self._sweep_redistribute(grid, actions)
+        self.assertEqual(sweep.get_status(), 1)
+        self._assert_rows(grid, sweep, [(actions[0], -p_load2)])
+
+
+class TestScenarioSweepTopologyStorage(_TopoSweepBase):
+    """storage units a row takes out that take part in the voltage control or in the
+    distributed slack (educ_case14_storage, whose action space has no set_bus: the rows
+    are TopoAction)"""
+    env_name = "educ_case14_storage"
+
+    @staticmethod
+    def _topo_act(*elements):
+        act = TopoAction()
+        for el_type, el_id, bus in elements:
+            act.add_element(el_type, el_id, bus)
+        return act
+
+    def _regulating_storages(self, min_q=-50., max_q=50.):
+        """storage 0 the only regulator of a load bus (reactive range [min_q, max_q]),
+        storage 1 regulating the bus of generators 2 and 3 alongside them, at their
+        set-point"""
+        grid = copy.deepcopy(self.grid)
+        shared_bus = self.bus_of_gen[2]
+        self.assertEqual(self.bus_of_gen[3], shared_bus)
+        vm_shared = grid.get_generators()[2].target_vm_pu
+        load_bus = grid.get_loads()[2].bus_id
+        self.assertNotIn(load_bus, self.bus_of_gen)
+        grid.init_storages_full(np.array([5., 0.]), np.array([0., 0.]), [True, True],
+                                np.array([1.04, vm_shared]), np.array([min_q, -50.]), np.array([max_q, 50.]),
+                                np.array([load_bus, shared_bus], dtype=np.int32))
+        grid.set_storage_to_subid(np.array([load_bus, shared_bus], dtype=np.int32))
+        grid.tell_solver_need_reset()
+        return grid, load_bus, shared_bus, vm_shared
+
+    def test_regulating_storage_taken_out(self):
+        """a bus whose last regulator the row takes out turns PQ, a storage unit included;
+        and a bus a storage unit still holds stays PV when its generators go"""
+        grid, load_bus, shared_bus, vm_shared = self._regulating_storages()
+        actions = [self._topo_act((ElementType.storage, 0, -1)),
+                   self._topo_act((ElementType.gen, 2, -1), (ElementType.gen, 3, -1)),
+                   TopoAction()]
+        sweep = self._sweep(actions, grid=grid)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+        Vs = sweep.get_voltages()
+        self.assertNotAlmostEqual(abs(Vs[0][load_bus]), 1.04, places=4)
+        self.assertAlmostEqual(abs(Vs[2][load_bus]), 1.04, places=8)
+        self.assertAlmostEqual(abs(Vs[1][shared_bus]), vm_shared, places=8)
+
+    def test_generator_reactivated_on_a_storage_held_bus(self):
+        """a row reactivating a generator on a bus only a storage unit holds: the bus has
+        one magnitude, so the generator must ask the storage unit's -- refused otherwise,
+        as on a bus a generator holds; matched against a one-off powerflow when it does"""
+        gen_id = 4
+        bus = self.bus_of_gen[gen_id]
+        self.assertEqual(self.bus_of_gen.count(bus), 1)
+        vm_gen = self.grid.get_generators()[gen_id].target_vm_pu
+        other_bus = self.grid.get_storages()[1].bus_id
+        self.assertGreaterEqual(other_bus, 0)
+        for vm_sto, refused in ((vm_gen - 0.05, True), (vm_gen, False)):
+            with self.subTest(vm_storage=vm_sto):
+                grid = copy.deepcopy(self.grid)
+                grid.deactivate_gen(gen_id)
+                grid.init_storages_full(np.array([5., 0.]), np.array([0., 0.]), [True, False],
+                                        np.array([vm_sto, 1.0]), np.array([-50., -50.]), np.array([50., 50.]),
+                                        np.array([bus, other_bus], dtype=np.int32))
+                grid.set_storage_to_subid(np.array([bus, other_bus], dtype=np.int32))
+                grid.tell_solver_need_reset()
+                actions = [self._topo_act((ElementType.gen, gen_id, 1)), TopoAction()]
+                if refused:
+                    with self.assertRaises(RuntimeError) as cm:
+                        self._sweep(actions, grid=grid)
+                    self.assertIn("row 0", str(cm.exception))
+                    self.assertIn(f"generator {gen_id}", str(cm.exception))
+                    self.assertIn("storage unit 0", str(cm.exception))
+                    continue
+                sweep = self._sweep(actions, grid=grid)
+                self.assertEqual(sweep.get_status(), 1)
+                for row, action in enumerate(actions):
+                    self._assert_row_matches(sweep, row, action, grid=grid)
+                self.assertAlmostEqual(abs(sweep.get_voltages()[0][bus]), vm_sto, places=8)
+
+    def test_regulating_storage_taken_out_leaves_the_reactive_check(self):
+        """compute_physical_violations: the reactive range of a storage unit the row takes
+        out is not its bus's any more -- given one that a bus solved as PQ (about 0 MVAr)
+        falls short of, a check still counting it would report that bus"""
+        grid, load_bus, _, _ = self._regulating_storages(min_q=10., max_q=20.)
+        sweep = ScenarioSweepCPP(grid)
+        sweep.compute_physical_violations = True
+        sweep.modify_load_p(self.load_p[:1])
+        sweep.set_topo_actions([self._topo_act((ElementType.storage, 0, -1))])
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(sweep.get_status(), 1)
+        q_buses = [v.element_id for v in sweep.get_physical_violations()[0]
+                   if v.element_type == ViolationElementType.BUS and
+                   v.violation_type in (LimitViolationType.LOW_Q, LimitViolationType.HIGH_Q)]
+        self.assertNotIn(load_bus, q_buses)
+
+    def _storage_in_the_slack(self):
+        grid = copy.deepcopy(self.grid)
+        grid.change_algorithm(AlgorithmType.NR_KLU)
+        grid.add_storage_slackbus(0, 1.)
+        grid.change_p_storage(0, 10.)
+        return grid
+
+    def test_storage_in_the_slack_taken_out(self):
+        """the row's distributed slack without the storage unit it disconnects"""
+        grid = self._storage_in_the_slack()
+        actions = [self._topo_act((ElementType.storage, 0, -1)), TopoAction()]
+        sweep = self._sweep(actions, grid=grid, change_algorithm=AlgorithmType.NR_KLU)
+        self.assertEqual(sweep.get_status(), 1)
+        for row, action in enumerate(actions):
+            with self.subTest(row=row):
+                self._assert_row_matches(sweep, row, action, grid=grid)
+
+    def test_storage_in_the_slack_move_refused(self):
+        """moved, it would take its share on another bus: the slack set would change with the
+        row, refused as for a generator"""
+        grid = self._storage_in_the_slack()
+        moved = self._topo_act((ElementType.storage, 0, 2), (ElementType.line_or, 7, 2))
+        with self.assertRaises(RuntimeError) as cm:
+            self._sweep([TopoAction(), moved], grid=grid, change_algorithm=AlgorithmType.NR_KLU)
+        self.assertIn("row 1", str(cm.exception))
+        self.assertIn("storage unit 0", str(cm.exception))
+        self.assertIn("slack", str(cm.exception))
 
 
 class TestScenarioSweepTopologyPhysical(unittest.TestCase):
@@ -685,6 +1320,25 @@ class TestScenarioSweepTopologyGrid2op(unittest.TestCase):
                          [str(self.env.name_line[3]), str(self.env.name_line[5])])
         for row in res.post_contingency_results:
             self.assertTrue(row.converged)
+
+    def test_run_reports_a_diverging_base_case(self):
+        """the "n" powerflow diverging is reported by run(), with what each row
+        disconnects, topological actions or not"""
+        actions = [self.env.action_space({}), self.env.action_space({"set_line_status": [(2, -1)]})]
+        sweep = ScenarioSweep(self.env)
+        sweep.compute_limit_violations = True
+        sweep.modify_load_p(np.tile(self.obs.load_p, (len(actions), 1)))
+        sweep.set_topo_actions(actions)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            # a tolerance no powerflow reaches: the "n" case diverges
+            sweep.compute(tol=1e-30, ignore_errors=True)
+        self.assertNotEqual(sweep.computer.get_status(), 1)
+        res = sweep.run()
+        self.assertFalse(res.pre_contingency_result.converged)
+        self.assertEqual([row.element_ids for row in res.post_contingency_results], [[], [2]])
+        for row in res.post_contingency_results:
+            self.assertFalse(row.converged)
 
 
 if __name__ == "__main__":

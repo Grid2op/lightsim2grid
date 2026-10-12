@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-// Tests of the outer-loop driver of the NROuter_* algorithms (NROuterAlgo): the order in
+// Tests of the outer-loop driver of the NROuter_* algorithms (OuterLoopAlgo): the order in
 // which OpenLoadFlow's engine runs, re-runs and stops the loops, and the one-analyze
 // premise. The loops here are scripted stand-ins that say STABLE / UNSTABLE / FAILED on cue
 // and log every call; the real loops have their own tests. C++14 only (project policy).
@@ -20,6 +20,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "Solvers.hpp"
 #include "powerflow_algorithm/outer_loop/BaseOuterLoop.hpp"
 
 using Catch::Approx;
@@ -100,7 +101,7 @@ class ScriptedLoop final : public BaseOuterLoop
             const std::size_t pos = std::min(calls_, script_.size() - 1);
             ++calls_;
             const OuterLoopStatus res = script_[pos];
-            if (res == OuterLoopStatus::UNSTABLE) *ctx.state->Sbus *= 1.01;
+            if (res == OuterLoopStatus::UNSTABLE) *ctx.injections->Sbus *= 1.01;
             return res;
         }
         void _cleanup(OuterContext &) override { log_->push_back(name_ + ".cleanup"); }
@@ -123,15 +124,43 @@ class DeclaringLoop final : public BaseOuterLoop
 {
     protected:
         std::string _name() const override { return "Declaring"; }
-        void _declare(const OuterContext & ctx, ls2g::OuterDeclaration & decl) const override {
+        void _declare(const OuterContext & ctx) const override {
             const ls2g::SolverBusIdVect & pv = ctx.grid->get_ac_pv_solver();
-            for (std::size_t i = 0; i < pv.size(); ++i) decl.add_switchable_vm_bus(pv[i].cast_int());
+            for (std::size_t i = 0; i < pv.size(); ++i) ctx.controls->reserve_bus_voltage(pv[i].cast_int());
         }
         void _detect(const OuterContext &, std::vector<LimitViolation> &) const override {}
         OuterLoopStatus _check(OuterContext &) override { return OuterLoopStatus::STABLE; }
         std::unique_ptr<BaseOuterLoop> _clone() const override {
             return std::unique_ptr<BaseOuterLoop>(new DeclaringLoop(*this));
         }
+};
+
+// a loop with one real parameter that logs it on every check: which clone the solve runs
+class ProbeLoop final : public BaseOuterLoop
+{
+    public:
+        ProbeLoop(real_type eps, std::shared_ptr<std::vector<real_type> > seen):
+            eps_(eps), seen_(std::move(seen)) {}
+
+    protected:
+        std::string _name() const override { return "Probe"; }
+        void _detect(const OuterContext &, std::vector<LimitViolation> &) const override {}
+        OuterLoopStatus _check(OuterContext &) override {
+            seen_->push_back(eps_);
+            return OuterLoopStatus::STABLE;
+        }
+        std::unique_ptr<BaseOuterLoop> _clone() const override {
+            return std::unique_ptr<BaseOuterLoop>(new ProbeLoop(*this));
+        }
+        ls2g::AlgoConfig _get_params() const override {
+            ls2g::AlgoConfig res;
+            res.real_params.push_back(eps_);
+            return res;
+        }
+
+    private:
+        real_type eps_;
+        std::shared_ptr<std::vector<real_type> > seen_;
 };
 
 const OuterLoopStatus S = OuterLoopStatus::STABLE;
@@ -360,4 +389,39 @@ TEST_CASE("a rejected configuration changes nothing", "[outer_loop]")
     CHECK_THROWS(grid.set_ac_algo_config(cfg));
     CHECK(grid.get_ac_algo_config().int_params == before.int_params);
     CHECK(grid.get_ac_algo_config().real_params == before.real_params);
+}
+
+TEST_CASE("a loop whose parameter changed is replaced, however small the change", "[outer_loop]")
+{
+    auto seen = std::make_shared<std::vector<real_type> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ProbeLoop>(1e-7, seen));
+    REQUIRE(solve(grid).size() == 3);
+    REQUIRE_FALSE(seen->empty());
+    CHECK(seen->back() == 1e-7);
+
+    // the same loop, its parameter changed far below what a decimal rendering keeps
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ProbeLoop>(1e-9, seen));
+    REQUIRE(solve(grid).size() == 3);
+    CHECK(seen->back() == 1e-9);
+}
+
+TEST_CASE("NROuter declares the capabilities of the Newton it wraps", "[outer_loop]")
+{
+    // BaseAlgo's contract: each family's constants, readable without an instance, agree with
+    // what an instance answers
+    using Algo = ls2g::NROuter_SparseLU;
+    const Algo algo;
+    const bool hvdc = Algo::SUPPORTS_HVDC_DROOP;
+    const bool remote = Algo::SUPPORTS_REMOTE_VOLTAGE_CONTROL;
+    const bool mismatch = Algo::FILLS_BUS_MISMATCH;
+    CHECK(hvdc == algo.supports_hvdc_droop());
+    CHECK(remote == algo.supports_remote_voltage_control());
+    CHECK(mismatch == algo.fills_bus_mismatch());
+    CHECK(hvdc);
+    CHECK(remote);
+    CHECK(mismatch);
 }

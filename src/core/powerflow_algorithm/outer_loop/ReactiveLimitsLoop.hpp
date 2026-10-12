@@ -30,14 +30,13 @@ class LSGrid;
  * every PV bus would switch, the strongest one stays PV (highest nominal voltage, then
  * highest target P).
  *
- * Fixed pattern. A controller bus holding its own voltage (the ordinary PV path) is
- * declared switchable (its Vm unknown and Q row reserved, pinned while it is PV); making
- * it PQ is a value edit of the algorithm's injection (OuterState::Sbus) and of the pinned
- * set (OuterState::pq_buses); making it PV again resets its magnitude to its set-point
- * (OuterState::vm_set). The bus' units share what is frozen as the results split any bus'
+ * Fixed pattern. A controller bus holding its own voltage (the ordinary PV path) reserves a
+ * BusVoltageControl (its Vm unknown and Q row, pinned while it is PV); making it PQ is a
+ * value edit of the algorithm's injection (OuterInjections::Sbus) and of that control; making it
+ * PV again resets its magnitude to its set-point (OuterControls::reset_vm). The bus' units share what is frozen as the results split any bus'
  * reactive power. A bus whose units are controllers of a voltage-control group (remote
  * regulation, an SVC) is frozen by holding each of them at its own limit
- * (OuterState::controller_hold_q, VoltageControl::set_held_controllers), the group's other
+ * (VoltageControllerHold, VoltageControl::set_held_controllers), the group's other
  * controllers regulating on; released, they regulate again.
  *
  * Trigger (detect): bus_q_check (BusQCheck.hpp) on the PV buses, compared with the
@@ -47,32 +46,43 @@ class LSGrid;
  * An SVC's limits are its susceptance range at the bus' voltage, so they move with the
  * solve. With `robust_mode`, a remote controller bus whose own voltage is unrealistic is
  * frozen at its units' target Q (MIN_REALISTIC_V / MAX_REALISTIC_V in OpenLoadFlow) and
- * restarted from 1 pu, as is one frozen at a limit with such a voltage. A generator's limits
- * follow the target P an outer loop gave it (LSGrid::gen_limits_at_outer_target, its
+ * restarted from `robust_restart_vm_pu`, as is one frozen at a limit with such a voltage. A
+ * generator's limits follow the target P an outer loop gave it (LSGrid::gen_limits_at_outer_target, its
  * capability curve), so a frozen bus whose units moved is frozen again at the new limit.
  */
 class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
 {
     public:
-        /// OpenLoadFlow's reactiveLimitsMaxPqPvSwitch
-        int max_pq_pv_switch = 3;
-        /// OpenLoadFlow's maxReactivePowerMismatch (its newtonRaphsonConvEpsPerEq with the
-        /// default stopping criterion), pu of OpenLoadFlow's own 100 MVA base
-        real_type max_reactive_power_mismatch = 1e-4;
-        static constexpr real_type OLF_SB_MVA = 100.;
-        /// OpenLoadFlow's voltageRemoteControlRobustMode: a remote controller whose own bus'
-        /// voltage is unrealistic stops regulating, at its units' target Q, its bus back at 1 pu
-        bool robust_mode = true;
-        /// OpenLoadFlow's minRealisticVoltage / maxRealisticVoltage, pu (the robust mode
-        /// compares with them, with a margin)
-        real_type min_realistic_voltage = 0.8;
-        real_type max_realistic_voltage = 1.2;
-        /// OpenLoadFlow's REALISTIC_VOLTAGE_MARGIN
-        static constexpr real_type REALISTIC_VOLTAGE_MARGIN = 1.02;
+        /// The loop's parameters, OpenLoadFlow's values by default; fixed at construction.
+        struct Params {
+            /// OpenLoadFlow's reactiveLimitsMaxPqPvSwitch
+            int max_pq_pv_switch = 3;
+            /// OpenLoadFlow's maxReactivePowerMismatch (its newtonRaphsonConvEpsPerEq with the
+            /// default stopping criterion), pu of `mismatch_base_mva`
+            real_type max_reactive_power_mismatch = 1e-4;
+            /// the base of max_reactive_power_mismatch, MVA (OpenLoadFlow's own)
+            real_type mismatch_base_mva = 100.;
+            /// OpenLoadFlow's voltageRemoteControlRobustMode: a remote controller whose own bus'
+            /// voltage is unrealistic stops regulating, at its units' target Q, its bus restarted
+            /// at `robust_restart_vm_pu`
+            bool robust_mode = true;
+            /// OpenLoadFlow's minRealisticVoltage / maxRealisticVoltage, pu (the robust mode
+            /// compares with them, with a margin)
+            real_type min_realistic_voltage = 0.8;
+            real_type max_realistic_voltage = 1.2;
+            /// OpenLoadFlow's REALISTIC_VOLTAGE_MARGIN
+            real_type realistic_voltage_margin = 1.02;
+            /// the magnitude the robust mode restarts a bus from, pu
+            real_type robust_restart_vm_pu = 1.;
+        };
+
+        ReactiveLimitsLoop();
+        explicit ReactiveLimitsLoop(const Params & params);
+        const Params & params() const { return params_; }
 
     protected:
         std::string _name() const override { return "ReactiveLimits"; }
-        void _declare(const OuterContext & ctx, OuterDeclaration & decl) const override;
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;
@@ -82,7 +92,6 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             return std::unique_ptr<BaseOuterLoop>(new ReactiveLimitsLoop(*this));
         }
         AlgoConfig _get_params() const override;
-        void _set_params(const AlgoConfig & params) override;
 
     private:
         /// A controller bus, and where the loop left it.
@@ -103,8 +112,10 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             real_type frozen_q = 0.;     ///< MVar, while frozen
             int nb_pv_pq = 0;        ///< how many times it was switched PV -> PQ
             /// an idle standby SVC's bus (a voltage monitor, held by the plan): checked only
-            /// once the VoltageMonitoring loop switched it on (OuterState::svc_target_vm)
+            /// once the VoltageMonitoring loop switched it on (StandbySvcControl)
             int monitor_svc = -1;
+            /// a local bus' PV / PQ switch (null for the others)
+            BusVoltageControl * voltage = nullptr;
         };
 
         /// the plan of every controller bus of `ctx` (bus_q_check)
@@ -141,6 +152,8 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         // per solve (see _initialize)
         bus_q_check::BusQPlan plan_;
         std::vector<ControllerBus> buses_;
+
+        const Params params_;
 };
 
 }  // namespace ls2g

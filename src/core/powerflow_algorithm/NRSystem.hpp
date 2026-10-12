@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstring>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 #include <set>
 #include <stdexcept>
@@ -1119,7 +1120,7 @@ class LS2G_API VoltageControl
         // (v_row, q_col) slot of every group's first controller, and in each sharing row an
         // entry towards every other controller of the group, so that the reference of the
         // sharing can be any active one. Caller-set, before the sparsity build it should
-        // affect (an outer loop's declaration, see NROuterAlgo); off, nothing changes.
+        // affect (an outer loop's declaration, see OuterLoopAlgo); off, nothing changes.
         void set_may_hold_controllers(bool val) { may_hold_ = val; }
 
         // Hold some controllers at a reactive output by value, for the next Newton solves:
@@ -1579,10 +1580,20 @@ class LS2G_API VoltageControl
  * contributions may resolve to the same J position, so fill_J zeroes J then
  * accumulates (+=).
  */
+// whether T is one of Ts (a recursive trait: the core stays C++14)
+template <class T, class... Ts>
+struct nr_is_one_of : std::false_type {};
+template <class T, class U, class... Ts>
+struct nr_is_one_of<T, U, Ts...>
+    : std::conditional<std::is_same<T, U>::value, std::true_type, nr_is_one_of<T, Ts...> >::type {};
+
 template <typename... Rest>
 class NRSystem<Base, Rest...>
 {
 public:
+    // whether the slack is distributed (the MultiSlack extension is in Rest...)
+    static constexpr bool HAS_MULTI_SLACK = nr_is_one_of<MultiSlack, Rest...>::value;
+
     NRSystem() noexcept:
         timer_dSbus_(0.),
         timer_fillJ_(0.),

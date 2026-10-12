@@ -229,3 +229,40 @@ TEST_CASE("a monitor switched on is held at its limit by ReactiveLimits", "[oute
     // held at b_max V², V that of the solve which switched it (the value is frozen)
     CHECK(svc_q(grid) == Approx(0.05 * std::norm(V(2)) * 100.).margin(1e-3));
 }
+
+TEST_CASE("a switch-on is recorded as taken only when the SVC is switched on", "[outer][svc]")
+{
+    LSGrid grid = make_grid();
+    set_monitor(grid, 0.99, 1.10);
+    REQUIRE(solve_outer(grid).size() == 4);  // builds the bus maps and holds the monitor
+
+    // the monitored bus below its low threshold
+    CplxVect V = CplxVect::Constant(4, {1.0, 0.});
+    V(grid.id_me_to_ac_solver()[2].cast_int()) = {0.95, 0.};
+    CplxVect Sbus = CplxVect::Zero(4);
+    ls2g::OuterInjections state;
+    state.Sbus = &Sbus;
+    state.Sbus_init = &Sbus;
+
+    for (const bool reserved : {true, false}) {
+        CAPTURE(reserved);
+        ls2g::OuterControls controls;
+        std::vector<ls2g::OuterDecision> trace;
+        ls2g::OuterContext ctx;
+        ctx.grid = &grid;
+        ctx.V = &V;
+        ctx.injections = &state;
+        ctx.controls = &controls;
+        ctx.trace = &trace;
+        VoltageMonitoringLoop loop;
+        REQUIRE(loop.is_needed(ctx));
+        if (reserved) loop.declare(ctx);
+        loop.initialize(ctx);
+        const OuterLoopStatus status = loop.check(ctx);
+        REQUIRE(trace.size() == 1);
+        CHECK(trace[0].action == "SWITCH_ON");
+        // without its control the loop cannot switch the SVC on: the trace must not say it did
+        CHECK(trace[0].taken == reserved);
+        CHECK(status == (reserved ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE));
+    }
+}

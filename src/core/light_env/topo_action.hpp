@@ -185,6 +185,20 @@ class TopoAction
                     }
                 }
             }
+            // contradictions between the two ends of a branch: one disconnected (which
+            // disconnects the branch), the other connected to a busbar (which connects it).
+            // grid2op refuses it as well (InvalidLineStatus).
+            for(size_t i = 0; i < set_bus_.size(); ++i){
+                const SetBusEntry & a = set_bus_[i];
+                if(a.g2op_line_id < 0 || a.local_bus != -1) continue;
+                for(const auto & b : set_bus_){
+                    if(b.g2op_line_id != a.g2op_line_id || b.local_bus <= 0) continue;
+                    std::ostringstream exc_;
+                    exc_ << "TopoAction::check_validity: line " << a.g2op_line_id << " has one end "
+                         << "disconnected and the other connected to a busbar with set_bus. This is ambiguous.";
+                    throw std::invalid_argument(exc_.str());
+                }
+            }
             checked_ = true;
         }
 

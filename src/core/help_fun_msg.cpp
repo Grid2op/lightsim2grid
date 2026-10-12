@@ -743,6 +743,11 @@ const std::string DocSolver::DistributedSlackLoop = R"mydelimiter(
     units cannot take all of it, the solve fails (``fail_on_residue``) or the slack bus keeps
     the rest.
 
+    Every parameter is a keyword argument of the constructor, OpenLoadFlow's value by default,
+    and read-only afterwards: ``slack_bus_p_max_mismatch_mw``, ``fail_on_residue``,
+    ``p_residue_eps_mw`` (what is left to share below it is nothing) and ``moved_fraction``
+    (the units moved when they moved by more than this fraction of ``p_residue_eps_mw``).
+
 )mydelimiter";
 
 const std::string DocSolver::HvdcAcEmulationLimitsLoop = R"mydelimiter(
@@ -776,11 +781,17 @@ const std::string DocSolver::ReactiveLimitsLoop = R"mydelimiter(
     (``name()`` is ``"ReactiveLimits"``).
 
     A bus whose units hold its voltage needs some reactive power from them. When that leaves
-    the sum of their reactive limits by more than ``max_reactive_power_mismatch`` (pu of a
-    100 MVA base, OpenLoadFlow's ``newtonRaphsonConvEpsPerEq``), the bus is switched PQ with
-    its units at that limit; a frozen bus whose voltage came back on the side of its
-    set-point the limit was stopping it from reaching is switched PV again, at most
-    ``max_pq_pv_switch`` times. If every PV bus would switch, the strongest one stays PV.
+    the sum of their reactive limits by more than ``max_reactive_power_mismatch`` (pu of
+    ``mismatch_base_mva``, OpenLoadFlow's ``newtonRaphsonConvEpsPerEq`` on its 100 MVA base),
+    the bus is switched PQ with its units at that limit; a frozen bus whose voltage came back
+    on the side of its set-point the limit was stopping it from reaching is switched PV again,
+    at most ``max_pq_pv_switch`` times. If every PV bus would switch, the strongest one stays
+    PV. With ``robust_mode``, a remote controller whose own bus' voltage leaves the realistic
+    band (``min_realistic_voltage`` / ``max_realistic_voltage``, narrowed by
+    ``realistic_voltage_margin``) is frozen and restarted from ``robust_restart_vm_pu``.
+
+    Every parameter is a keyword argument of the constructor, OpenLoadFlow's value by default,
+    and read-only afterwards.
 
 )mydelimiter";
 
@@ -2058,16 +2069,20 @@ const std::string DocIterator::svc_standby = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocIterator::can_participate_slack = R"mydelimiter(
-    Whether this unit (a generator or a storage unit) is one an outer loop left out of the
-    distributed slack ONLY because it sat at an active limit in the reference solve (see
+    Whether this unit (a generator or a storage unit) can be in the distributed slack. Every
+    slack participant is; so is a unit that left the slack because it saturated at an active
+    limit (:func:`lightsim2grid.network.LSGrid.redistribute_active_power`), and one an outer loop
+    left out of the slack ONLY because it sat at an active limit in the reference solve (see
     :func:`lightsim2grid.network.LSGrid.set_gen_can_participate_slack` /
     :func:`lightsim2grid.network.LSGrid.set_storage_can_participate_slack`, filled by
     ``init_from_pypowsybl(can_participate_slack=...)`` from what ``bake_outer_loops`` capped).
-    ``False`` by default.
+    Removing a unit from the slack by hand clears it.
 
-    Never read by the Newton solve: only the bounded redistribution pre-pass counts it as a
-    participant, with :attr:`can_participate_slack_weight`, within its ``[min_p, max_p]`` --
-    so it only moves away from the limit it sits at.
+    While such a unit is out of the slack, the Newton solve does not read it: the bounded
+    redistribution pre-pass counts it as a participant, with
+    :attr:`can_participate_slack_weight`, within its ``[min_p, max_p]`` -- so it only moves away
+    from the limit it sits at -- and it goes back into the slack, with that weight, as soon as it
+    is reconnected or its set-point is moved off its limits.
 
 )mydelimiter";
 
@@ -2079,7 +2094,8 @@ const std::string DocIterator::can_participate_slack_weight = R"mydelimiter(
 
 const std::string DocIterator::can_participate_slack_overshoot_mw = R"mydelimiter(
     When :attr:`can_participate_slack`: how far beyond the limit it sits at this unit was in the
-    reference solve, in MW (``0`` by default). The redistribution pre-pass only moves it away
+    reference solve, in MW (``0`` by default), signed: positive above its upper limit, negative
+    below its lower one. The redistribution pre-pass only moves it away
     from that limit once the common shift of the distribution has used it up, as OpenLoadFlow,
     which shares the slack from the raw set-points, does (see
     :func:`lightsim2grid.network.LSGrid.set_gen_can_participate_slack_overshoot`).
@@ -3910,7 +3926,8 @@ const std::string DocLSGrid::turnedoff_pv = R"mydelimiter(
 
 const std::string DocLSGrid::set_reference_slack_bus = R"mydelimiter(
     Force a (gridmodel) bus to be the angle reference among the slack buses (reordered to
-    ``slack_ids[0]``) without changing the slack set / weights; ``-1`` clears it.
+    ``slack_ids[0]``) without changing the slack set / weights; ``-1`` clears it. Any other
+    id outside the buses of the grid raises.
 
     It is kept by :func:`copy`, hence by the batch algorithms built from this grid, which use
     it as the reference of the whole batch: with ``handle_disconnected_grid``, the
@@ -4284,14 +4301,15 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
     :class:`lightsim2grid.elements.HvdcLineContainer`.
 
     The generators and storage units of the (distributed) slack whose bus is outside the main
-    component are first removed from the slack (as with :func:`remove_gen_slackbus` /
-    :func:`remove_storage_slackbus`), so that the slack is only distributed on the main component.
-    A reference slack bus forced with :func:`set_reference_slack_bus` that is outside the main
-    component is cleared. When no slack is left in the main component, it is given one as
+    component are disconnected with the rest of their island: they stay in the slack but take no
+    share of it while disconnected, so that the slack is only distributed on the main component,
+    and take their share again once reconnected (:func:`reactivate_gen`, :func:`update_topo`,
+    ...). A reference slack bus forced with :func:`set_reference_slack_bus` that is outside the
+    main component is cleared. When no slack is left in the main component, it is given one as
     :func:`assign_slack_to_most_connected` does, the buses compared on their nominal voltage
     first (OpenLoadFlow's most meshed bus is among the highest nominal voltage ones): a strong bus
-    absorbs what the islanding took out. Reactivating the elements afterwards does not put
-    them back in the slack: work on a copy (:func:`copy`) if the original slack is needed afterwards.
+    absorbs what the islanding took out. That replaces the whole slack, the stranded units
+    included: work on a copy (:func:`copy`) if the original slack is needed afterwards.
 
     With ``redistribute_slack`` (default ``True``), the active power the islanding takes out --
     the set-points of the stranded generators and static generators, minus the stranded loads,
@@ -4309,6 +4327,37 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
 
     Requires at least one slack bus to already be defined (see
     :func:`assign_slack_to_most_connected`); raises otherwise.
+
+)mydelimiter";
+
+const std::string DocLSGrid::cap_slack_at_active_limits = R"mydelimiter(
+    OpenLoadFlow's distributed-slack rule applied to the solved state of this grid: a unit of the
+    distributed slack (generator or storage unit) that the last :func:`ac_pf` pushed past its
+    ``[min_p, max_p]`` by more than ``tol_mw`` -- a ``LOW_P`` / ``HIGH_P`` record of
+    :func:`get_physical_violations` -- leaves the slack at that limit, and the grid is solved again
+    (``max_iter``, ``tol``, starting from its current voltages), until no unit is pushed out
+    (``max_rounds``).
+
+    The Newton solve's distributed slack has no bounds: it shares its whole mismatch between the
+    participants by their weights, so a unit sitting at its ``max_p`` gets a share of a positive
+    mismatch, which OpenLoadFlow never gives it. A grid whose set-points come from an OpenLoadFlow
+    solve (see ``bake_outer_loops``) typically has such units, and a small mismatch of its own
+    (its losses are not exactly OpenLoadFlow's): its base case then reports them, and so does
+    nearly every contingency of a batch run on it.
+
+    A capped unit gets its set-point at the limit (generator convention) and is flagged as
+    :func:`set_gen_can_participate_slack` (resp. :func:`set_storage_can_participate_slack`) does,
+    with its slack weight: out of the Newton solve's slack, still counted by the bounded
+    redistribution pre-pass (the batch algorithms' ``redistribute_slack``) within its range, so a
+    contingency that needs less generation moves it away from its limit, as OpenLoadFlow would.
+    When no unit would be left in the slack, nothing is capped (OpenLoadFlow then keeps them all).
+    A capped unit may hold the angle reference: the reference then moves to another participant,
+    whose angle stays where the current voltages put it.
+
+    Modifies the grid (work on a :func:`copy` to keep the original). Returns the records acted on
+    (``value`` the active power the solve gave, ``limit`` where the unit now sits), empty when
+    nothing had to be capped. Raises if no AC powerflow converged on this grid before, or if it no
+    longer converges once capped.
 
 )mydelimiter";
 
@@ -4344,13 +4393,19 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the ``GENERATOR``, ``value`` its own bus voltage and
       ``limit`` the bound, in kV; AC only);
     - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
+    - an angle-droop hvdc line flagged with :func:`set_hvdc_ac_emulation_frozen` (one an outer
+      loop froze at its active power limit) whose droop would now ask for less than that limit
+      by more than ``tol_mva``: OpenLoadFlow's ``AcHvdcAcEmulationLimits`` loop would leave it in
+      AC emulation (``HVDC_AC_EMULATION_RELEASE`` on the ``HVDC``, ``side`` the direction it is
+      frozen in, ``value`` the flow its droop asks for in that direction and ``limit`` the
+      limit, in MW; AC and DC);
     - a generator or storage unit of the distributed slack whose share of the imbalance lands it
       past its ``[min_p, max_p]`` (:func:`set_gen_p_limits` / :func:`set_storage_p_limits`;
       ``LOW_P`` / ``HIGH_P``).
 
     Nothing is enforced: the solution is what it is, this only reports it. ``tol_mva`` is the
     absolute slack (MW / MVAr) on every power comparison, ``tol_vm_pu`` the one (pu) on the
-    voltage comparisons of the PQ -> PV and the standby SVC checks. Returns a list of ``LimitViolation``
+    voltage comparisons of the PQ -> PV, the standby SVC and the remote voltage control checks. Returns a list of ``LimitViolation``
     (``element_type``, ``element_id``, ``violation_type``, ``value``, ``limit``, ``name``), empty
     when every limit holds.
 
@@ -4403,12 +4458,23 @@ const std::string DocLSGrid::redistribute_active_power = R"mydelimiter(
     units that reached a bound are removed from the distributed slack
     (:func:`remove_gen_slackbus` / :func:`remove_storage_slackbus`), so that the next powerflow
     only shares what is left (the change in the losses) on the units that can still move. If
-    every unit reaches a bound, all of them stay in the slack (a powerflow needs one), and the
-    report says how much could not be placed.
+    every unit of the distributed slack reaches a bound, all of them stay in the slack (a
+    powerflow needs one), even when a unit only flagged with
+    :func:`set_gen_can_participate_slack` / :func:`set_storage_can_participate_slack` still
+    has room (it takes the rest of the mismatch, but the powerflow does not distribute on it),
+    and the report says how much could not be placed.
 
-    Note that a generator or storage unit leaving the slack this way does not come back on its
-    own; and when the FIRST slack generator leaves it, the angle reference moves to the next one
-    (a constant angle shift, the magnitudes are unchanged).
+    A generator or storage unit leaving the slack this way keeps its ``can_participate_slack``
+    flag: it goes back into the slack when its set-point is moved off that limit
+    (:func:`change_p_gen` / :func:`change_p_storage`) or when it is reconnected off it. When the
+    FIRST slack generator leaves the slack, the angle reference moves to the next one (a constant
+    angle shift, the magnitudes are unchanged).
+
+    A unit flagged with an overshoot (``can_participate_slack_overshoot_mw``, what the reference
+    solve left it beyond its limit) keeps what this call did not use up of it: the next call
+    starts from there, so that two calls in a row end where one call sharing their sum would. A
+    call never makes an overshoot: a unit it saturates leaves its limit at once on a mismatch
+    of the other sign. A unit back in the slack has none.
 
     Returns a :class:`SlackRedistributionReport` (``mismatch_mw``, ``nb_participants``,
     ``nb_saturated``, ``nb_rounds``, ``not_distributed_mw``, ``all_saturated``).
@@ -6093,7 +6159,7 @@ const std::string DocLSGrid::set_remote_voltage_control_vm_range = R"mydelimiter
 
     Never read by a powerflow. ``NaN`` (the default) on both sides: no check; ``NaN`` on one
     side only checks the other. Copied with the grid, so a batch algorithm built from it
-    inherits it; not part of ``get_state`` / the binary format.
+    inherits it, and kept by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------
@@ -8026,8 +8092,9 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
     element-level violation; ``NOT_SIMULATED`` or ``DIVERGENCE`` for a contingency-level one (see
     :class:`ViolationElementType`'s ``GRID``); ``LOW_Q`` / ``HIGH_Q``, ``LOW_P`` / ``HIGH_P`` and
     ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``, ``LOW_VOLTAGE_SVC_STANDBY`` /
-    ``HIGH_VOLTAGE_SVC_STANDBY`` and ``LOW_VOLTAGE_REMOTE_CONTROL`` /
-    ``HIGH_VOLTAGE_REMOTE_CONTROL`` for the physical checks of ``compute_physical_violations`` (see
+    ``HIGH_VOLTAGE_SVC_STANDBY``, ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+    ``HIGH_VOLTAGE_REMOTE_CONTROL`` and ``HVDC_AC_EMULATION_RELEASE`` for the physical checks of
+    ``compute_physical_violations`` (see
     each value's own documentation):
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
@@ -8060,7 +8127,8 @@ const std::string DocContingencyAnalysis::element_id = R"mydelimiter(
 
 const std::string DocContingencyAnalysis::side = R"mydelimiter(
     ``1`` or ``2`` for a ``LINE`` / ``TRAFO`` violation (which side's current limit was
-    violated); unused (``0``) for ``BUS`` / ``GRID``.
+    violated) and for an ``HVDC`` one (the direction: ``1`` for a flow from side 1 to side 2);
+    unused (``0``) for ``BUS`` / ``GRID``.
 
 )mydelimiter";
 
@@ -8075,7 +8143,8 @@ const std::string DocContingencyAnalysis::value = R"mydelimiter(
     in kV, of the bus the pinned generator would regulate; for ``LOW_VOLTAGE_SVC_STANDBY`` /
     ``HIGH_VOLTAGE_SVC_STANDBY`` the voltage, in kV, of the bus the standby SVC regulates; for
     ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` the voltage, in kV, of the
-    remote controller's own bus); unused (``NaN``) for
+    remote controller's own bus; for ``HVDC_AC_EMULATION_RELEASE`` the flow, in MW, the frozen
+    line's droop asks for in the direction ``side`` names); unused (``NaN``) for
     ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";
@@ -8085,7 +8154,8 @@ const std::string DocContingencyAnalysis::limit = R"mydelimiter(
     generator's target voltage, for ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY``
     the standby automaton's threshold, both in kV of the regulated bus; for
     ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` the realistic bound, in kV
-    of the controller's own bus); unused (``NaN``) for
+    of the controller's own bus; for ``HVDC_AC_EMULATION_RELEASE`` the limit the line is frozen
+    at, in MW); unused (``NaN``) for
     ``NOT_SIMULATED`` / ``DIVERGENCE``.
 
 )mydelimiter";

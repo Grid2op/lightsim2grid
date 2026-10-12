@@ -18,29 +18,24 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         int                              max_iter,
         real_type                        tol)
 {
-    if (!is_linear_solver_valid()) return false;
-
-    reset_timer();
-    err_ = ErrorType::NoError;
+    if (!begin_solve()) return false;
     auto timer = CustTimer();
 
     bool need_init = false;
-    if (!_setup(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, need_init)) {
+    if (!setup(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, need_init, [](){})) {
         timer_total_nr_ += timer.duration();
         return false;
     }
-    const bool res = _newton(max_iter, tol, need_init);
-    _finalize();
+    const bool res = newton(max_iter, tol, need_init);
+    finalize();
     timer_total_nr_ += timer.duration();
     return res;
 }
 
-// Phases 1 and 2 of a solve: decide whether the topology changed, point the system at
-// this solve's Ybus / V / Sbus, and (only if it changed) rebuild the ledger and the
-// sparsity of J. `need_init` tells _newton whether the linear solver must analyze.
-// Returns false if the linear solver could not be reset (err_ says why).
+// Phases 1 and 2 of a solve, see the declaration.
 template<class LinearSolver, class NRSystem>
-bool NRAlgo<LinearSolver, NRSystem>::_setup(
+template<class BeforeInitTopology>
+bool NRAlgo<LinearSolver, NRSystem>::setup(
         const EigenRefConstCplxSpMat     & Ybus,
         const Eigen::Ref<const CplxVect> & V,
         const Eigen::Ref<const CplxVect> & Sbus,
@@ -48,7 +43,8 @@ bool NRAlgo<LinearSolver, NRSystem>::_setup(
         const Eigen::Ref<const RealVect> & slack_weights,
         const Eigen::Ref<const IntVect>  & pv,
         const Eigen::Ref<const IntVect>  & pq,
-        bool                             & need_init)
+        bool                             & need_init,
+        BeforeInitTopology               && before_init_topology)
 {
     auto timer_pre = CustTimer();
 
@@ -100,7 +96,7 @@ bool NRAlgo<LinearSolver, NRSystem>::_setup(
 
     // Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).
     if (need_rebuild) {
-        _before_init_topology();
+        before_init_topology();
         _system.init_topology(slack_ids, slack_weights, pv, pq);
     }
 
@@ -112,18 +108,17 @@ bool NRAlgo<LinearSolver, NRSystem>::_setup(
 #ifndef NDEBUG
         ybus_nnz_ = Ybus.nonZeros();  // only used by the debug check above
 #endif
-        _after_build_J_sparsity();
     }
     timer_pre_proc_ += timer_pre.duration();
     return true;
 }
 
-// The Newton iterations, from whatever state the system holds: the one _setup put it in,
+// The Newton iterations, from whatever state the system holds: the one setup put it in,
 // or -- for an outer loop resuming the solve -- the one the previous call left, possibly
 // edited by value. Always factorizes on its first iteration: analyze + factorize if
 // `need_init`, refactorize otherwise.
 template<class LinearSolver, class NRSystem>
-bool NRAlgo<LinearSolver, NRSystem>::_newton(int max_iter, real_type tol, bool need_init)
+bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool need_init)
 {
     auto timer_pre = CustTimer();
 
@@ -216,7 +211,7 @@ bool NRAlgo<LinearSolver, NRSystem>::_newton(int max_iter, real_type tol, bool n
 
 // After the last Newton iterations of a solve: publish the voltages and fold the timers.
 template<class LinearSolver, class NRSystem>
-void NRAlgo<LinearSolver, NRSystem>::_finalize()
+void NRAlgo<LinearSolver, NRSystem>::finalize()
 {
     // Synchronise BaseAlgo's voltage state
     V_  = _system.V();

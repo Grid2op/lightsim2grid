@@ -46,6 +46,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
 
     _apply_step_gen_v(i, V);
     _apply_step_topo_seed(i, V);
+    _apply_step_dc_vm_reset(i, V);
     _apply_step_vc_v_set(i, algo);
 
     // the Ybus edit, and its timer, only where Ybus varies at all: the hooks compile
@@ -70,12 +71,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            _record_row_solve_stats(i, algo);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
             // (and _record_row_bus_q, which reads the mismatch of the system this row
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
                 _record_row_physical(i, algo, V, sw, sb);
+                _record_row_gen_results(i, algo, Ybus, V, sw, sb);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -96,12 +99,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            _record_row_solve_stats(i, algo);
             // before the pinning is restored, and before the Ybus is put back: the
             // refreshed Jacobian has to describe the system THIS row solved, and so does
             // the state the physical-limit checks read
             if(conv){
                 _maybe_store_jacobian(i, algo);
                 _record_row_physical(i, algo, V, sw, sb);
+                _record_row_gen_results(i, algo, Ybus, V, sw, sb);
             }
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }
@@ -370,9 +375,24 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     std::vector<double> th_timer_solver(nb_thread, 0.);
     std::vector<int> th_diverge(nb_thread, -1);
     std::vector<std::exception_ptr> th_err(nb_thread);
+    // In DC a row's outage is not an edit of the Ybus copy but of the solver's own
+    // reduced matrix (YbusPolicy::Contingency::remove_from_Ybus -> update_internal_Ybus),
+    // which a freshly built algorithm does not have yet: editing it would read past
+    // its empty bus map, and its first solve would rebuild the matrix from the
+    // unedited Bbus anyway, dropping that row's outage. So a fresh DC worker solves
+    // the base case first, as the member algorithm did, and its range must then not
+    // ask for a full rebuild (needs_solver_init) that would undo the row's edit.
+    std::vector<char> th_needs_init(nb_thread, !reuse_workers);
 
     auto init_thread = [&](int t){
         if(algos[t] == nullptr) algos[t] = make_thread_algo();
+        controls[t] = _algo_controler;
+        // before the settings below: warmup_solver resets the algorithm, which
+        // clears its masking
+        if(!ac_solver_used && th_needs_init[t]){
+            warmup_solver(*algos[t], controls[t], Vinit_solver, max_iter, tol_);
+            th_needs_init[t] = 0;
+        }
         algos[t]->set_lazy_v(use_dc_lazy_v);
         algos[t]->set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         // freshly spawned -- no rebuild-invalidation needed (its very first
@@ -381,7 +401,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
         // the refactorize fallback the member algo got (see _maybe_prepare_masks /
         // _push_switchable_to_algo): a fresh algo starts without it
-        if(mask_mode || _has_pv_switching()) algos[t]->set_refactor_fallback(true);
+        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary()) algos[t]->set_refactor_fallback(true);
         // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
         // yet, so telling it here is enough -- its first build_J_sparsity() already
         // accounts for them. Starts fully pinned, like _algo; each row releases what
@@ -390,7 +410,6 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
             algos[t]->set_switchable_vm_buses(_switchable_buses_);
             algos[t]->set_pv_pinned_buses(_switchable_buses_);
         }
-        controls[t] = _algo_controler;
         ybus_copies[t] = ac_cache_.mat;
     };
 
@@ -399,15 +418,17 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     auto body = [&](int t){
         size_t b, e;
         split_range(nb_steps, nb_thread, static_cast<int>(t), b, e);
-        init_thread(t);
+        // the DC warm-up solves: an exception must reach th_err, not a worker's
+        // std::thread (which would terminate the process)
+        try { init_thread(t); } catch(...) { th_err[t] = std::current_exception(); return; }
         if(mask_mode){
             _maybe_run_range_masked(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used,
                                     max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_nb_converged[t], th_timer_solver[t],
-                                    th_diverge[t], th_err[t], !reuse_workers);
+                                    th_diverge[t], th_err[t], th_needs_init[t] != 0);
         } else {
             _run_range(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used, max_iter, tol_,
                       th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t],
-                      !reuse_workers);
+                      th_needs_init[t] != 0);
         }
     };
 
@@ -465,6 +486,18 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _algo.ac_solver_used();
 
+    // the slack pre-pass moves set-points by the slack weights and takes the units it
+    // saturates out of them: a single-slack algorithm ignores both, and the physical
+    // checks would read targets the solve never used
+    if(_redistribute_slack_ && !_algo.distributes_slack()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::compute: `redistribute_slack` needs an algorithm with a distributed "
+                "slack (a Newton-Raphson NR_*, the DC or the fast-decoupled one): the active one, "
+             << _algo.get_name() << ", puts the whole imbalance on the reference bus. Use "
+                "`change_algorithm`, or turn `redistribute_slack` off.";
+        throw std::runtime_error(exc_.str());
+    }
+
     const size_t nb_steps = _nb_steps();
 
     // ---- what of the three levels this call may keep ------------------------------
@@ -489,6 +522,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // next to it. Rows never reached this compute() (eg a TimeSeries chain that
     // aborts, or the diverging-"n"-case early return below) stay 0.
     _converged_mask_.assign(nb_steps, 0);
+    _row_solve_time_.assign(nb_steps, 0.);
+    _row_nb_iter_.assign(nb_steps, 0);
+    _gen_results_ = _compute_gen_results_ ?
+        RealMat::Zero(static_cast<Eigen::Index>(nb_steps), 2 * static_cast<Eigen::Index>(_grid_model.get_generators().nb())) :
+        RealMat();
 
     // limit-violation bookkeeping (ContingencyAnalysis only; no-op elsewhere)
     _refresh_defaults_vect_cache();
@@ -567,6 +605,12 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // reads the per-row injections above, the masks and the generator contingencies:
     // after all of them, before the "n" solve it leaves untouched)
     _prepare_slack_redistribution(nb_steps);
+    // A row whose slack weights differ from the base case's (a participant it disconnects,
+    // one its pre-pass saturates) zeroes a value of the Jacobian's slack column that the
+    // "n" factorization had non-zero, and KLU's refactorization keeps that pivot order:
+    // let it fall back to a numeric factorize there, as for masking / PV pinning. A
+    // bool store; the fallback only runs on a failure.
+    if(_row_slack_weights_vary()) _algo.set_refactor_fallback(true);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
@@ -575,6 +619,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // magnitude-reconstruction helpers do not need to know about SbusPolicy at all).
     const bool use_dc_lazy_v = !ac_solver_used && !_mask_mode();
     if(use_dc_lazy_v) _dc_gen_v_ = _sbus_gen_v();
+    _prepare_dc_row_vm_reset(Vinit, ac_solver_used, nb_steps);
 
     // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
     // factorization every row refactorizes into), plus this call's result buffers
