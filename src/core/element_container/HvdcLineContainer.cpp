@@ -72,6 +72,7 @@ void HvdcLineContainer::init(const Eigen::Ref<const Eigen::VectorXi> & bus1_id,
     converters_mode_ = IntVect(size);
     status_droop_ = IntVect::Zero(size);
     droop_enabled_ = droop_enabled;
+    ac_emulation_frozen_.assign(static_cast<std::size_t>(size), false);
     p0_mw_ = droop_p0_mw;
     // MW / degree -> MW / radian (my_180_pi_ = 180 / pi)
     k_mw_per_rad_ = droop_mw_per_deg * BaseConstants::my_180_pi_;
@@ -182,7 +183,8 @@ HvdcLineContainer::StateRes HvdcLineContainer::get_state() const
                                     k_mw_per_rad,
                                     pmax_1to2_mw,
                                     pmax_2to1_mw,
-                                    status_droop);
+                                    status_droop,
+                                    ac_emulation_frozen_);
     return res;
 }
 
@@ -201,6 +203,7 @@ void HvdcLineContainer::set_state(HvdcLineContainer::StateRes & my_state)
     std::vector<real_type> & pmax_1to2_mw = std::get<StateResIdx::PMAX_1TO2_MW>(my_state);
     std::vector<real_type> & pmax_2to1_mw = std::get<StateResIdx::PMAX_2TO1_MW>(my_state);
     std::vector<int> & status_droop = std::get<StateResIdx::STATUS_DROOP>(my_state);
+    std::vector<bool> & ac_emulation_frozen = std::get<StateResIdx::AC_EMULATION_FROZEN>(my_state);
 
     const int size = nb();
     check_size(loss_percent, size, "loss_percent");
@@ -215,6 +218,7 @@ void HvdcLineContainer::set_state(HvdcLineContainer::StateRes & my_state)
     check_size(pmax_1to2_mw, size, "pmax_1to2_mw");
     check_size(pmax_2to1_mw, size, "pmax_2to1_mw");
     check_size(status_droop, size, "status_droop");
+    check_size(ac_emulation_frozen, size, "ac_emulation_frozen");
 
     loss_percent_ = RealVect::Map(loss_percent.data(), loss_percent.size());
     loss_mw_ = RealVect::Map(loss_mw.data(), loss_mw.size());
@@ -228,6 +232,7 @@ void HvdcLineContainer::set_state(HvdcLineContainer::StateRes & my_state)
     pmax_1to2_mw_ = RealVect::Map(pmax_1to2_mw.data(), pmax_1to2_mw.size());
     pmax_2to1_mw_ = RealVect::Map(pmax_2to1_mw.data(), pmax_2to1_mw.size());
     status_droop_ = IntVect::Map(status_droop.data(), status_droop.size());
+    ac_emulation_frozen_ = ac_emulation_frozen;
     reset_results();
 }
 
@@ -332,7 +337,17 @@ void HvdcLineContainer::change_p(int hvdc_id, real_type new_p, DualAlgoControl &
         exc_ << ")";
         throw std::runtime_error(exc_.str());
     }
+    const int old_mode = converters_mode_(hvdc_id);
+    const real_type old_setpoint = p_setpoint_mw_(hvdc_id);
     update_targets_from_p1(hvdc_id, new_p, solver_control);
+    // a line an outer loop froze at its limit is no longer there once its set-point moves:
+    // its release (HvdcPCheck.hpp) means nothing any more, and its direction would be read
+    // off the new set-point. The same set-point written again keeps it.
+    if(ac_emulation_frozen_[hvdc_id] &&
+       (converters_mode_(hvdc_id) != old_mode ||
+        std::abs(p_setpoint_mw_(hvdc_id) - old_setpoint) > BaseConstants::_tol_equal_float)){
+        ac_emulation_frozen_[hvdc_id] = false;
+    }
 }
 
 void HvdcLineContainer::set_status_droop(int hvdc_id, int status, DualAlgoControl & solver_control)

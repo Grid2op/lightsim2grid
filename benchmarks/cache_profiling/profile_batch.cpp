@@ -7,9 +7,9 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 /**
- * Instruction-count audit of the BATCH algorithms -- TimeSeries and
- * ContingencyAnalysis -- the sibling of profile_cached_pf.cpp for the code that
- * runs one solve per row on a fixed Jacobian sparsity.
+ * Instruction-count audit of the BATCH algorithms -- TimeSeries,
+ * ContingencyAnalysis and ScenarioSweep -- the sibling of profile_cached_pf.cpp for
+ * the code that runs one solve per row on a fixed Jacobian sparsity.
  *
  * Same discipline: callgrind only ever COLLECTS the call under audit. Loading the
  * grid, the plain powerflow that seeds the batch, registering the rows and reading
@@ -42,6 +42,15 @@
  *                      ContingencyAnalysis from an already-solved grid: the copy of
  *                      the grid, 8 contingencies, compute(). One construction per
  *                      "row"; nothing is shared between two of them.
+ *   ss_ac              ScenarioSweep::compute() over the rows of ts_ac, each from
+ *                      the same seed: the floor of the next phase.
+ *   ss_topo_ac         idem with one topological action per row, all of them
+ *                      plain but the first, which moves a load and a line end to
+ *                      busbar 2 of a substation (find_split): one bus created for
+ *                      the whole batch -- the union layout gains a busbar that the
+ *                      base grid leaves isolated -- which every other row has to
+ *                      live with. Needs a grid with two busbars per substation
+ *                      (make_grids.py --two-busbars).
  *
  * The "per solve" figure the scripts print is per ROW here (per construction for
  * ca_construct). Running a compute phase with nb_rows = 1 and again with N gives,
@@ -86,6 +95,9 @@ using ls2g::real_type;
 using ls2g::AlgorithmType;
 using ls2g::TimeSeries;
 using ls2g::ContingencyAnalysis;
+using ls2g::ScenarioSweep;
+using ls2g::TopoAction;
+using ls2g::ElementType;
 
 namespace {
 
@@ -155,6 +167,57 @@ std::vector<int> first_n1(const LSGrid & grid, int nb)
     return res;
 }
 
+// The action of ss_topo_ac's first row: a load, and one powerline end of the same
+// substation, onto busbar 2 -- tried load by load, line end by line end, on a copy of
+// the grid, until the split keeps every bus solved plus the new one (busbar 2 fed by
+// the line, busbar 1 by the others). False on a grid with one busbar per substation,
+// or where no such pair exists.
+bool find_split(const LSGrid & grid, TopoAction & split)
+{
+    if(grid.get_max_nb_bus_per_sub() < 2) return false;
+    const int n_sub = grid.get_n_sub();
+    const auto & load_bus = grid.get_loads().get_bus_id();
+    const auto & gen_bus = grid.get_generators().get_bus_id();
+    const auto & lines = grid.get_powerlines_as_data();
+    const int nb_line = static_cast<int>(grid.nb_powerline());
+    std::vector<char> has_gen(static_cast<size_t>(n_sub), 0);
+    for(int g = 0; g < static_cast<int>(gen_bus.size()); ++g){
+        const int b = gen_bus(g).cast_int();
+        if(b >= 0 && b < n_sub) has_gen[static_cast<size_t>(b)] = 1;
+    }
+    LSGrid base(grid);
+    const CplxVect V0 = CplxVect::Constant(static_cast<Eigen::Index>(base.total_bus()), base.get_init_vm_pu());
+    if(base.ac_pf(V0, MAX_ITER, TOL).size() == 0) return false;
+    const size_t nb_solved = base.id_ac_solver_to_me().to_int_vector().size();
+    for(int load_id = 0; load_id < static_cast<int>(load_bus.size()); ++load_id){
+        const int b = load_bus(load_id).cast_int();
+        // a substation without a generator: no PV bus moves
+        if(b < 0 || b >= n_sub || has_gen[static_cast<size_t>(b)]) continue;
+        for(int line_id = 0; line_id < nb_line; ++line_id){
+            for(int side = 1; side <= 2; ++side){
+                const auto & bus = side == 1 ? lines.get_bus_id_side_1() : lines.get_bus_id_side_2();
+                if(bus(line_id).cast_int() != b) continue;
+                TopoAction act;
+                act.add_element(ElementType::load, load_id, 2);
+                act.add_element(side == 1 ? ElementType::line_or : ElementType::line_ex, line_id, 2);
+                LSGrid split_grid(grid);
+                try{
+                    act.check_validity(split_grid);
+                    act.apply_to_gridmodel(split_grid);
+                }catch(const std::exception &){
+                    continue;
+                }
+                const CplxVect V = split_grid.ac_pf(V0, MAX_ITER, TOL);
+                if(V.size() == 0) continue;
+                if(split_grid.id_ac_solver_to_me().to_int_vector().size() != nb_solved + 1) continue;
+                split = act;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 struct Trace {
     std::vector<int> flags;              // one per step: the converged flag
     std::vector<std::vector<std::pair<real_type, real_type> > > rows;
@@ -208,7 +271,8 @@ int main(int argc, char ** argv)
 {
     if(argc < 3){
         std::cerr << "usage: " << argv[0]
-                  << " <grid.lsb> <ts_ac|ts_dc|ts_flows|ca_ac|ca_dc|ca_ac_mask|ca_dc_mask|ca_flows|ca_construct>"
+                  << " <grid.lsb> <ts_ac|ts_dc|ts_flows|ca_ac|ca_dc|ca_ac_mask|ca_dc_mask|ca_flows|ca_construct"
+                     "|ss_ac|ss_topo_ac>"
                      " [nb_rows] [KLU|SparseLU|<registry name>] [always] [trace_file]\n";
         return 2;
     }
@@ -222,10 +286,11 @@ int main(int argc, char ** argv)
 
     const bool is_ts = phase.rfind("ts_", 0) == 0;
     const bool is_ca = phase.rfind("ca_", 0) == 0;
+    const bool is_ss = phase == "ss_ac" || phase == "ss_topo_ac";
     const bool dc = phase == "ts_dc" || phase == "ca_dc" || phase == "ca_dc_mask";
     const bool mask = phase == "ca_ac_mask" || phase == "ca_dc_mask";
     const bool flows = phase == "ts_flows" || phase == "ca_flows";
-    if(!is_ts && !is_ca){
+    if(!is_ts && !is_ca && !is_ss){
         std::cerr << "unknown phase '" << phase << "'\n";
         return 2;
     }
@@ -280,6 +345,43 @@ int main(int argc, char ** argv)
             }
         }
         CALLGRIND_STOP_INSTRUMENTATION;
+    } else if(is_ss){
+        ScenarioSweep ss(grid);
+        RealMat gen_p, load_p, load_q;
+        fill_time_series(grid, nb_rows, gen_p, load_p, load_q);
+        ss.modify_gen_p(gen_p);
+        ss.modify_load_p(load_p);
+        ss.modify_load_q(load_q);
+        if(phase == "ss_topo_ac"){
+            TopoAction split;
+            if(!find_split(grid, split)){
+                std::cerr << phase << ": no busbar split found -- this phase needs a grid with two busbars "
+                             "per substation (make_grids.py --two-busbars)\n";
+                return 5;
+            }
+            std::vector<TopoAction> actions(static_cast<size_t>(nb_rows));
+            actions[0] = split;
+            ss.set_topo_actions(actions);
+        }
+
+        // the wall clock brackets exactly what callgrind collects
+        CALLGRIND_START_INSTRUMENTATION;
+        CALLGRIND_ZERO_STATS;
+        const auto t0 = std::chrono::steady_clock::now();
+        CALLGRIND_TOGGLE_COLLECT;
+        ss.compute(Vsolved, MAX_ITER, TOL);
+        CALLGRIND_TOGGLE_COLLECT;
+        secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        CALLGRIND_STOP_INSTRUMENTATION;
+
+        nb_solved = ss.nb_solved();
+        nb_converged = ss.nb_converged();
+        total_refactor = static_cast<long>(ss.get_linear_solver_stats().nb_refactorize);
+        solver_secs = ss.solver_time();
+        preproc_secs = ss.preprocessing_time();
+        nb_measured = nb_rows;
+        if(ss.get_status() != 1){ std::cerr << phase << ": the scenario sweep did not converge\n"; return 4; }
+        if(!trace_path.empty()) trace_voltages(trace, ss.get_voltages(), ss.converged_mask());
     } else if(is_ts){
         TimeSeries ts(grid);
         select_batch_family(ts, algo_name, dc);

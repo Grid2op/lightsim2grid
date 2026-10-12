@@ -9,6 +9,7 @@
 #ifndef NR_ALGO_H
 #define NR_ALGO_H
 
+#include <cassert>
 #include <cmath>     // std::isfinite (policy parameter validation)
 #include <sstream>
 #include <stdexcept>
@@ -72,6 +73,10 @@ public:
     // every residual evaluation -- the last of which is at the voltage returned
     static constexpr bool FILLS_BUS_MISMATCH = true;
     bool fills_bus_mismatch() const noexcept override { return FILLS_BUS_MISMATCH; }
+
+    // MultiSlackNRSystem distributes the slack, SingleSlackNRSystem (NRSing_*) does not
+    static constexpr bool DISTRIBUTES_SLACK = NRSystem::HAS_MULTI_SLACK;
+    bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
 
     // ----- Jacobian accessor ---------------------------------------------------
 
@@ -185,7 +190,7 @@ public:
     void set_may_mask_voltage_control(bool val) override {
         _system.set_may_mask_voltage_control(val);
     }
-    void set_voltage_control_v_set(const RealVect & v_set) override {
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override {
         _system.set_voltage_control_v_set(v_set);
     }
     void set_refactor_fallback(bool val) override {
@@ -471,6 +476,10 @@ private:
     NRSystem     _system;
 
     bool need_factorize_;
+    // number of non zero coefficients of the Ybus the sparsity of J was last built for. Only
+    // read by a debug (no NDEBUG) check in solve. The member itself is not conditional on NDEBUG,
+    // so the layout of the class is the same in every translation unit
+    Eigen::Index ybus_nnz_ = -1;
 
     // Runtime policy enums
     std::unique_ptr<ScalingPolicy<NRSystem> >  scaling_policy_;

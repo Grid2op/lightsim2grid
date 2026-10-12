@@ -462,7 +462,42 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
         const std::vector<bool>& get_status_side_2() const { return side_2_.get_status(); }
         const std::vector<bool>& get_status_global()  const { return status_global_; }
 
+        /**
+         * Replace the physical parameters (series impedance and shunt admittances, all in pu)
+         * of ALL the elements of this container, without changing the topology
+         * (buses, statuses, ordering).
+         *
+         * The model coefficients (AC, DC, Kron-reduced, FDPF if cached) are recomputed
+         * from the new values, and the solver is told that Ybus has to be recomputed.
+         * The sparsity pattern of Ybus is unchanged.
+         */
+        void update_physical_parameters(
+            const Eigen::Ref<const RealVect> & branch_r,
+            const Eigen::Ref<const RealVect> & branch_x,
+            const Eigen::Ref<const CplxVect> & branch_h_side_1,
+            const Eigen::Ref<const CplxVect> & branch_h_side_2,
+            DualAlgoControl & solver_control)
+        {
+            const int my_size = nb();
+            GenericContainer::check_size(branch_r, my_size, "branch_r");
+            GenericContainer::check_size(branch_x, my_size, "branch_x");
+            GenericContainer::check_size(branch_h_side_1, my_size, "branch_h_side_1");
+            GenericContainer::check_size(branch_h_side_2, my_size, "branch_h_side_2");
+
+            r_ = branch_r;
+            x_ = branch_x;
+            h_side_1_ = branch_h_side_1;
+            h_side_2_ = branch_h_side_2;
+            _on_physical_parameters_updated(solver_control);
+            _update_model_coeffs();
+            solver_control.tell_recompute_ybus();
+        }
+
     protected:
+        // called by update_physical_parameters once r_, x_, h_side_1_ and h_side_2_ are
+        // assigned, before the coefficients are recomputed.
+        virtual void _on_physical_parameters_updated(DualAlgoControl & /*solver_control*/) {}
+
         // solver interface
         void _fillYbus(
             std::vector<Eigen::Triplet<cplx_type> > & res,
@@ -964,6 +999,29 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
         FDPFCoeffsContainer BX_fpdf_coeffs_;
         FDPFCoeffsContainer XB_fpdf_coeffs_;
 };
+
+/**
+ * The DC active power, per unit, entering a branch at side 1 (`p1`) and at side 2 (`p2`),
+ * from the angles of its two buses:
+ *
+ *     p1 = ydc_11 . theta_1 + ydc_12 . theta_2 + x_tau_shift
+ *     p2 = ydc_22 . theta_2 + ydc_21 . theta_1 - x_tau_shift
+ *
+ * `x_tau_shift` is `TrafoContainer::dc_x_tau_shift`, ie `-shift / (x . tau)`, and 0 for a
+ * line, so a phase shifter gives `p1 = (theta_1 - theta_2 - shift) / (x . tau)`. This is
+ * the model `dc_pf` solves (`TrafoContainer::hack_Sbus_for_dc_phase_shifter`) and
+ * publishes (`TrafoContainer::compute_results`); a batch reading a DC flow off its own
+ * angles goes through here so that it reports the same number.
+ */
+inline void dc_branch_p_pu(real_type ydc_11, real_type ydc_12,
+                           real_type ydc_21, real_type ydc_22,
+                           real_type x_tau_shift,
+                           real_type theta_1, real_type theta_2,
+                           real_type & p1, real_type & p2)
+{
+    p1 = ydc_11 * theta_1 + ydc_12 * theta_2 + x_tau_shift;
+    p2 = ydc_22 * theta_2 + ydc_21 * theta_1 - x_tau_shift;
+}
 
 } // namespace ls2g
 

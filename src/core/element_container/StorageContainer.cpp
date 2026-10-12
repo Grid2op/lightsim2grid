@@ -90,7 +90,9 @@ StorageContainer::StateRes StorageContainer::get_state() const
                                    slack_.flags(),
                                    slack_.weights(),
                                    p_min,
-                                   p_max);
+                                   p_max,
+                                   slack_.can_participate_weights(),
+                                   slack_.can_participate_overshoots());
     return res;
 }
 
@@ -107,6 +109,8 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     std::vector<real_type> & slack_weight = std::get<StateResIdx::SLACK_WEIGHT>(my_state);
     std::vector<real_type> & p_min = std::get<StateResIdx::P_MIN_MW>(my_state);
     std::vector<real_type> & p_max = std::get<StateResIdx::P_MAX_MW>(my_state);
+    std::vector<real_type> & can_participate = std::get<StateResIdx::CAN_PARTICIPATE_SLACK>(my_state);
+    std::vector<real_type> & can_participate_overshoot = std::get<StateResIdx::CAN_PARTICIPATE_SLACK_OVERSHOOT>(my_state);
 
     const auto size = nb();
     check_size(voltage_regulator_on, size, "voltage_regulator_on");
@@ -116,6 +120,8 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     check_size(regulated_bus, size, "regulated_bus");
     check_size(slack_bus, size, "slack_bus");
     check_size(slack_weight, size, "slack_weight");
+    check_size(can_participate, size, "can_participate_slack");
+    check_size(can_participate_overshoot, size, "can_participate_slack_overshoot");
     // optional: either both empty (no limit was ever set) or both one entry per unit
     if(!p_min.empty() || !p_max.empty()){
         check_size(p_min, size, "p_min_mw");
@@ -128,6 +134,8 @@ void StorageContainer::set_state(StorageContainer::StateRes & my_state)
     max_q_ = RealVect::Map(max_q.data(), max_q.size());
     regulated_bus_id_ = Eigen::VectorXi::Map(regulated_bus.data(), regulated_bus.size());
     slack_.set(slack_bus, slack_weight);
+    slack_.set_can_participate_weights(can_participate);
+    slack_.set_can_participate_overshoots(can_participate_overshoot);
     p_min_mw_ = p_min.empty() ? RealVect() : RealVect::Map(p_min.data(), p_min.size());
     p_max_mw_ = p_max.empty() ? RealVect() : RealVect::Map(p_max.data(), p_max.size());
     reset_results();

@@ -8,7 +8,7 @@
 
 """Low-level helpers shared by two or more of the ``_aux_add_*.py`` element
 converters (bus resolution, current limits, per-unit view, transformer ratio /
-phase-shift, remote voltage-control bus resolution)."""
+phase-shift, remote voltage-control bus resolution, reactive limits)."""
 
 import copy
 import warnings
@@ -208,3 +208,26 @@ def _aux_regulated_bus_view_ids(net, regulated_ids):
                            "not be resolved (unknown or disconnected regulated element): "
                            f"{missing}. This is not supported at the moment.")
     return np.array([lookup[rid] for rid in regulated_ids], dtype=object)
+
+
+def _aux_reactive_limits_at_target_p(df):
+    """The reactive limits (MVAr) of the units of ``df`` (generators, VSC converter
+    stations), as two float arrays the caller may write to (under pandas copy-on-write,
+    ``to_numpy`` hands out read-only views).
+
+    ``min_q`` / ``max_q`` (the flat MIN_MAX box) are NaN for a unit whose
+    ``reactive_limits_kind`` is CURVE: pypowsybl only populates those through
+    ``min_q_at_target_p`` / ``max_q_at_target_p``, the capability curve evaluated at the
+    unit's own target P (available before any loadflow, unlike ``min_q_at_p``). Read
+    alone, such a unit was unlimited.
+
+    Malformed curve data (a point entered with min_q / max_q swapped) can make the
+    interpolation at the target P yield min_q > max_q: OpenLoadFlow tolerates it, the
+    containers refuse it, so the pair is sorted -- which only changes the width of the
+    interval, never whether a unit is limited. A NaN is left for the caller to bound."""
+    no_curve = pd.Series(np.nan, index=df.index)
+    min_q = df.get("min_q_at_target_p", no_curve).fillna(df["min_q"]).to_numpy(float, copy=True)
+    max_q = df.get("max_q_at_target_p", no_curve).fillna(df["max_q"]).to_numpy(float, copy=True)
+    swapped = min_q > max_q
+    min_q[swapped], max_q[swapped] = max_q[swapped], min_q[swapped].copy()
+    return min_q, max_q

@@ -21,6 +21,8 @@ import unittest
 import warnings
 
 import numpy as np
+import scipy.sparse as sp
+import pandapower as pp
 import pandapower.networks as pn
 
 from lightsim2grid.gridmodel import init_from_pandapower
@@ -164,6 +166,105 @@ class TestRelabelMatrix(unittest.TestCase):
         self.assertEqual(Ybus_solver.shape, (0, 0))
         with self.assertRaises(RuntimeError):
             _ = gridmodel.get_Ybus()
+
+
+def _make_gridmodel_with_gaps():
+    """case14 with three disconnected buses, numbered first, in the middle and last.
+
+    The solver then covers a strict subset of the grid buses, with a gap at each end and
+    one in between, so `id_solver_to_me` is neither the identity nor a contiguous range.
+    """
+    pp_net = pn.case14()
+    nb_bus = pp_net.bus.shape[0]
+    for _ in range(3):
+        pp.create_bus(pp_net, vn_kv=pp_net.bus["vn_kv"].iloc[0], in_service=False)
+    old_ids = list(pp_net.bus.index)
+    new_order = [nb_bus] + old_ids[:7] + [nb_bus + 1] + old_ids[7:nb_bus] + [nb_bus + 2]
+    pp.toolbox.reindex_buses(pp_net, {old: new for new, old in enumerate(new_order)})
+    pp_net.bus.sort_index(inplace=True)
+    gridmodel = _make_gridmodel(pp_net)
+    for bus_id in np.where(~pp_net.bus["in_service"].values)[0]:
+        gridmodel.deactivate_bus(int(bus_id))
+    return gridmodel
+
+
+class TestRelabelMatrixDisconnectedBuses(unittest.TestCase):
+    """
+    get_Ybus / get_dcYbus / get_Bf when some grid buses are not in the solver: the result
+    must be exactly what a relabelling of the solver matrix gives, empty rows and columns
+    for the disconnected buses included, and in canonical CSC form (sorted, no duplicate).
+    """
+
+    def _relabel(self, mat_solver, id_solver_to_me, total_bus, relabel_row=True):
+        coo = mat_solver.tocoo()
+        rows = id_solver_to_me[coo.row] if relabel_row else coo.row
+        shape = (total_bus if relabel_row else mat_solver.shape[0], total_bus)
+        return sp.csc_matrix((coo.data, (rows, id_solver_to_me[coo.col])), shape=shape)
+
+    def _assert_same_csc(self, res, expected):
+        self.assertEqual(res.shape, expected.shape)
+        self.assertTrue(res.has_canonical_format)
+        expected = expected.copy()
+        expected.sum_duplicates()
+        # array equality, not a numerical tolerance: relabelling moves the values unchanged
+        np.testing.assert_array_equal(res.indptr, expected.indptr)
+        np.testing.assert_array_equal(res.indices, expected.indices)
+        np.testing.assert_array_equal(res.data, expected.data)
+
+    def test_mapping_has_gaps(self):
+        gridmodel = _make_gridmodel_with_gaps()
+        V = gridmodel.ac_pf(np.ones(gridmodel.total_bus(), dtype=complex), 10, 1e-8)
+        self.assertTrue(V.shape[0] > 0)
+        id_ac = np.array(gridmodel.id_ac_solver_to_me())
+        self.assertEqual(gridmodel.total_bus(), 17)
+        self.assertEqual(id_ac.shape[0], 14)
+        self.assertNotIn(0, id_ac)
+        self.assertNotIn(8, id_ac)
+        self.assertNotIn(16, id_ac)
+
+    def test_ac_ybus(self):
+        gridmodel = _make_gridmodel_with_gaps()
+        V = gridmodel.ac_pf(np.ones(gridmodel.total_bus(), dtype=complex), 10, 1e-8)
+        self.assertTrue(V.shape[0] > 0)
+        id_ac = np.array(gridmodel.id_ac_solver_to_me())
+        expected = self._relabel(gridmodel.get_Ybus_solver(), id_ac, gridmodel.total_bus())
+        self._assert_same_csc(gridmodel.get_Ybus(), expected)
+
+    def test_dc_ybus_and_bf(self):
+        gridmodel = _make_gridmodel_with_gaps()
+        V = gridmodel.dc_pf(np.ones(gridmodel.total_bus(), dtype=complex), 1, 1e-8)
+        self.assertTrue(V.shape[0] > 0)
+        id_dc = np.array(gridmodel.id_dc_solver_to_me())
+        expected = self._relabel(gridmodel.get_dcYbus_solver(), id_dc, gridmodel.total_bus())
+        self._assert_same_csc(gridmodel.get_dcYbus(), expected)
+        # Bf: one row per branch, only its columns are relabelled
+        expected = self._relabel(gridmodel.get_Bf_solver(), id_dc, gridmodel.total_bus(), relabel_row=False)
+        self._assert_same_csc(gridmodel.get_Bf(), expected)
+
+    def test_after_topology_change(self):
+        """A second bus disconnected after a first solve: the new mapping is used."""
+        gridmodel = _make_gridmodel_with_gaps()
+        V = gridmodel.ac_pf(np.ones(gridmodel.total_bus(), dtype=complex), 10, 1e-8)
+        self.assertTrue(V.shape[0] > 0)
+        # grid bus 9 is bus 7 of case14: a generator at the end of a transformer, with
+        # nothing else on it, so it can be disconnected without splitting the grid
+        gen_id = [gen.id for gen in gridmodel.get_generators() if gen.bus_id == 9]
+        self.assertEqual(len(gen_id), 1)
+        gridmodel.deactivate_gen(gen_id[0])
+        trafo_id = [tr.id for tr in gridmodel.get_trafos() if 9 in (tr.bus1_id, tr.bus2_id)]
+        for tr_id in trafo_id:
+            gridmodel.deactivate_trafo(tr_id)
+        line_id = [li.id for li in gridmodel.get_lines() if 9 in (li.bus1_id, li.bus2_id)]
+        for li_id in line_id:
+            gridmodel.deactivate_powerline(li_id)
+        gridmodel.deactivate_bus(9)
+        V = gridmodel.ac_pf(np.ones(gridmodel.total_bus(), dtype=complex), 10, 1e-8)
+        self.assertTrue(V.shape[0] > 0)
+        id_ac = np.array(gridmodel.id_ac_solver_to_me())
+        self.assertEqual(id_ac.shape[0], 13)
+        self.assertNotIn(9, id_ac)
+        expected = self._relabel(gridmodel.get_Ybus_solver(), id_ac, gridmodel.total_bus())
+        self._assert_same_csc(gridmodel.get_Ybus(), expected)
 
 
 if __name__ == "__main__":

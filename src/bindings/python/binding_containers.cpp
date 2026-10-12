@@ -57,6 +57,10 @@ void bind_containers(py::module_& m) {
                       "algorithms' `compute_physical_violations`).")
         .def_readonly("max_p_mw", &GenInfo::max_p_mw,
                       "Maximum active power, in MW -- OPTIONAL, see `min_p_mw`.")
+        .def_readonly("can_be_pv", &GenInfo::can_be_pv, DocIterator::can_be_pv.c_str())
+        .def_readonly("can_participate_slack", &GenInfo::can_participate_slack, DocIterator::can_participate_slack.c_str())
+        .def_readonly("can_participate_slack_weight", &GenInfo::can_participate_slack_weight, DocIterator::can_participate_slack_weight.c_str())
+        .def_readonly("can_participate_slack_overshoot_mw", &GenInfo::can_participate_slack_overshoot_mw, DocIterator::can_participate_slack_overshoot_mw.c_str())
         .def_readonly("regulated_bus_id", &GenInfo::regulated_bus_id, DocIterator::regulated_bus_id.c_str())
         .def_readonly("reactive_key", &GenInfo::reactive_key, DocIterator::reactive_key.c_str())
         .def_readonly("has_res", &GenInfo::has_res, DocIterator::has_res.c_str())
@@ -95,6 +99,10 @@ void bind_containers(py::module_& m) {
         .def_readonly("b_min", &SvcInfo::b_min, DocIterator::b_min.c_str())
         .def_readonly("b_max", &SvcInfo::b_max, DocIterator::b_max.c_str())
         .def_readonly("regulated_bus_id", &SvcInfo::regulated_bus_id, DocIterator::svc_regulated_bus_id.c_str())
+        .def_readonly("standby", &SvcInfo::standby, DocIterator::svc_standby.c_str())
+        .def_readonly("can_be_pv", &SvcInfo::can_be_pv, DocIterator::svc_can_be_pv.c_str())
+        .def_readonly("standby_low_vm_pu", &SvcInfo::standby_low_vm_pu, DocIterator::svc_standby_low_vm_pu.c_str())
+        .def_readonly("standby_high_vm_pu", &SvcInfo::standby_high_vm_pu, DocIterator::svc_standby_high_vm_pu.c_str())
         .def_readonly("has_res", &SvcInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &SvcInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &SvcInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
@@ -188,6 +196,9 @@ void bind_containers(py::module_& m) {
         .def_readonly("regulated_bus_id", &StorageInfo::regulated_bus_id, DocIterator::storage_regulated_bus_id.c_str())
         .def_readonly("is_slack", &StorageInfo::is_slack, DocIterator::storage_is_slack.c_str())
         .def_readonly("slack_weight", &StorageInfo::slack_weight, DocIterator::storage_slack_weight.c_str())
+        .def_readonly("can_participate_slack", &StorageInfo::can_participate_slack, DocIterator::can_participate_slack.c_str())
+        .def_readonly("can_participate_slack_weight", &StorageInfo::can_participate_slack_weight, DocIterator::can_participate_slack_weight.c_str())
+        .def_readonly("can_participate_slack_overshoot_mw", &StorageInfo::can_participate_slack_overshoot_mw, DocIterator::can_participate_slack_overshoot_mw.c_str())
         .def_readonly("has_res", &StorageInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &StorageInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &StorageInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
@@ -369,6 +380,8 @@ void bind_containers(py::module_& m) {
         .def_readonly("min_q_mvar", &ConverterStationInfo::min_q_mvar, DocIterator::min_q_mvar.c_str())
         .def_readonly("max_q_mvar", &ConverterStationInfo::max_q_mvar, DocIterator::max_q_mvar.c_str())
         .def_readonly("power_factor", &ConverterStationInfo::power_factor, DocIterator::power_factor.c_str())
+        .def_readonly("can_be_pv", &ConverterStationInfo::can_be_pv,
+                      "Whether this VSC station is one an outer loop froze at a reactive limit (see LSGrid.set_hvdc_can_be_pv); False by default, never read by a powerflow.")
         .def_readonly("has_res", &ConverterStationInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &ConverterStationInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &ConverterStationInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
@@ -420,6 +433,10 @@ void bind_containers(py::module_& m) {
         .def_readonly("pmax_1to2_mw", &HvdcLineInfo::pmax_1to2_mw, DocIterator::pmax_1to2_mw.c_str())
         .def_readonly("pmax_2to1_mw", &HvdcLineInfo::pmax_2to1_mw, DocIterator::pmax_2to1_mw.c_str())
         .def_readonly("status_droop", &HvdcLineInfo::status_droop, DocIterator::status_droop.c_str())
+        .def_readonly("ac_emulation_frozen", &HvdcLineInfo::ac_emulation_frozen,
+                      "Whether an outer loop froze this angle-droop line at its active power limit "
+                      "(LSGrid.set_hvdc_ac_emulation_frozen): never read by a powerflow, it opens the "
+                      "line to the physical check of its release. False by default.")
         .def_readonly("station1", &HvdcLineInfo::station_side_1, DocIterator::station_side_1.c_str())
         .def_readonly("station2", &HvdcLineInfo::station_side_2, DocIterator::station_side_2.c_str())
         .def_readonly("has_res", &HvdcLineInfo::has_res, DocIterator::has_res.c_str())

@@ -28,7 +28,7 @@
 // Include Solvers.hpp (not powerflow_algorithm/NRAlgo.hpp directly): it pulls
 // in SparseLULinearSolver/KLULinearSolver plus, when LS2G_BUILDING_CORE is
 // NOT defined (true for any out-of-tree plugin build), `extern template`
-// declarations for NRAlgo<SparseLULinearSolver/KLULinearSolver,
+// declarations for NRAlgo<LinearSolverPolicy<SparseLULinearSolver/KLULinearSolver>,
 // SingleSlackNRSystem> -- so `inner_` below links against the symbols
 // already compiled into the main lightsim2grid_cpp library instead of being
 // re-instantiated (and re-emitted) inside this plugin's .so.
@@ -80,7 +80,7 @@ public:
     int       get_slack_col()      const override { return -1; }
     real_type get_slack_absorbed() const override { return slack_absorbed_accum_; }
 
-    // The inner NRAlgo<LinearSolver, SingleSlackNRSystem> includes both the
+    // The inner NRAlgo<LinearSolverPolicy<LinearSolver>, SingleSlackNRSystem> includes both the
     // Hvdc and VoltageControl extensions (see NRAlgo.hpp), forwarded to
     // unconditionally on every outer round -- so this wrapper genuinely
     // supports both, unlike a generic plugin (BaseAlgo's conservative
@@ -89,6 +89,9 @@ public:
     bool supports_hvdc_droop() const noexcept override { return SUPPORTS_HVDC_DROOP; }
     static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = true;
     bool supports_remote_voltage_control() const noexcept override { return SUPPORTS_REMOTE_VOLTAGE_CONTROL; }
+    // ... and the outer loop is a distributed slack (by the weights it is handed)
+    static constexpr bool DISTRIBUTES_SLACK = true;
+    bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
 
     // Number of outer redistribution rounds performed by the last compute_pf call.
     int get_outer_iter() const { return outer_iter_; }
@@ -98,6 +101,11 @@ public:
     bool supports_bus_masking() const override { return inner_.supports_bus_masking(); }
     void set_masked_buses(const std::vector<int>& solver_bus_ids) override {
         inner_.set_masked_buses(solver_bus_ids);
+    }
+    // a batch row's set-points of the voltage-control groups (modify_gen_v on a
+    // generator that holds a bus remotely): the inner solve is the one holding them
+    void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override {
+        inner_.set_voltage_control_v_set(v_set);
     }
 
     // int_params[0] = max outer rounds; real_params[0] = outer active-power
@@ -204,7 +212,9 @@ public:
     }
 
 private:
-    NRAlgo<LinearSolver, SingleSlackNRSystem> inner_;
+    // wrapped in LinearSolverPolicy like every built-in solver (see Solvers.hpp):
+    // NRAlgo needs the policy's refactor-fallback switch
+    NRAlgo<LinearSolverPolicy<LinearSolver>, SingleSlackNRSystem> inner_;
     real_type slack_absorbed_accum_;
     int outer_iter_;
     int max_outer_iter_;

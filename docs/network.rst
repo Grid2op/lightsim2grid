@@ -37,6 +37,12 @@ An `LSGrid` can be built from several source formats, each with a dedicated ``in
 
 See the "Detailed documentation" section below for the full signature and caveats of each.
 
+Every loader leaves the grid on the fastest algorithms this build has: ``NR_KLU`` and
+``DC_KLU`` when KLU was compiled in (it is optional), ``NR_SparseLU`` and ``DC_SparseLU``
+otherwise. Both solve the same equations to the same answer, up to rounding.
+``change_algorithm`` selects any other one; a batch class built from the grid
+(``ScenarioSweepCPP``, ``ContingencyAnalysisCPP``, ...) starts from the grid's AC algorithm.
+
 Whichever loader built it, the resulting ``LSGrid`` also knows **which substation / voltage
 level each of its elements belongs to** (``sub_id`` of an ``*Info`` object, set by the loader
 through ``set_gen_to_subid`` and friends). That is a property of the source file, so the
@@ -193,6 +199,13 @@ Which convention each "by id" method uses:
        ``solver.get_vm_to_J_col`` / ``solver.get_q_to_J_col``
      - get
      - Solver
+
+The ``_solver`` getters return views of what the grid holds, not copies. ``get_Ybus_solver``
+and ``get_dcYbus_solver`` give a read-only scipy matrix on the grid's own arrays, valid until
+a powerflow rebuilds that matrix (after a change of topology or of an admittance): call
+``.copy()`` on it to keep it, or to pass it to a lightsim2grid function taking a sparse
+matrix, such as an algorithm's ``compute_pf``. ``get_Ybus`` and ``get_dcYbus`` build a new
+matrix at each call, which is the caller's to keep and modify.
 
 .. _elements-modeled:
 

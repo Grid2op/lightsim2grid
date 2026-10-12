@@ -45,6 +45,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     }
 
     _apply_step_gen_v(i, V);
+    _apply_step_topo_seed(i, V);
+    _apply_step_dc_vm_reset(i, V);
     _apply_step_vc_v_set(i, algo);
 
     // the Ybus edit, and its timer, only where Ybus varies at all: the hooks compile
@@ -59,18 +61,24 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
 
     if(invertible){
         if(!_has_gen_contingency()){
-            const CplxVect & sb = _step_sbus(i, sbus_scratch);
+            // the layout's own weights and injection on the common row; this row's own
+            // where the slack pre-pass moved set-points / saturated units
+            // (_prepare_slack_redistribution) -- both by reference, no row allocates
+            const RealVect & sw = _row_slack_weights(i, sw_scratch);
+            const CplxVect & sb = _step_sbus_row(i, sbus_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, sb,
-                                         active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
+                                         active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            _record_row_solve_stats(i, algo);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
             // (and _record_row_bus_q, which reads the mismatch of the system this row
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
-                _record_row_physical(i, algo, V, active_layout().slack_weights, sb);
+                _record_row_physical(i, algo, V, sw, sb);
+                _record_row_gen_results(i, algo, Ybus, V, sw, sb);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -85,18 +93,20 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             const bool flips = _row_flips_pv(i);
             if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(i));
             const RealVect & sw = _row_slack_weights(i, sw_scratch);
-            const CplxVect & sb = _step_sbus(i, sbus_scratch);
+            const CplxVect & sb = _step_sbus_row(i, sbus_scratch);
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            _record_row_solve_stats(i, algo);
             // before the pinning is restored, and before the Ybus is put back: the
             // refreshed Jacobian has to describe the system THIS row solved, and so does
             // the state the physical-limit checks read
             if(conv){
                 _maybe_store_jacobian(i, algo);
                 _record_row_physical(i, algo, V, sw, sb);
+                _record_row_gen_results(i, algo, Ybus, V, sw, sb);
             }
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }
@@ -313,7 +323,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     int max_iter, real_type tol, real_type sn_mva, double & timer_thread_init)
 {
     const real_type tol_ = tol / sn_mva;
-    const bool mask_mode = _handle_disconnected_grid;
+    const bool mask_mode = _mask_mode();
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): never on together with
     // mask_mode -- that path stays on the legacy, always-eager _voltages
     // accumulation (see _run_range_masked).
@@ -365,9 +375,24 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     std::vector<double> th_timer_solver(nb_thread, 0.);
     std::vector<int> th_diverge(nb_thread, -1);
     std::vector<std::exception_ptr> th_err(nb_thread);
+    // In DC a row's outage is not an edit of the Ybus copy but of the solver's own
+    // reduced matrix (YbusPolicy::Contingency::remove_from_Ybus -> update_internal_Ybus),
+    // which a freshly built algorithm does not have yet: editing it would read past
+    // its empty bus map, and its first solve would rebuild the matrix from the
+    // unedited Bbus anyway, dropping that row's outage. So a fresh DC worker solves
+    // the base case first, as the member algorithm did, and its range must then not
+    // ask for a full rebuild (needs_solver_init) that would undo the row's edit.
+    std::vector<char> th_needs_init(nb_thread, !reuse_workers);
 
     auto init_thread = [&](int t){
         if(algos[t] == nullptr) algos[t] = make_thread_algo();
+        controls[t] = _algo_controler;
+        // before the settings below: warmup_solver resets the algorithm, which
+        // clears its masking
+        if(!ac_solver_used && th_needs_init[t]){
+            warmup_solver(*algos[t], controls[t], Vinit_solver, max_iter, tol_);
+            th_needs_init[t] = 0;
+        }
         algos[t]->set_lazy_v(use_dc_lazy_v);
         algos[t]->set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         // freshly spawned -- no rebuild-invalidation needed (its very first
@@ -376,7 +401,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
         // the refactorize fallback the member algo got (see _maybe_prepare_masks /
         // _push_switchable_to_algo): a fresh algo starts without it
-        if(mask_mode || _has_pv_switching()) algos[t]->set_refactor_fallback(true);
+        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary()) algos[t]->set_refactor_fallback(true);
         // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
         // yet, so telling it here is enough -- its first build_J_sparsity() already
         // accounts for them. Starts fully pinned, like _algo; each row releases what
@@ -385,7 +410,6 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
             algos[t]->set_switchable_vm_buses(_switchable_buses_);
             algos[t]->set_pv_pinned_buses(_switchable_buses_);
         }
-        controls[t] = _algo_controler;
         ybus_copies[t] = ac_cache_.mat;
     };
 
@@ -394,15 +418,17 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     auto body = [&](int t){
         size_t b, e;
         split_range(nb_steps, nb_thread, static_cast<int>(t), b, e);
-        init_thread(t);
+        // the DC warm-up solves: an exception must reach th_err, not a worker's
+        // std::thread (which would terminate the process)
+        try { init_thread(t); } catch(...) { th_err[t] = std::current_exception(); return; }
         if(mask_mode){
             _maybe_run_range_masked(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used,
                                     max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_nb_converged[t], th_timer_solver[t],
-                                    th_diverge[t], th_err[t], !reuse_workers);
+                                    th_diverge[t], th_err[t], th_needs_init[t] != 0);
         } else {
             _run_range(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used, max_iter, tol_,
                       th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t],
-                      !reuse_workers);
+                      th_needs_init[t] != 0);
         }
     };
 
@@ -460,6 +486,18 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _algo.ac_solver_used();
 
+    // the slack pre-pass moves set-points by the slack weights and takes the units it
+    // saturates out of them: a single-slack algorithm ignores both, and the physical
+    // checks would read targets the solve never used
+    if(_redistribute_slack_ && !_algo.distributes_slack()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::compute: `redistribute_slack` needs an algorithm with a distributed "
+                "slack (a Newton-Raphson NR_*, the DC or the fast-decoupled one): the active one, "
+             << _algo.get_name() << ", puts the whole imbalance on the reference bus. Use "
+                "`change_algorithm`, or turn `redistribute_slack` off.";
+        throw std::runtime_error(exc_.str());
+    }
+
     const size_t nb_steps = _nb_steps();
 
     // ---- what of the three levels this call may keep ------------------------------
@@ -484,6 +522,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // next to it. Rows never reached this compute() (eg a TimeSeries chain that
     // aborts, or the diverging-"n"-case early return below) stay 0.
     _converged_mask_.assign(nb_steps, 0);
+    _row_solve_time_.assign(nb_steps, 0.);
+    _row_nb_iter_.assign(nb_steps, 0);
+    _gen_results_ = _compute_gen_results_ ?
+        RealMat::Zero(static_cast<Eigen::Index>(nb_steps), 2 * static_cast<Eigen::Index>(_grid_model.get_generators().nb())) :
+        RealMat();
 
     // limit-violation bookkeeping (ContingencyAnalysis only; no-op elsewhere)
     _refresh_defaults_vect_cache();
@@ -504,8 +547,19 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // Keeping it does not mean keeping the STARTING VOLTAGE: a call is free to start
     // anywhere, so V is mapped onto the kept labelling every time -- microseconds
     // against the tens of milliseconds the cache saves, see _vinit_on_grid_cache.
-    CplxVect Vinit_solver = _grid_cache_valid_ ? _vinit_on_grid_cache(Vinit)
-                                               : prepare_solver_input_base(Vinit, ac_solver_used);
+    CplxVect Vinit_solver;
+    if(_grid_cache_valid_){
+        Vinit_solver = _vinit_on_grid_cache(Vinit);
+    } else {
+        // the topological actions' buses join the labelling, their entries the pattern
+        // (a no-op without actions -- see _maybe_topo_union)
+        _maybe_topo_union();
+        Vinit_solver = prepare_solver_input_base(Vinit, ac_solver_used,
+                                                 _topo_used_buses_me_.empty() ? nullptr : &_topo_used_buses_me_);
+        _maybe_finalize_extra_buses();
+        _maybe_reserve_union_pattern(ac_solver_used);
+    }
+    _maybe_seed_extra_buses(Vinit_solver);
 
     // ---- L2: what is built for THIS batch from that grid ---------------------------
     if(!_batch_inputs_valid_){
@@ -516,13 +570,16 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         // switchable buses solved as PQ, the per-row pinning hiding it from the rows.
         _algo.reset();
 
+        // the topological actions, resolved into what every hook below reads (a
+        // no-op where none is registered -- ScenarioSweep only)
+        _maybe_resolve_topology(nb_steps);
         // the per-row Ybus edit lists (a no-op where Ybus does not vary)
         _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
         // ... and settle, once, which contingencies split the grid and what they strand
         // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
         // row skips a contingency that splits the grid, and the masked mode strands the
         // smaller side; a plain DC row leaves the split to the solver and never asks.
-        if(ac_solver_used || _handle_disconnected_grid) _prepare_connectivity();
+        if(ac_solver_used || _mask_mode()) _prepare_connectivity();
 
         // "handle disconnected grid" mode pre-pass (ContingencyAnalysis AND
         // ScenarioSweep; no-op elsewhere -- and _handle_disconnected_grid can never be
@@ -544,14 +601,25 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _prepare_gen_v_constraints();
     // ... and the voltage-control groups a per-row gen_v sets the v_set of
     _prepare_gen_v_vc();
+    // ... and, where asked, the OLF-style redistribution of what each row loses (it
+    // reads the per-row injections above, the masks and the generator contingencies:
+    // after all of them, before the "n" solve it leaves untouched)
+    _prepare_slack_redistribution(nb_steps);
+    // A row whose slack weights differ from the base case's (a participant it disconnects,
+    // one its pre-pass saturates) zeroes a value of the Jacobian's slack column that the
+    // "n" factorization had non-zero, and KLU's refactorization keeps that pivot order:
+    // let it fall back to a numeric factorize there, as for masking / PV pinning. A
+    // bool store; the fallback only runs on a failure.
+    if(_row_slack_weights_vary()) _algo.set_refactor_fallback(true);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
     // legacy path -- see _run_range_masked). _sbus_gen_v() is the generic,
     // SbusPolicy-agnostic copy of sbus_policy_.gen_v (BaseBatchSolverSynch's
     // magnitude-reconstruction helpers do not need to know about SbusPolicy at all).
-    const bool use_dc_lazy_v = !ac_solver_used && !_handle_disconnected_grid;
+    const bool use_dc_lazy_v = !ac_solver_used && !_mask_mode();
     if(use_dc_lazy_v) _dc_gen_v_ = _sbus_gen_v();
+    _prepare_dc_row_vm_reset(Vinit, ac_solver_used, nb_steps);
 
     // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
     // factorization every row refactorizes into), plus this call's result buffers
@@ -673,24 +741,34 @@ BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indi
 
     // generators of a voltage-control group: their gen_v is the group's v_set, and
     // dF_v/dv_set = -1, so -lambda^T dF/dv is lambda at the group's voltage row --
-    // except on a row where handle_disconnected_grid stranded that (lone) controller:
-    // its row is then "Q_c = 0" and no longer contains v_set
+    // except on a row where handle_disconnected_grid stranded every controller of that
+    // group: its row is then "Q_first = 0" and no longer contains v_set
     {
         const IntVect vc_row = get_gen_v_vc_row();
         const IntVect vc_group = _gen_v_vc_group();
-        const bool has_masking = _handle_disconnected_grid && !_li_masked.empty();
+        const bool has_masking = _mask_mode() && !_li_masked.empty();
         const VoltageControlSolverData & ctrl = _grid_model.get_ac_voltage_control_plan().controllers();
+        // the rule of VoltageControl::_recompute_group_stranded: only the active
+        // controllers count, a group of held ones only is never stranded
+        const auto group_stranded = [&ctrl](int grp, const std::vector<int> & masked){
+            const int first = ctrl.grp_start(grp);
+            const int cnt = ctrl.grp_count(grp);
+            bool any_active = false;
+            for(int off = 0; off < cnt; ++off){
+                if(ctrl.is_held(first + off)) continue;
+                any_active = true;
+                if(std::find(masked.begin(), masked.end(), ctrl.bus(first + off)) == masked.end()) return false;
+            }
+            return any_active;
+        };
         for(Eigen::Index g = 0; g < nb_gen && g < vc_row.size(); ++g){
             if(vc_row[g] < 0) continue;
             const int grp = vc_group[g];
-            const int lone_bus = (grp >= 0 && grp < ctrl.n_groups() && ctrl.grp_count(grp) == 1)
-                                 ? ctrl.bus(ctrl.grp_start(grp)) : -1;
+            const bool grp_ok = grp >= 0 && grp < ctrl.n_groups();
             for(Eigen::Index i = 0; i < nb_rows; ++i){
                 if(static_cast<size_t>(i) < _converged_mask_.size() && !_converged_mask_[static_cast<size_t>(i)]) continue;
-                if(has_masking && lone_bus >= 0 && static_cast<size_t>(i) < _li_masked.size()){
-                    const std::vector<int> & masked = _li_masked[static_cast<size_t>(i)];
-                    if(std::find(masked.begin(), masked.end(), lone_bus) != masked.end()) continue;
-                }
+                if(has_masking && grp_ok && static_cast<size_t>(i) < _li_masked.size() &&
+                   group_stranded(grp, _li_masked[static_cast<size_t>(i)])) continue;
                 res(i, g) = lambda(i, vc_row[g]) * share[g];
             }
         }

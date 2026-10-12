@@ -94,10 +94,14 @@ one".
 
 What is still missing around it:
 
-- **The PQ → PV direction does not exist.** OLF's loop also switches a bus *back* to PV
-  when its voltage recrosses the set-point on the right side. lightsim2grid never pins a
-  machine at a limit, so there is no such state to detect. This only becomes meaningful
-  the day the limit is *enforced*.
+- **The PQ → PV direction is detected for flagged machines only.** OLF's loop also
+  switches a bus *back* to PV when its voltage recrosses the set-point on the right side.
+  lightsim2grid never pins a machine at a limit itself, so for a PQ machine of its own
+  there is no such state to detect; a caller who knows a machine was pinned (the
+  pypowsybl bake) flags it with `set_gen_can_be_pv`, and `GenPvReleaseCheck.hpp` then
+  reports it (`LOW_VOLTAGE_AT_MIN_Q` / `HIGH_VOLTAGE_AT_MAX_Q`) when its regulated
+  voltage sits on the release side of its target. Still never enforced: the release
+  itself would be an outer-loop iteration.
 - **Non-regulating machines are out of scope** by construction: their Q is their own
   setpoint, part of `Sbus`. A violation there is an input error, not something a solve
   produced. Same for a REACTIVE_POWER-mode SVC and a fixed-Q converter station.

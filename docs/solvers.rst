@@ -265,6 +265,32 @@ The per-policy parameters (``max_dVa``, ``max_dVm``, ``ls_c``, ``ls_rho``, ``ls_
 ``iw_mu_min``, ``iw_mu_max``, ``refactor_every_n``) are only read by their corresponding
 policy; changing them has no effect while a different policy is active.
 
+Before the first iteration, every regulated bus has its voltage magnitude set to its set-point.
+Step damping cannot soften that move. For the buses a voltage-control group regulates (a bus
+regulated from elsewhere, by an SVC, or by several controllers at least one of which is remote)
+the magnitude is itself an unknown of the Newton-Raphson, so the move is optional: with
+``LSGrid.set_keep_vinit_at_group_controlled_buses(True)`` they keep their starting magnitude and
+the voltage-control equations bring them to the set-point, damped along with the rest of the step
+under ``MaxVoltageChange``. The solution is the same. It helps when a small controller regulates a
+stiff bus: setting that bus to its target up front can make every damped step tiny. ``dc_pf``
+honours the option as well, so a DC seed computed with it on can be handed to ``ac_pf`` as is; set
+it before calling ``dc_pf``, not only before ``ac_pf``. The batch
+algorithms inherit the option from the grid they are built from, and have a
+``keep_vinit_at_group_controlled_buses`` property of their own.
+
+A generator an outer loop froze at a reactive limit (``LSGrid.set_gen_can_be_pv``, its voltage
+regulation off) is an ordinary PQ machine for the Newton-Raphson. When it would regulate a REMOTE
+bus if released, ``LSGrid.set_hold_frozen_regulators(True)`` keeps it in the voltage-control group
+of that bus instead, held at the reactive output it was frozen at: it has a reactive unknown of its
+own, and the row that would share the group's reactive power with it (or the group's voltage row,
+when every controller of the group is held) reads "Q = frozen output". The solution is the same as
+without the option. The point is the Jacobian: a tool reusing it -- a batch that releases the
+machine on some rows only, as an outer loop would -- can do so by rewriting values, without
+touching its sparsity pattern. ``LSGrid.get_controller_held_solver`` says which controllers are
+held. A held machine the formulation cannot express (its own bus with no reactive equation, a
+set-point other than its group's, a group holding an SVC) is left out, never an error. The option
+is AC only, inherited by the batch algorithms like the one above, and off by default.
+
 Setting the policy on a raw solver object (see :ref:`use-solver`) is direct:
 
 .. code-block:: python

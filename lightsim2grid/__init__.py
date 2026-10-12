@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 __all__ = [
     "newtonpf",
@@ -133,6 +133,14 @@ from lightsim2grid.continuationPowerflow import ContinuationPowerFlow, run_cpf  
 __all__.append("ContinuationPowerFlow")
 __all__.append("run_cpf")
 __all__.append("continuationPowerflow")
+
+try:
+    from lightsim2grid.lightEnv import LightEnv  # noqa: F401
+    __all__.append("LightEnv")
+    __all__.append("lightEnv")
+except ImportError as exc_:  # noqa: F841
+    # grid2op is not installed, the LightEnv module will not be available
+    pass
 
 try:
     from lightsim2grid.rewards import N1ContingencyReward  # noqa: F401

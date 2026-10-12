@@ -224,6 +224,15 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
             BranchContainer::_on_connectivity_changed(el_id, solver_control);
             solver_control.dc_algo_controler().tell_recompute_sbus();
         }
+
+        // new r / x are the neutral (uncorrected) impedance. The DC Sbus term of a phase
+        // shifter depends on x, so it has to be recomputed too.
+        void _on_physical_parameters_updated(DualAlgoControl & solver_control) override {
+            base_r_ = r_;
+            base_x_ = x_;
+            solver_control.dc_algo_controler().tell_recompute_sbus();
+        }
+
     private:
         /**
          * whether to ignore the tap position for phase shifter (alpha).

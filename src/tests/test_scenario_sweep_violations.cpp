@@ -110,10 +110,12 @@ TEST_CASE("a contingency stranding a regulated bus is reported through ScenarioS
     // mirrors test_batch_voltage_control.cpp's identically-named ContingencyAnalysis
     // test: line 2 is bus2--bus3, and bus 3 is the REGULATED bus. In the default mode
     // the row is skipped outright (zero voltages, one NOT_SIMULATED sentinel
-    // violation). In "handle disconnected grid" mode the row comes back as a
-    // DIVERGENCE (masking pins Vm(3), which conflicts with VoltageControl's own
-    // bordered row against that same bus) -- not a good answer, but an honest one:
-    // what must never happen is a converged row with the regulation quietly dropped.
+    // violation). In "handle disconnected grid" mode too: masking would pin Vm(3),
+    // which VoltageControl's bordered row asks to be v_set, a system with no solution,
+    // so the row is skipped before the solve (BaseBatchSweep::
+    // _skip_rows_stranding_regulated_bus) -- it used to run every iteration to a
+    // DIVERGENCE. What must never happen is a converged row with the regulation
+    // quietly dropped.
     for (bool handle_disconnected : {false, true}) {
         INFO("handle_disconnected_grid = " << handle_disconnected);
         LSGrid grid = make_remote_gen_grid();
@@ -137,9 +139,7 @@ TEST_CASE("a contingency stranding a regulated bus is reported through ScenarioS
         REQUIRE(sweep.get_violations().size() == 1);
         REQUIRE(sweep.get_violations()[0].size() == 1);
         CHECK(sweep.get_violations()[0][0].element_type == ViolationElementType::GRID);
-        const auto expected_reason = handle_disconnected ? LimitViolationType::DIVERGENCE
-                                                          : LimitViolationType::NOT_SIMULATED;
-        CHECK(sweep.get_violations()[0][0].violation_type == expected_reason);
+        CHECK(sweep.get_violations()[0][0].violation_type == LimitViolationType::NOT_SIMULATED);
         for (int b = 0; b < NB_BUS; ++b) CHECK(std::abs(sweep.get_voltages()(0, b)) == 0.);
     }
 }

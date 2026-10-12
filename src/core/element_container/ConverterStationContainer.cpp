@@ -69,6 +69,8 @@ void ConverterStationContainer::init(const std::vector<int> & type,
     min_q_ = min_q;
     max_q_ = max_q;
     power_factor_ = power_factor;
+    // the "can be pv" hint describes the stations this call replaces
+    can_be_pv_ = std::vector<bool>(static_cast<std::size_t>(bus_id.size()), false);
     reset_results();
 }
 
@@ -87,7 +89,8 @@ ConverterStationContainer::StateRes ConverterStationContainer::get_state() const
                                             vm_pu,
                                             min_q,
                                             max_q,
-                                            power_factor);
+                                            power_factor,
+                                            can_be_pv_);
     return res;
 }
 
@@ -101,6 +104,7 @@ void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & 
     std::vector<real_type> & min_q = std::get<StateResIdx::MIN_Q>(my_state);
     std::vector<real_type> & max_q = std::get<StateResIdx::MAX_Q>(my_state);
     std::vector<real_type> & power_factor = std::get<StateResIdx::POWER_FACTOR>(my_state);
+    std::vector<bool> & can_be_pv = std::get<StateResIdx::CAN_BE_PV>(my_state);
 
     const auto size = nb();
     check_size(type, size, "type");
@@ -110,6 +114,7 @@ void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & 
     check_size(min_q, size, "min_q");
     check_size(max_q, size, "max_q");
     check_size(power_factor, size, "power_factor");
+    check_size(can_be_pv, size, "can_be_pv");
 
     type_ = IntVect::Map(type.data(), type.size());
     loss_factor_ = RealVect::Map(loss_factor.data(), loss_factor.size());
@@ -118,6 +123,7 @@ void ConverterStationContainer::set_state(ConverterStationContainer::StateRes & 
     min_q_ = RealVect::Map(min_q.data(), min_q.size());
     max_q_ = RealVect::Map(max_q.data(), max_q.size());
     power_factor_ = RealVect::Map(power_factor.data(), power_factor.size());
+    can_be_pv_ = can_be_pv;
     regulated_bus_id_ = bus_id_.as_eigen();  // not serialised: a station regulates its own bus
     reset_results();
 }

@@ -102,12 +102,6 @@ class ScenarioSweep:
         self.grid2op_env = grid2op_env.copy()
         self.computer = type(self)._CPP_CLASS(self.grid2op_env.backend._grid)
         self.__computed = False
-        # ScenarioSweepCPP.set_contingency_lines/trafos are write-only (no getter) --
-        # run() needs each row's disconnected branch ids for
-        # ContingencyResult.element_ids/element_names, so this wrapper caches the last
-        # validated mask it sent down. Reset by clear() below.
-        self._line_mask = None
-        self._trafo_mask = None
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
         if AlgorithmType.NR_KLU in self.available_default_algorithms:
@@ -150,6 +144,24 @@ class ScenarioSweep:
         self.computer.init_from_n_powerflow = bool(val)
 
     @property
+    def keep_vinit_at_group_controlled_buses(self):
+        """Whether the buses a voltage-control group regulates (regulated from elsewhere, by
+        an SVC, or by several controllers at least one of which is remote) keep the magnitude
+        of the starting voltage instead of being set to their set-point before each solve.
+        The solution is the same; with ``MaxVoltageChange`` damping it can be reached in far
+        fewer iterations. Defaults to the grid's own setting (see
+        :func:`lightsim2grid.lightsim2grid_cpp.LSGrid.set_keep_vinit_at_group_controlled_buses`),
+        ``False`` unless set there.
+        """
+        return self.computer.keep_vinit_at_group_controlled_buses
+
+    @keep_vinit_at_group_controlled_buses.setter
+    def keep_vinit_at_group_controlled_buses(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `keep_vinit_at_group_controlled_buses` attribute must be a boolean.")
+        self.computer.keep_vinit_at_group_controlled_buses = bool(val)
+
+    @property
     def handle_disconnected_grid(self):
         """Whether a row whose contingency splits the grid into several connected
         components is simulated on its largest component instead of being skipped.
@@ -168,6 +180,32 @@ class ScenarioSweep:
         if bool(val) != val:
             raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
         self.computer.handle_disconnected_grid = bool(val)
+
+    @property
+    def redistribute_slack(self):
+        """Whether the active power a row loses (the generators its generator contingency
+        disconnects, the elements of an island cut off with
+        :attr:`handle_disconnected_grid`, and the imbalance its own :func:`modify_gen_p` /
+        :func:`modify_sgen_p` / :func:`modify_load_p` create against the grid's targets) is
+        first shared on the remaining units of the
+        distributed slack as OpenLoadFlow's ``DistributedSlack`` outer loop does:
+        proportionally to their weight, each one clamped to its ``[min_p, max_p]`` and never
+        crossing 0 MW, a clamped unit leaving the pool (and that row's distributed slack), the
+        powerflow then only sharing what is left (the change in the losses) on the units that
+        can still move. A line / trafo contingency that leaves the grid connected loses no
+        injection: the change in the losses it causes is left to the powerflow.
+        Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
+        clamp anything. Needs an algorithm with a distributed slack: ``compute`` refuses it
+        with a single-slack one (``NRSing_*``, Gauss-Seidel). Same name/semantics as
+        :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
+        """
+        return self.computer.redistribute_slack
+
+    @redistribute_slack.setter
+    def redistribute_slack(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `redistribute_slack` attribute must be a boolean.")
+        self.computer.redistribute_slack = bool(val)
 
     @property
     def compute_limit_violations(self):
@@ -193,13 +231,8 @@ class ScenarioSweep:
             return  # no-op, matches the C++ side (which also no-ops and does not clear)
         self.computer.compute_limit_violations = val  # this clear()s the whole C++ object:
         # registered injections, contingency masks, handle_disconnected_grid, the
-        # row-count lock, everything -- not just computed results. Drop the Python-side
-        # mask cache too, or a stale non-None _line_mask/_trafo_mask survives this reset
-        # and the next run() derives element_ids/element_names from masks that no longer
-        # match what was actually registered C++-side.
+        # row-count lock, everything -- not just computed results
         self.__computed = False
-        self._line_mask = None
-        self._trafo_mask = None
 
     @property
     def violation_threshold(self):
@@ -230,6 +263,33 @@ class ScenarioSweep:
         self.computer.violation_threshold = val
 
     @property
+    def violation_rel_tol(self):
+        """Relative tolerance (a ``float`` in ``[0., 1.[``, default ``1e-9``) of every
+        limit-violation check performed when :attr:`compute_limit_violations` is ``True``:
+        a value is reported only when it is beyond its effective limit by more than this
+        fraction of it, so a value on its limit up to rounding (a bus a generator holds at
+        its ``vmax``) is not a violation. Same meaning as
+        :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.violation_rel_tol`
+        -- see that docstring for the formulas. ``0.`` gives the bare strict comparisons.
+        Changing it invalidates any already-computed results.
+        """
+        return self.computer.violation_rel_tol
+
+    @violation_rel_tol.setter
+    def violation_rel_tol(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `violation_rel_tol` attribute must be a real number.")
+        if not (0. <= val < 1.):
+            raise ValueError("The `violation_rel_tol` attribute must be in the range "
+                             f"[0., 1.[ (got {val}).")
+        if val != self.computer.violation_rel_tol:
+            # mirrors the C++ side, which clears its results on any change
+            self.__computed = False
+        self.computer.violation_rel_tol = val
+
+    @property
     def compute_physical_violations(self):
         """Whether every converged row reports the PHYSICAL limits its solution leaves -- a
         state the grid cannot reach at all (``ViolationCategory.PHYSICAL``), as opposed to
@@ -237,10 +297,13 @@ class ScenarioSweep:
         thermal rating: states the grid does reach and should not sit in). Default:
         ``False``. Same meaning as
         :attr:`lightsim2grid.timeSerie.TimeSerie.compute_physical_violations`, which
-        documents the two checks (the reactive capability of a bus, and the active power of
-        an angle-droop hvdc line) in full.
+        documents the checks (the reactive capability of a bus, the release of a PQ
+        generator flagged as pinned at a reactive limit, the switch on of an idle SVC flagged
+        as carrying a standby automaton, the own bus of a remote voltage controller, the
+        active power of an angle-droop hvdc line, the release of one flagged as frozen at its
+        limit, and the active power of a machine carrying the distributed slack) in full.
 
-        Detection only: nothing is switched PV -> PQ, no droop is clamped, no row is
+        Detection only: nothing is switched PV -> PQ or back, no droop is clamped, no row is
         re-solved. Unlike :attr:`compute_limit_violations`, changing this flag keeps the
         registered injections and contingency masks -- only the results go.
         """
@@ -264,7 +327,7 @@ class ScenarioSweep:
     def physical_violation_tol_mva(self):
         """Absolute slack (MVA) on every comparison :attr:`compute_physical_violations`
         makes: a violation needs ``value > limit + tol`` (or ``value < limit - tol`` for
-        ``LOW_Q``). Default: ``1e-4``. Changing it invalidates any previously-computed
+        ``LOW_Q`` and ``HVDC_AC_EMULATION_RELEASE``). Default: ``1e-4``. Changing it invalidates any previously-computed
         results."""
         return self.computer.physical_violation_tol_mva
 
@@ -277,6 +340,33 @@ class ScenarioSweep:
         if val == self.computer.physical_violation_tol_mva:
             return
         self.computer.physical_violation_tol_mva = val  # validates, and drops base case + results
+        self.__computed = False
+
+    @property
+    def physical_violation_tol_vm_pu(self):
+        """The same as :attr:`physical_violation_tol_mva`, in pu, for the comparisons
+        :attr:`compute_physical_violations` makes on a voltage: the PQ -> PV release check
+        reports a flagged PQ generator (``LSGrid.set_gen_can_be_pv``) whose regulated bus
+        is below (at ``min_q``) or above (at ``max_q``) its target by more than this
+        (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
+        flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
+        automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
+        ``HIGH_VOLTAGE_SVC_STANDBY``), and the remote voltage control check a remote
+        controller whose own bus is outside the realistic range by more than this
+        (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``). Default: ``1e-4``. Changing it invalidates any
+        previously-computed results.
+        """
+        return self.computer.physical_violation_tol_vm_pu
+
+    @physical_violation_tol_vm_pu.setter
+    def physical_violation_tol_vm_pu(self, val):
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            raise ValueError("The `physical_violation_tol_vm_pu` attribute must be a real number.")
+        if val == self.computer.physical_violation_tol_vm_pu:
+            return
+        self.computer.physical_violation_tol_vm_pu = val  # validates, and drops base case + results
         self.__computed = False
 
     def _check_2d(self, arr, name):
@@ -344,7 +434,6 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of powerlines on the grid ({n_line}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_lines(mask)
-        self._line_mask = mask  # cached: see the note in __init__ (no C++-side getter)
         self.__computed = False
 
     def set_contingency_trafos(self, mask):
@@ -356,7 +445,6 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of trafos on the grid ({n_trafo}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_trafos(mask)
-        self._trafo_mask = mask  # cached: see the note in __init__ (no C++-side getter)
         self.__computed = False
 
     def set_contingency_gens(self, mask):
@@ -388,6 +476,56 @@ class ScenarioSweep:
             raise RuntimeError(f"The number of generators on the grid ({self.grid2op_env.n_gen}) "
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_gens(mask)
+        self.__computed = False
+
+    def set_topo_actions(self, actions):
+        """One topological action per row, played by that row on top of its injections
+        and contingency masks.
+
+        ``actions`` is a list (one entry per simulation) of grid2op actions -- ``set_bus``
+        and ``set_line_status`` only, see
+        :func:`lightsim2grid.lightEnv.topo_action_from_grid2op` -- or of
+        :class:`lightsim2grid.lightEnv.TopoAction`; mixing both is fine, and an action
+        that changes nothing is a plain row. Every action is checked against the grid:
+        an element that does not exist, a busbar that does not exist (eg ``-2``), an
+        unsupported modification (``change_bus``, ``redispatch``, ...) or a contradiction
+        raises a ``ValueError`` naming the action, and nothing is registered.
+
+        A row plays disconnections (a line or trafo by ``set_line_status`` ``-1`` or
+        ``set_bus`` ``-1`` on one of its ends, a generator, a load or a storage unit by
+        ``set_bus`` ``-1``), reconnections and moves between busbars (``set_bus`` to a
+        busbar, ``set_line_status`` ``1``): a bus created or merged. A disconnection is
+        played exactly as :func:`set_contingency_lines` / :func:`set_contingency_trafos`
+        / :func:`set_contingency_gens` do it, and :func:`compute` raises if a row names
+        an element in both a mask and its action.
+
+        The whole sweep keeps running on one symbolic analysis: the solver labelling is
+        built for the union of the buses the rows use, the admittance entries a row
+        writes are reserved up front, and a row is value edits only -- its coefficients,
+        its injections, the PV pinning of the buses whose generators it moves, and the
+        masking of the union buses it leaves empty (an element alone on a busbar is an
+        island of one: that bus is masked and its injection left out). Refused by
+        :func:`compute` for now: moving or reactivating a slack participant, a generator
+        on a slack bus or one that regulates a remote bus, a storage unit that regulates
+        voltage, a branch with one end open in the base grid put back on, ``keep_jacobian``
+        with a generator move or reactivation, and the DC algorithm. :attr:`compute_physical_violations` follows the row: a generator the
+        row moves or reactivates is checked on the bus the row gives it.
+        """
+        from lightsim2grid.lightEnv import TopoAction, topo_action_from_grid2op
+        from grid2op.Action import BaseAction
+        converted = []
+        for i, act in enumerate(actions):
+            if isinstance(act, TopoAction):
+                converted.append(act)
+            elif isinstance(act, BaseAction):
+                try:
+                    converted.append(topo_action_from_grid2op(act))
+                except (ValueError, TypeError) as exc_:
+                    raise ValueError(f"ScenarioSweep.set_topo_actions: action {i} is invalid: {exc_}") from exc_
+            else:
+                raise ValueError(f"ScenarioSweep.set_topo_actions: action {i} is invalid: expected a grid2op "
+                                 f"action or a TopoAction, got a {type(act)}")
+        self.computer.set_topo_actions(converted)
         self.__computed = False
 
     def compute(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
@@ -475,10 +613,20 @@ class ScenarioSweep:
     def get_physical_violations(self):
         """Per row: the list of :class:`LimitViolation` of the physical limits that row's
         solution leaves -- ``element_type`` ``BUS`` with ``violation_type`` ``LOW_Q`` /
-        ``HIGH_Q`` (the reactive capability of the machines holding that bus), or
-        ``element_type`` ``HVDC`` with ``HIGH_P`` and ``side`` naming the direction (the
-        active power of an angle-droop hvdc line). Every entry has ``category ==
-        ViolationCategory.PHYSICAL``.
+        ``HIGH_Q`` (the reactive capability of the machines holding that bus),
+        ``element_type`` ``GENERATOR`` with ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``
+        (a flagged PQ generator that would regulate again, ``value`` / ``limit`` in kV),
+        ``element_type`` ``SVC`` with ``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY``
+        (a flagged idle standby SVC its automaton would switch on, ``value`` / ``limit`` in
+        kV), ``element_type`` ``GENERATOR`` with ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+        ``HIGH_VOLTAGE_REMOTE_CONTROL`` (a remote voltage controller whose own bus leaves the
+        realistic range, ``value`` / ``limit`` in kV), ``element_type`` ``HVDC`` with
+        ``HIGH_P`` and ``side`` naming the direction (the active power of an angle-droop hvdc
+        line), ``element_type`` ``HVDC`` with ``HVDC_AC_EMULATION_RELEASE`` and ``side`` the
+        direction it is frozen in (a flagged frozen line whose droop would ask for less than
+        its limit, ``value`` / ``limit`` in MW), or ``element_type`` ``GENERATOR`` /
+        ``STORAGE`` with ``LOW_P`` / ``HIGH_P`` (the distributed slack). Every entry has
+        ``category == ViolationCategory.PHYSICAL``.
 
         A row that did not converge has an **empty** entry, not a sentinel (unlike
         :func:`get_violations`) -- use ``self.computer.converged_mask()`` to tell that from
@@ -525,8 +673,9 @@ class ScenarioSweep:
         since ``ScenarioSweep`` rows are independent scenarios, not a *set* of
         contingencies) -- and every ``ContingencyResult.contingency_name`` is
         ``None`` (no such concept on ``ScenarioSweep``); ``element_ids`` /
-        ``element_names`` are instead derived from that row's own
-        ``set_contingency_lines`` / ``set_contingency_trafos`` mask.
+        ``element_names`` are instead the branches that row disconnects, through its
+        ``set_contingency_lines`` / ``set_contingency_trafos`` masks and its topological
+        action together.
         """
         if not self.computer.compute_limit_violations:
             raise RuntimeError("`run` requires `compute_limit_violations=True`, set via "
@@ -556,18 +705,15 @@ class ScenarioSweep:
             physical_violations=phys_n,
         )
 
-        n_line = len(self.grid2op_env.backend._grid.get_lines())
         violations = self.computer.get_violations()
         nb_steps = len(violations)
-        line_mask = self._line_mask if self._line_mask is not None else np.zeros((nb_steps, n_line), dtype=bool)
-        trafo_mask = self._trafo_mask if self._trafo_mask is not None else np.zeros(
-            (nb_steps, len(self.grid2op_env.backend._grid.get_trafos())), dtype=bool)
 
         post_contingency_results = []
         for row_id in range(nb_steps):
             row_violations = list(violations[row_id])
-            element_ids = [int(el_id) for el_id in np.nonzero(line_mask[row_id])[0]]
-            element_ids += [n_line + int(el_id) for el_id in np.nonzero(trafo_mask[row_id])[0]]
+            # the masks and the row's topological action together (the C++ side merges
+            # them; it needs the compute() that just ran)
+            element_ids = [int(el_id) for el_id in self.computer.get_row_disconnected_branches(row_id)]
             post_contingency_results.append(ContingencyResult(
                 element_ids=element_ids,
                 element_names=[str(self.grid2op_env.name_line[el_id]) for el_id in element_ids],
@@ -582,8 +728,6 @@ class ScenarioSweep:
         """Clear everything, as if nothing had ever been set / computed."""
         self.computer.clear()
         self.__computed = False
-        self._line_mask = None
-        self._trafo_mask = None
 
     def close(self):
         """permanently close the object"""

@@ -65,14 +65,78 @@ class TestHvdcMainComponent(unittest.TestCase):
         h = model.get_dclines()[0]
         self.assertAlmostEqual(h.res_p1_mw, -psp, places=6)
 
+    def _slack_on_every_gen(self, model):
+        for gen in model.get_generators():
+            model.add_gen_slackbus(gen.id, 1.)
+        return np.array([gen.target_p_mw for gen in model.get_generators()])
+
+    def test_stranded_rectifier_is_lost_consumption(self):
+        # side 2 (the leaf bus) rectifies: it draws psp from the grid it is about to leave.
+        # Islanding it takes that consumption out of the balance: the redistribution
+        # reports -psp and the remaining generators produce psp less.
+        psp = 30.0
+        net, model = make_case14_hvdc(3, _LEAF_BUS, converters_mode=1, p_setpoint=psp)
+        targets = self._slack_on_every_gen(model)
+        h = model.get_dclines()[0]
+        self.assertAlmostEqual(h.p2_mw, -psp, places=9)  # the stranded station's setpoint
+        self._isolate_leaf(model)
+        report = model.consider_only_main_component(True)
+        self.assertAlmostEqual(report.mismatch_mw, -psp, places=9)
+        self.assertGreater(report.nb_participants, 0)
+        gens = model.get_generators()
+        kept = np.array([gen.connected for gen in gens])
+        new = np.array([gen.target_p_mw for gen in gens])
+        self.assertAlmostEqual(new[kept].sum(), targets[kept].sum() - psp, places=9)
+        # the in-main inverter (side 1) keeps injecting what it receives, as before
+        V = model.ac_pf(np.ones(net.bus.shape[0], dtype=np.complex128), 30, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        h = model.get_dclines()[0]
+        self.assertTrue(h.connected1)
+        self.assertFalse(h.connected2)
+        self.assertAlmostEqual(h.res_p1_mw, psp, places=6)
+
+    def test_stranded_inverter_is_lost_injection(self):
+        # the mirror case: side 2 (the leaf bus) inverts, it fed the grid it leaves
+        psp = 30.0
+        net, model = make_case14_hvdc(3, _LEAF_BUS, converters_mode=0, p_setpoint=psp)
+        targets = self._slack_on_every_gen(model)
+        h = model.get_dclines()[0]
+        self.assertAlmostEqual(h.p2_mw, psp, places=9)  # no loss in this fixture
+        self._isolate_leaf(model)
+        report = model.consider_only_main_component(True)
+        self.assertAlmostEqual(report.mismatch_mw, psp, places=9)
+        gens = model.get_generators()
+        kept = np.array([gen.connected for gen in gens])
+        new = np.array([gen.target_p_mw for gen in gens])
+        self.assertAlmostEqual(new[kept].sum(), targets[kept].sum() + psp, places=9)
+        V = model.ac_pf(np.ones(net.bus.shape[0], dtype=np.complex128), 30, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+
+    def test_already_open_station_is_not_lost(self):
+        # the far end of a cross-border link is open from the start (its side keeps its bus
+        # id): it was never in the balance, so cutting its bus off loses nothing
+        psp = 30.0
+        net, model = make_case14_hvdc(3, _LEAF_BUS, converters_mode=1, p_setpoint=psp)
+        targets = self._slack_on_every_gen(model)
+        model.deactivate_dcline_side2(0)
+        self.assertFalse(model.get_dclines()[0].connected2)
+        self._isolate_leaf(model)
+        report = model.consider_only_main_component(True)
+        self.assertEqual(report.mismatch_mw, 0.)
+        gens = model.get_generators()
+        kept = np.array([gen.connected for gen in gens])
+        np.testing.assert_array_equal(np.array([gen.target_p_mw for gen in gens])[kept], targets[kept])
+
     def test_both_converters_in_main_unchanged(self):
         # control case: both converters in the main component -> nothing is opened.
         net, model = make_case14_hvdc(3, 9, converters_mode=0, p_setpoint=30.0)
-        model.consider_only_main_component()
+        self._slack_on_every_gen(model)
+        report = model.consider_only_main_component()
         h = model.get_dclines()[0]
         self.assertTrue(h.connected_global)
         self.assertTrue(h.connected1)
         self.assertTrue(h.connected2)
+        self.assertEqual(report.mismatch_mw, 0.)  # nothing stranded: the HVDC line counts for nothing
 
 
 if __name__ == "__main__":
