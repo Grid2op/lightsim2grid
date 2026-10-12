@@ -12,6 +12,7 @@
 #include "LSGrid.hpp"
 
 #include <set>
+#include <utility>
 #include <vector>
 
 namespace ls2g {
@@ -70,6 +71,14 @@ struct LS2G_API YbusPolicy
         // via init_li_coeffs_from_masks below instead of init_li_coeffs, li_defaults
         // staying empty/unused on that path.
         std::vector<std::vector<Coeff> > li_coeffs;
+        // DC only, aligned with li_coeffs: the active injection (solver bus id, per unit)
+        // to ADD to the entry's Pbus. A DC phase shifter is not in the matrix: its shift is
+        // a pair of injections at its two buses (TrafoContainer::hack_Sbus_for_dc_phase_shifter),
+        // so taking its coefficients out of Bbus leaves them behind -- an entry that
+        // disconnects one would otherwise solve a grid with a phantom injection pair.
+        // Empty for an entry that disconnects no phase shifter, and always in AC, where the
+        // shift is part of the (complex) coefficients removed.
+        std::vector<std::vector<std::pair<int, real_type> > > li_dc_shift_dp;
 
         // dense row-aligned contingency masks (ScenarioSweep only): row i, column j
         // True means "deactivate this branch for step i". Empty (0 rows) means "never
@@ -157,12 +166,15 @@ struct LS2G_API YbusPolicy
                                                  std::vector<Coeff> & out);
             // shared by init_li_coeffs and init_li_coeffs_from_masks: the Ybus
             // coefficients (up to 4 per branch) that emulate disconnecting exactly
-            // `branch_ids` (gridmodel numbering, lines then trafos).
+            // `branch_ids` (gridmodel numbering, lines then trafos), and -- in DC -- the
+            // phase-shift injections that go with them (see li_dc_shift_dp), into
+            // `dc_shift_dp`.
             static std::vector<Coeff> _coeffs_for_branch_ids(const std::vector<int> & branch_ids,
                                                               const LSGrid & grid_model,
                                                               bool ac_solver_used,
                                                               const SolverBusIdVect & id_me_to_solver,
-                                                              size_t n_line);
+                                                              size_t n_line,
+                                                              std::vector<std::pair<int, real_type> > & dc_shift_dp);
     };
 };
 

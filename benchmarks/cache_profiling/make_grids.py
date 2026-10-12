@@ -25,13 +25,19 @@ Two families are written:
   a magnitude the grid already holds, so that each added controller is a no-op
   at the solution -- see `make_fancy` for the order this imposes.
 
-    python make_grids.py [output_dir]
+With ``--two-busbars``, a third family is written instead: grids with two busbars per
+substation (``_2bb``), the second one empty, for the phases that move elements
+between busbars (``profile_batch``'s ``ss_topo_ac``). A synthetic grid (the 200-bus
+Illinois case of the ACTIVSg series) and a larger one.
+
+    python make_grids.py [output_dir] [--two-busbars]
 """
 
 import os
 import sys
 
 import numpy as np
+import pandapower as pp
 import pandapower.networks as pn
 
 from lightsim2grid.network import init_from_pandapower
@@ -52,6 +58,12 @@ FANCY_GRIDS = [
     ("case118_fancy", pn.case118, 8, 4),
     ("case1354pegase_fancy", pn.case1354pegase, 20, 10),
     ("case9241pegase_fancy", pn.case9241pegase, 40, 30),
+]
+
+# (file stem, pandapower factory): see the module docstring
+TWO_BUSBAR_GRIDS = [
+    ("illinois200_2bb", pn.case_illinois200),
+    ("case1354pegase_2bb", pn.case1354pegase),
 ]
 
 MAX_ITER = 10
@@ -183,8 +195,30 @@ def make_fancy(net, nb_groups, nb_svc):
     return grid, len(groups), len(svc_buses)
 
 
-def main(out_dir):
+def two_busbars(net):
+    """`net` with two busbars per substation: one substation per pandapower bus, its
+    second busbar a copy of it, out of service, that no element stands on (the layout
+    grid2op uses, which the converter expects)."""
+    nb_bus = net.bus.shape[0]
+    if list(net.bus.index) != list(range(nb_bus)):
+        raise RuntimeError("the buses of this case are not numbered 0..n-1")
+    pp.create_buses(net, nb_bus, vn_kv=net.bus.vn_kv.values, in_service=False)
+    grid = init_from_pandapower(net, n_sub=nb_bus, n_busbar_per_sub=2)
+    if not _solves(grid):
+        raise RuntimeError("the two-busbar grid does not converge")
+    return grid
+
+
+def main(out_dir, with_two_busbars=False):
     os.makedirs(out_dir, exist_ok=True)
+    if with_two_busbars:
+        for name, factory in TWO_BUSBAR_GRIDS:
+            net = factory()
+            grid = two_busbars(net)
+            path = os.path.join(out_dir, f"{name}.lsb")
+            grid.save_binary(path)
+            print(f"{name}: {grid.get_n_sub()} substations, two busbars each -> {path}")
+        return
     for name, factory in GRIDS:
         net = factory()
         grid = init_from_pandapower(net)
@@ -203,4 +237,5 @@ def main(out_dir):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "grids")
+    args = [a for a in sys.argv[1:] if a != "--two-busbars"]
+    main(args[0] if args else "grids", with_two_busbars="--two-busbars" in sys.argv[1:])

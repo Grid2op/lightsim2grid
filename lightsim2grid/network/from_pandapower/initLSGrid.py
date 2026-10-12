@@ -28,6 +28,7 @@ from ._aux_add_storage import _aux_add_storage
 from ._aux_add_dc_line import _aux_add_dc_line
 from ._my_const import ALLOWED_PP_ORIG_FILE
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
+from lightsim2grid.network._default_algorithms import use_fastest_default_algorithms
 
 
 def init(pp_net: "pandapower.auxiliary.pandapowerNet",
@@ -210,6 +211,8 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     # make sure the grid we just built is internally consistent (bus / substation
     # / topology-vector indices in range, no NaN/Inf in the physical inputs)
     model.check_grid()
+    # KLU where this build has it (see use_fastest_default_algorithms)
+    use_fastest_default_algorithms(model)
 
     return model
 

@@ -19,7 +19,7 @@ void bind_gridmodel(py::module_& m) {
         "What LSGrid.redistribute_active_power / consider_only_main_component(redistribute_slack=True) did: "
         "the imbalance shared (MW, > 0: the units inject more), how many units took part, how many reached "
         "a bound (and left the distributed slack), how many rounds it took, what could not be placed, and "
-        "whether EVERY unit saturated (in which case none left the slack).")
+        "whether every unit of the distributed slack saturated (in which case none left it).")
         .def_readonly("mismatch_mw", &slack_redistribution::Report::mismatch_mw)
         .def_readonly("nb_participants", &slack_redistribution::Report::nb_participants)
         .def_readonly("nb_saturated", &slack_redistribution::Report::nb_saturated)
@@ -131,6 +131,9 @@ void bind_gridmodel(py::module_& m) {
         .def("get_physical_violations", &LSGrid::get_physical_violations,
              py::arg("ac") = true, py::arg("tol_mva") = 1e-4, py::arg("tol_vm_pu") = 1e-4,
              DocLSGrid::get_physical_violations.c_str())
+        .def("cap_slack_at_active_limits", &LSGrid::cap_slack_at_active_limits,
+             py::arg("max_iter") = 10, py::arg("tol") = 1e-8, py::arg("tol_mw") = 1e-6,
+             py::arg("max_rounds") = 10, DocLSGrid::cap_slack_at_active_limits.c_str())
         .def("get_violations", &LSGrid::get_violations,
              py::arg("threshold") = 1., py::arg("ac") = true,
              py::arg("rel_tol") = DEFAULT_VIOLATION_REL_TOL, DocLSGrid::get_violations.c_str())
@@ -261,11 +264,14 @@ void bind_gridmodel(py::module_& m) {
              "max_p when the mismatch it distributes is positive, at min_p when negative), with "
              "the weight each would have as a participant, on the same scale as the slack "
              "weights (ignored where not flagged; `GenInfo.can_participate_slack` / "
-             "`can_participate_slack_weight`). Never read by the Newton solve, whose distributed "
-             "slack has no bounds: only the bounded redistribution pre-pass "
-             "(`consider_only_main_component(True)`, the batch algorithms' `redistribute_slack`) "
-             "counts them, within their [min_p, max_p], so they only move away from the limit "
-             "they sit at. `init_from_pypowsybl(can_participate_slack=...)` fills it from what "
+             "`can_participate_slack_weight`). The slack participants carry the flag on their own "
+             "and keep it whatever `flags` says. While out of the slack, a flagged unit is not "
+             "read by the Newton solve, whose distributed slack has no bounds: only the bounded "
+             "redistribution pre-pass (`consider_only_main_component(True)`, the batch algorithms' "
+             "`redistribute_slack`) counts it, within its [min_p, max_p], so it only moves away "
+             "from the limit it sits at. It goes back into the slack, with this weight, when it "
+             "is reconnected or its set-point is moved off its limits (`change_p_gen`). "
+             "`init_from_pypowsybl(can_participate_slack=...)` fills it from what "
              "`bake_outer_loops(..., return_details=True)` capped.")
         .def("set_storage_can_participate_slack", &LSGrid::set_storage_can_participate_slack,
              py::arg("flags"), py::arg("weights"),
@@ -273,12 +279,13 @@ void bind_gridmodel(py::module_& m) {
         .def("set_gen_can_participate_slack_overshoot", &LSGrid::set_gen_can_participate_slack_overshoot,
              py::arg("overshoot_mw"),
              "For the generators flagged with `set_gen_can_participate_slack`: how far BEYOND the "
-             "limit it sits at each one was in the reference solve, in MW (>= 0, one value per "
-             "generator, 0 by default; `GenInfo.can_participate_slack_overshoot_mw`). OpenLoadFlow "
+             "limit it sits at each one was in the reference solve, in MW (> 0 above its upper "
+             "limit, < 0 below its lower one, one value per generator, 0 by default; "
+             "`GenInfo.can_participate_slack_overshoot_mw`). OpenLoadFlow "
              "shares the slack from the raw set-points, so a unit it capped at max_p had "
              "raw + lambda * weight above max_p by that much, and an imbalance of the other sign "
              "only moves it once the common shift of the distribution has used that up. Only the "
-             "bounded redistribution pre-pass reads it. `init_from_pypowsybl(can_participate_slack=...)` "
+             "bounded redistribution pre-pass reads it. `init_from_pypowsybl(can_participate_slack_overshoot=...)` "
              "fills it when given what `bake_outer_loops(..., return_details=True)` computed.")
         .def("set_storage_can_participate_slack_overshoot", &LSGrid::set_storage_can_participate_slack_overshoot,
              py::arg("overshoot_mw"),
@@ -557,6 +564,12 @@ void bind_gridmodel(py::module_& m) {
         .def("get_slack_ids", &LSGrid::get_slack_ids_numpy, DocLSGrid::get_slack_ids.c_str(), py::return_value_policy::reference)
         .def("get_slack_ids_dc", &LSGrid::get_slack_ids_dc_numpy, DocLSGrid::get_slack_ids_dc.c_str(), py::return_value_policy::reference)
         .def("get_slack_weights", &LSGrid::get_slack_weights, DocLSGrid::get_slack_weights.c_str(), py::return_value_policy::reference)
+        .def("get_gen_slack_shares", &LSGrid::get_gen_slack_shares,
+             "Each generator's share of the distributed slack: its weight over the total weight "
+             "of every connected participant (storage units included), so that "
+             "P = target_p + share * (slack absorbed). 0 for a generator that does not take part. "
+             "Read off the current weights, which change_p_gen does not update (see "
+             "update_slack_weights).")
         .def("get_pv_solver", &LSGrid::get_pv_solver_numpy, DocLSGrid::get_pv_solver.c_str(), py::return_value_policy::reference)
         .def("get_pq_solver", &LSGrid::get_pq_solver_numpy, DocLSGrid::get_pq_solver.c_str(), py::return_value_policy::reference)
         // per-family variants: the AC and the DC solver each keep their own split

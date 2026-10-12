@@ -199,4 +199,33 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
     else _timer_compute_P = timer_compute.duration();
 }
 
+void BaseBatchSolverSynch::compute_branch_results_from_Vs()
+{
+    if (_voltages.size() == 0 && _thetas.size() == 0)
+    {
+        std::ostringstream exc_;
+        exc_ << "BaseMultiplePowerflow::compute_branch_results_from_Vs: cannot compute the flows as the voltages are not set. Have you called compute(...) ? ";
+        throw std::runtime_error(exc_.str());
+    }
+    const real_type sn_mva = _grid_model.get_sn_mva();
+    const Eigen::Index nb_steps = _nb_result_rows();
+    const Eigen::Index nb_col = 4 * static_cast<Eigen::Index>(n_total_);
+    const bool is_ac = _algo.ac_solver_used();
+    // DC fast path: the angles straight from _thetas (see compute_flows_from_Vs)
+    const bool dc_lazy = !is_ac && _dc_lazy_storage_used_;
+    if(_branch_results.rows() != nb_steps || _branch_results.cols() != nb_col){
+        _branch_results.resize(nb_steps, nb_col);
+    }
+    _branch_results.setZero();
+
+    const auto & lines = _grid_model.get_powerlines_as_data();
+    const auto & trafos = _grid_model.get_trafos_as_data();
+    for(Eigen::Index i = 0; i < nb_steps; ++i){
+        const cplx_type * V_row = dc_lazy ? nullptr : _voltages.row(i).data();
+        const real_type * theta_row = dc_lazy ? _thetas.row(i).data() : nullptr;
+        _branch_results_of_row(lines, i, 0, false, is_ac, sn_mva, V_row, theta_row);
+        _branch_results_of_row(trafos, i, n_line_, true, is_ac, sn_mva, V_row, theta_row);
+    }
+}
+
 } // namespace ls2g

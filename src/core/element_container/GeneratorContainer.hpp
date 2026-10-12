@@ -163,12 +163,17 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         void remove_slackbus(int gen_id, DualAlgoControl & solver_control){
             slack_.remove(gen_id, solver_control);
         }
-        void remove_all_slackbus(){ slack_.remove_all(); }
-        /// the participants outside the main component leave the slack (LSGrid::consider_only_main_component)
-        void remove_slackbus_not_in_main_component(const std::vector<bool> & busbar_in_main_component,
-                                                   DualAlgoControl & solver_control){
-            slack_.remove_if_bus_not_in(busbar_in_main_component, bus_id_, solver_control);
+        /// out of the slack while it sits at the limit it saturated at, still able to come back (see SlackParticipation::leave)
+        void leave_slackbus(int gen_id, DualAlgoControl & solver_control){
+            slack_.leave(gen_id, solver_control);
         }
+        /// back into the slack if it can participate and is connected off its limits (see SlackParticipation::rejoin_if_able)
+        bool rejoin_slackbus_if_able(int gen_id, DualAlgoControl & solver_control){
+            const bool connected = status_[gen_id] && bus_id_(gen_id).cast_int() != _deactivated_bus_id;
+            return slack_.rejoin_if_able(gen_id, connected, target_p_mw_(gen_id), get_min_p(gen_id), get_max_p(gen_id),
+                                         solver_control, "GeneratorContainer::rejoin_slackbus_if_able");
+        }
+        void remove_all_slackbus(){ slack_.remove_all(); }
 
         /// add, per bus, the active power (MW, generator convention) the connected generators
         /// produce: what LSGrid::assign_slack_to_most_connected shares the slack by
@@ -226,6 +231,29 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
                          bool can_participate = false){
             slack_.split(res_p_, 1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
                          "GeneratorContainer::set_p_slack", can_participate);
+        }
+        /**
+         * set_p_slack, for a state the caller solved itself and keeps outside this
+         * container (a batch row): adds each participant's share to `res_p` instead of
+         * res_p_. `gen_off` (empty, or one entry per generator) takes generators out as if
+         * disconnected, the way that row did.
+         */
+        void add_p_slack(RealVect & res_p,
+                         const Eigen::Ref<const RealVect> & node_mismatch,
+                         const SolverBusIdVect & id_grid_to_solver,
+                         const Eigen::Ref<const RealVect> & bus_raw_total,
+                         const std::vector<bool> & gen_off) const{
+            if(gen_off.empty()){
+                slack_.split(res_p, 1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
+                             "GeneratorContainer::add_p_slack");
+                return;
+            }
+            std::vector<bool> status(status_);
+            for(std::size_t gen_id = 0; gen_id < status.size() && gen_id < gen_off.size(); ++gen_id){
+                if(gen_off[gen_id]) status[gen_id] = false;
+            }
+            slack_.split(res_p, 1., node_mismatch, bus_raw_total, status, bus_id_, id_grid_to_solver,
+                         "GeneratorContainer::add_p_slack");
         }
 
         // modification
@@ -343,6 +371,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             slack_.set_can_participate_overshoot(overshoot_mw, "GeneratorContainer::set_can_participate_slack_overshoot");
         }
         real_type get_can_participate_slack_overshoot(int gen_id) const {return slack_.can_participate_overshoot(gen_id);}
+        /// see SlackParticipation::set_can_participate_overshoot_of (LSGrid::redistribute_active_power)
+        void set_can_participate_slack_overshoot_of(int gen_id, real_type overshoot_mw){
+            slack_.set_can_participate_overshoot_of(gen_id, overshoot_mw);
+        }
         bool is_slack(int gen_id) const {return slack_.is_slack(gen_id);}
 
         /**

@@ -37,6 +37,12 @@ An `LSGrid` can be built from several source formats, each with a dedicated ``in
 
 See the "Detailed documentation" section below for the full signature and caveats of each.
 
+Every loader leaves the grid on the fastest algorithms this build has: ``NR_KLU`` and
+``DC_KLU`` when KLU was compiled in (it is optional), ``NR_SparseLU`` and ``DC_SparseLU``
+otherwise. Both solve the same equations to the same answer, up to rounding.
+``change_algorithm`` selects any other one; a batch class built from the grid
+(``ScenarioSweepCPP``, ``ContingencyAnalysisCPP``, ...) starts from the grid's AC algorithm.
+
 Whichever loader built it, the resulting ``LSGrid`` also knows **which substation / voltage
 level each of its elements belongs to** (``sub_id`` of an ``*Info`` object, set by the loader
 through ``set_gen_to_subid`` and friends). That is a property of the source file, so the

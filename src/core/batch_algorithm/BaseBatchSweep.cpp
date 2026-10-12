@@ -46,6 +46,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
 
     _apply_step_gen_v(i, V);
     _apply_step_topo_seed(i, V);
+    _apply_step_dc_vm_reset(i, V);
     _apply_step_vc_v_set(i, algo);
 
     // the Ybus edit, and its timer, only where Ybus varies at all: the hooks compile
@@ -70,12 +71,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            _record_row_solve_stats(i, algo);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
             // (and _record_row_bus_q, which reads the mismatch of the system this row
             // solved)
             if(conv){
                 _maybe_store_jacobian(i, algo);
                 _record_row_physical(i, algo, V, sw, sb);
+                _record_row_gen_results(i, algo, Ybus, V, sw, sb);
             }
         } else {
             // generator contingencies: this row's buses that keep a live local voltage
@@ -96,12 +99,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
+            _record_row_solve_stats(i, algo);
             // before the pinning is restored, and before the Ybus is put back: the
             // refreshed Jacobian has to describe the system THIS row solved, and so does
             // the state the physical-limit checks read
             if(conv){
                 _maybe_store_jacobian(i, algo);
                 _record_row_physical(i, algo, V, sw, sb);
+                _record_row_gen_results(i, algo, Ybus, V, sw, sb);
             }
             if(flips) algo.set_pv_pinned_buses(_switchable_buses_);
         }
@@ -381,7 +386,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
         // the refactorize fallback the member algo got (see _maybe_prepare_masks /
         // _push_switchable_to_algo): a fresh algo starts without it
-        if(mask_mode || _has_pv_switching()) algos[t]->set_refactor_fallback(true);
+        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary()) algos[t]->set_refactor_fallback(true);
         // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
         // yet, so telling it here is enough -- its first build_J_sparsity() already
         // accounts for them. Starts fully pinned, like _algo; each row releases what
@@ -465,6 +470,18 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     const auto & sn_mva = _grid_model.get_sn_mva();
     const bool ac_solver_used = _algo.ac_solver_used();
 
+    // the slack pre-pass moves set-points by the slack weights and takes the units it
+    // saturates out of them: a single-slack algorithm ignores both, and the physical
+    // checks would read targets the solve never used
+    if(_redistribute_slack_ && !_algo.distributes_slack()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::compute: `redistribute_slack` needs an algorithm with a distributed "
+                "slack (a Newton-Raphson NR_*, the DC or the fast-decoupled one): the active one, "
+             << _algo.get_name() << ", puts the whole imbalance on the reference bus. Use "
+                "`change_algorithm`, or turn `redistribute_slack` off.";
+        throw std::runtime_error(exc_.str());
+    }
+
     const size_t nb_steps = _nb_steps();
 
     // ---- what of the three levels this call may keep ------------------------------
@@ -489,6 +506,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // next to it. Rows never reached this compute() (eg a TimeSeries chain that
     // aborts, or the diverging-"n"-case early return below) stay 0.
     _converged_mask_.assign(nb_steps, 0);
+    _row_solve_time_.assign(nb_steps, 0.);
+    _row_nb_iter_.assign(nb_steps, 0);
+    _gen_results_ = _compute_gen_results_ ?
+        RealMat::Zero(static_cast<Eigen::Index>(nb_steps), 2 * static_cast<Eigen::Index>(_grid_model.get_generators().nb())) :
+        RealMat();
 
     // limit-violation bookkeeping (ContingencyAnalysis only; no-op elsewhere)
     _refresh_defaults_vect_cache();
@@ -567,6 +589,12 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // reads the per-row injections above, the masks and the generator contingencies:
     // after all of them, before the "n" solve it leaves untouched)
     _prepare_slack_redistribution(nb_steps);
+    // A row whose slack weights differ from the base case's (a participant it disconnects,
+    // one its pre-pass saturates) zeroes a value of the Jacobian's slack column that the
+    // "n" factorization had non-zero, and KLU's refactorization keeps that pivot order:
+    // let it fall back to a numeric factorize there, as for masking / PV pinning. A
+    // bool store; the fallback only runs on a failure.
+    if(_row_slack_weights_vary()) _algo.set_refactor_fallback(true);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
@@ -575,6 +603,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // magnitude-reconstruction helpers do not need to know about SbusPolicy at all).
     const bool use_dc_lazy_v = !ac_solver_used && !_mask_mode();
     if(use_dc_lazy_v) _dc_gen_v_ = _sbus_gen_v();
+    _prepare_dc_row_vm_reset(Vinit, ac_solver_used, nb_steps);
 
     // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
     // factorization every row refactorizes into), plus this call's result buffers

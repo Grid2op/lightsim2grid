@@ -87,9 +87,27 @@ class TestRemoteVoltageControlRange(unittest.TestCase):
         self.assertEqual(grid.get_remote_voltage_control_max_vm_pu(), 1.2)
         grid.set_remote_voltage_control_vm_range(np.nan, 1.2)  # one side only
         self.assertTrue(np.isnan(grid.get_remote_voltage_control_min_vm_pu()))
-        # copied with the grid (a batch built from it inherits it), like
-        # keep_vinit_at_group_controlled_buses not part of the state a pickle carries
+        # copied with the grid (a batch built from it inherits it)
         self.assertEqual(grid.copy().get_remote_voltage_control_max_vm_pu(), 1.2)
+
+    @unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+    def test_kept_by_pickle_deepcopy_and_binary(self):
+        # a grid shipped to worker processes (pickle) or deep-copied keeps checking its
+        # remote controllers: the range is part of the grid's state, like the other flags
+        # init_from_pypowsybl sets
+        import copy
+        import os
+        import pickle
+        import tempfile
+        grid = init_from_pypowsybl(pp.network.create_ieee14(), gen_slack_id="B1-G", sort_index=True)
+        grid.set_remote_voltage_control_vm_range(np.nan, 1.15)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "grid.lsb")
+            grid.save_binary(path)
+            from_file = LSGrid.load_binary(path)
+        for other in (pickle.loads(pickle.dumps(grid)), copy.deepcopy(grid), from_file):
+            self.assertTrue(np.isnan(other.get_remote_voltage_control_min_vm_pu()))
+            self.assertEqual(other.get_remote_voltage_control_max_vm_pu(), 1.15)
 
     def test_refused(self):
         grid = LSGrid()
@@ -116,14 +134,24 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
                 self.assertEqual(el.category, ViolationCategory.PHYSICAL)
 
     def test_value_and_limit(self):
-        grid = _ls(_ieee14_remote(14.2))
+        # an explicit range (OpenLoadFlow's default differs from one version to the next)
+        grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=(0.8 * 1.02, 1.2 / 1.02))
         viols = _remote(grid.get_physical_violations(True, 0., 0.))
         self.assertEqual(len(viols), 1)
         self.assertEqual(viols[0].violation_type, LimitViolationType.HIGH_VOLTAGE_REMOTE_CONTROL)
-        # the bound in kV of its own (12 kV) bus, OpenLoadFlow's default maxRealisticVoltage
-        # with its margin
+        # the bound in kV of its own (12 kV) bus
         self.assertAlmostEqual(viols[0].limit, 12. * 1.2 / 1.02, places=9)
         self.assertGreater(viols[0].value, viols[0].limit)
+
+    def test_olf_range_is_the_installed_olf_default(self):
+        # "olf" reads minRealisticVoltage / maxRealisticVoltage off the OpenLoadFlow pypowsybl
+        # ships (its defaults changed between versions), with the margin of its loop
+        params = lf.get_provider_parameters("OpenLoadFlow")
+        vmin = float(params.loc["minRealisticVoltage", "default"])
+        vmax = float(params.loc["maxRealisticVoltage", "default"])
+        grid = _ls(_ieee14_remote(13.85))
+        self.assertAlmostEqual(grid.get_remote_voltage_control_min_vm_pu(), vmin * 1.02, places=12)
+        self.assertAlmostEqual(grid.get_remote_voltage_control_max_vm_pu(), vmax / 1.02, places=12)
 
     def test_switched_off(self):
         grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=None)
@@ -138,7 +166,7 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
         self.assertEqual(_remote(_ls(n).get_physical_violations(True, 0., 0.)), [])
 
     def test_contingency_analysis_matches_the_single_solve(self):
-        grid = _ls(_ieee14_remote(14.2))
+        grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=(0.8 * 1.02, 1.2 / 1.02))
         ref = _remote(grid.get_physical_violations(True, 0., 0.))
         self.assertEqual(len(ref), 1)
         ca = ContingencyAnalysisCPP(grid)

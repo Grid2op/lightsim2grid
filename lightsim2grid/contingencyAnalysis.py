@@ -47,8 +47,11 @@ class PreContingencyResult:
     #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), a PQ generator
     #: flagged as pinned at a reactive limit that would regulate again (LOW_VOLTAGE_AT_MIN_Q /
     #: HIGH_VOLTAGE_AT_MAX_Q), an idle SVC flagged as carrying a standby automaton that would
-    #: switch it on (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), an angle-droop
-    #: hvdc line beyond what its converters can transmit (HIGH_P), or a generator the
+    #: switch it on (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), a generator holding a
+    #: remote bus from an unrealistic voltage on its own bus (LOW_VOLTAGE_REMOTE_CONTROL /
+    #: HIGH_VOLTAGE_REMOTE_CONTROL), an angle-droop hvdc line beyond what its converters can
+    #: transmit (HIGH_P), one flagged as frozen at its limit whose droop would ask for less
+    #: (HVDC_AC_EMULATION_RELEASE), or a generator the
     #: distributed slack pushed outside its active power limits (LOW_P / HIGH_P). Kept apart from
     #: `limit_violations` because it is a different KIND of statement: every entry here has
     #: `category == ViolationCategory.PHYSICAL` -- a state the grid cannot reach -- or
@@ -246,7 +249,11 @@ class ContingencyAnalysis(object):
     def handle_disconnected_grid(self, val: bool):
         if bool(val) != val:
             raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
-        self.computer.handle_disconnected_grid = bool(val)
+        val = bool(val)
+        if val != self.computer.handle_disconnected_grid:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.handle_disconnected_grid = val
 
     @property
     def redistribute_slack(self):
@@ -259,7 +266,8 @@ class ContingencyAnalysis(object):
         only sharing what is left (the change in the losses) on the units that can still move.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
         clamp anything. Same as ``LSGrid.consider_only_main_component(redistribute_slack=True)``,
-        contingency by contingency.
+        contingency by contingency. Needs an algorithm with a distributed slack: ``compute``
+        refuses it with a single-slack one (``NRSing_*``, Gauss-Seidel).
         """
         return self.computer.redistribute_slack
 
@@ -267,7 +275,11 @@ class ContingencyAnalysis(object):
     def redistribute_slack(self, val: bool):
         if bool(val) != val:
             raise ValueError("The `redistribute_slack` attribute must be a boolean.")
-        self.computer.redistribute_slack = bool(val)
+        val = bool(val)
+        if val != self.computer.redistribute_slack:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.redistribute_slack = val
 
     @property
     def compute_limit_violations(self):
@@ -407,7 +419,7 @@ class ContingencyAnalysis(object):
         does reach and should not sit in). Default: ``False``. See
         :func:`get_physical_violations` and `ContingencyResult.physical_violations`.
 
-        Five checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        Each check is a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
         enforced here (nothing is switched PV -> PQ or back, no droop is clamped, no machine
         leaves the slack distribution, no contingency is re-solved):
 
@@ -432,9 +444,21 @@ class ContingencyAnalysis(object):
           ``MonitoringVoltageOuterLoop``. ``value`` and ``limit`` in kV, compared with
           :attr:`physical_violation_tol_vm_pu`. A grid with no flagged SVC reports nothing
           here.
+        * the **own bus** of every generator regulating a remote bus, when a realistic range
+          is set (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the
+          ``GENERATOR``, see
+          :func:`lightsim2grid.network.LSGrid.set_remote_voltage_control_vm_range`): does
+          holding the remote target take it outside that range? OpenLoadFlow's
+          ``ReactiveLimits``, in its robust remote voltage control mode. ``value`` and
+          ``limit`` in kV, compared with :attr:`physical_violation_tol_vm_pu`.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? OpenLoadFlow's ``HvdcAcEmulationLimits``.
+        * the **release** of every angle-droop hvdc line flagged as frozen at its active
+          power limit (``HVDC_AC_EMULATION_RELEASE`` on the ``HVDC``, see
+          :func:`lightsim2grid.network.LSGrid.set_hvdc_ac_emulation_frozen`): would its droop
+          ask for less than that limit? The other half of the same ``HvdcAcEmulationLimits``
+          loop. ``side`` the direction it is frozen in, ``value`` and ``limit`` in MW.
         * the **active power** of every generator and every storage unit carrying the
           **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
           ``STORAGE``): the slack is solved inside the
@@ -450,8 +474,8 @@ class ContingencyAnalysis(object):
 
         Independent of `compute_limit_violations`: either can be on without the other (though
         `run` still requires `compute_limit_violations`, and fills `physical_violations` only
-        when this one is on too). The two active-power checks work in DC; the reactive one
-        and the release one need an AC algorithm that publishes its per-bus mismatch (every
+        when this one is on too). The active-power checks (the hvdc ones and the slack one) work
+        in DC; the reactive one and the voltage ones need an AC algorithm that publishes its per-bus mismatch (every
         built-in AC algorithm does) and `run` / `compute_V` raise for one that does not.
         Changing this flag invalidates any computed result but keeps the registered
         contingencies.
@@ -475,7 +499,8 @@ class ContingencyAnalysis(object):
     def physical_violation_tol_mva(self):
         """Absolute slack on every comparison :attr:`compute_physical_violations` makes, so
         that an element resting exactly on its limit is not reported over solver noise: a
-        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q``).
+        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q`` and
+        ``HVDC_AC_EMULATION_RELEASE``).
         Default: ``1e-4``. In MVA -- one noise floor for both halves, MW and MVAr being the
         same scale.
 
@@ -507,7 +532,9 @@ class ContingencyAnalysis(object):
         (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
         flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
         automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
-        ``HIGH_VOLTAGE_SVC_STANDBY``). Default: ``1e-4``. Changing it invalidates any
+        ``HIGH_VOLTAGE_SVC_STANDBY``), and the remote voltage control check a remote
+        controller whose own bus is outside the realistic range by more than this
+        (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``). Default: ``1e-4``. Changing it invalidates any
         previously-computed results.
         """
         return self.computer.physical_violation_tol_vm_pu
