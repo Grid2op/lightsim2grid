@@ -242,6 +242,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] DC flows of a phase shifter in the batch flows and in the current-limit checks (batch and
   ``LSGrid.get_violations``): the shift term had the wrong sign and no ``sn_mva`` scaling.
 - [FIXED] A DC batch row disconnecting a phase shifter kept its shift injections in Pbus.
+- [FIXED] DC ``ContingencyAnalysis`` / ``ScenarioSweep`` with ``nb_thread > 1`` crashed (segfault):
+  a fresh worker's solver had no internal Bbus yet when the first outage edited it.
 - [FIXED] DC batch with ``handle_disconnected_grid``: rows were solved with a stale Pbus (the base
   case's, or the first row's), ignoring per-row injections and the slack pre-pass.
 - [FIXED] ``LSGrid`` pickling converts its state one element at a time: the single huge tuple cast

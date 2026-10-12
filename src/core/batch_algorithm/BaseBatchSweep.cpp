@@ -374,9 +374,24 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     std::vector<double> th_timer_solver(nb_thread, 0.);
     std::vector<int> th_diverge(nb_thread, -1);
     std::vector<std::exception_ptr> th_err(nb_thread);
+    // In DC a row's outage is not an edit of the Ybus copy but of the solver's own
+    // reduced matrix (YbusPolicy::Contingency::remove_from_Ybus -> update_internal_Ybus),
+    // which a freshly built algorithm does not have yet: editing it would read past
+    // its empty bus map, and its first solve would rebuild the matrix from the
+    // unedited Bbus anyway, dropping that row's outage. So a fresh DC worker solves
+    // the base case first, as the member algorithm did, and its range must then not
+    // ask for a full rebuild (needs_solver_init) that would undo the row's edit.
+    std::vector<char> th_needs_init(nb_thread, !reuse_workers);
 
     auto init_thread = [&](int t){
         if(algos[t] == nullptr) algos[t] = make_thread_algo();
+        controls[t] = _algo_controler;
+        // before the settings below: warmup_solver resets the algorithm, which
+        // clears its masking
+        if(!ac_solver_used && th_needs_init[t]){
+            warmup_solver(*algos[t], controls[t], Vinit_solver, max_iter, tol_);
+            th_needs_init[t] = 0;
+        }
         algos[t]->set_lazy_v(use_dc_lazy_v);
         algos[t]->set_start_polar_cache(INIT == BatchInitKind::FromSeed);
         // freshly spawned -- no rebuild-invalidation needed (its very first
@@ -394,7 +409,6 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
             algos[t]->set_switchable_vm_buses(_switchable_buses_);
             algos[t]->set_pv_pinned_buses(_switchable_buses_);
         }
-        controls[t] = _algo_controler;
         ybus_copies[t] = ac_cache_.mat;
     };
 
@@ -403,15 +417,17 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
     auto body = [&](int t){
         size_t b, e;
         split_range(nb_steps, nb_thread, static_cast<int>(t), b, e);
-        init_thread(t);
+        // the DC warm-up solves: an exception must reach th_err, not a worker's
+        // std::thread (which would terminate the process)
+        try { init_thread(t); } catch(...) { th_err[t] = std::current_exception(); return; }
         if(mask_mode){
             _maybe_run_range_masked(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used,
                                     max_iter, tol, sn_mva, th_timer_modif[t], th_nb_solved[t], th_nb_converged[t], th_timer_solver[t],
-                                    th_diverge[t], th_err[t], !reuse_workers);
+                                    th_diverge[t], th_err[t], th_needs_init[t] != 0);
         } else {
             _run_range(b, e, *algos[t], controls[t], ybus_copies[t], Vinit_solver, ac_solver_used, max_iter, tol_,
                       th_nb_solved[t], th_nb_converged[t], th_timer_solver[t], th_timer_modif[t], th_diverge[t], th_err[t],
-                      !reuse_workers);
+                      th_needs_init[t] != 0);
         }
     };
 
