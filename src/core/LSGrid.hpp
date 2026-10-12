@@ -2632,32 +2632,36 @@ class LS2G_API LSGrid final
         Eigen::SparseMatrix<T> _relabel_matrix(const Eigen::SparseMatrix<T> & Ybus,
                                                const GlobalBusIdVect & id_solver_to_me,
                                                bool relabel_row=true) const {
-            // TODO optim : if relabel_row is false, then we can just copy
-            // paste the columns easily in the target matrix, which should be
-            // way faster than this function.
             using index_type = typename Eigen::SparseMatrix<T>::StorageIndex ;
             const int nb_conn_bus = nb_connected_bus();
             if(id_solver_to_me.size() == 0) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             if(Ybus.cols() != nb_conn_bus) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columns, (.., nb connected bus) expected");
             if(relabel_row & (Ybus.rows() != nb_conn_bus)) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columnd (nb connected bus, ...) expected");
-            Eigen::SparseMatrix<T> res(relabel_row ? total_bus() : Ybus.rows(), total_bus());
-            res.reserve(Ybus.nonZeros());
-            std::vector<Eigen::Triplet<T> > tripletList;
-            tripletList.reserve(Ybus.nonZeros());
-            const auto n_col = Ybus.cols();
-            for (Eigen::Index col_=0; col_ < n_col; ++col_){
-                for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_); it; ++it)
-                {
-                    if(relabel_row) tripletList.push_back({static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())]),
-                                                           static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.col())]),
-                                                           it.value()});
-                    else tripletList.push_back({static_cast<index_type>(it.row()), 
-                                                static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.col())]),
-                                                it.value()});
+            // id_solver_to_me is strictly increasing (init_converter_bus_id numbers the
+            // connected buses in grid order). So relabelling keeps the entries of a column
+            // in order, and a solver column lands whole in its grid column: the compressed
+            // storage is written directly, in one pass and without sorting, with an empty
+            // column for each bus the solver does not see.
+            const Eigen::Index n_total = static_cast<Eigen::Index>(total_bus());
+            Eigen::SparseMatrix<T> res(relabel_row ? n_total : Ybus.rows(), n_total);
+            res.resizeNonZeros(Ybus.nonZeros());
+            index_type * outer = res.outerIndexPtr();
+            index_type * inner = res.innerIndexPtr();
+            T * values = res.valuePtr();
+            index_type nnz = 0;
+            Eigen::Index next_col = 0;  // first grid column whose start is not written yet
+            for (Eigen::Index col_solver = 0; col_solver < Ybus.outerSize(); ++col_solver){
+                const Eigen::Index col_me = id_solver_to_me[static_cast<size_t>(col_solver)].cast_int();
+                if(col_me < next_col) throw std::runtime_error("LSGrid::_relabel_matrix: the solver to gridmodel bus mapping is not increasing.");
+                for(; next_col <= col_me; ++next_col) outer[next_col] = nnz;
+                for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_solver); it; ++it){
+                    inner[nnz] = relabel_row ? static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())].cast_int())
+                                             : static_cast<index_type>(it.row());
+                    values[nnz] = it.value();
+                    ++nnz;
                 }
             }
-            res.setFromTriplets(tripletList.begin(), tripletList.end());
-            res.makeCompressed();
+            for(; next_col <= n_total; ++next_col) outer[next_col] = nnz;
             return res;
         }
 

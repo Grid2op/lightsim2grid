@@ -1886,6 +1886,8 @@ void LSGrid::init_converter_bus_id(SolverBusIdVect& id_me_to_solver,
     id_me_to_solver = SolverBusIdVect(nb_bus_init, SolverBusId(BaseConstants::_deactivated_bus_id));  // by default, if a bus is disconnected, then it has a -1 there
     id_solver_to_me = GlobalBusIdVect();
     id_solver_to_me.reserve(nb_bus_init);
+    // the connected buses are numbered in grid order, so id_solver_to_me is strictly
+    // increasing: _relabel_matrix relies on it to relabel a matrix without sorting
     int bus_id_solver = 0;
     for(int bus_id_me=0; bus_id_me < nb_bus_init; ++bus_id_me){
         if(substations_.is_bus_connected(GlobalBusId(bus_id_me))){

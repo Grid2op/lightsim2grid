@@ -403,6 +403,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] ``ScenarioSweep.redistribute_slack`` also shares, before each row's powerflow, the
   active imbalance its ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` create against
   the grid's own targets.
+- [IMPROVED] ``LSGrid.get_Ybus()``, ``get_dcYbus()`` and ``get_Bf()`` relabel the solver matrix in
+  one pass instead of sorting it again: several times faster on large grids.
 
 
 [1.1.0] 2026-09-21
