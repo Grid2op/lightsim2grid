@@ -36,7 +36,11 @@ class LSGrid;
  * Only on a grid with some unit flagged "can participate in the slack" (is_needed, and the
  * same rule in detection mode): a grid where no unit is flagged has no distributed slack set
  * up at all -- OpenLoadFlow with distributedSlack off, where the loop does not exist -- and
- * its single slack is kept on purpose.
+ * its single slack is kept on purpose. Detection asks more: a participant OFF the slack bus.
+ * Units on the slack bus alone (a slack unit keeps its flag, see
+ * SlackParticipation::set_can_participate) would only take what that bus already absorbs,
+ * the same solution: nothing to report -- such a unit past its active range is GenPCheck's
+ * LOW_P / HIGH_P.
  * UNSTABLE when the targets moved, FAILED when some of the mismatch could not be shared
  * (every unit at a bound) and `Params::fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its
  * LEAVE_ON_SLACK_BUS: the slack bus keeps it).
@@ -79,8 +83,10 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         real_type _mismatch_mw(const OuterContext & ctx) const;
         /// OpenLoadFlow's trigger: the mismatch (written in `mismatch_mw`) above the threshold
         bool _triggered(const OuterContext & ctx, real_type & mismatch_mw) const;
-        /// whether some unit of `grid` takes part in the slack
-        static bool _has_participant(const LSGrid & grid, const SolverBusIdVect & id_me_to_solver);
+        /// whether some unit of `grid` takes part in the slack, on another solver bus than
+        /// `skip_solver_bus` (-1: anywhere)
+        static bool _has_participant(const LSGrid & grid, const SolverBusIdVect & id_me_to_solver,
+                                     int skip_solver_bus = -1);
 
         // per solve (see _initialize): the participants, with their initial injection
         // (generator convention, MW), and where each one is now

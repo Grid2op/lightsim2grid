@@ -243,6 +243,32 @@ class TestDistributedSlack(unittest.TestCase):
         self.assertFalse([v for v in grid.get_physical_violations()
                           if v.violation_type == LimitViolationType.SLACK_MISMATCH])
 
+    def test_detection_slack_unit_alone_past_its_limit(self):
+        """The slack unit, the only one left to share the slack, absorbs enough to leave its
+        active range: sharing the mismatch on itself would change nothing, so it is no
+        SLACK_MISMATCH -- the unit past its limit is a LOW_P of its own."""
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
+        from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationElementType
+        net = self._net()
+        target_p = net.get_generators().loc["B1-G", "target_p"]
+        # the slack absorbs more than 10 MW less than its target here
+        net.update_generators(id=["B1-G"], min_p=[target_p - 10.])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, olf_rules=True, gen_slack_id="B1-G")
+        grid.change_algorithm(SING)
+        nb_gen = len(list(grid.get_generators()))
+        grid.set_gen_can_participate_slack([False] * nb_gen, np.zeros(nb_gen))
+        grid.set_storage_can_participate_slack([], np.zeros(0))
+        self.assertGreater(_solve(grid).shape[0], 0)
+        violations = grid.get_physical_violations()
+        self.assertFalse([v for v in violations if v.violation_type == LimitViolationType.SLACK_MISMATCH])
+        low_p = [v for v in violations if v.violation_type == LimitViolationType.LOW_P]
+        self.assertEqual(len(low_p), 1)
+        self.assertEqual(low_p[0].element_type, ViolationElementType.GENERATOR)
+        self.assertEqual(low_p[0].element_id, 0)
+        self.assertLess(low_p[0].value, target_p - 10.)
+
 
 class TestHvdcAcEmulationLimits(unittest.TestCase):
     """OpenLoadFlow's AcHvdcAcEmulationLimits loop, from python: an angle-droop hvdc line on

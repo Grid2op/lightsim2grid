@@ -113,25 +113,28 @@ void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitVi
 {
     real_type mismatch = 0.;
     if(!_triggered(ctx, mismatch)) return;
-    // only on a grid that says who would share the slack (see is_needed); the outer-loop
-    // mode never gets here otherwise
+    // only on a grid that says who would share the slack (see is_needed), and with a unit
+    // off the slack bus to take it: the slack bus' own units would only take what it already
+    // absorbs, the same solution. The outer-loop mode never gets here otherwise
     if(ctx.is_detection() &&
        !_has_participant(*ctx.grid, ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver
-                                                                   : ctx.grid->id_me_to_ac_solver())) return;
+                                                                   : ctx.grid->id_me_to_ac_solver(),
+                         ctx.slack_bus)) return;
     out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::SLACK_MISMATCH,
                                  mismatch, params_.slack_bus_p_max_mismatch_mw, std::string()});
 }
 
-bool DistributedSlackLoop::_has_participant(const LSGrid & grid, const SolverBusIdVect & id_me_to_solver)
+bool DistributedSlackLoop::_has_participant(const LSGrid & grid, const SolverBusIdVect & id_me_to_solver,
+                                            int skip_solver_bus)
 {
     std::vector<slack_redistribution::Participant> units;
     std::vector<int> solver_bus;
     collect_units(grid.get_generators(), slack_redistribution::UnitKind::GENERATOR, 1.,
                   id_me_to_solver, units, solver_bus);
-    if(!units.empty()) return true;
     collect_units(grid.get_storages(), slack_redistribution::UnitKind::STORAGE, -1.,
                   id_me_to_solver, units, solver_bus);
-    return !units.empty();
+    return std::any_of(solver_bus.begin(), solver_bus.end(),
+                       [skip_solver_bus](int bus){ return bus != skip_solver_bus; });
 }
 
 OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
