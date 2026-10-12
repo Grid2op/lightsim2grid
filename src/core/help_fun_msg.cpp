@@ -5283,7 +5283,7 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
 
     It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
 
-    .. versionchanged:: 1.1.1
+    .. versionchanged:: 1.2.0
         This is now a read only view of the matrix the grid holds, and no longer a copy of it.
 
     .. warning::
@@ -5330,7 +5330,7 @@ const std::string DocLSGrid::get_dcYbus_solver = R"mydelimiter(
 
     It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
 
-    .. versionchanged:: 1.1.1
+    .. versionchanged:: 1.2.0
         This is now a read only view of the matrix the grid holds, and no longer a copy of it.
 
     .. warning::

@@ -213,7 +213,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
-[1.1.1] 2026-xx-yy
+[1.2.0] 2026-10-12
 --------------------
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtual ``distributes_slack()`` (false unless
   overridden, which ``redistribute_slack`` requires) and ``set_voltage_control_v_set`` takes an
