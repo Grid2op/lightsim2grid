@@ -11,6 +11,7 @@
 #include "batch_algorithm/ContinuationSweep.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
 #include "help_fun_msg.hpp"
+#include "sparse_helpers.hpp"
 
 using namespace ls2g;
 
@@ -405,14 +406,21 @@ template<class T>
 void bind_row_ybus(py::class_<T> & cls)
 {
     cls
-        .def("get_Ybus", &T::template get_Ybus<>, py::arg("row"), py::arg("solver_numbering") = false,
+        // built by the call, so handed over to python rather than copied
+        .def("get_Ybus", [](const T & self, Eigen::Index row, bool solver_numbering){
+                 return sparse_to_scipy(self.template get_Ybus<>(row, solver_numbering));
+             },
+             py::arg("row"), py::arg("solver_numbering") = false,
              "The admittance matrix row `row` of the last compute() was solved with (AC "
              "algorithm only): the base one without the branches that row disconnects. An entry "
              "only those branches contributed to is removed, not kept as an explicit zero, so "
              "the pattern is the one a one-at-a-time solve of that topology builds. Grid bus "
              "numbering, shape (total_bus, total_bus) like LSGrid.get_Ybus, or the solver one "
              "with `solver_numbering=True`.")
-        .def("get_dcYbus", &T::template get_dcYbus<>, py::arg("row"), py::arg("solver_numbering") = false,
+        .def("get_dcYbus", [](const T & self, Eigen::Index row, bool solver_numbering){
+                 return sparse_to_scipy(self.template get_dcYbus<>(row, solver_numbering));
+             },
+             py::arg("row"), py::arg("solver_numbering") = false,
              "The DC counterpart of get_Ybus (DC algorithm only): the real Bbus of row `row`.");
 }
 

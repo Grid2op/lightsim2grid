@@ -405,6 +405,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   the grid's own targets.
 - [IMPROVED] ``LSGrid.get_Ybus()``, ``get_dcYbus()`` and ``get_Bf()`` relabel the solver matrix in
   one pass instead of sorting it again: several times faster on large grids.
+- [IMPROVED] The sparse matrices a getter builds (``get_Ybus``, ``get_dcYbus``, ``get_Bf``,
+  ``get_Bf_solver``, the batch ``get_Ybus(row)`` / ``get_dcYbus(row)``) reach python without a copy.
 
 
 [1.1.0] 2026-09-21
