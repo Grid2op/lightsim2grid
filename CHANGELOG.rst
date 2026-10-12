@@ -224,6 +224,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid2op backend and ``init_from_pypowsybl`` do.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
   ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
+- [BREAKING] ``LSGrid.get_Ybus_solver()`` / ``get_dcYbus_solver()`` return a read-only view of the
+  grid's matrix, not a copy, valid until a powerflow rebuilds it. Use ``.copy()`` to keep it or
+  to pass it to an algorithm's ``compute_pf``.
 - [ADDED] Batch classes: ``compute_branch_results()``, P and Q at both ends of every branch per
   row, ``(nb_rows, nb_branch, 4)``; ``get_row_solve_times()`` / ``get_row_nb_iter()``.
 - [IMPROVED] The ``init_from_*`` loaders select ``NR_KLU`` / ``DC_KLU`` when KLU is compiled in

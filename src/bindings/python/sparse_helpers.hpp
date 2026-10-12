@@ -60,4 +60,15 @@ py::object sparse_to_scipy(SpMat mat)
     return sparse_view_to_scipy(ref, owner, true);
 }
 
+// A read only view of a matrix `owner` holds: the arrays are `mat`'s own, and keep `owner`
+// alive (as return_value_policy::reference_internal would). They are only valid while
+// `owner` does not rebuild that matrix. A matrix not in compressed form has no arrays scipy
+// could use as they are: it is copied instead, which `mat` being const leaves as the only way.
+template<typename SpMat>
+py::object sparse_const_view_to_scipy(const SpMat & mat, py::handle owner)
+{
+    if(!mat.isCompressed()) return sparse_to_scipy(SpMat(mat));
+    return sparse_view_to_scipy(mat, owner, false);
+}
+
 #endif // SPARSE_HELPERS_HPP

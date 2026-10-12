@@ -5283,6 +5283,17 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
 
     It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
 
+    .. versionchanged:: 1.1.1
+        This is now a read only view of the matrix the grid holds, and no longer a copy of it.
+
+    .. warning::
+        The arrays of the returned matrix are the ones the grid uses, not a copy: it is only
+        valid until a powerflow of this grid rebuilds that matrix (after a change of topology
+        or of an admittance, or a reset of the solver). Reading it after that is undefined:
+        it can show the new values, the old ones, or crash. Call `.copy()` on it to keep it,
+        and to pass it to a function of lightsim2grid taking a sparse matrix (for example
+        the `compute_pf` of an algorithm), which needs writeable arrays.
+
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
         :func:`lightsim2grid.network.LSGrid.get_Ybus`
@@ -5313,12 +5324,22 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::get_dcYbus_solver = R"mydelimiter(
-    This function returns the (complex) `Ybus` matrix used to compute the DC powerflow
-    (its imaginary part should be 0.).
+    This function returns the (real) `Ybus` matrix used to compute the DC powerflow.
 
-    The resulting matrix is a CSC scipy sparse matrix of complex number.
+    The resulting matrix is a CSC scipy sparse matrix of real number.
 
     It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
+
+    .. versionchanged:: 1.1.1
+        This is now a read only view of the matrix the grid holds, and no longer a copy of it.
+
+    .. warning::
+        The arrays of the returned matrix are the ones the grid uses, not a copy: it is only
+        valid until a powerflow of this grid rebuilds that matrix (after a change of topology
+        or of an admittance, or a reset of the solver). Reading it after that is undefined:
+        it can show the new values, the old ones, or crash. Call `.copy()` on it to keep it,
+        and to pass it to a function of lightsim2grid taking a sparse matrix (for example
+        the `compute_pf` of an algorithm), which needs writeable arrays.
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
@@ -5460,10 +5481,10 @@ const std::string DocLSGrid::get_Ybus = R"mydelimiter(
 
 
 const std::string DocLSGrid::get_dcYbus = R"mydelimiter(
-    This function returns the (complex) `Ybus` matrix (for the DC powerflow)
-    (its imaginary part should be 0.) with the gridmodel convention.
+    This function returns the (real) `Ybus` matrix (for the DC powerflow) with the gridmodel
+    convention.
 
-    The resulting matrix is a CSC scipy sparse matrix of complex number.
+    The resulting matrix is a CSC scipy sparse matrix of real number.
 
     It is a square matrix, as many rows (columns) as there are **total** buses on the grid.
 

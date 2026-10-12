@@ -13,6 +13,9 @@ A matrix a getter builds for the call (get_Ybus, get_dcYbus, get_Bf, get_Bf_solv
 the per-row get_Ybus / get_dcYbus of the batch classes) is handed over to python: its
 arrays are the C++ ones, owned by a capsule that frees them with the last array using
 them. Each call gives a matrix of its own, writeable, independent of the grid.
+
+The matrices the grid holds (get_Ybus_solver, get_dcYbus_solver) come as a read only view
+of the grid's own arrays, which keeps the grid alive.
 """
 import gc
 import unittest
@@ -23,7 +26,7 @@ import scipy.sparse as sp
 import pandapower.networks as pn
 
 from lightsim2grid.gridmodel import init_from_pandapower
-from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
+from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP, NR_SparseLU
 from lightsim2grid.algorithm import AlgorithmType
 
 from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
@@ -175,6 +178,102 @@ class TestBatchYbusHandedOver(TestSparseGettersHandedOver):
         for nm, mat in mats.items():
             with self.subTest(getter=nm):
                 self._assert_same(mat, refs[nm])
+
+
+class TestSolverYbusView(unittest.TestCase):
+    """get_Ybus_solver / get_dcYbus_solver: a read only view, not a copy."""
+
+    def setUp(self):
+        self.grid = _make_grid()
+
+    def _getters(self):
+        return {"get_Ybus_solver": self.grid.get_Ybus_solver,
+                "get_dcYbus_solver": self.grid.get_dcYbus_solver}
+
+    def test_view_of_the_grid(self):
+        for nm, getter in self._getters().items():
+            with self.subTest(getter=nm):
+                mat = getter()
+                self.assertIsInstance(mat, sp.csc_matrix)
+                self.assertEqual(mat.shape, (self.grid.nb_connected_bus(), self.grid.nb_connected_bus()))
+                self.assertGreater(mat.nnz, 0)
+                for arr in _arrays(mat):
+                    # the arrays are the grid's, and keep it alive
+                    self.assertIs(_root_owner(arr), self.grid)
+                    self.assertFalse(arr.flags.writeable)
+                other = getter()
+                for arr, arr2 in zip(_arrays(mat), _arrays(other)):
+                    self.assertTrue(np.shares_memory(arr, arr2))
+
+    def test_read_only(self):
+        for nm, getter in self._getters().items():
+            with self.subTest(getter=nm):
+                mat = getter()
+                ref = mat.copy()
+                with self.assertRaises(ValueError):
+                    mat.data[0] = 0.
+                with self.assertRaises(ValueError):
+                    mat.indices[0] = 0
+                np.testing.assert_array_equal(getter().data, ref.data)
+
+    def test_copy_is_independent(self):
+        for nm, getter in self._getters().items():
+            with self.subTest(getter=nm):
+                mat = getter().copy()
+                ref = mat.copy()
+                for arr in _arrays(mat):
+                    self.assertTrue(arr.flags.writeable)
+                mat.data[:] = 0.
+                np.testing.assert_array_equal(getter().data, ref.data)
+
+    def test_keeps_the_grid_alive(self):
+        mats = {nm: getter() for nm, getter in self._getters().items()}
+        refs = {nm: mat.copy() for nm, mat in mats.items()}
+        del self.grid
+        gc.collect()
+        for nm, mat in mats.items():
+            with self.subTest(getter=nm):
+                for arr, arr_ref in zip(_arrays(mat), _arrays(refs[nm])):
+                    np.testing.assert_array_equal(arr, arr_ref)
+
+    def test_valid_while_ybus_is_not_rebuilt(self):
+        """A powerflow after a change of injection only reuses the matrix: same arrays."""
+        Ybus = self.grid.get_Ybus_solver()
+        ref = Ybus.copy()
+        self.grid.change_p_load(0, 1.1 * self.grid.get_loads()[0].target_p_mw)
+        V = self.grid.ac_pf(np.ones(self.grid.total_bus(), dtype=complex), 10, 1e-8)
+        self.assertTrue(V.shape[0] > 0)
+        Ybus_after = self.grid.get_Ybus_solver()
+        for arr, arr_after, arr_ref in zip(_arrays(Ybus), _arrays(Ybus_after), _arrays(ref)):
+            self.assertTrue(np.shares_memory(arr, arr_after))
+            np.testing.assert_array_equal(arr, arr_ref)
+
+    def test_copy_goes_to_compute_pf(self):
+        """The documented way to hand the solver Ybus to an algorithm."""
+        Ybus = self.grid.get_Ybus_solver().copy()
+        solver = NR_SparseLU()
+        # the algorithm reads the PV setpoints off the magnitudes of the initial voltages
+        V_ref = 1.0 * self.grid.get_V_solver()
+        conv = solver.compute_pf(Ybus,
+                                 np.abs(V_ref).astype(complex),
+                                 1.0 * self.grid.get_Sbus_solver(),
+                                 np.array(self.grid.get_slack_ids_solver(), dtype=np.int32),
+                                 1.0 * self.grid.get_slack_weights_solver(),
+                                 np.array(self.grid.get_pv_solver(), dtype=np.int32),
+                                 np.array(self.grid.get_pq_solver(), dtype=np.int32),
+                                 10, 1e-8)
+        self.assertTrue(conv)
+        np.testing.assert_allclose(solver.get_V(), V_ref, atol=1e-7)
+
+    def test_before_any_powerflow(self):
+        """An empty (0, 0) matrix before the first powerflow, read only as well."""
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(pn.case14())
+        for mat in (grid.get_Ybus_solver(), grid.get_dcYbus_solver()):
+            self.assertEqual(mat.shape, (0, 0))
+            self.assertEqual(mat.nnz, 0)
+            np.testing.assert_array_equal(mat.indptr, [0])
 
 
 if __name__ == "__main__":

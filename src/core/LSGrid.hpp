@@ -1873,10 +1873,13 @@ class LS2G_API LSGrid final
          * 
          * (new in lightsim2grid 0.9.0, used to be called `get_Ybus` before that)
          * 
-         * @return Eigen::SparseMatrix<cplx_type> 
+         * It is the matrix the grid holds, not a copy: the reference stays valid until a
+         * powerflow rebuilds it (after a change of topology or of an admittance, or a reset).
+         * 
+         * @return const Eigen::SparseMatrix<cplx_type> &
          */
-        Eigen::SparseMatrix<cplx_type> get_Ybus_solver() const {
-            return ac_cache_.mat;  // This is copied to python
+        [[nodiscard]] const Eigen::SparseMatrix<cplx_type> & get_Ybus_solver() const {
+            return ac_cache_.mat;
         }
 
         /**
@@ -1891,10 +1894,13 @@ class LS2G_API LSGrid final
          * 
          * (new in lightsim2grid 0.9.0, used to be called `get_dcYbus` before that)
          * 
-         * @return Eigen::SparseMatrix<cplx_type> 
+         * It is the matrix the grid holds, not a copy: the reference stays valid until a
+         * powerflow rebuilds it (after a change of topology or of an admittance, or a reset).
+         * 
+         * @return const Eigen::SparseMatrix<real_type> & (the DC admittance matrix is real)
          */
-        Eigen::SparseMatrix<real_type> get_dcYbus_solver() const {
-            return dc_cache_.mat;  // This is copied to python (DC admittance matrix is real)
+        [[nodiscard]] const Eigen::SparseMatrix<real_type> & get_dcYbus_solver() const {
+            return dc_cache_.mat;
         }
 
         /**

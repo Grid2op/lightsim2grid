@@ -490,8 +490,13 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dcYbus", [](const LSGrid & self){ return sparse_to_scipy(self.get_dcYbus()); }, DocLSGrid::get_dcYbus.c_str())
         .def("get_Sbus", &LSGrid::get_Sbus, DocLSGrid::get_Sbus.c_str())
         .def("get_dcSbus", &LSGrid::get_dcSbus, DocLSGrid::get_dcSbus.c_str())
-        .def("get_Ybus_solver", &LSGrid::get_Ybus_solver, DocLSGrid::get_Ybus_solver.c_str(), py::return_value_policy::reference)
-        .def("get_dcYbus_solver", &LSGrid::get_dcYbus_solver, DocLSGrid::get_dcYbus_solver.c_str(), py::return_value_policy::reference)
+        // a read only view of the matrix the grid holds, valid until a powerflow rebuilds it
+        .def("get_Ybus_solver", [](const py::object & self){
+                return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_Ybus_solver(), self);
+            }, DocLSGrid::get_Ybus_solver.c_str())
+        .def("get_dcYbus_solver", [](const py::object & self){
+                return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_dcYbus_solver(), self);
+            }, DocLSGrid::get_dcYbus_solver.c_str())
         .def("get_Sbus_solver", &LSGrid::get_Sbus_solver, DocLSGrid::get_Sbus_solver.c_str(), py::return_value_policy::reference)
         .def("get_dcSbus_solver", &LSGrid::get_dcSbus_solver, DocLSGrid::get_dcSbus_solver.c_str(), py::return_value_policy::reference)
 
