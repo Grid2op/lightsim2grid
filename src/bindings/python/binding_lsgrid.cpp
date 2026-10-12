@@ -9,6 +9,7 @@
 #include "binding_declarations.hpp"
 #include "pickle_helpers.hpp"
 #include "binary_helpers.hpp"
+#include "sparse_helpers.hpp"
 #include "LSGrid.hpp"
 #include "help_fun_msg.hpp"
 
@@ -484,12 +485,18 @@ void bind_gridmodel(py::module_& m) {
         .def("get_vm_cols_solver", &LSGrid::get_vm_cols_solver, py::return_value_policy::reference, DocLSGrid::get_vm_cols_solver.c_str())
         .def("get_hvdc_droop_data_solver", &LSGrid::get_hvdc_droop_data_solver, DocLSGrid::get_hvdc_droop_data_solver.c_str())
 
-        .def("get_Ybus", &LSGrid::get_Ybus, DocLSGrid::get_Ybus.c_str())
-        .def("get_dcYbus", &LSGrid::get_dcYbus, DocLSGrid::get_dcYbus.c_str())
+        // the grid-numbered matrices are built by the call: handed over, not copied
+        .def("get_Ybus", [](const LSGrid & self){ return sparse_to_scipy(self.get_Ybus()); }, DocLSGrid::get_Ybus.c_str())
+        .def("get_dcYbus", [](const LSGrid & self){ return sparse_to_scipy(self.get_dcYbus()); }, DocLSGrid::get_dcYbus.c_str())
         .def("get_Sbus", &LSGrid::get_Sbus, DocLSGrid::get_Sbus.c_str())
         .def("get_dcSbus", &LSGrid::get_dcSbus, DocLSGrid::get_dcSbus.c_str())
-        .def("get_Ybus_solver", &LSGrid::get_Ybus_solver, DocLSGrid::get_Ybus_solver.c_str(), py::return_value_policy::reference)
-        .def("get_dcYbus_solver", &LSGrid::get_dcYbus_solver, DocLSGrid::get_dcYbus_solver.c_str(), py::return_value_policy::reference)
+        // a read only view of the matrix the grid holds, valid until a powerflow rebuilds it
+        .def("get_Ybus_solver", [](const py::object & self){
+                return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_Ybus_solver(), self);
+            }, DocLSGrid::get_Ybus_solver.c_str())
+        .def("get_dcYbus_solver", [](const py::object & self){
+                return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_dcYbus_solver(), self);
+            }, DocLSGrid::get_dcYbus_solver.c_str())
         .def("get_Sbus_solver", &LSGrid::get_Sbus_solver, DocLSGrid::get_Sbus_solver.c_str(), py::return_value_policy::reference)
         .def("get_dcSbus_solver", &LSGrid::get_dcSbus_solver, DocLSGrid::get_dcSbus_solver.c_str(), py::return_value_policy::reference)
 
@@ -574,12 +581,13 @@ void bind_gridmodel(py::module_& m) {
         // array around the returned temporary's memory, which is freed as soon as
         // this call returns (dangling on the Python side). The default policy
         // (copy/move into a Python-owned array) is the only safe choice for a
-        // by-value return.
+        // by-value return. The sparse ones (Bf) are handed over to python instead,
+        // which is as safe and does not copy.
         .def("get_ptdf", &LSGrid::get_ptdf, DocLSGrid::get_ptdf.c_str())
         .def("get_ptdf_solver", &LSGrid::get_ptdf_solver, DocLSGrid::get_ptdf_solver.c_str())
         .def("get_lodf", &LSGrid::get_lodf, DocLSGrid::get_lodf.c_str())
-        .def("get_Bf", &LSGrid::get_Bf, DocLSGrid::get_Bf.c_str())
-        .def("get_Bf_solver", &LSGrid::get_Bf_solver, DocLSGrid::get_Bf_solver.c_str())
+        .def("get_Bf", [](LSGrid & self){ return sparse_to_scipy(self.get_Bf()); }, DocLSGrid::get_Bf.c_str())
+        .def("get_Bf_solver", [](LSGrid & self){ return sparse_to_scipy(self.get_Bf_solver()); }, DocLSGrid::get_Bf_solver.c_str())
 
         // apply action faster (optimized for grid2op representation)
         .def("update_gens_p", &LSGrid::update_gens_p, DocLSGrid::update_gens_p.c_str())

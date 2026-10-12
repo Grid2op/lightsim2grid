@@ -176,7 +176,8 @@ class TestSolverComputePfInputs(unittest.TestCase):
         grid = _make_grid()
         n_bus = grid.total_bus()
         grid.ac_pf(np.ones(n_bus, dtype=complex), MAX_IT, TOL)
-        cls.Ybus = grid.get_Ybus_solver()  # scipy sparse, n x n
+        # scipy sparse, n x n; a copy, as compute_pf cannot take the read-only view itself
+        cls.Ybus = grid.get_Ybus_solver().copy()
         cls.Sbus = 1.0 * grid.get_Sbus_solver()
         cls.V0 = np.ones(cls.Ybus.shape[0], dtype=complex)
         cls.slack_ids = np.array(grid.get_slack_ids_solver(), dtype=np.int32)
