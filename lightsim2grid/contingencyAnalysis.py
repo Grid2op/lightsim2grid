@@ -264,7 +264,8 @@ class ContingencyAnalysis(object):
         only sharing what is left (the change in the losses) on the units that can still move.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
         clamp anything. Same as ``LSGrid.consider_only_main_component(redistribute_slack=True)``,
-        contingency by contingency.
+        contingency by contingency. Needs an algorithm with a distributed slack: ``compute``
+        refuses it with a single-slack one (``NRSing_*``, Gauss-Seidel).
         """
         return self.computer.redistribute_slack
 

@@ -46,6 +46,7 @@ pybind11_add_module(lightsim2grid_cpp
     "${CMAKE_CURRENT_SOURCE_DIR}/binding_misc.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/binding_lsgrid.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/binding_batch.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/binding_light_env.cpp"
 )
 
 target_include_directories(lightsim2grid_cpp PRIVATE

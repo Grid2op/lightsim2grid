@@ -276,9 +276,17 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
  * row disconnected that generator (a generator contingency): it produces nothing, so it
  * leaves the summed capability, and a bus whose every machine is gone is not checked at
  * all (it is an ordinary PQ bus in that row, and the residual there is nobody's reactive
- * output).
+ * output). `is_storage_off(storage_id)` is the same for a regulating storage unit.
+ *
+ * `placed` (may be nullptr): the generators this row's topological action puts on a bus,
+ * as (generator, solver bus), each in the plan's order of placement. A placed generator
+ * counts on the bus the row gives it and on no other: on the entry of `plan` for that
+ * bus, after the entry's own generators, and is skipped wherever else `plan` lists it.
+ * A bus `plan` has no entry for is checked from `row_entries`, which the caller builds
+ * for those buses only (see BaseBatchSweep::_row_bus_q_entries) -- so a row checks the
+ * batch's plan as it is, rather than a copy of it edited for the row.
  */
-template<class IsGenOff>
+template<class IsGenOff, class IsStorageOff>
 inline void check_bus_q_violations(const BusQPlan & plan,
                                    const LSGrid & grid_model,
                                    const Eigen::Ref<const CplxVect> & bus_mismatch,
@@ -288,10 +296,18 @@ inline void check_bus_q_violations(const BusQPlan & plan,
                                    real_type tol_mvar,
                                    const std::vector<int> * masked_solver_ids,
                                    IsGenOff is_gen_off,
-                                   std::vector<LimitViolation> & out)
+                                   IsStorageOff is_storage_off,
+                                   std::vector<LimitViolation> & out,
+                                   const std::vector<std::pair<int, int> > * placed = nullptr,
+                                   const BusQPlan * row_entries = nullptr)
 {
-    if(plan.empty()) return;
     if(bus_mismatch.size() == 0) return;
+    const bool has_placed = (placed != nullptr) && !placed->empty();
+    auto is_placed = [placed, has_placed](int gen_id){
+        if(!has_placed) return false;
+        for(const auto & p : *placed) if(p.first == gen_id) return true;
+        return false;
+    };
 
     const GeneratorContainer & generators = grid_model.get_generators();
     const StorageContainer & storages = grid_model.get_storages();
@@ -312,14 +328,23 @@ inline void check_bus_q_violations(const BusQPlan & plan,
         int nb_live = 0;
         for(std::size_t g = 0; g < entry.gen_ids.size(); ++g){
             const int gen_id = entry.gen_ids[g];
+            if(is_placed(gen_id)) continue;   // counted where the row puts it
             if(is_gen_off(gen_id)) continue;  // disconnected by this row: produces nothing
             ++nb_live;
             q_min += generators.get_min_q(gen_id);
             q_max += generators.get_max_q(gen_id);
         }
+        if(has_placed){
+            for(const auto & p : *placed){
+                if(p.second != entry.bus_solver) continue;
+                ++nb_live;
+                q_min += generators.get_min_q(p.first);
+                q_max += generators.get_max_q(p.first);
+            }
+        }
         for(std::size_t s = 0; s < entry.storage_ids.size(); ++s){
-            // no row disconnects a storage unit: always live
             const int storage_id = entry.storage_ids[s];
+            if(is_storage_off(storage_id)) continue;  // disconnected by this row
             ++nb_live;
             q_min += storages.get_min_q(storage_id);
             q_max += storages.get_max_q(storage_id);
@@ -366,6 +391,29 @@ inline void check_bus_q_violations(const BusQPlan & plan,
                                          entry.sub_name});
         }
     }
+    if(has_placed && row_entries != nullptr && !row_entries->empty()){
+        // the buses only this row's placements hold, after the plan's own: the same
+        // check, with nothing placed left to add
+        check_bus_q_violations(*row_entries, grid_model, bus_mismatch, V, controller_q, sn_mva, tol_mvar,
+                               masked_solver_ids, is_gen_off, is_storage_off, out);
+    }
+}
+
+/** The same, for a solve that disconnects no storage unit. **/
+template<class IsGenOff>
+inline void check_bus_q_violations(const BusQPlan & plan,
+                                   const LSGrid & grid_model,
+                                   const Eigen::Ref<const CplxVect> & bus_mismatch,
+                                   const Eigen::Ref<const CplxVect> & V,
+                                   const RealVect & controller_q,
+                                   real_type sn_mva,
+                                   real_type tol_mvar,
+                                   const std::vector<int> * masked_solver_ids,
+                                   IsGenOff is_gen_off,
+                                   std::vector<LimitViolation> & out)
+{
+    check_bus_q_violations(plan, grid_model, bus_mismatch, V, controller_q, sn_mva, tol_mvar,
+                           masked_solver_ids, is_gen_off, [](int){ return false; }, out);
 }
 
 }  // namespace bus_q_check

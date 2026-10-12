@@ -101,6 +101,14 @@ class VoltageSourceContainer : public OneSideContainer_PQ
         bool is_remote_voltage_controller(int el_id) const {
             return is_voltage_controller(el_id) && regulates_remote(el_id);
         }
+        // is_local_voltage_controller for an element that a caller is about to
+        // reconnect: the same test, status left out (a batch sweep that reactivates a
+        // generator for one row asks this of the base grid, where it is off)
+        bool would_be_local_voltage_controller(int el_id) const {
+            if(!voltage_regulator_on_[el_id]) return false;
+            if(leaf()._treated_as_off(el_id)) return false;
+            return !regulates_remote(el_id);
+        }
 
         /**
          * Is this element one of those that share the reactive residual of their bus?

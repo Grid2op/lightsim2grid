@@ -13,8 +13,11 @@
 // temporary file, raw file IO, and the synthetic serializable types used to
 // exercise BinaryArchive without a real grid. C++14 only (project policy).
 
+#include <chrono>
+#include <cstdint>
 #include <cstdio>    // std::remove
 #include <fstream>
+#include <random>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -24,9 +27,28 @@
 
 namespace ls2g_test {
 
+// A random 64-bit token drawn once per process. ctest runs every TEST_CASE in a
+// process of its own, and `ctest -j` runs them side by side in the same build
+// directory: a per-process counter alone gave two of them the same file name. The
+// seed mixes std::random_device (deterministic on some older standard libraries)
+// with the clock and the address of a static (randomised by ASLR).
+inline std::uint64_t process_token() {
+    static int anchor = 0;
+    static const std::uint64_t token = [] {
+        std::random_device rd;
+        std::uint64_t seed = (static_cast<std::uint64_t>(rd()) << 32) ^ static_cast<std::uint64_t>(rd());
+        seed ^= static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+        seed ^= static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&anchor));
+        std::mt19937_64 gen(seed);
+        return gen();
+    }();
+    return token;
+}
+
 // A unique file path in the current working directory (ctest / CI run the
 // binary from the build directory), removed on destruction together with the
-// ".lsb_tmp" sibling a BinaryArchive atomic write may have left behind.
+// ".lsb_tmp" sibling a BinaryArchive atomic write may have left behind: the
+// process token tells processes apart, the counter the files of one process.
 // mkdtemp/std::filesystem are avoided on purpose: C++14, no platform #ifdef.
 class TempFile
 {
@@ -34,7 +56,7 @@ class TempFile
         explicit TempFile(const std::string & suffix = ".lsb") {
             static int counter = 0;
             std::ostringstream oss;
-            oss << "ls2g_unit_test_" << counter++ << suffix;
+            oss << "ls2g_unit_test_" << std::hex << process_token() << std::dec << "_" << counter++ << suffix;
             path_ = oss.str();
             // in case a previous crashed run left files behind
             std::remove(path_.c_str());

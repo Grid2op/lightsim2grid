@@ -53,6 +53,13 @@ template<> struct CoeffAs<real_type> { static real_type get(const cplx_type & v)
  * bus 0, which is what a component labelling that starts from bus 0 and keeps the
  * first largest component does.
  *
+ * Buses known to be isolated can be left out (see `build`): a batch's union layout
+ * holds busbars no element of the base grid stands on, so the whole graph is never
+ * connected there, while the rest is. The tree then covers the other buses, rooted at
+ * the first of them, and every answer is about those: a left-out bus is on neither
+ * side of a cut, cut off in every one -- as the search, for which it is a component of
+ * its own, has it.
+ *
  * Built from the solver-side matrix, so every bus id here is a SolverBusId's value.
  * The graph is read-only once built: several threads may query it at once.
  */
@@ -81,7 +88,21 @@ class BusGraph
         template<typename T>
         void build(const Eigen::SparseMatrix<T> & mat, real_type threshold = 1e-8)
         {
+            build(mat, threshold, std::vector<int>());
+        }
+
+        /** The same, the buses of `left_out` (ids, any order) left out of the tree. They
+            must be isolated in `mat`: if one of them has an edge, nothing is settled
+            (base_connected() is false). **/
+        template<typename T>
+        void build(const Eigen::SparseMatrix<T> & mat, real_type threshold, const std::vector<int> & left_out)
+        {
             n_ = static_cast<int>(mat.cols());
+            left_out_.assign(static_cast<size_t>(n_), 0);
+            for(int bus : left_out){
+                if(bus >= 0 && bus < n_) left_out_[static_cast<size_t>(bus)] = 1;
+            }
+            bool left_out_isolated = true;
             adj_start_.assign(static_cast<size_t>(n_) + 1, 0);
             adj_.clear();
             adj_.reserve(static_cast<size_t>(mat.nonZeros()));
@@ -90,17 +111,24 @@ class BusGraph
                     const int row = static_cast<int>(it.row());
                     if(row == col) continue;
                     if(!(std::abs(it.value()) > threshold)) continue;
+                    if(left_out_[static_cast<size_t>(row)] || left_out_[static_cast<size_t>(col)]) left_out_isolated = false;
                     adj_.push_back(row);
                 }
                 adj_start_[static_cast<size_t>(col) + 1] = static_cast<int>(adj_.size());
             }
             _dfs();
+            // a left-out bus with an edge is not what the tree assumes; and a tree of two
+            // buses could tie with a left-out one for the largest component, which the
+            // search would settle on bus ids
+            const bool any_left_out = std::find(left_out_.begin(), left_out_.end(), 1) != left_out_.end();
+            if(!left_out_isolated || (any_left_out && nb_tree_ < 3)) connected_ = false;
         }
 
         bool built() const { return n_ >= 0; }
         int nb_bus() const { return n_; }
-        /** whether the whole graph was reachable from bus 0 -- if not, every cut is
-            Unknown: a labelling that starts disconnected is not a tree. **/
+        /** whether the whole graph (the buses left out aside) was reachable from the
+            root -- if not, every cut is Unknown: a labelling that starts disconnected
+            is not a tree. **/
         bool base_connected() const { return connected_; }
 
         /**
@@ -195,13 +223,15 @@ class BusGraph
         }
 
         /** Split only: whether `bus` is on the side that is stranded (the smaller
-            one; on a tie, the one without bus 0). **/
+            one; on a tie, the one without the root). A left-out bus is cut off. **/
         bool is_stranded(const Cut & cut, int bus) const
         {
+            if(left_out_[static_cast<size_t>(bus)]) return true;
             return _in_subtree(cut.child, bus) == _subtree_is_stranded(cut.child);
         }
 
-        /** Split only: appends the stranded side to `out`, in increasing bus order. **/
+        /** Split only: appends the stranded side to `out`, in increasing bus order (the
+            left-out buses are not listed). **/
         void stranded_buses(const Cut & cut, std::vector<int> & out) const
         {
             const int c = cut.child;
@@ -212,7 +242,7 @@ class BusGraph
                 for(int k = lo; k < hi; ++k) out.push_back(order_[static_cast<size_t>(k)]);
             } else {
                 for(int k = 0; k < lo; ++k) out.push_back(order_[static_cast<size_t>(k)]);
-                for(int k = hi; k < n_; ++k) out.push_back(order_[static_cast<size_t>(k)]);
+                for(int k = hi; k < nb_tree_; ++k) out.push_back(order_[static_cast<size_t>(k)]);
             }
             std::sort(out.begin() + static_cast<std::ptrdiff_t>(first), out.end());
         }
@@ -233,16 +263,17 @@ class BusGraph
             return p >= lo && p < lo + size_[static_cast<size_t>(child)];
         }
         // the subtree is the stranded side when it is the smaller one, or on a tie
-        // (bus 0 is the root: it is never inside a proper subtree)
+        // (the root is never inside a proper subtree)
         bool _subtree_is_stranded(int child) const
         {
             const int sz = size_[static_cast<size_t>(child)];
-            return sz <= n_ - sz;
+            return sz <= nb_tree_ - sz;
         }
 
-        // iterative DFS from bus 0: preorder ranks, subtree sizes, parents, and
-        // Tarjan's low-link for the bridges. Iterative rather than recursive so a
-        // long radial feeder cannot exhaust the stack.
+        // iterative DFS from the root (bus 0, or the first bus not left out):
+        // preorder ranks, subtree sizes, parents, and Tarjan's low-link for the
+        // bridges. Iterative rather than recursive so a long radial feeder cannot
+        // exhaust the stack.
         void _dfs()
         {
             const size_t n = static_cast<size_t>(n_);
@@ -253,16 +284,18 @@ class BusGraph
             bridge_child_.assign(n, 0);
             order_.clear();
             order_.reserve(n);
+            nb_tree_ = n_ - static_cast<int>(std::count(left_out_.begin(), left_out_.end(), 1));
             connected_ = true;
-            if(n_ == 0) return;
+            if(nb_tree_ == 0) return;
+            const int root = static_cast<int>(std::find(left_out_.begin(), left_out_.end(), 0) - left_out_.begin());
 
             std::vector<std::pair<int, int> > stack;   // (vertex, next neighbour slot)
             stack.reserve(n);
             int counter = 0;
-            pre_[0] = counter++;
-            low_[0] = pre_[0];
-            order_.push_back(0);
-            stack.emplace_back(0, adj_start_[0]);
+            pre_[static_cast<size_t>(root)] = counter++;
+            low_[static_cast<size_t>(root)] = pre_[static_cast<size_t>(root)];
+            order_.push_back(root);
+            stack.emplace_back(root, adj_start_[static_cast<size_t>(root)]);
             while(!stack.empty()){
                 const int v = stack.back().first;
                 int & slot = stack.back().second;
@@ -289,10 +322,12 @@ class BusGraph
                     }
                 }
             }
-            connected_ = (counter == n_);
+            connected_ = (counter == nb_tree_);
         }
 
         int n_ = -1;
+        int nb_tree_ = 0;                 // the buses in the tree: n_ but the left-out ones
+        std::vector<char> left_out_;      // 1 for a bus left out of the tree (see build)
         bool connected_ = false;
         // CSR adjacency
         std::vector<int> adj_start_;

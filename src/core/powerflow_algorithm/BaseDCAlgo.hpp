@@ -41,6 +41,9 @@ class BaseDCAlgo final: public BaseAlgo
 
         static constexpr bool IS_DC = true;
         bool is_dc() const noexcept override { return IS_DC; }
+        // the imbalance is shared on the participating slack buses by slack_weights
+        static constexpr bool DISTRIBUTES_SLACK = true;
+        bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
 
         void reset() override;
         void reset_timer() override{

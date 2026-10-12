@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <complex>
+#include <iterator>
 #include <queue>
 #include <random>
 #include <utility>
@@ -294,6 +295,74 @@ TEST_CASE("BusGraph: what the tree cannot settle is reported, not guessed", "[bu
         // of the two tree edges cannot be settled, the two pairs holding the back
         // edge and one tree edge cannot either
         CHECK(nb_unknown == 3);
+    }
+}
+
+TEST_CASE("BusGraph: buses known to be isolated are left out of the tree", "[bus_graph]")
+{
+    // a batch's union layout holds busbars no element of the base grid stands on: no
+    // edge reaches them, so the whole graph is not connected -- but the rest is, and the
+    // tree over the rest settles every contingency the search does, the isolated buses
+    // being stranded in both answers
+    SECTION("random graphs against the search"){
+        for(unsigned seed = 1; seed <= 6; ++seed){
+            std::mt19937 rng(seed);
+            // bus 0 among them: the tree is then rooted elsewhere
+            const std::vector<int> isolated = {0, 17, 41};
+            const int n = 43;
+            std::vector<int> live;
+            for(int bus = 0; bus < n; ++bus){
+                if(!std::binary_search(isolated.begin(), isolated.end(), bus)) live.push_back(bus);
+            }
+            const int m = static_cast<int>(live.size());
+            std::vector<Edge> branches;
+            for(int i = 1; i < 30; ++i) branches.emplace_back(live[i - 1], live[i]);
+            std::uniform_int_distribution<int> pick(0, 29);
+            for(int c = 0; c < 12; ++c){
+                const int a = live[pick(rng)], b = live[pick(rng)];
+                if(a != b) branches.emplace_back(std::min(a, b), std::max(a, b));
+            }
+            for(int i = 30; i < m; ++i) branches.emplace_back(live[pick(rng)], live[i]);
+            std::vector<cplx_type> y;
+            std::uniform_real_distribution<real_type> mag(0.5, 5.);
+            for(size_t k = 0; k < branches.size(); ++k) y.emplace_back(mag(rng), -mag(rng));
+            CplxSp mat = make_matrix(n, branches, y);
+            // the batch reserves their diagonal as a stored zero
+            for(int bus : isolated) mat.coeffRef(bus, bus) = cplx_type(0., 0.);
+            mat.makeCompressed();
+            INFO("seed " << seed);
+
+            BusGraph whole;
+            whole.build(mat);
+            CHECK_FALSE(whole.base_connected());
+
+            BusGraph graph;
+            graph.build(mat, BusGraph::default_threshold(), isolated);
+            REQUIRE(graph.base_connected());
+            std::vector<int> from_tree;
+            int nb_split = 0;
+            for(int k = 0; k < static_cast<int>(branches.size()); ++k){
+                const std::vector<Coeff> edits = disconnect(branches, y, k);
+                const std::vector<int> expected = reference_after(mat, edits);
+                INFO("branch " << k);
+                REQUIRE(tree_after(graph, mat, edits, from_tree));
+                std::vector<int> with_isolated;
+                std::set_union(from_tree.begin(), from_tree.end(), isolated.begin(), isolated.end(),
+                               std::back_inserter(with_isolated));
+                CHECK(with_isolated == expected);
+                if(from_tree.size() > 0) ++nb_split;
+            }
+            CHECK(nb_split > 0);
+        }
+    }
+    SECTION("a bus said isolated that is not: nothing is settled"){
+        const std::vector<Edge> branches = {{0, 1}, {1, 2}, {2, 3}};
+        const std::vector<cplx_type> y(3, cplx_type(1., -1.));
+        CplxSp mat = make_matrix(4, branches, y);
+        BusGraph graph;
+        graph.build(mat, BusGraph::default_threshold(), std::vector<int>{3});
+        CHECK_FALSE(graph.base_connected());
+        CHECK(graph.cut(std::vector<Edge>{}).verdict == BusGraph::Verdict::Unknown);
     }
 }
 
