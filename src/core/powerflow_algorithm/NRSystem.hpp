@@ -2196,6 +2196,9 @@ protected:
     void _residual_into(Eigen::Ref<RealVect> res,
                         const Eigen::Ref<const CplxVect>& V_t,
                         const Eigen::Ref<const RealVect>& dx) const;
+    // out = Ybus_ref_ * V, its products spelled out on real and imaginary parts (see
+    // the definition)
+    void _ybus_times_into(CplxVect & out, const Eigen::Ref<const CplxVect>& V) const;
 
     // value-returning wrappers, kept for out-of-tree derived algorithms: the
     // *_into forms above are what the hot path uses.
