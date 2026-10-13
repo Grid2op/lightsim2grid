@@ -2616,24 +2616,43 @@ bool LSGrid::gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_t
     return true;
 }
 
+namespace {
+
+// generator `gen_id`'s entry of a per-generator vector, NaN past its end
+real_type outer_target_of(int gen_id, const std::vector<real_type> & outer_target_p)
+{
+    return static_cast<std::size_t>(gen_id) < outer_target_p.size() ? outer_target_p[static_cast<std::size_t>(gen_id)]
+                                                                    : std::numeric_limits<real_type>::quiet_NaN();
+}
+
+}  // namespace
+
 void LSGrid::gen_limits_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p,
+                                        real_type & min_q, real_type & max_q) const
+{
+    gen_limits_at_outer_target(gen_id, outer_target_of(gen_id, outer_target_p), min_q, max_q);
+}
+
+void LSGrid::gen_limits_at_outer_target(int gen_id, real_type outer_target_p,
                                         real_type & min_q, real_type & max_q) const
 {
     min_q = generators_.get_min_q(gen_id);
     max_q = generators_.get_max_q(gen_id);
-    if(static_cast<std::size_t>(gen_id) >= outer_target_p.size()) return;
-    const real_type p = outer_target_p[static_cast<std::size_t>(gen_id)];
-    if(!std::isfinite(p)) return;
+    if(!std::isfinite(outer_target_p)) return;
     real_type lo, hi;
-    if(gen_limits_at(gen_id, p, lo, hi)){ min_q = lo; max_q = hi; }
+    if(gen_limits_at(gen_id, outer_target_p, lo, hi)){ min_q = lo; max_q = hi; }
 }
 
 real_type LSGrid::gen_target_q_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p) const
 {
+    return gen_target_q_at_outer_target(gen_id, outer_target_of(gen_id, outer_target_p));
+}
+
+real_type LSGrid::gen_target_q_at_outer_target(int gen_id, real_type outer_target_p) const
+{
     const real_type target_q = generators_.get_target_q()(gen_id);
-    const std::size_t k = static_cast<std::size_t>(gen_id);
     if(gen_raw_target_q_.size() <= gen_id || !std::isfinite(gen_raw_target_q_(gen_id)) ||
-       k >= outer_target_p.size() || !std::isfinite(outer_target_p[k])) return target_q;
+       !std::isfinite(outer_target_p)) return target_q;
     real_type lo, hi;
     gen_limits_at_outer_target(gen_id, outer_target_p, lo, hi);
     real_type q = gen_raw_target_q_(gen_id);

@@ -147,11 +147,10 @@ class LS2G_API OuterGridView
         bool line_closed(int line_id, int & bus1_solver, int & bus2_solver) const;
         bool trafo_closed(int trafo_id, int & bus1_solver, int & bus2_solver) const;
 
-        /// every generator's target P where a row or a loop moved it, NaN elsewhere: what
-        /// LSGrid::gen_limits_at_outer_target reads. `loops` (may be empty) wins over the row.
-        /// Returns `loops` itself when the row moves nothing, `scratch` otherwise.
-        const std::vector<real_type> & gen_target_p_overrides(const std::vector<real_type> & loops,
-                                                              std::vector<real_type> & scratch) const;
+        /// a generator's target P where a loop or the row moved it, NaN where neither did: what
+        /// LSGrid::gen_limits_at_outer_target reads. `loops` (per generator, may be empty) wins
+        /// over the row.
+        real_type gen_target_p_override(const std::vector<real_type> & loops, int gen_id) const;
 
     private:
         static int _placed(const OuterRowView::Units * u, int id) {

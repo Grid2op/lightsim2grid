@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "LSGrid.hpp"
 
@@ -117,15 +118,12 @@ real_type OuterGridView::gen_target_vm(int gen_id) const
     return grid_.get_generators().get_target_vm_pu(gen_id);
 }
 
-const std::vector<real_type> & OuterGridView::gen_target_p_overrides(const std::vector<real_type> & loops,
-                                                                     std::vector<real_type> & scratch) const
+real_type OuterGridView::gen_target_p_override(const std::vector<real_type> & loops, int gen_id) const
 {
-    if (row_ == nullptr || row_->gens.target_p.empty()) return loops;
-    scratch = row_->gens.target_p;
-    for (std::size_t g = 0; g < loops.size() && g < scratch.size(); ++g) {
-        if (!std::isnan(loops[g])) scratch[g] = loops[g];
-    }
-    return scratch;
+    real_type res;
+    if (_value(loops, gen_id, res)) return res;
+    if (row_ != nullptr && _value(row_->gens.target_p, gen_id, res)) return res;
+    return std::numeric_limits<real_type>::quiet_NaN();
 }
 
 // ----- storage units -------------------------------------------------------------------

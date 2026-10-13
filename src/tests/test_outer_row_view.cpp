@@ -137,8 +137,9 @@ TEST_CASE("without a row, the view is the grid", "[outer_loop][row_view]")
     CHECK(b1 == solver_bus(grid, 1));
     CHECK(b2 == solver_bus(grid, 2));
     const std::vector<real_type> loops = {NaN, 45., NaN};
-    std::vector<real_type> scratch;
-    CHECK(&view.gen_target_p_overrides(loops, scratch) == &loops);  // nothing to merge
+    CHECK(std::isnan(view.gen_target_p_override(loops, 0)));       // nothing moved it
+    CHECK(view.gen_target_p_override(loops, 1) == Approx(45.));
+    CHECK(std::isnan(view.gen_target_p_override({}, 1)));           // no loop moved anything
 }
 
 TEST_CASE("a row's overrides win over the grid, element by element", "[outer_loop][row_view]")
@@ -179,12 +180,11 @@ TEST_CASE("a row's overrides win over the grid, element by element", "[outer_loo
 
     // the loops' moves win over the row's
     const std::vector<real_type> loops = {55., NaN, NaN};
-    std::vector<real_type> scratch;
-    const std::vector<real_type> & merged = view.gen_target_p_overrides(loops, scratch);
-    REQUIRE(merged.size() == 3);
-    CHECK(merged[0] == Approx(55.));
-    CHECK(std::isnan(merged[1]));
-    CHECK(merged[2] == Approx(70.));
+    CHECK(view.gen_target_p_override(loops, 0) == Approx(55.));
+    CHECK(std::isnan(view.gen_target_p_override(loops, 1)));
+    CHECK(view.gen_target_p_override(loops, 2) == Approx(70.));
+    CHECK(view.gen_target_p_override({}, 2) == Approx(70.));
+    CHECK(view.gen_target_p_override({55.}, 0) == Approx(55.));
 }
 
 TEST_CASE("a placed generator is on in its row, even where the grid has it off", "[outer_loop][row_view]")

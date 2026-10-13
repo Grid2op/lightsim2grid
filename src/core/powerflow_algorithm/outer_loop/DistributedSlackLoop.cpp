@@ -171,12 +171,11 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
             // a unit that does not regulate: its target Q follows its limits at the new P
             // (forceTargetQInReactiveLimits, LfGeneratorImpl.getTargetQ)
             const bool pq = !grid.get_generators().get_voltage_regulator_on(gen_id);
-            std::vector<real_type> scratch;
             const real_type q_before = pq ? grid.gen_target_q_at_outer_target(
-                gen_id, ctx.view().gen_target_p_overrides(state.gen_target_p, scratch)) : 0.;
+                gen_id, ctx.view().gen_target_p_override(state.gen_target_p, gen_id)) : 0.;
             state.gen_target_p[static_cast<std::size_t>(gen_id)] = new_mw[k];
             if(pq) ds += cplx_type(0., (grid.gen_target_q_at_outer_target(
-                gen_id, ctx.view().gen_target_p_overrides(state.gen_target_p, scratch)) - q_before) / sn_mva);
+                gen_id, ctx.view().gen_target_p_override(state.gen_target_p, gen_id)) - q_before) / sn_mva);
         } else {
             state.storage_target_p[units_[k].el_id] = -new_mw[k];
         }

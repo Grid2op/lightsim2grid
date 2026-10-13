@@ -608,9 +608,14 @@ class LS2G_API LSGrid final
         /// a non-regulating generator's target Q (MVar) at the target P the outer loops gave it
         /// (set_gen_raw_target_q), its own target Q otherwise
         [[nodiscard]] real_type gen_target_q_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p) const;
+        /// the same, for that one generator's target P (MW, NaN: none moved it)
+        [[nodiscard]] real_type gen_target_q_at_outer_target(int gen_id, real_type outer_target_p) const;
         /// a generator's reactive limits at the target P the last solve's outer loops gave it
         /// (its curve), its fixed ones otherwise
         void gen_limits_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p,
+                                        real_type & min_q, real_type & max_q) const;
+        /// the same, for that one generator's target P (MW, NaN: none moved it)
+        void gen_limits_at_outer_target(int gen_id, real_type outer_target_p,
                                         real_type & min_q, real_type & max_q) const;
 
         void set_hold_frozen_regulators(bool hold) {

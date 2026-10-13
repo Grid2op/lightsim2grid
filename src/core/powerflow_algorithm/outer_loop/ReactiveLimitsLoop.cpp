@@ -219,12 +219,11 @@ void ReactiveLimitsLoop::_limits(const OuterContext & ctx, const ControllerBus &
     const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
     // a generator: its curve at the target P an outer loop gave it, its fixed limits otherwise
     static const std::vector<real_type> none;
-    std::vector<real_type> scratch;
-    const std::vector<real_type> & target_p = ctx.view().gen_target_p_overrides(
-        ctx.injections != nullptr ? ctx.injections->gen_target_p : none, scratch);
+    const std::vector<real_type> & loops = ctx.injections != nullptr ? ctx.injections->gen_target_p : none;
+    const OuterGridView view = ctx.view();
     for (int gen_id : entry.gen_ids) {
         real_type lo, hi;
-        ctx.grid->gen_limits_at_outer_target(gen_id, target_p, lo, hi);
+        ctx.grid->gen_limits_at_outer_target(gen_id, view.gen_target_p_override(loops, gen_id), lo, hi);
         q_min += lo;
         q_max += hi;
     }
@@ -246,10 +245,9 @@ real_type ReactiveLimitsLoop::_controller_limit(const OuterContext & ctx, int ct
     switch (ctrl.kind(ctrl_pos)) {
         case VoltageControlSolverData::GEN: {
             static const std::vector<real_type> none;
-            std::vector<real_type> scratch;
             real_type lo, hi;
-            grid.gen_limits_at_outer_target(el, ctx.view().gen_target_p_overrides(
-                ctx.injections != nullptr ? ctx.injections->gen_target_p : none, scratch), lo, hi);
+            grid.gen_limits_at_outer_target(el, ctx.view().gen_target_p_override(
+                ctx.injections != nullptr ? ctx.injections->gen_target_p : none, el), lo, hi);
             return max ? hi : lo;
         }
         case VoltageControlSolverData::SVC: {
