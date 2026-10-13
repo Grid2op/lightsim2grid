@@ -12,6 +12,10 @@ Companion notes in this folder:
 - `outer_loops_fixed_sparsity.md` -- why the outer loops keep one Jacobian pattern per solve
   and change values only, which is where the refactorization failures below come from.
 
+The layout facts below (which row lands on which diagonal) were read off `NRLedger`,
+`VoltageControl::register_in` and `BranchControl::register_in`, and the zero pivots
+classified with temporary instrumentation of those and of the solver, since removed.
+
 ## The bench
 
 Everything below is measured the same way, so that the numbers compare:
@@ -89,12 +93,32 @@ Every one of them is a refactorization whose frozen pivot became exactly zero. I
   2 % of the columns.
 - The bus masking of `handle_disconnected_grid` and the PV pinning (`_recompute_mask_positions`)
   never zero a diagonal entry: they are not the cause.
-- What is left is the outer loops' value-level switches of a voltage-control row between its
-  two forms, "Vm(reg) = target" (entry on the Vm column) and "Q_c = q" (entry on the Q_c
-  column), when ReactiveLimits / VoltageMonitoring switch a bus PV <-> PQ or hold a
-  controller. Each form zeroes the other's entry, and such a row has no other nonzero: its
-  pivot is on one of the two, so one of the forms always puts it at zero. This is structural:
-  **no single pivot order can serve both forms of such a row.** Not yet confirmed loop by loop.
+- What is left are the rows the outer loops switch, by value, between two forms. Each zero
+  pivot was classified by the row and the column it sits on:
+
+  | row | column | zero pivots |
+  |---|---|---|
+  | a voltage-control group's voltage row (remote control by a generator) | the group's first `Q_c` column, its diagonal | 64 |
+  | a transformer voltage-control ratio-group row (BranchControl) | a ratio column, on the diagonal | 56 |
+  | the same rows | a ratio column, off the diagonal | 21 |
+  | the Q row of a voltage-control controller bus | a Vm column, off the diagonal | 1 |
+
+  A voltage row reads "Vm(reg) = target" (one entry, on the regulated bus's Vm column) or,
+  held, "Q_c = q" (one entry, on the `Q_c` column); a ratio-group row reads "Vm(bus) = target"
+  or "ratio = held", the same way. Each form zeroes the other's entry.
+- Where the pivot sits follows from the layout. Rows and columns are numbered by two
+  counters that advance together (`NRLedger`), so a bus's Vm column has the bus's Q row on its
+  diagonal (dQ/dVm, never switched), while a voltage row lands on the diagonal of its group's
+  first `Q_c` column (every group of the snapshot). KLU prefers the diagonal, so it pivots
+  the voltage row on `(v_row, Q_c)`: 1 in the held form, 0 in the PV form.
+- In every case the Vm columns that would let the pivot fill in come **after** the pivot
+  column in KLU's order: for the 64 voltage rows, the regulated bus's Vm column and the
+  controller bus's Vm column; for the 77 ratio-group rows, the group bus's Vm
+  column. That is what turns the other form into a zero pivot, see "Ordering the regulated Vm
+  first" below. It is the necessary condition only: that moving them first makes the pivot
+  fill in is the reasoning below, not yet measured.
+- Local voltage control by a generator does not go through these groups (a local PV bus is
+  the ordinary PV path), so none of the cases is local.
 - The pivot orders recur: of the 143 factorizations, 73 chose an order already seen (70
   distinct orders). The sets of exactly-zero entries do not recur (136 distinct out of 143:
   each contingency zeroes its own branch's entries), so they cannot key a cache.
@@ -134,6 +158,86 @@ Every one of them is a refactorization whose frozen pivot became exactly zero. I
      of plans: precheck the current plan; if it fails, take the most recent cached plan whose
      pivot entries are all nonzero; call `klu_factor` only when none passes. A cache of 4 to 8
      plans, ~8 % of `Ir` expected.
+   **Ordering the regulated Vm first (orthogonal to the above, and probably better).** A
+   frozen order *can* serve both forms of a switched row, through fill-in. Take a voltage row
+   whose regulated bus's Vm column is eliminated before the `Q_c` column, its pivot on the
+   bus's Q row (its diagonal, dQ/dVm, never switched):
+
+   - PV form: the voltage row has a 1 on the Vm column; eliminating Vm subtracts
+     `1 / (dQ/dVm)` times the Q row from it, and the Q row has an entry on `Q_c` (the
+     controller's reactive injection, when the controller sits on the regulated bus). The
+     voltage row's entry on `Q_c` is then nonzero: the pivot `(v_row, Q_c)` is valid;
+   - held form: that entry is the 1 of "Q_c = q", valid as well.
+
+   So with the order "regulated Vm before the `Q_c` columns", the pivot never moves when the
+   row switches, and none of these fallbacks happens -- for `NROuter_KLU` as much as for the
+   static-pivot solver. KLU already pivots the Vm column on its diagonal (its diagonal
+   preference, dQ/dVm being large); what has to be added is the column order. By the fill
+   path theorem, the entry `(v_row, Q_c)` fills in iff a path joins the voltage row to `Q_c`
+   through columns eliminated earlier. For remote control -- all the cases seen -- the path
+   goes regulated bus -> ... -> controller bus, whose Q row carries `Q_c`: the Vm columns
+   along that path (in practice the regulated bus and the controller bus, joined by the
+   step-up transformer) must all come before `Q_c`. The ratio-group rows are the same
+   picture with the bus's Vm column and the transformer's ratio column (the bus's Q row
+   carries dQ/dratio when the transformer touches the bus).
+
+   How it could be done:
+
+   - KLU takes a given ordering (`klu_analyze_given`): run AMD as today, then move each
+     control column (`Q_c`, ratio) to just after the last Vm column of its path, keeping the
+     permutation symmetric so the diagonal preference still applies.
+   - Only the Newton system knows the pairs (`vm_cols_`, `q_cols_`, the ratio groups' columns).
+     They reach the linear solver through an optional hook found by template detection, like
+     `set_rgrowth_threshold`; `BaseAlgo`, hence the plugin ABI, is not touched.
+   - Not "all control columns last": with every `Q_c` at the end, the Schur complement on them
+     is dense (the grid connects them all), a dense trailing block that would cost more than it
+     saves. The move has to be local.
+
+   To check: the fill it adds (the kernel flop count), the 21 off-diagonal ratio-group
+   cases, paths longer than one transformer, the share rows of multi-controller groups and
+   SVC slopes, and that the iteration counts do not move. If it works, the remaining
+   fallbacks (bus masking, odd cases) can still go through the cache of plans.
+
+   **Measured (throw-away prototype, not committed).** The column pairs went from
+   `VoltageControl::register_in` and `BranchControl::register_in` to the static-pivot solver
+   through a global registry; its `analyze` ran AMD (`amd_order`, default controls), moved
+   indices in a stable sort on the position, kept the permutation symmetric, and called
+   `klu_analyze_given`. Five ways of building the order were tried on the contingency bench:
+
+   | order | time | fallbacks | update flops per refactorization |
+   |---|---|---|---|
+   | AMD, as today | 2.06 s | 142 | 571 k |
+   | controls after the Vm of every related bus (ratio groups: group bus and both transformer ends) | 1.75-1.82 s | 0 | 1 126 k |
+   | **controls after the Vm they need (voltage groups: regulated and controller buses; ratio groups: the group bus only)** | **1.65 s** | **0** | **720 k** |
+   | the same, moving only the ratio groups' rows (not their ratio columns) | 1.66 s | 0 | 720 k |
+   | the Vm columns moved up, before the first control column (minimal sets) | 3.39 s | 0 | 4 078 k |
+   | the same, full sets | 14.20 s | 0 | 31 819 k |
+
+   Every variant removes every fallback: the fill-in argument holds, for the remote voltage
+   controls and for the ratio groups, including the 21 off-diagonal cases. What separates
+   them is the fill. Moving the control columns down is local; moving the Vm columns up
+   drags dense parts of the grid forward and is ruinous.
+
+   With the third order, against the two other algorithms (same build, one core):
+
+   | | `NROuter_KLU` | `NROuter_KLUStaticPivot`, AMD | `NROuter_KLUStaticPivot`, moved order |
+   |---|---|---|---|
+   | ContingencyAnalysis, 100 N-1 (3 runs) | 2.95 s | 2.06 / 2.11 / 2.12 s | 1.65 / 1.66 / 1.66 s |
+   | InjectionSweep, 100 rows | 8.00 s | 5.83 s | 4.17 s |
+   | factorizations (contingencies / sweep) | 143 / 442 | 143 / 442 | 1 / 1 |
+
+   About -20 % on the contingencies and -28 % on the sweep on top of the static pivot (-44 %
+   and -48 % against KLU). Converged rows, outer and Newton iteration counts are identical to
+   KLU's row by row; voltages differ at round-off (per-row max dVm 1.0e-12 / 1.6e-12 /
+   2.7e-12 pu and dVa 3.8e-11 / 6.4e-11 / 9.1e-11 deg, median / p90 / max, for the
+   contingencies; the same order for the sweep). The distance to the upper bound (~1.45 s) is
+   the extra fill, +26 % of update flops.
+
+   Left to do to make it real: the pairs reach the linear solver through an optional hook
+   rather than a global; the same order in `KLULinearSolver` (its fallbacks are the same; not
+   measured there yet); a test on a public grid with remote voltage control and transformer
+   voltage control asserting that the fallbacks are gone.
+
 2. **A faster kernel** (33 % of `Ir`).
    - The "map" variant of Chen et al. (DATE 2016, see `static_pivot_refactorization.md`):
      precompute the address of every update, no dense work vector, no scatter / gather /
