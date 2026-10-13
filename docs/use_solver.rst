@@ -97,7 +97,7 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
   tol_pu = ...  # a > 0. real number giving the maximum KCL violation allowed for a all nodes, in per unit
 
   solver = NR_KLU()
-  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol_pu)
+  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iter=max_it, tol_pu=tol_pu)
 
   # to retrieve the voltages related information (in case converged is True)
   solver.get_Va()  # voltage angle
@@ -232,7 +232,7 @@ You can use them as:
 
   # retrieve some Ybus, V0, etc. as above
   solver = NR_KLU()
-  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol_pu)
+  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iter=max_it, tol_pu=tol_pu)
   # process the results as above
 
 .. note::
@@ -289,7 +289,7 @@ There are 4 solvers of this type that are different in the way they solve `Ybus 
 
   # retrieve some Ybus, V0, etc. as above
   dc_solver = DC_SparseLU()
-  converged = dc_solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol_pu)
+  converged = dc_solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iter=max_it, tol_pu=tol_pu)
   # process the results as above
 
 Fast Decoupled solvers
@@ -314,7 +314,7 @@ The list is:
 
   # retrieve some Ybus, V0, etc. as above
   solver = FDPF_XB_SparseLU()
-  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol_pu)
+  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iter=max_it, tol_pu=tol_pu)
   # process the results as above
 
 .. note::
