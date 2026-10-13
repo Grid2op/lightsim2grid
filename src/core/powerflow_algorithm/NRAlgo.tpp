@@ -147,7 +147,7 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
         need_factorize = (need_factorize || should_refactor_policy(nr_iter_));
         if (need_factorize) {
             // Phase 3: fill J numerically with current V.
-            _system.fill_internal_variables();  // timer_dSbus_
+            _system.fill_internal_variables(true);  // timer_dSbus_ (Ybus . V: the residual's)
             _system.fill_J();  // timer_fillJ_
 
             if (need_init) {

@@ -1629,7 +1629,10 @@ public:
     // ----- Phase 3: fill J numerically -------------------------------------------
 
     void fill_J();
-    void fill_internal_variables();
+    // reuse_ybus_v: take Ybus . V from the last residual instead of recomputing it, when
+    // that residual was evaluated at this V with this Ybus (see ybus_v_at_V_); NRAlgo's
+    // loop asks for it, where the residual it just read always precedes the fill
+    void fill_internal_variables(bool reuse_ybus_v = false);
 
     // ----- bus masking (ContingencyAnalysis "handle disconnected grid" mode) ------
     // Mark some solver buses as "masked": their P/Q mismatch rows are replaced by
@@ -1866,6 +1869,7 @@ public:
         init_Vm_cache_  = RealVect();
         if(ybus_v_ptr_ != nullptr) *ybus_v_ptr_ = CplxVect();
         if(mis_ptr_ != nullptr)    *mis_ptr_    = CplxVect();
+        ybus_v_at_V_ = false;
         Va_trial_cache_ = RealVect();
         Vm_trial_cache_ = RealVect();
         V_trial_cache_  = CplxVect();
@@ -1894,6 +1898,7 @@ public:
     void set_mismatch_buffers(CplxVect & mis, CplxVect & ybus_v) noexcept {
         mis_ptr_ = &mis;
         ybus_v_ptr_ = &ybus_v;
+        ybus_v_at_V_ = false;
     }
 
     Eigen::Ref<const CplxVect> V()  const { return V_; }
@@ -1905,6 +1910,7 @@ public:
     // keeps the magnitude the bus has, see set_pv_pinned_buses), or OpenLoadFlow's robust
     // mode restarting a bus from 1 pu. Values only.
     void set_vm_at(const std::vector<int>& buses, const std::vector<real_type>& vm) {
+        ybus_v_at_V_ = false;
         for (std::size_t k = 0; k < buses.size() && k < vm.size(); ++k) {
             const int b = buses[k];
             if (b < 0 || b >= Vm_.size()) continue;
@@ -2040,6 +2046,9 @@ private:
     CplxVect *                             ybus_v_ptr_ = nullptr;   // Ybus * V_t
     CplxVect *                             mis_ptr_ = nullptr;      // per-bus complex mismatch
     mutable CplxVect                       ybus_v_own_;  // used iff ybus_v_ptr_ is null
+    // the Ybus . V buffer holds Ybus_ref_ * V_: the last _residual_into was evaluated at
+    // V_, and neither V_ nor Ybus has moved since (every writer of either clears it)
+    mutable bool                           ybus_v_at_V_ = false;
     mutable CplxVect                       mis_own_;     // used iff mis_ptr_ is null
     mutable RealVect                       Va_trial_cache_, Vm_trial_cache_;
     mutable CplxVect                       V_trial_cache_;
