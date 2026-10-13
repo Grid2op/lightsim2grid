@@ -843,7 +843,8 @@ void bind_batch(py::module_& m) {
         .def("compute", &ContinuationSweep::compute, py::call_guard<py::gil_scoped_release>(),
              py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
              "Trace the curve. Raises if the target is identical to the base state, or if "
-             "the selected algorithm is not Newton-Raphson based.")
+             "the selected algorithm is not Newton-Raphson based. ``tol`` is in MVA (not in "
+             "per unit), as for LSGrid.ac_pf, for the base case and every corrector alike.")
 
         // results
         .def("get_status", &ContinuationSweep::get_status,

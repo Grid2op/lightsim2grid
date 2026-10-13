@@ -220,6 +220,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   of ``LSGrid.ac_pf`` and the batch algorithms.
 - [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
   algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
+- [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
+  case: they accepted points ``sn_mva`` times less converged than asked.
 
 
 [1.2.0] 2026-10-12
