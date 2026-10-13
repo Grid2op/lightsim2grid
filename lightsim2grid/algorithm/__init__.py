@@ -82,6 +82,12 @@ try:
     __all__.append("FDPF_BX_KLU")
     __all__.append("NRRefactorRetry_KLU")
     __all__.append("NROuter_KLU")
+    from ..lightsim2grid_cpp import NR_KLUStaticPivot  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NRSing_KLUStaticPivot  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NROuter_KLUStaticPivot  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
+    __all__.append("NR_KLUStaticPivot")
+    __all__.append("NRSing_KLUStaticPivot")
+    __all__.append("NROuter_KLUStaticPivot")
 except Exception as exc_:  # noqa: F841
     # KLU is not available
     pass

@@ -529,6 +529,28 @@ void bind_solvers(py::module_& m) {
         bind_linear_solver_stats(cls);
         bind_outer_algo(cls);
     }
+    {
+        auto cls = py::class_<NR_KLUStaticPivot>(m, "NR_KLUStaticPivot", DocSolver::NR_KLUStaticPivot.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+    }
+    {
+        auto cls = py::class_<NRSing_KLUStaticPivot>(m, "NRSing_KLUStaticPivot", DocSolver::NR_KLUStaticPivot.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+    }
+    {
+        auto cls = py::class_<NROuter_KLUStaticPivot>(m, "NROuter_KLUStaticPivot", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
 #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)

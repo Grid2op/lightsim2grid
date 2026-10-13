@@ -123,6 +123,21 @@ class MakeTests(unittest.TestCase):
     def test_dir(self):
         if not KLU_AVAILBLE:
             self.skipTest("KLU is not installed")
+        self._check_dir()
+
+    def test_dir_static_pivot(self):
+        """NR_KLUStaticPivot (KLU's factorization, refactorizations on its frozen pivot order)
+        finds the same Jacobians and voltages, to the test's tolerance, and refactorizes."""
+        if not KLU_AVAILBLE:
+            self.skipTest("KLU is not installed")
+        from lightsim2grid.lightsim2grid_cpp import NR_KLUStaticPivot
+        self.solver = NR_KLUStaticPivot()
+        self._check_dir()
+        stats = self.solver.get_linear_solver_stats()
+        assert stats.nb_refactorize > 0, "the static-pivot refactorization was not exercised"
+        assert stats.nb_refactorize_failed == 0, "no refactor should fail on a well-behaved test case"
+
+    def _check_dir(self):
         nb_tested = 0
         for path in os.listdir("."):
             _, ext = os.path.splitext(path)

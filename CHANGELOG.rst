@@ -223,6 +223,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.1.1] 2026-xx-yy
 --------------------
+- [ADDED] ``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot``, ``NROuter_KLUStaticPivot``: KLU with a
+  static-pivot refactorization (Gilbert & Peierls 1988, https://doi.org/10.1137/0909058; KLU,
+  Davis & Palamadai Natarajan 2010, https://doi.org/10.1145/1824801.1824814). Opt-in.
 - [ADDED] The batch classes run the outer loops: with an ``NROuter_*`` algorithm each row is solved with
   the grid's loops, as a single solve of the row's grid, still with one symbolic analysis per thread.
   ``get_outer_results()`` tells what they did per row. A TimeSeries row resumes from the previous

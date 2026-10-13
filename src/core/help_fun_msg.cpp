@@ -671,6 +671,26 @@ const std::string DocSolver::NRRefactorRetry_KLU = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::NR_KLUStaticPivot = R"mydelimiter(
+    Newton-Raphson with KLU, refactorizing the Jacobian on a static pivot order: the
+    ``*_KLUStaticPivot`` family (``NR_KLUStaticPivot``, multi-slack; ``NRSing_KLUStaticPivot``,
+    single-slack; ``NROuter_KLUStaticPivot``, with OpenLoadFlow's outer loops).
+
+    The first factorization is KLU's own, which chooses the pivots. Every refactorization
+    after it keeps those pivots and the nonzero pattern of the factors, and recomputes the
+    values with the left-looking column algorithm of Gilbert and Peierls: the same numerical
+    work as KLU's refactorization, without the row scaling and the storage it goes through
+    each time. The results agree with the ``*_KLU`` algorithms up to round-off, not bit for
+    bit.
+
+    A refactorization whose pivot is zero (or, with the refactorization fallback on, whose
+    reciprocal pivot growth is too small) is rejected, and the fallback factorizes again
+    with new pivots, as with KLU.
+
+    See :ref:`static-pivot-refactorization` for the references.
+
+)mydelimiter";
+
 const std::string DocSolver::NROuter = R"mydelimiter(
     Single-slack Newton-Raphson with OpenLoadFlow's outer loops run around it (the
     ``NROuter_*`` family: ``NROuter_SparseLU``, ``NROuter_KLU``, ...).
