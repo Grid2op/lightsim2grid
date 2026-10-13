@@ -213,37 +213,33 @@ int TransformerVoltageControlLoop::_closest_tap(const OuterContext & ctx, int t,
     return best;
 }
 
-bool TransformerVoltageControlLoop::_step_up(const OuterGridView & view, const bus_q_check::BusQEntry & entry, real_type limit) const
+std::vector<TransformerVoltageControlLoop::ClosedBranch> TransformerVoltageControlLoop::_closed_branches(const OuterGridView & view)
+{
+    std::vector<ClosedBranch> res;
+    const LSGrid & grid = view.grid();
+    int b1, b2;
+    const int nb_lines = grid.get_lines().nb();
+    for (int el = 0; el < nb_lines; ++el) {
+        if (view.line_closed(el, b1, b2)) res.push_back(ClosedBranch{b1, b2, -1});
+    }
+    const int nb_trafos = grid.get_trafos().nb();
+    for (int el = 0; el < nb_trafos; ++el) {
+        if (view.trafo_closed(el, b1, b2)) res.push_back(ClosedBranch{b1, b2, el});
+    }
+    return res;
+}
+
+bool TransformerVoltageControlLoop::_step_up(const bus_q_check::BusQEntry & entry, real_type limit,
+                                             const Eigen::Ref<const RealVect> & vn_kv,
+                                             const std::vector<char> & on_controller,
+                                             const std::vector<real_type> & min_connected) const
 {
     // GeneratorVoltageControlManager.hasStepUpTransformers
     if (!entry.station_ids.empty()) return true;  // a VSC converter station
-    const LSGrid & grid = view.grid();
-    const TrafoContainer & trafos = grid.get_trafos();
-    const Eigen::Ref<const RealVect> vn_kv = grid.get_bus_vn_kv();
-    const GlobalBusIdVect & to_me = view.id_solver_to_me();
-    const int bus = entry.bus_solver;
-    int b1, b2;
-    for (int t = 0; t < trafos.nb(); ++t) {
-        if (!controller_[static_cast<std::size_t>(t)]) continue;
-        if (trafos.get_bus_side_1(t).cast_int() == entry.bus_grid ||
-            trafos.get_bus_side_2(t).cast_int() == entry.bus_grid) return false;
-    }
-    real_type min_connected = -1.;
-    bool any = false;
-    auto visit = [&](int x1, int x2) {
-        if (x1 != bus && x2 != bus) return;
-        const real_type v = std::max(vn_kv(to_me[x1].cast_int()), vn_kv(to_me[x2].cast_int()));
-        min_connected = any ? std::min(min_connected, v) : v;
-        any = true;
-    };
-    const int nb_lines = grid.get_lines().nb();
-    for (int el = 0; el < nb_lines; ++el) {
-        if (view.line_closed(el, b1, b2)) visit(b1, b2);
-    }
-    for (int el = 0; el < trafos.nb(); ++el) {
-        if (view.trafo_closed(el, b1, b2)) visit(b1, b2);
-    }
-    return min_connected > vn_kv(entry.bus_grid) && min_connected > limit;
+    if (on_controller[static_cast<std::size_t>(entry.bus_grid)]) return false;
+    // NaN (no closed branch at the bus) compares false: not a step-up unit
+    const real_type min_v = min_connected[static_cast<std::size_t>(entry.bus_solver)];
+    return min_v > vn_kv(entry.bus_grid) && min_v > limit;
 }
 
 namespace {
@@ -257,7 +253,8 @@ bool voltage_control_off(const OuterControls & controls, int bus)
 
 }  // namespace
 
-void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_type limit)
+void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_type limit,
+                                                       const std::vector<ClosedBranch> & closed)
 {
     // disableGeneratorVoltageControlsUnderMaxControlledNominalVoltage: a controller bus frozen at
     // its bus' Q equation, the injection, which OpenLoadFlow takes as the generation (its load
@@ -269,6 +266,28 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
     const OuterGridView view = ctx.view();
     const VoltageControlSolverData & ctrl = view.layout().voltage_control.controllers();
     const GlobalBusIdVect & id_solver_to_me = view.id_solver_to_me();
+    // what hasStepUpTransformers reads (see _step_up), once for every bus: the grid buses a
+    // controller transformer ends at, and per solver bus the lowest of max(vn side 1, vn side 2)
+    // over the closed branches at it, NaN when none
+    std::vector<char> on_controller(static_cast<std::size_t>(vn_kv.size()), 0);
+    {
+        const TrafoContainer & trafos = grid.get_trafos();
+        const int nb_grid_bus = static_cast<int>(vn_kv.size());
+        for (int t = 0; t < trafos.nb(); ++t) {
+            if (!controller_[static_cast<std::size_t>(t)]) continue;
+            for (const int b : {trafos.get_bus_side_1(t).cast_int(), trafos.get_bus_side_2(t).cast_int()}) {
+                if (b >= 0 && b < nb_grid_bus) on_controller[static_cast<std::size_t>(b)] = 1;
+            }
+        }
+    }
+    std::vector<real_type> min_connected(id_solver_to_me.size(), std::numeric_limits<real_type>::quiet_NaN());
+    for (const ClosedBranch & br : closed) {
+        const real_type v = std::max(vn_kv(id_solver_to_me[br.bus1].cast_int()), vn_kv(id_solver_to_me[br.bus2].cast_int()));
+        for (const int b : {br.bus1, br.bus2}) {
+            real_type & m = min_connected[static_cast<std::size_t>(b)];
+            m = std::isnan(m) ? v : std::min(m, v);
+        }
+    }
     // the load of every bus, pu
     std::vector<real_type> load_q(static_cast<std::size_t>(ctx.V->size()), 0.);
     {
@@ -297,7 +316,7 @@ void TransformerVoltageControlLoop::_freeze_generators(OuterContext & ctx, real_
             }
             if (held) continue;
         }
-        if (_step_up(view, entry, limit)) continue;
+        if (_step_up(entry, limit, vn_kv, on_controller, min_connected)) continue;
         real_type target_vm = ctx.vm(b);
         if (!entry.gen_ids.empty()) target_vm = view.gen_target_vm(entry.gen_ids.front());
         else if (!entry.storage_ids.empty()) target_vm = view.storage_target_vm(entry.storage_ids.front());
@@ -345,7 +364,7 @@ void TransformerVoltageControlLoop::_release_generators(OuterContext & ctx)
     frozen_.clear();
 }
 
-void TransformerVoltageControlLoop::_fix_controls(OuterContext & ctx)
+void TransformerVoltageControlLoop::_fix_controls(OuterContext & ctx, const std::vector<ClosedBranch> & closed)
 {
     // LfNetwork.fixTransformerVoltageControls: a transformer whose other side, once every
     // transformer switched on is taken out, keeps no PV bus is switched off
@@ -356,15 +375,9 @@ void TransformerVoltageControlLoop::_fix_controls(OuterContext & ctx)
         if (a < 0 || b < 0 || a >= static_cast<int>(parent.size()) || b >= static_cast<int>(parent.size())) return;
         parent[static_cast<std::size_t>(find_root(parent, a))] = find_root(parent, b);
     };
-    int x1, x2;
-    const int nb_lines = ctx.grid->get_lines().nb();
-    for (int el = 0; el < nb_lines; ++el) {
-        if (view.line_closed(el, x1, x2)) join(x1, x2);
-    }
-    const int nb_trafos = ctx.grid->get_trafos().nb();
-    for (int el = 0; el < nb_trafos; ++el) {
-        if (enabled_[static_cast<std::size_t>(el)] || !view.trafo_closed(el, x1, x2)) continue;
-        join(x1, x2);
+    for (const ClosedBranch & br : closed) {
+        if (br.trafo >= 0 && enabled_[static_cast<std::size_t>(br.trafo)]) continue;
+        join(br.bus1, br.bus2);
     }
     // the components holding a PV bus (a generator regulating its own bus, enabled)
     std::set<int> with_pv;
@@ -464,8 +477,9 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
             step_ = Step::COMPLETE;
             return OuterLoopStatus::STABLE;
         }
-        _freeze_generators(ctx, _limit(ctx.view()));
-        _fix_controls(ctx);
+        const std::vector<ClosedBranch> closed = _closed_branches(ctx.view());
+        _freeze_generators(ctx, _limit(ctx.view()), closed);
+        _fix_controls(ctx, closed);
         step_ = Step::CONTROL;
         return OuterLoopStatus::UNSTABLE;
     }
