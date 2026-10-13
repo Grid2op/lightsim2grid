@@ -4189,7 +4189,8 @@ const std::string DocLSGrid::cap_slack_at_active_limits = R"mydelimiter(
     distributed slack (generator or storage unit) that the last :func:`ac_pf` pushed past its
     ``[min_p, max_p]`` by more than ``tol_mw`` -- a ``LOW_P`` / ``HIGH_P`` record of
     :func:`get_physical_violations` -- leaves the slack at that limit, and the grid is solved again
-    (``max_iter``, ``tol``, starting from its current voltages), until no unit is pushed out
+    (``max_iter``, ``tol`` -- in MVA, as for :func:`ac_pf` -- starting from its current voltages),
+    until no unit is pushed out
     (``max_rounds``).
 
     The Newton solve's distributed slack has no bounds: it shares its whole mismatch between the
@@ -5657,7 +5658,10 @@ const std::string DocLSGrid::ac_pf = R"mydelimiter(
         last iterate of a diverged powerflow does.
     
     tol: ``float``
-        Tolerance criteria to stop the computation. This should be > 0 real number.
+        Tolerance criteria to stop the computation, **in MVA** (not in per unit): the powerflow
+        has converged when no bus has an active or reactive mismatch larger than ``tol`` MW / MVAr.
+        It is divided by :func:`get_sn_mva` before reaching the solver, which works in per unit.
+        This should be a > 0 real number.
 
     Returns
     -------
@@ -5682,7 +5686,7 @@ const std::string DocLSGrid::ac_pf = R"mydelimiter(
         # maximum number of iteration
         nb_iter = 10  # a good default
 
-        # tolerance
+        # tolerance, in MVA
         tol = 1e-8
 
         V = grid_model.ac_pf(Vinit, nb_iter, tol)
@@ -7399,7 +7403,8 @@ const std::string DocTimeSeries::compute_Vs = R"mydelimiter(
         Total number of iteration (>0 integer)
 
     tol: ``float``
-        Solver tolerance (> 0. float)
+        Solver tolerance, **in MVA** (not in per unit), as for :func:`lightsim2grid.network.LSGrid.ac_pf`
+        (> 0. float)
 
     Returns
     ----------
@@ -7859,7 +7864,8 @@ const std::string DocContingencyAnalysis::compute = R"mydelimiter(
         Total number of iteration (>0 integer)
 
     tol: ``float``
-        Solver tolerance (> 0. float)
+        Solver tolerance, **in MVA** (not in per unit), as for :func:`lightsim2grid.network.LSGrid.ac_pf`
+        (> 0. float)
 
 )mydelimiter";
 

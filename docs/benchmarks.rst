@@ -308,7 +308,8 @@ More information
 ~~~~~~~~~~~~~~~~~
 
 For all the benchmarks, the stopping criteria (of the solver, for each steps) is based on the maximum discrepency (at each bus) of the Kirchhoff Current Law's. 
-The solver stops if this `tolerance` is under `1e-8` "per unit".
+The solver stops if this `tolerance` is under `1e-8` MVA (the unit of the `tol` argument of
+:class:`lightsim2grid.lightSimBackend.LightSimBackend`).
 
 For all "steps", the model is intialized with the "DC" (direct current) approximation before the AC powerflow is run. In these benchmark, only the timings
 of the AC powerflow is reported in the column "`solver powerflow time (ms)`". This time is however included in the other columns.

@@ -471,7 +471,8 @@ class TimeSerie:
         Run the batch using whatever was set by :func:`modify_gen_p` / :func:`modify_sgen_p`
         / :func:`modify_load_p` / :func:`modify_load_q` (the new setter-based API -- an
         alternative to the single bundled :func:`compute_V_from_inj` call). ``max_iter`` /
-        ``tol`` default to the backend's own values when not given.
+        ``tol`` default to the backend's own values when not given. ``tol`` is in MVA (not
+        in per unit), as for :attr:`lightsim2grid.lightSimBackend.LightSimBackend.tol`.
         """
         if v_init is None:
             v_init_comp = self.grid2op_env.backend.V

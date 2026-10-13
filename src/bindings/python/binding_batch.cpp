@@ -539,7 +539,9 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
              "Run the batch: one powerflow per simulation, using whatever was set by "
              "modify_* (and, on ScenarioSweep, set_contingency_lines / "
-             "set_contingency_trafos). Raises if nothing was ever set.")
+             "set_contingency_trafos). Raises if nothing was ever set. ``tol`` is in MVA "
+             "(not in per unit), as for LSGrid.ac_pf: it is divided by the grid's sn_mva "
+             "before reaching the solver.")
 
         // results
         .def("compute_flows", &T::compute_flows, DocTimeSeries::compute_flows.c_str())

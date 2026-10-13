@@ -213,6 +213,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
+[1.3.0] 2026-xx-xx
+--------------------
+- [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
+  algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
+
+
 [1.2.0] 2026-10-12
 --------------------
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtual ``distributes_slack()`` (false unless

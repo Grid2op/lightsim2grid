@@ -138,7 +138,7 @@ void bind_light_env(py::module_& m) {
         .def_property_readonly("current_step", &LightEnv::get_current_step, "Current step count for this environment (number of env.step). current_step is 0 at reset and increased by 1 for each env.step.")
         .def_property_readonly("grid", &LightEnv::get_grid, "State of the underlying powergrid (readonly)")
         .def_property("protections", &LightEnv::get_protections, &LightEnv::assign_protections, "The current protections of the env")
-        .def_property("tol", &LightEnv::get_tol, &LightEnv::set_tol, "Tolerance used to compute the powerflows")
+        .def_property("tol", &LightEnv::get_tol, &LightEnv::set_tol, "Tolerance used to compute the powerflows, in MVA (not in per unit), as for LSGrid.ac_pf")
         .def_property("max_iter", &LightEnv::get_max_iter, &LightEnv::set_max_iter, "Maximum number of iterations for the powerflows")
         .def_property("nb_timestep_cooldown_sub", &LightEnv::get_nb_timestep_cooldown_sub, &LightEnv::set_nb_timestep_cooldown_sub,
                       "Number of steps a substation cannot be acted on after an action modified it (grid2op NB_TIMESTEP_COOLDOWN_SUB)")
