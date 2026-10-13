@@ -266,6 +266,22 @@ Every one of them is a refactorization whose frozen pivot became exactly zero. I
    same small grid gets no fallback even without the order (AMD happens to order it well
    there), so that case is only covered by the real grid snapshot.
 
+   **Full N-1 on the same snapshot.** Every line and transformer (`add_all_n1`), otherwise the contingency bench's settings: `init_from_n_powerflow`, islands
+   handled, one core. The static pivot without the order is the build just before it.
+
+   | | `NROuter_KLU` | `NROuter_KLUStaticPivot`, AMD | `NROuter_KLUStaticPivot`, constrained order |
+   |---|---|---|---|
+   | time | 301 s | 214 s (-29 %) | 162 s (-46 %) |
+   | factorizations (of which fallbacks) | 14 857 (14 856) | 14 857 (14 856) | 9 (8) |
+   | refactorizations | 100 068 | 100 069 | 100 067 |
+   | rows not converged | 7 | 7 | 7 |
+   | outer / Newton iterations | 24 211 / 100 022 | 24 211 / 100 023 | 24 211 / 100 021 |
+
+   The same rows converge; outer iterations are identical row by row, Newton iterations
+   differ by one on a single row (round-off at the tolerance). Against `NROuter_KLU`, per-row
+   max dVm 9.5e-13 / 1.5e-12 / 5.0e-12 pu and dVa 4.1e-11 / 6.3e-11 / 1.4e-10 deg (median /
+   p90 / max); no row above 1e-6. The 8 fallbacks left are not classified yet.
+
    Not done: the same order in `KLULinearSolver` (its fallbacks are the same).
 
 2. **A faster kernel** (33 % of `Ir`).
