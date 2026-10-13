@@ -180,6 +180,22 @@ void BranchControl::register_in(NRLedger & ledger)
     }
 }
 
+void BranchControl::declare_ordering_constraints(OrderingConstraints & out) const
+{
+    // A ratio group's rows switch by value between "Vm(bus) = target" and holding / sharing
+    // the ratios, each form with its entries on different columns. Eliminated after the bus'
+    // Vm, whose pivot on the bus' Q row fills in their ratio entries, they keep a usable pivot
+    // in both forms (see OrderingConstraints). A phase row needs nothing: its pivot column,
+    // the shift, has an entry in both of its forms.
+    for (const RatioGroup & g : groups_) {
+        if (g.vm_col < 0 || g.rows.empty()) continue;
+        OrderingConstraint c;
+        c.follow = g.rows;
+        c.lead.push_back(g.vm_col);
+        out.push_back(std::move(c));
+    }
+}
+
 void BranchControl::declare_feature_entries(FeatureSink & sink)
 {
     for (Entry & e : entries_) {

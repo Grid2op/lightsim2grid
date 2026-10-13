@@ -139,10 +139,21 @@ refactorization is where the time goes.
   the batch algorithms switch it on), so does a reciprocal pivot growth below the threshold
   OpenLoadFlow uses, as with KLU. A rejected refactorization is redone as a factorization,
   which chooses new pivots.
+- The **ordering** keeps those rejections away from the rows the outer loops switch by
+  value. A remote voltage row switches between "Vm(regulated bus) = target" and a reactive
+  form, a transformer or shunt voltage row between "Vm(bus) = target" and holding its
+  ratio or section; each form has its entry on a different column, and a pivot chosen in
+  one form sits on an entry the other form zeroes. The Newton system tells the solver which
+  indices these are, and the solver orders them after the Vm columns of the buses involved
+  (AMD, then each such index moved down to just after the last of those columns). The
+  pivots of those columns, on the buses' Q rows, then fill in the switched row's other
+  entry, and one pivot order serves both forms. A system without such rows is ordered by
+  AMD alone.
 
 The results agree with the ``*_KLU`` algorithms to round-off, not bit for bit (the
-ordering differs, without the block-triangular step, and so does the rounding, without the
-row scaling). The algorithms are opt-in, and registered by name only: select them with
+ordering differs, without the block-triangular step and with the constraints above, and so
+does the rounding, without the row scaling). Ordering the switched rows last costs some fill
+on a system whose rows never switch, which the refactorizations a batch saves outweigh. The algorithms are opt-in, and registered by name only: select them with
 ``grid.change_algorithm("NROuter_KLUStaticPivot")``. DC and fast-decoupled algorithms
 factorize their matrices once per solve and have no ``*_KLUStaticPivot`` variant.
 

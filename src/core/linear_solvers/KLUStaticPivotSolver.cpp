@@ -19,6 +19,39 @@ void KLUStaticPivotLinearSolver::set_defaults(){
     common_.btf = 0;
 }
 
+bool constrained_amd_order(int n, const int * Ap, const int * Ai,
+                           const OrderingConstraints & constraints,
+                           std::vector<int> & perm){
+    perm.resize(n);
+    if(n == 0) return true;
+    double control[AMD_CONTROL];
+    double info[AMD_INFO];
+    amd_defaults(control);
+    const int status = amd_order(n, Ap, Ai, perm.data(), control, info);
+    if(status != AMD_OK && status != AMD_OK_BUT_JUMBLED) return false;
+    if(constraints.empty()) return true;
+
+    std::vector<int> pos(n);
+    for(int k = 0; k < n; ++k) pos[perm[k]] = k;
+    // sort key: twice the AMD position; a follow index that comes before its last lead one
+    // gets the odd key right after it. Leads keep their place, so the keys of all the
+    // constraints are read off the same AMD order and one pass is enough.
+    std::vector<long> key(n);
+    for(int i = 0; i < n; ++i) key[i] = 2L * pos[i];
+    for(const OrderingConstraint & c : constraints){
+        int last_lead = -1;
+        for(int i : c.lead){
+            if(i >= 0 && i < n && pos[i] > last_lead) last_lead = pos[i];
+        }
+        if(last_lead < 0) continue;
+        for(int i : c.follow){
+            if(i >= 0 && i < n && pos[i] < last_lead) key[i] = std::max(key[i], 2L * last_lead + 1);
+        }
+    }
+    std::stable_sort(perm.begin(), perm.end(), [&key](int a, int b){ return key[a] < key[b]; });
+    return true;
+}
+
 ErrorType KLUStaticPivotLinearSolver::reset(){
     numeric_.reset();
     symbolic_.reset();
@@ -26,6 +59,7 @@ ErrorType KLUStaticPivotLinearSolver::reset(){
     set_defaults();
     plan_valid_ = false;
     factors_ = Factors::None;
+    ordering_constraints_.clear();
     return ErrorType::NoError;
 }
 
@@ -38,10 +72,16 @@ ErrorType KLUStaticPivotLinearSolver::analyze(const EigenRefConstRealSpMat & J){
     set_defaults();
     plan_valid_ = false;
     factors_ = Factors::None;
-    symbolic_.reset(klu_analyze(n,
-                                const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
-                                const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
-                                &common_));
+    auto * Ap = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr());
+    auto * Ai = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr());
+    if(ordering_constraints_.empty()){
+        symbolic_.reset(klu_analyze(n, Ap, Ai, &common_));
+    } else {
+        // symmetric: the rows the constraints move sit on the diagonal of their pivot column
+        std::vector<int> perm;
+        if(!constrained_amd_order(static_cast<int>(n), Ap, Ai, ordering_constraints_, perm)) return ErrorType::SolverAnalyze;
+        symbolic_.reset(klu_analyze_given(n, Ap, Ai, perm.data(), perm.data(), &common_));
+    }
     if(common_.status != KLU_OK) return ErrorType::SolverAnalyze;
     return ErrorType::NoError;
 }

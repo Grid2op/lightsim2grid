@@ -233,10 +233,40 @@ Every one of them is a refactorization whose frozen pivot became exactly zero. I
    contingencies; the same order for the sweep). The distance to the upper bound (~1.45 s) is
    the extra fill, +26 % of update flops.
 
-   Left to do to make it real: the pairs reach the linear solver through an optional hook
-   rather than a global; the same order in `KLULinearSolver` (its fallbacks are the same; not
-   measured there yet); a test on a public grid with remote voltage control and transformer
-   voltage control asserting that the fallbacks are gone.
+   **Implemented (static-pivot solver only).** The third order, as a part of
+   `KLUStaticPivotLinearSolver` rather than an option: the static-pivot algorithms are opt-in
+   already, and the order only differs from AMD's on a system with rows switched by value.
+   - Each Newton component declares its constraints (`declare_ordering_constraints`, in the
+     protocol of `NRSystem.hpp`): `VoltageControl` for a group whose voltage row has a slot
+     on a `Q_c` column (follow: the `Q_c` columns, the voltage and share rows; lead: the Vm
+     of the regulated and controller buses), `BranchControl` and `ShuntControl` for each
+     group (follow: its rows; lead: the bus' Vm).
+   - `NRAlgo` hands them over before each `analyze`, through
+     `detail::set_ordering_constraints_impl` (template detection: a linear solver without
+     `set_ordering_constraints` builds none, and `BaseAlgo` is not touched).
+   - The solver orders with `constrained_amd_order` and `klu_analyze_given`.
+
+   Measured on the bench, same build, one core:
+
+   | | `NROuter_KLU` | `NROuter_KLUStaticPivot` |
+   |---|---|---|
+   | ContingencyAnalysis, 100 N-1 | 2.99 s | 1.60 s |
+   | InjectionSweep, 100 rows | 8.03 s | 3.96 s |
+   | factorizations (contingencies / sweep) | 143 / 442 | 1 / 1 |
+
+   On the contingencies `NROuter_KLU` is bit-identical to the build without the constraints.
+   Against it, converged
+   rows and outer and Newton iteration counts are identical row by row; voltages differ at
+   round-off (per-row max dVm up to 2.7e-12 pu, dVa up to 9.1e-11 deg, both benches).
+
+   Tests: the C++ ones check the order itself, and that on a ring with one switched row, AMD
+   alone loses the pivot when the row switches while the constrained order keeps it. A Python
+   one checks that a contingency analysis on a public grid with transformer voltage control,
+   which has one fallback without the order, has none with it. Remote voltage control on the
+   same small grid gets no fallback even without the order (AMD happens to order it well
+   there), so that case is only covered by the real grid snapshot.
+
+   Not done: the same order in `KLULinearSolver` (its fallbacks are the same).
 
 2. **A faster kernel** (33 % of `Ir`).
    - The "map" variant of Chen et al. (DATE 2016, see `static_pivot_refactorization.md`):

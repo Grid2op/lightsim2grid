@@ -15,6 +15,7 @@
 #include "NRLedger.hpp"
 #include "HvdcDroopData.hpp"
 #include "VoltageControlData.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
 
@@ -139,6 +140,11 @@ class LS2G_API Contrib final
 //                                   P/Q rows are filled generically by NRSystem.
 //  - apply_step(dx)               : updates ONLY the component's own non-voltage
 //                                   state. Voltage updates are generic.
+//  - declare_ordering_constraints(OrderingConstraints&) const : appends the indices
+//                                   to eliminate after others (the component's rows
+//                                   that switch form by value after the Vm columns
+//                                   that keep their pivot usable), read by a linear
+//                                   solver that orders with them; no-op for most.
 //  - clear()                      : reset.
 
 /**
@@ -313,6 +319,7 @@ class LS2G_API Base
         const std::set<int>& switchable_vm_buses() const { return switchable_vm_buses_; }
 
         void declare_feature_entries(FeatureSink& /*sink*/) {}
+        void declare_ordering_constraints(OrderingConstraints& /*out*/) const {}
         void fill_feature_values(FeatureWriter& /*writer*/, const Eigen::Ref<const RealVect>& /*Va*/) const {}
         void adjust_mismatch(const Eigen::Ref<const CplxVect>& /*V_t*/, const Eigen::Ref<const RealVect>& /*dx*/, Eigen::Ref<CplxVect> /*mis*/) const {}
         void fill_custom_rows(Eigen::Ref<RealVect> /*res*/,
@@ -430,6 +437,8 @@ class LS2G_API MultiSlack   // distributed-slack extension
         }
 
         // one entry per slack bus: (that bus' P row, slack_absorbed column)
+        void declare_ordering_constraints(OrderingConstraints& /*out*/) const {}
+
         void declare_feature_entries(FeatureSink& sink)
         {
             feature_handles_.clear();
@@ -631,6 +640,8 @@ class LS2G_API Hvdc
         }
 
         // up to 4 dP/dtheta entries per line, declared whatever the regime
+        void declare_ordering_constraints(OrderingConstraints& /*out*/) const {}
+
         void declare_feature_entries(FeatureSink& sink)
         {
             h11_.assign(my_size_, -1);
@@ -798,6 +809,7 @@ class LS2G_API BranchControl
                            const Eigen::Ref<const IntVect> & pv, const Eigen::Ref<const IntVect> & pq);
         void register_in(NRLedger & ledger);
         void declare_feature_entries(FeatureSink & sink);
+        void declare_ordering_constraints(OrderingConstraints & out) const;
         void fill_feature_values(FeatureWriter & writer, const Eigen::Ref<const RealVect> & Va) const;
         void adjust_mismatch(const Eigen::Ref<const CplxVect> & V_t, const Eigen::Ref<const RealVect> & dx,
                              Eigen::Ref<CplxVect> mis) const;
@@ -944,6 +956,7 @@ class LS2G_API ShuntControl
                            const Eigen::Ref<const IntVect> & pv, const Eigen::Ref<const IntVect> & pq);
         void register_in(NRLedger & ledger);
         void declare_feature_entries(FeatureSink & sink);
+        void declare_ordering_constraints(OrderingConstraints & out) const;
         void fill_feature_values(FeatureWriter & writer, const Eigen::Ref<const RealVect> & Va) const;
         void adjust_mismatch(const Eigen::Ref<const CplxVect> & V_t, const Eigen::Ref<const RealVect> & dx,
                              Eigen::Ref<CplxVect> mis) const;
@@ -1182,6 +1195,7 @@ class LS2G_API VoltageControl
             const int ng = data_.n_groups();
             q_cols_.assign(nc, -1);
             q_rows_.assign(nc, -1);
+            ctrl_vm_cols_.assign(nc, -1);
             v_rows_.assign(ng, -1);
             vm_cols_.assign(ng, -1);
             share_rows_.assign(ng, std::vector<int>());
@@ -1192,11 +1206,44 @@ class LS2G_API VoltageControl
                     const int j = first + off;
                     q_cols_[j] = ledger.add_q_unknown(data_.bus(j));
                     q_rows_[j] = ledger.q_row(data_.bus(j));
+                    ctrl_vm_cols_[j] = ledger.vm_col(data_.bus(j));
                 }
                 v_rows_[g]  = ledger.add_custom_row();
                 vm_cols_[g] = ledger.vm_col(data_.reg_bus(g));
                 share_rows_[g].assign(cnt - 1, -1);
                 for (int k = 0; k < cnt - 1; ++k) share_rows_[g][k] = ledger.add_custom_row();
+            }
+        }
+
+        // A group whose voltage row has an entry on a controller's Q column (an SVC's slope,
+        // or the slot reserved when the batch may mask a bus or the loops may hold a
+        // controller, see declare_feature_entries) is switched by value between "Vm(reg) =
+        // target" and a Q form. Its rows sit on the diagonal of its Q columns (allocated
+        // together, see register_in): eliminated after the Vm of the regulated bus and of the
+        // controller buses, whose pivots on those buses' Q rows fill the rows' Q entries in,
+        // they keep a usable pivot in both forms. A group that cannot switch adds nothing, and
+        // its ordering is AMD's.
+        void declare_ordering_constraints(OrderingConstraints& out) const
+        {
+            const int ng = data_.n_groups();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                bool switchable = false;
+                for (int off = 0; off < cnt; ++off) {
+                    if (static_cast<std::size_t>(first + off) < h_slope_.size() && h_slope_[first + off] >= 0) switchable = true;
+                }
+                if (!switchable) continue;
+                OrderingConstraint c;
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    if (q_cols_[j] >= 0) c.follow.push_back(q_cols_[j]);
+                    if (ctrl_vm_cols_[j] >= 0) c.lead.push_back(ctrl_vm_cols_[j]);
+                }
+                if (v_rows_[g] >= 0) c.follow.push_back(v_rows_[g]);
+                for (int r : share_rows_[g]) if (r >= 0) c.follow.push_back(r);
+                if (vm_cols_[g] >= 0) c.lead.push_back(vm_cols_[g]);
+                if (!c.follow.empty() && !c.lead.empty()) out.push_back(std::move(c));
             }
         }
 
@@ -1529,6 +1576,7 @@ class LS2G_API VoltageControl
         RealVect                       q_held_;      // per controller, the frozen output a held one holds (pu), 0 otherwise
         std::vector<int>               q_cols_;      // J column of each controller's Q unknown
         std::vector<int>               q_rows_;      // q_row of each controller bus (-1 if none)
+        std::vector<int>               ctrl_vm_cols_; // vm_col of each controller bus (-1 if none)
         std::vector<int>               v_rows_;      // voltage row of each group
         std::vector<int>               vm_cols_;     // vm column of each group's regulated bus (-1 if none)
         std::vector<std::vector<int> > share_rows_;  // sharing rows of each group (size N-1)
@@ -1633,6 +1681,16 @@ public:
     // that residual was evaluated at this V with this Ybus (see ybus_v_at_V_); NRAlgo's
     // loop asks for it, where the residual it just read always precedes the fill
     void fill_internal_variables(bool reuse_ybus_v = false);
+
+    // What the components know of the elimination order the Jacobian wants (see
+    // OrderingConstraints), for a linear solver that orders with it. Valid once the
+    // sparsity is built; empty on a system without rows switched by value.
+    OrderingConstraints ordering_constraints() const {
+        OrderingConstraints out;
+        base_.declare_ordering_constraints(out);
+        _declare_ordering_constraints_extensions(out, std::make_index_sequence<sizeof...(Rest)>{});
+        return out;
+    }
 
     // ----- bus masking (ContingencyAnalysis "handle disconnected grid" mode) ------
     // Mark some solver buses as "masked": their P/Q mismatch rows are replaced by
@@ -2253,6 +2311,13 @@ private:
     void _declare_feature_entries_extensions(FeatureSink& sink, std::index_sequence<Is...>) {
         int dummy[] = { 0, (std::get<Is>(extensions_).declare_feature_entries(sink), 0)... };
         (void)dummy;
+    }
+
+    template <std::size_t... Is>
+    void _declare_ordering_constraints_extensions(OrderingConstraints& out, std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (std::get<Is>(extensions_).declare_ordering_constraints(out), 0)... };
+        (void)dummy;
+        (void)out;
     }
 
     template <std::size_t... Is>

@@ -10,8 +10,11 @@
 // order and nonzero pattern. They must give the solution klu_refactor gives (to round-off),
 // solve the transposed system out of the same factors, and refuse a frozen pivot that turned
 // zero (always) or tiny (above an rgrowth threshold), which LinearSolverPolicy's fallback
-// then factorizes again. C++14 only.
+// then factorizes again. Given ordering constraints, its analysis orders with AMD then moves
+// each constrained index after the ones it must follow, which is what keeps a pivot for a row
+// switched by value between two forms. C++14 only.
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <random>
@@ -26,6 +29,7 @@
 #ifdef KLU_SOLVER_AVAILABLE
 #include "linear_solvers/KLUSolver.hpp"
 #include "linear_solvers/KLUStaticPivotSolver.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 #endif
 
 #ifdef KLU_SOLVER_AVAILABLE
@@ -34,6 +38,8 @@ using ls2g::ErrorType;
 using ls2g::KLULinearSolver;
 using ls2g::KLUStaticPivotLinearSolver;
 using ls2g::LinearSolverPolicy;
+using ls2g::OrderingConstraint;
+using ls2g::OrderingConstraints;
 using ls2g::RealVect;
 using ls2g::real_type;
 
@@ -288,6 +294,139 @@ TEST_CASE("a factorization that keeps the pivots keeps the plan", "[linear_solve
     y = rhs(N);
     REQUIRE(solver.solve(y) == ErrorType::NoError);
     CHECK(residual(first, y, rhs(N)) < 1e-11);
+}
+
+namespace {
+
+std::vector<int> positions(const std::vector<int> & perm)
+{
+    std::vector<int> pos(perm.size(), -1);
+    for(std::size_t k = 0; k < perm.size(); ++k) pos[perm[k]] = static_cast<int>(k);
+    return pos;
+}
+
+// A ring of n "bus" indices, plus index n: the Q unknown of a controller at bus `ctrl` (an
+// entry in that bus' row) and the voltage row switched by value between its two forms,
+// "Vm(ctrl) = target" (an entry on column `ctrl`, the one on its own column a stored zero)
+// and "Q = q" (the other way round). Both forms share one pattern.
+SpMat with_switched_row(int n, int ctrl, bool voltage_form)
+{
+    const SpMat ring = with_values(n, jacobian_like_pattern(n), 7);
+    std::vector<Eigen::Triplet<real_type> > triplets;
+    for(int col = 0; col < ring.outerSize(); ++col){
+        for(SpMat::InnerIterator it(ring, col); it; ++it) triplets.emplace_back(it.row(), it.col(), it.value());
+    }
+    triplets.emplace_back(ctrl, n, -1.);
+    triplets.emplace_back(n, ctrl, voltage_form ? 1. : 0.);
+    triplets.emplace_back(n, n, voltage_form ? 0. : 1.);
+    SpMat res(n + 1, n + 1);
+    res.setFromTriplets(triplets.begin(), triplets.end());
+    res.makeCompressed();
+    return res;
+}
+
+}  // namespace
+
+TEST_CASE("a constrained ordering is AMD's with the follow indices moved after their leads", "[linear_solver][klu][static_pivot][ordering]")
+{
+    const SpMat A = with_values(N, jacobian_like_pattern(N), 6);
+    std::vector<int> amd_perm(N);
+    double control[AMD_CONTROL];
+    double info[AMD_INFO];
+    ls2g::amd_defaults(control);
+    REQUIRE(ls2g::amd_order(N, A.outerIndexPtr(), A.innerIndexPtr(), amd_perm.data(), control, info) == AMD_OK);
+
+    // no constraint: AMD's order
+    std::vector<int> perm;
+    REQUIRE(ls2g::constrained_amd_order(N, A.outerIndexPtr(), A.innerIndexPtr(), OrderingConstraints(), perm));
+    CHECK(perm == amd_perm);
+
+    // the indices AMD places first and last, so that some constraints have to move things
+    OrderingConstraints constraints;
+    constraints.push_back(OrderingConstraint{{amd_perm[0], amd_perm[1]}, {amd_perm[N - 1], amd_perm[N / 2]}});
+    constraints.push_back(OrderingConstraint{{amd_perm[2]}, {amd_perm[3]}});
+    constraints.push_back(OrderingConstraint{{amd_perm[N - 2]}, {amd_perm[4]}});  // already after
+    REQUIRE(ls2g::constrained_amd_order(N, A.outerIndexPtr(), A.innerIndexPtr(), constraints, perm));
+
+    // a permutation, each follow index after every one of its leads
+    std::vector<int> sorted = perm;
+    std::sort(sorted.begin(), sorted.end());
+    for(int i = 0; i < N; ++i) REQUIRE(sorted[i] == i);
+    const std::vector<int> pos = positions(perm);
+    for(const OrderingConstraint & c : constraints){
+        for(int f : c.follow){
+            for(int l : c.lead) CHECK(pos[f] > pos[l]);
+        }
+    }
+    // a moved index lands right after its last lead
+    CHECK(pos[amd_perm[0]] == pos[amd_perm[N - 1]] + 1);
+    CHECK(pos[amd_perm[1]] == pos[amd_perm[N - 1]] + 2);
+    CHECK(pos[amd_perm[2]] == pos[amd_perm[3]] + 1);
+    // and everything else keeps AMD's relative order (the one already after its lead included)
+    std::vector<int> rest_amd, rest;
+    const std::set<int> moved = {amd_perm[0], amd_perm[1], amd_perm[2]};
+    for(int i : amd_perm) if(!moved.count(i)) rest_amd.push_back(i);
+    for(int i : perm) if(!moved.count(i)) rest.push_back(i);
+    CHECK(rest == rest_amd);
+}
+
+TEST_CASE("ordered after its leads, a row switched by value keeps a pivot in both its forms", "[linear_solver][klu][static_pivot][ordering]")
+{
+    const int ctrl = 5;
+    const SpMat q_form = with_switched_row(N, ctrl, false);
+    const SpMat v_form = with_switched_row(N, ctrl, true);
+    REQUIRE(q_form.nonZeros() == v_form.nonZeros());
+    const RealVect b = rhs(N + 1);
+
+    // AMD alone eliminates the switched index first (it has one neighbour): factorized in
+    // its Q form, it pivots on its own diagonal, which the voltage form zeroes
+    {
+        KLUStaticPivotLinearSolver solver;
+        REQUIRE(solver.analyze(q_form) == ErrorType::NoError);
+        REQUIRE(solver.factorize(q_form) == ErrorType::NoError);
+        CHECK(solver.refactorize(v_form) == ErrorType::SolverReFactor);
+    }
+
+    // after the Vm column of the bus, whose pivot fills its diagonal in: both forms go through,
+    // whichever the factorization saw
+    OrderingConstraints constraints;
+    constraints.push_back(OrderingConstraint{{N}, {ctrl}});
+    for(int first_q = 0; first_q < 2; ++first_q){
+        const SpMat & first = first_q ? q_form : v_form;
+        const SpMat & other = first_q ? v_form : q_form;
+        KLUStaticPivotLinearSolver solver;
+        solver.set_ordering_constraints(constraints);
+        REQUIRE(solver.analyze(first) == ErrorType::NoError);
+        REQUIRE(solver.factorize(first) == ErrorType::NoError);
+        for(int round = 0; round < 2; ++round){
+            for(const SpMat * A : {&other, &first}){
+                REQUIRE(solver.refactorize(*A) == ErrorType::NoError);
+                RealVect x = b;
+                REQUIRE(solver.solve(x) == ErrorType::NoError);
+                CHECK(residual(*A, x, b) < 1e-11);
+            }
+        }
+    }
+
+    // reset forgets them
+    KLUStaticPivotLinearSolver solver;
+    solver.set_ordering_constraints(constraints);
+    REQUIRE(solver.reset() == ErrorType::NoError);
+    CHECK(solver.ordering_constraints().empty());
+}
+
+TEST_CASE("the policy forwards ordering constraints to a solver that takes them", "[linear_solver][klu][static_pivot][ordering]")
+{
+    const int ctrl = 5;
+    LinearSolverPolicy<KLUStaticPivotLinearSolver> solver;
+    OrderingConstraints constraints;
+    constraints.push_back(OrderingConstraint{{N}, {ctrl}});
+    solver.set_ordering_constraints(constraints);
+    const SpMat q_form = with_switched_row(N, ctrl, false);
+    REQUIRE(solver.analyze(q_form) == ErrorType::NoError);
+    REQUIRE(solver.factorize(q_form) == ErrorType::NoError);
+    REQUIRE(solver.refactorize(with_switched_row(N, ctrl, true)) == ErrorType::NoError);
+    CHECK(solver.get_linear_solver_stats().nb_refactorize_failed == 0);
 }
 
 #endif  // KLU_SOLVER_AVAILABLE

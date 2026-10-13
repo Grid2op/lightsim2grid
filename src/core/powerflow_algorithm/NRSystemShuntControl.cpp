@@ -96,6 +96,18 @@ void ShuntControl::register_in(NRLedger & ledger)
     }
 }
 
+void ShuntControl::declare_ordering_constraints(OrderingConstraints & out) const
+{
+    // a group's rows switch by value like a ratio group's (see BranchControl's)
+    for (const Group & g : groups_) {
+        if (g.vm_col < 0 || g.rows.empty()) continue;
+        OrderingConstraint c;
+        c.follow = g.rows;
+        c.lead.push_back(g.vm_col);
+        out.push_back(std::move(c));
+    }
+}
+
 void ShuntControl::declare_feature_entries(FeatureSink & sink)
 {
     for (Entry & e : entries_) {

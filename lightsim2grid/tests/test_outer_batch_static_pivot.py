@@ -9,7 +9,9 @@
 """test_outer_batch's equivalences again, with NROuter_KLUStaticPivot: KLU's factorization, then
 refactorizations on its frozen pivot order. Each row of a batch still equals the single solve of
 its grid (to the tolerance those tests use: the static-pivot factors are not bit-identical to
-KLU's), and the batch still pays no analysis and no factorization beyond the plain Newton's."""
+KLU's), and the batch still pays no analysis and no factorization beyond the plain Newton's.
+And the rows the outer loops switch by value need no fallback factorization: the solver orders
+them after the Vm columns that keep their pivot usable in both forms."""
 
 import os
 import sys
@@ -63,7 +65,17 @@ class TestStaticPivotInjectionSweepFromN(_StaticPivot, tob.TestOuterInjectionSwe
 
 
 class TestStaticPivotTapsInContingencyAnalysis(_StaticPivot, tob.TestOuterTapsInContingencyAnalysis):
-    pass
+    def test_the_switched_rows_need_no_fallback(self):
+        # the rows that move the tap switch the ratio group's row from "Vm = target" to the
+        # ratio held: on AMD's order alone, its frozen pivot sits on the entry that form zeroes
+        batch = self._batch()
+        batch.change_algorithm(STATIC_PIVOT)
+        batch.compute(tob._v0(self.base), tob.MAX_IT, tob.TOL)
+        self.assertTrue(any(r.ratio_tap for r in batch.get_outer_results()))
+        stats = batch.get_linear_solver_stats()
+        self.assertEqual(stats.nb_refactorize_failed, 0)
+        self.assertEqual(stats.nb_fallback_factorize, 0)
+        self.assertEqual(stats.nb_factorize, 1)
 
 
 if __name__ == "__main__":

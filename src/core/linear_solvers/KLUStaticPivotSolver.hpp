@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "Utils.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -48,7 +49,10 @@ LinearSolverPolicy (set_refactor_fallback) runs a fresh `klu_factor`, which choo
 
 `analyze` turns KLU's block-triangular preordering off, so that the factorization is one
 block (a connected power-flow Jacobian is irreducible anyway) and the frozen plan needs no
-block structure.
+block structure. Given ordering constraints (`set_ordering_constraints`, which the Newton
+system hands over before each analysis), it orders with AMD then moves each constrained index
+just after the last index it must follow (`constrained_amd_order`), instead of KLU's own AMD:
+the rows the outer loops switch by value then keep a usable pivot in both their forms.
 
 References:
 
@@ -109,6 +113,11 @@ class LS2G_API KLUStaticPivotLinearSolver final
         // the reciprocal pivot growth of the last refactorization (1 when it was not computed)
         real_type last_rgrowth() const noexcept { return last_rgrowth_; }
 
+        // Indices to eliminate after others, for the next analyze() (see OrderingConstraints).
+        // Empty (the default): KLU's own AMD ordering.
+        void set_ordering_constraints(OrderingConstraints constraints) { ordering_constraints_ = std::move(constraints); }
+        const OrderingConstraints & ordering_constraints() const noexcept { return ordering_constraints_; }
+
     private:
         // see KLULinearSolver: the deleters need `common_`, declared before the handles
         struct SymbolicDeleter {
@@ -146,6 +155,7 @@ class LS2G_API KLUStaticPivotLinearSolver final
         real_type rgrowth_threshold_ = 0.;
         real_type last_rgrowth_ = 1.;
         Factors factors_ = Factors::None;
+        OrderingConstraints ordering_constraints_;
 
         // the frozen plan, valid while `plan_valid_`
         bool plan_valid_ = false;
@@ -174,6 +184,19 @@ class LS2G_API KLUStaticPivotLinearSolver final
         KLUStaticPivotLinearSolver & operator=(KLUStaticPivotLinearSolver&&) = delete;
         KLUStaticPivotLinearSolver & operator=(const KLUStaticPivotLinearSolver&) = delete;
 };
+
+/**
+A fill-reducing ordering of the n-by-n pattern (Ap, Ai) that honours `constraints`: AMD on the
+pattern of A + A^T, then every `follow` index placed after the last of its `lead` ones, by a
+stable sort on the position (an index only ever moves down, to just after its last lead, and
+keeps its relative order with what it passes). Moving the follow indices down rather than the
+lead ones up is what keeps the fill local: a lead index moved up drags its whole neighbourhood
+forward. Returns false if AMD fails; `perm` (size n) is the elimination order, perm[k] being
+the index eliminated k-th.
+**/
+LS2G_API bool constrained_amd_order(int n, const int * Ap, const int * Ai,
+                                    const OrderingConstraints & constraints,
+                                    std::vector<int> & perm);
 
 } // namespace ls2g
 
