@@ -485,6 +485,18 @@ const std::string DocSolver::set_refactor_every_n = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::constrained_ordering = R"mydelimiter(
+    Whether the linear solver orders the rows the outer loops switch by value (remote voltage
+    control, transformer and shunt voltage control) after the voltage-magnitude columns that keep
+    their pivot valid in both forms, so that a switch does not cost a new factorization. Only the
+    KLU-based algorithms can: on by default for ``*_KLUStaticPivot``, off for ``*_KLU``, and
+    setting it on another algorithm raises. Part of :func:`get_config`, so a grid copy and the
+    batch classes keep it. Takes effect on the next solve, which analyzes the Jacobian again.
+
+    .. seealso:: :ref:`static-pivot-refactorization`
+
+)mydelimiter";
+
 const std::string DocSolver::get_config = R"mydelimiter(
     Return a :class:`lightsim2grid.algorithm.AlgoConfig` capturing every scaling/refactor policy
     type and parameter above, as a single serializable object.

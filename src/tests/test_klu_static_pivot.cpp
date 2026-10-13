@@ -415,6 +415,45 @@ TEST_CASE("ordered after its leads, a row switched by value keeps a pivot in bot
     CHECK(solver.ordering_constraints().empty());
 }
 
+TEST_CASE("KLU given ordering constraints keeps the pivot of a switched row too", "[linear_solver][klu][ordering]")
+{
+    const int ctrl = 5;
+    const SpMat q_form = with_switched_row(N, ctrl, false);
+    const SpMat v_form = with_switched_row(N, ctrl, true);
+    const RealVect b = rhs(N + 1);
+    {
+        // KLU's own ordering (BTF, AMD): the same lost pivot
+        KLULinearSolver klu;
+        REQUIRE(klu.analyze(q_form) == ErrorType::NoError);
+        REQUIRE(klu.factorize(q_form) == ErrorType::NoError);
+        CHECK(klu.refactorize(v_form) == ErrorType::SolverReFactor);
+    }
+    OrderingConstraints constraints;
+    constraints.push_back(OrderingConstraint{{N}, {ctrl}});
+    KLULinearSolver klu;
+    klu.set_ordering_constraints(constraints);
+    REQUIRE(klu.analyze(q_form) == ErrorType::NoError);
+    REQUIRE(klu.factorize(q_form) == ErrorType::NoError);
+    for(const SpMat * A : {&v_form, &q_form, &v_form}){
+        REQUIRE(klu.refactorize(*A) == ErrorType::NoError);
+        RealVect x = b;
+        REQUIRE(klu.solve(x) == ErrorType::NoError);
+        CHECK(residual(*A, x, b) < 1e-11);
+    }
+    REQUIRE(klu.reset() == ErrorType::NoError);
+    CHECK(klu.ordering_constraints().empty());
+}
+
+TEST_CASE("only the static pivot orders with constraints by default", "[linear_solver][klu][ordering]")
+{
+    using ls2g::detail::orders_with_constraints_by_default;
+    using ls2g::detail::takes_ordering_constraints;
+    CHECK(takes_ordering_constraints<LinearSolverPolicy<KLULinearSolver> >::value);
+    CHECK(takes_ordering_constraints<LinearSolverPolicy<KLUStaticPivotLinearSolver> >::value);
+    CHECK_FALSE(orders_with_constraints_by_default<LinearSolverPolicy<KLULinearSolver> >::value);
+    CHECK(orders_with_constraints_by_default<LinearSolverPolicy<KLUStaticPivotLinearSolver> >::value);
+}
+
 TEST_CASE("the policy forwards ordering constraints to a solver that takes them", "[linear_solver][klu][static_pivot][ordering]")
 {
     const int ctrl = 5;

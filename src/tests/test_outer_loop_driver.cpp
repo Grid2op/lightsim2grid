@@ -390,7 +390,7 @@ TEST_CASE("a rejected configuration changes nothing", "[outer_loop]")
     grid.change_algorithm("NROuter_SparseLU");
     const ls2g::AlgoConfig before = grid.get_ac_algo_config();
     ls2g::AlgoConfig cfg = before;
-    cfg.int_params[4] = 12;   // a valid driver part ...
+    cfg.int_params[5] = 12;   // a valid driver part ...
     cfg.int_params[3] = 0;    // ... with an invalid Newton part (refactor_every_n)
     CHECK_THROWS(grid.set_ac_algo_config(cfg));
     CHECK(grid.get_ac_algo_config().int_params == before.int_params);

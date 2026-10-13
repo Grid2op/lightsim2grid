@@ -124,6 +124,10 @@ class LinearSolverPolicy
         }
         bool refactor_fallback() const noexcept { return refactor_fallback_; }
 
+        // the inner solver's (see detail::orders_with_constraints_by_default)
+        static constexpr bool ORDERS_WITH_CONSTRAINTS_BY_DEFAULT =
+            detail::orders_with_constraints_by_default<LinearSolver>::value;
+
         // Forwarded to a solver that orders with constraints (see OrderingConstraints), and
         // only declared for one, so that detail::set_ordering_constraints_impl leaves the
         // others alone without building any constraint.

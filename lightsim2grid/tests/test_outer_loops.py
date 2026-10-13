@@ -77,21 +77,21 @@ class TestNROuter(unittest.TestCase):
     def test_config_holds_only_the_resume_flag(self):
         grid = _grid(OUTER)
         cfg = grid.get_ac_algo_config()
-        # the Newton's 4 + 6 parameters, then resume_outer_state: the driver's OpenLoadFlow
+        # the Newton's 5 + 6 parameters, then resume_outer_state: the driver's OpenLoadFlow
         # parameters are the grid's
-        self.assertEqual(len(cfg.int_params), 5)
+        self.assertEqual(len(cfg.int_params), 6)
         self.assertEqual(len(cfg.real_params), 6)
-        self.assertEqual(cfg.int_params[4], 0)
+        self.assertEqual(cfg.int_params[5], 0)
         ip = list(cfg.int_params)
-        ip[4] = 1
+        ip[5] = 1
         cfg.int_params = ip
         grid.set_ac_algo_config(cfg)
-        self.assertEqual(grid.get_ac_algo_config().int_params[4], 1)
+        self.assertEqual(grid.get_ac_algo_config().int_params[5], 1)
         # a copy keeps the algorithm and its configuration
         grid2 = grid.copy()
         self.assertTrue(grid2.get_algo().supports_outer_loops())
-        self.assertEqual(grid2.get_ac_algo_config().int_params[4], 1)
-        self.assertEqual(copy.deepcopy(grid).get_ac_algo_config().int_params[4], 1)
+        self.assertEqual(grid2.get_ac_algo_config().int_params[5], 1)
+        self.assertEqual(copy.deepcopy(grid).get_ac_algo_config().int_params[5], 1)
 
     def test_driver_parameters(self):
         from lightsim2grid.algorithm import OuterLoopDriverParams

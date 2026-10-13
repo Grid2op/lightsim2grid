@@ -114,7 +114,10 @@ class LS2G_API KLUStaticPivotLinearSolver final
         real_type last_rgrowth() const noexcept { return last_rgrowth_; }
 
         // Indices to eliminate after others, for the next analyze() (see OrderingConstraints).
-        // Empty (the default): KLU's own AMD ordering.
+        // Empty (the default): KLU's own AMD ordering. A Newton hands its system's over unless
+        // told not to (NRAlgo::set_constrained_ordering): what this solver is for is a batch
+        // whose rows the outer loops switch, and it is opt-in already.
+        static constexpr bool ORDERS_WITH_CONSTRAINTS_BY_DEFAULT = true;
         void set_ordering_constraints(OrderingConstraints constraints) { ordering_constraints_ = std::move(constraints); }
         const OrderingConstraints & ordering_constraints() const noexcept { return ordering_constraints_; }
 

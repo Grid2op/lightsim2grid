@@ -89,6 +89,11 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
         // EveryN param
         .def("get_refactor_every_n", [](const Solver & s){ return nr_of(s).get_refactor_every_n(); }, DocSolver::get_refactor_every_n.c_str())
         .def("set_refactor_every_n", [](Solver & s, int v){ nr_of(s).set_refactor_every_n(v); }, DocSolver::set_refactor_every_n.c_str(), py::arg("value"))
+        // ordering constraints (KLU-based linear solvers)
+        .def_property("constrained_ordering",
+            [](const Solver & s){ return nr_of(s).get_constrained_ordering(); },
+            [](Solver & s, bool v){ nr_of(s).set_constrained_ordering(v); },
+            DocSolver::constrained_ordering.c_str())
         // AlgoConfig serialization (the solver's own: an NROuter_* appends the driver's)
         .def("get_config", &Solver::get_config, DocSolver::get_config.c_str())
         .def("set_config", &Solver::set_config, py::arg("config"), DocSolver::set_config.c_str())

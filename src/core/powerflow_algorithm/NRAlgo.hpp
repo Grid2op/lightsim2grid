@@ -429,6 +429,25 @@ public:
     int  get_refactor_every_n() const { return refactor_every_n_; }
     void set_refactor_every_n(int v)  { refactor_every_n_ = _checked_refactor_every_n(v); }
 
+    // ----- constrained ordering ------------------------------------------------
+    // Whether the linear solver orders the rows the outer loops switch by value after the
+    // Vm columns that keep their pivot valid (see OrderingConstraints), so that a switch
+    // does not cost a fallback factorization. Only for a linear solver that takes ordering
+    // constraints (KLU); its own default: on for KLUStaticPivot, off for KLU. A change
+    // takes effect on the next solve, which analyzes again.
+    static constexpr bool SUPPORTS_CONSTRAINED_ORDERING = detail::takes_ordering_constraints<LinearSolver>::value;
+    bool get_constrained_ordering() const noexcept { return constrained_ordering_; }
+    void set_constrained_ordering(bool v) {
+        if (v && !SUPPORTS_CONSTRAINED_ORDERING) {
+            throw std::runtime_error("NRAlgo: this linear solver does not order with constraints "
+                                     "(only the KLU-based ones do)");
+        }
+        if (v != constrained_ordering_) {
+            constrained_ordering_ = v;
+            need_factorize_ = true;
+        }
+    }
+
     // ----- AlgoConfig serialization -------------------------------------------
 
     AlgoConfig get_config() const override {
@@ -436,7 +455,8 @@ public:
         cfg.int_params  = { static_cast<int>(scaling_policy_->type()),
                             static_cast<int>(refactor_policy_),
                             ls_max_iter_,
-                            refactor_every_n_ };
+                            refactor_every_n_,
+                            constrained_ordering_ ? 1 : 0 };
         cfg.real_params = { static_cast<double>(max_dVa_),
                             static_cast<double>(max_dVm_),
                             static_cast<double>(ls_c_),
@@ -454,6 +474,12 @@ public:
         // through leaves the algorithm with a mix of new and old parameters.
         const RefactorPolicyType new_refactor_policy = _checked_refactor_policy(cfg.int_params[1]);
         const ScalingPolicyType  new_scaling_policy  = _checked_scaling_policy(cfg.int_params[0]);
+        // the 5th is optional (a config saved before it existed keeps the current choice);
+        // ignored by a linear solver that cannot order with constraints, as a config may
+        // come from another algorithm
+        const bool new_constrained_ordering = cfg.int_params.size() > 4
+            ? (cfg.int_params[4] != 0 && SUPPORTS_CONSTRAINED_ORDERING)
+            : constrained_ordering_;
         // NB an AlgoConfig is part of the serialized grid state, so these values
         // can come straight from a pickle or a binary file: validate them exactly
         // like the setters do (see the note on _checked_refactor_every_n).
@@ -467,6 +493,7 @@ public:
         refactor_every_n_= _checked_refactor_every_n(cfg.int_params[3]);
         refactor_policy_ = new_refactor_policy;
         set_scaling_policy(new_scaling_policy);
+        set_constrained_ordering(new_constrained_ordering);
     }
 
     // ----- debug ---------------------------------------------------------------
@@ -549,6 +576,10 @@ protected:
 
     // EveryN param
     int refactor_every_n_;
+
+    // whether the linear solver orders with the system's constraints (see
+    // set_constrained_ordering); its own default
+    bool constrained_ordering_ = detail::orders_with_constraints_by_default<LinearSolver>::value;
 
     // Timers
     double timer_dSbus_;

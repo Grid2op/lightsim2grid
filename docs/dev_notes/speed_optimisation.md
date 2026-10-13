@@ -282,7 +282,22 @@ Every one of them is a refactorization whose frozen pivot became exactly zero. I
    max dVm 9.5e-13 / 1.5e-12 / 5.0e-12 pu and dVa 4.1e-11 / 6.3e-11 / 1.4e-10 deg (median /
    p90 / max); no row above 1e-6. The 8 fallbacks left are not classified yet.
 
-   Not done: the same order in `KLULinearSolver` (its fallbacks are the same).
+   **The same order for KLU, opt-in.** `KLULinearSolver` takes the constraints as well
+   (analysis with `constrained_amd_order` and `klu_analyze_given`, BTF off, since BTF's
+   strongly connected components would reorder the block). Whether a Newton hands them over
+   is `NRAlgo::set_constrained_ordering`, defaulting to the solver's
+   `ORDERS_WITH_CONSTRAINTS_BY_DEFAULT`: off for KLU, so that `NR*_KLU` keep their results
+   bit for bit, on for the static pivot. The flag is the fifth Newton entry of `int_params`
+   (before `resume_outer_state`), so that grid copies, binary files and the batch classes
+   keep it.
+
+   Measured on the contingency bench (same build, one core): `NROuter_KLU` 2.88 s with 142
+   fallbacks by default, bit-identical to the build before; 2.78 s (-3.5 %) with the order,
+   no fallback, the same rows converged with the same outer and Newton iterations, voltages
+   at round-off (per-row max dVm up to 2.5e-12 pu, dVa up to 9.2e-11 deg). The gain is small:
+   a `klu_refactor` costs more than the static pivot's refactorization (with the same counts
+   the static pivot was 29 % faster), so the fill the order adds to every refactorization
+   costs KLU nearly what the fallbacks did. Not profiled further. Hence opt-in.
 
 2. **A faster kernel** (33 % of `Ir`).
    - The "map" variant of Chen et al. (DATE 2016, see `static_pivot_refactorization.md`):

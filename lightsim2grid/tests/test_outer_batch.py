@@ -61,7 +61,7 @@ def _resume_on(grid):
     """a grid whose next solves start their loops from where the last one left them"""
     cfg = grid.get_ac_algo_config()
     ip = list(cfg.int_params)
-    ip[4] = 1  # resume_outer_state, after the Newton's 4
+    ip[5] = 1  # resume_outer_state, after the Newton's 5
     cfg.int_params = ip
     grid.set_ac_algo_config(cfg)
     return grid

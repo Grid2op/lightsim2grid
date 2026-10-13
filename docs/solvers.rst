@@ -157,6 +157,27 @@ on a system whose rows never switch, which the refactorizations a batch saves ou
 ``grid.change_algorithm("NROuter_KLUStaticPivot")``. DC and fast-decoupled algorithms
 factorize their matrices once per solve and have no ``*_KLUStaticPivot`` variant.
 
+The same ordering is available to the ``*_KLU`` algorithms, off by default so that their
+results stay what they were: KLU then orders with the constraints, without its
+block-triangular preordering, and its refactorizations keep their pivots through the same
+switches. The switch is ``constrained_ordering``, on a solver object or as the fifth entry of
+the Newton's ``int_params`` in an :class:`~lightsim2grid.algorithm.AlgoConfig`, which a grid
+copy and the batch classes keep. It can turn the ordering off on ``*_KLUStaticPivot`` too.
+
+.. code-block:: python
+
+    from lightsim2grid.algorithm import NROuter_KLU
+    solver = NROuter_KLU()
+    solver.constrained_ordering = True
+
+    # on a grid, hence on the batch classes built from it
+    grid.change_algorithm("NROuter_KLU")
+    config = grid.get_ac_algo_config()
+    int_params = list(config.int_params)
+    int_params[4] = 1  # constrained_ordering
+    config.int_params = int_params
+    grid.set_ac_algo_config(config)
+
 The algorithm is published; this implementation follows:
 
 - J. R. Gilbert, T. Peierls, "Sparse Partial Pivoting in Time Proportional to Arithmetic
@@ -385,7 +406,8 @@ counterparts for the DC solver) instead, which read/write a serialisable
     env = grid2op.make("l2rpn_case14_sandbox", backend=LightSimBackend())
 
     config = env.backend.get_ac_algo_config()
-    # config.int_params  == [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n]
+    # config.int_params  == [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n,
+    #                        constrained_ordering]  (an NROuter_* appends resume_outer_state)
     # config.real_params == [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]
 
     int_params = list(config.int_params)

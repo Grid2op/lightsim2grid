@@ -132,7 +132,7 @@ public:
     void set_refactor_fallback(bool /*val*/) override {}
 
     // ----- AlgoConfig: the inner algorithm's parameters, then whether to resume --------
-    // int_params:  [the Newton's 4], resume_outer_state
+    // int_params:  [the Newton's 5], resume_outer_state
     // real_params: [the Newton's 6]
     // The driver's OpenLoadFlow parameters are the grid's (LSGrid::set_outer_loop_driver_params),
     // handed over with the loops before each solve: not part of the algorithm's configuration.

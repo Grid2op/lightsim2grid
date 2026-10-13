@@ -227,6 +227,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   static-pivot refactorization (Gilbert & Peierls 1988, https://doi.org/10.1137/0909058; KLU,
   Davis & Palamadai Natarajan 2010, https://doi.org/10.1145/1824801.1824814). Opt-in. Rows the
   outer loops switch by value are ordered after the Vm columns that keep their pivot valid.
+- [ADDED] ``constrained_ordering`` (``NR*_KLU``, off by default): the same ordering for KLU, which
+  then keeps its pivots when the outer loops switch rows. Fifth Newton ``int_params`` entry, before
+  ``resume_outer_state``.
 - [ADDED] The batch classes run the outer loops: with an ``NROuter_*`` algorithm each row is solved with
   the grid's loops, as a single solve of the row's grid, still with one symbolic analysis per thread.
   ``get_outer_results()`` tells what they did per row. A TimeSeries row resumes from the previous
