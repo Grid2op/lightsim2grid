@@ -79,7 +79,10 @@ class InjectionSweep(TimeSerie):
     def init_from_n_powerflow(self):
         """Whether to initialize the complex voltages of **each** step of the batch with the
         results of a "n" powerflow (a powerflow at the current state of the grid) instead of
-        the vector given to ``compute_V``. Default: ``False``.
+        the vector given to ``compute_V``. Default: ``False``. With an ``NROuter_*``
+        algorithm, each step's outer loops also start from where the "n" ones ended (frozen
+        buses, taps, sections, and the targets ``DistributedSlack`` moved where the step does
+        not set its own), not from the grid.
 
         Unlike :attr:`lightsim2grid.timeSerie.TimeSerie.init_from_n_powerflow`, this applies
         to every step and not only the first one -- here every step starts from that same

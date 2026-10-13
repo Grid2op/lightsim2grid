@@ -41,6 +41,10 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     // ... and Ybus, whose values the phase shifters patch (see BranchControl)
     Ybus_ = Ybus;
 
+    // a row resuming from another solve (a batch's "n" one) starts from that solve's loops
+    const OuterResumePoint * from = (row_ != nullptr && row_->resume) ? row_->resume_from : nullptr;
+    if (from != nullptr) _take_loops(*from);
+
     bool need_init = false;
     if (!inner_.setup(Ybus_, V, Sbus_, slack_ids, slack_weights, pv, pq, need_init,
                       [this](){ _declare(); })) {
@@ -56,9 +60,11 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     injections_.gen_target_p.clear();
     injections_.storage_target_p.clear();
     inner_.controls().reset_states();
-    // a resumed solve (a time series' next step) starts from where the last one left the
-    // loops; any other from the grid
-    const bool resume = has_carry_ && (row_ != nullptr ? row_->resume : params_.resume_outer_state);
+    // a resumed solve (a time series' next step, a batch row from its "n" solve) starts from
+    // where that solve left the loops; any other from the grid
+    const bool resume = from != nullptr ||
+                        (has_carry_ && (row_ != nullptr ? row_->resume : params_.resume_outer_state));
+    if (from != nullptr) _take_targets(*from);
     if (resume) _apply_carried_positions();
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -253,6 +259,67 @@ void OuterLoopAlgo<Inner>::_apply_carried_positions()
             for (int s : g.shunts[c]) counts.push_back(carried(carried_sections_, s));
             if (std::find(counts.begin(), counts.end(), none) == counts.end()) shunt->set_sections(counts);
         }
+    }
+}
+
+template<class Inner>
+std::shared_ptr<const OuterResumePoint> OuterLoopAlgo<Inner>::get_outer_resume_point() const
+{
+    if (!has_carry_) return nullptr;
+    auto point = std::make_shared<OuterResumePoint>();
+    point->loops.reserve(loops_.size());
+    for (const auto & loop : loops_) point->loops.push_back(std::shared_ptr<const BaseOuterLoop>(loop->clone()));
+    point->phase_tap = carried_phase_tap_;
+    point->ratio_tap = carried_ratio_tap_;
+    point->sections = carried_sections_;
+    point->gen_target_p = injections_.gen_target_p;
+    point->storage_target_p = injections_.storage_target_p;
+    point->V = V_;
+    point->Va = Va_;
+    point->Vm = Vm_;
+    return point;
+}
+
+template<class Inner>
+void OuterLoopAlgo<Inner>::_take_loops(const OuterResumePoint & from)
+{
+    // the same loops, in the same order: the point was taken on an algorithm given the same
+    // list (the batch's, see set_outer_loops)
+    bool same = from.loops.size() == loops_.size();
+    for (std::size_t k = 0; same && k < loops_.size(); ++k) same = from.loops[k]->name() == loops_[k]->name();
+    if (!same) {
+        throw std::runtime_error("OuterLoopAlgo: the solve to resume from ran other outer loops than this one.");
+    }
+    // a clone: a loop's state is per solve, and the point is shared by every worker. A loop
+    // re-binds what it holds of the controls in initialize(), so a clone taken on another
+    // algorithm is fine
+    for (std::size_t k = 0; k < loops_.size(); ++k) loops_[k] = from.loops[k]->clone();
+    carried_phase_tap_ = from.phase_tap;
+    carried_ratio_tap_ = from.ratio_tap;
+    carried_sections_ = from.sections;
+    V_ = from.V;
+    Va_ = from.Va;
+    Vm_ = from.Vm;
+}
+
+template<class Inner>
+void OuterLoopAlgo<Inner>::_take_targets(const OuterResumePoint & from)
+{
+    if (lsgrid_ptr_ == nullptr) return;
+    // the units start at the targets the loops moved them to there -- but where the row sets
+    // its own: that is the row's input
+    const OuterGridView view(*lsgrid_ptr_, row_);
+    for (std::size_t g = 0; g < from.gen_target_p.size(); ++g) {
+        const int gen_id = static_cast<int>(g);
+        if (std::isnan(from.gen_target_p[g]) || view.row_sets_gen_target_p(gen_id)) continue;
+        const int bus = view.gen_bus_solver(gen_id);
+        if (bus >= 0) injections_.move_gen_target_p(view, gen_id, bus, from.gen_target_p[g]);
+    }
+    for (std::size_t s = 0; s < from.storage_target_p.size(); ++s) {
+        const int storage_id = static_cast<int>(s);
+        if (std::isnan(from.storage_target_p[s]) || view.row_sets_storage_target_p(storage_id)) continue;
+        const int bus = view.storage_bus_solver(storage_id);
+        if (bus >= 0) injections_.move_storage_target_p(view, storage_id, bus, from.storage_target_p[s]);
     }
 }
 

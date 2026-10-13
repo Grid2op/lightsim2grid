@@ -10,9 +10,11 @@
 #define OUTER_LOOP_ALGO_H
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -105,6 +107,7 @@ public:
     void get_outer_phase_tap(std::vector<int> & positions) const override { inner_.phase_tap(positions); }
     void get_outer_shunt_sections(std::vector<int> & counts) const override { inner_.shunt_sections(counts); }
     void get_outer_ratio_tap(std::vector<int> & positions) const override { inner_.ratio_tap(positions); }
+    std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const override;
 
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
     // a grid solving with this algorithm hands its own over before each solve (set_outer_loops)
@@ -282,6 +285,11 @@ private:
     RealVect controller_q_;  // the context's copy, refreshed with it
     int slack_bus_ = -1;     // solver id of the slack bus of the current solve
     const OuterRowView * row_ = nullptr;  // the caller's, see set_outer_row_view
+    // a row resuming from another solve (OuterRowView::resume_from): its loops, the positions
+    // they settled on and its voltages, then the targets they moved
+    void _take_loops(const OuterResumePoint & from);
+    void _take_targets(const OuterResumePoint & from);
+
     // what a resumed solve starts from: the positions the last converged solve settled on
     // (INT_MIN where nothing handled them), and whether there is such a solve
     std::vector<int> carried_phase_tap_;

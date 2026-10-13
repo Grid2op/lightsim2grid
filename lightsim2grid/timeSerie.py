@@ -119,7 +119,9 @@ class TimeSerie:
     def init_from_n_powerflow(self):
         """Whether to initialize the complex voltages of the first step of the batch with
         the results of a "n" powerflow (a powerflow at the current state of the grid)
-        instead of a flat start. Default: ``False``. Must be set before the computation
+        instead of a flat start. Default: ``False``. With an ``NROuter_*`` algorithm, the
+        first step's outer loops also start from where the "n" ones ended, as every later step
+        starts from the step before it. Must be set before the computation
         actually runs (eg before ``compute_V`` is called); it has no effect on a powerflow
         that has already been solved.
         """

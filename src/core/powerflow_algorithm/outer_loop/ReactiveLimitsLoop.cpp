@@ -160,15 +160,19 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             if (reg_grid >= 0) bus.nominal_v = vn_kv(reg_grid);
         }
         bus.target_q = target_q_of_bus[static_cast<std::size_t>(entry.bus_solver)];
-        // (a generator's limits follow its target P: read at each check, see _limits)
+        // (a generator's limits follow its target P: read at each check, see _limits). The
+        // target in force: one a resumed solve's DistributedSlack moved (see
+        // OuterInjections::gen_target_p_in_force) ranks the bus (KEPT_PV_STRONGEST)
         for (int gen_id : entry.gen_ids) {
-            bus.target_p += view.gen_target_p(gen_id);
+            bus.target_p += ctx.injections != nullptr ? ctx.injections->gen_target_p_in_force(view, gen_id)
+                                                      : view.gen_target_p(gen_id);
             if (!has_target) { bus.target_vm = view.gen_target_vm(gen_id); has_target = true; }
         }
         for (int storage_id : entry.storage_ids) {
             bus.min_q += storages.get_min_q(storage_id);
             bus.max_q += storages.get_max_q(storage_id);
-            bus.target_p -= view.storage_target_p(storage_id);  // load convention
+            bus.target_p -= ctx.injections != nullptr ? ctx.injections->storage_target_p_in_force(view, storage_id)
+                                                      : view.storage_target_p(storage_id);  // load convention
             if (!has_target) { bus.target_vm = view.storage_target_vm(storage_id); has_target = true; }
         }
         for (const auto & station : entry.station_ids) {

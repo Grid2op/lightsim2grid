@@ -1113,7 +1113,10 @@ void bind_batch(py::module_& m) {
                       "Whether to initialize the complex voltages of each simulation with the "
                       "results of a n-powerflow (ie a powerflow with no injection change and no "
                       "contingency) or not. Default: false, meaning each simulation is "
-                      "initialized with the given input vector.");
+                      "initialized with the given input vector. With an NROuter_* algorithm, "
+                      "each simulation's outer loops also start from where the n-powerflow's "
+                      "ended (frozen buses, taps, sections, and the targets DistributedSlack "
+                      "moved where the simulation does not set its own), not from the grid.");
 
     py::class_<ContingencyAnalysis> contingency_analysis(m, "ContingencyAnalysisCPP", DocContingencyAnalysis::ContingencyAnalysis.c_str());
     bind_batch_shared(contingency_analysis);
@@ -1215,7 +1218,10 @@ void bind_batch(py::module_& m) {
                       "each contingencies with the results of a n-powerflow "
                       "(*ie* a powerflow without any line disconnection) or not. "
                       "Default: false, meaning each simulation is initialized "
-                      "with the given input vector")
+                      "with the given input vector. With an NROuter_* algorithm, each "
+                      "contingency's outer loops also start from where the n-powerflow's "
+                      "ended (frozen buses, taps, sections, the targets DistributedSlack "
+                      "moved), not from the grid.")
         .def_property("redistribute_slack",
                       [](const ContingencyAnalysis & self){ return self.get_redistribute_slack(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_redistribute_slack(val); },

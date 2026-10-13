@@ -9,6 +9,7 @@
 #ifndef OUTER_ROW_VIEW_H
 #define OUTER_ROW_VIEW_H
 
+#include <memory>
 #include <vector>
 
 #include "Utils.hpp"
@@ -17,7 +18,32 @@
 namespace ls2g {
 
 class LSGrid;
+class BaseOuterLoop;
 struct SolverBusLayout;
+
+/**
+ * A solve's outer loops as they ended, for other solves to resume from: a batch's "n" solve,
+ * which every row seeded from it starts from (see BaseAlgo::get_outer_resume_point and
+ * OuterRowView::resume_from). Immutable once built, and shared read-only by every worker of
+ * the batch, each of which takes clones of its loops.
+ */
+struct OuterResumePoint
+{
+    /// a clone of each loop, in the algorithm's order, with the state the solve left it in
+    /// (the buses it froze, the SVCs it switched on, the hvdc regimes, ...)
+    std::vector<std::shared_ptr<const BaseOuterLoop> > loops;
+    /// the positions the loops settled on, by element id, INT_MIN where none handled it
+    std::vector<int> phase_tap;
+    std::vector<int> ratio_tap;
+    std::vector<int> sections;
+    /// the active targets a loop moved, MW, NaN elsewhere (OuterInjections' convention)
+    std::vector<real_type> gen_target_p;
+    std::vector<real_type> storage_target_p;
+    /// the solve's voltages, solver numbering: what a resuming loop reads of the solve before
+    CplxVect V;
+    RealVect Va;
+    RealVect Vm;
+};
 
 /**
  * What one row of a batch changes compared with the grid, as the outer loops read it.
@@ -44,6 +70,9 @@ struct OuterRowView
     /// the loops start from where the previous row left them (a TimeSeries row: its equations
     /// are the previous row's), not from the grid (see OuterLoopDriverParams::resume_outer_state)
     bool resume = false;
+    /// with `resume`, the solve they start from instead of the algorithm's own last one: the
+    /// batch's "n" solve, for a row seeded from it (init_from_n_powerflow). Null: the last one.
+    const OuterResumePoint * resume_from = nullptr;
 
     /// One element kind's overrides. Each vector is empty, or sized by the element count.
     struct Units
@@ -127,6 +156,8 @@ class LS2G_API OuterGridView
         /// connected, regulating its own bus through the PV path, in this row
         bool gen_is_local_voltage_controller(int gen_id) const;
         real_type gen_target_p(int gen_id) const;   ///< MW
+        /// whether the row sets the unit's active target (else it is the grid's)
+        bool row_sets_gen_target_p(int gen_id) const;
         real_type gen_target_vm(int gen_id) const;  ///< pu
 
         // ----- storage units (load convention for P, as the container) ------------------
@@ -134,6 +165,7 @@ class LS2G_API OuterGridView
         int storage_bus_solver(int storage_id) const;
         bool storage_is_local_voltage_controller(int storage_id) const;
         real_type storage_target_p(int storage_id) const;
+        bool row_sets_storage_target_p(int storage_id) const;
         real_type storage_target_vm(int storage_id) const;
 
         // ----- loads (load convention) --------------------------------------------------

@@ -229,12 +229,15 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   row's loops (frozen buses, held controllers, switched SVCs, hvdc regimes, taps, sections).
 - [ADDED] ``resume_outer_state`` (``NROuter_*``): a solve starts its loops from where the last one
   left them, for a sequence of solves of a time series.
+- [IMPROVED] With ``init_from_n_powerflow``, a row of ``ContingencyAnalysis``, ``InjectionSweep`` and
+  ``ScenarioSweep`` starts its outer loops from where the "n" solve's ended, not from the grid: fewer
+  outer iterations.
 - [IMPROVED] The batch wrappers keep the grid's algorithm when it runs outer loops, instead of ``NR_KLU``.
 - [BREAKING] ``get_physical_violations`` (grid and batches) reports a bus out of its reactive range, and a
   remote controller at an unrealistic voltage, with ``ReactiveLimits``' own test (OpenLoadFlow's tolerance,
   limits at the target P, robust mode by the loop's parameters).
-- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtual ``set_outer_row_view()``, and ``set_outer_loops()``
-  takes the driver's parameters: plugins must be rebuilt.
+- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtuals ``set_outer_row_view()`` and
+  ``get_outer_resume_point()``, and ``set_outer_loops()`` takes the driver's parameters: plugins must be rebuilt.
 - [ADDED] ``init_from_pypowsybl`` gives the grid the outer loops and driver parameters of the installed
   OpenLoadFlow (or of ``olf_parameters``), read by ``olf_outer_loops``; elsewhere OpenLoadFlow's own defaults.
 - [ADDED] ``LSGrid.set_outer_loop_driver_params``: the driver's parameters are the grid's; its loops and

@@ -7672,6 +7672,9 @@ const std::string DocTimeSeries::init_from_n_powerflow = R"mydelimiter(
     to :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs`. Every other step is
     initialized with the result of the step before it either way.
 
+    With an ``NROuter_*`` algorithm, the first step's outer loops also start from where the
+    "n" powerflow's ended, as every other step's start from the step before it.
+
 )mydelimiter";
 
 const std::string DocInjectionSweep::InjectionSweep = R"mydelimiter(
@@ -7704,6 +7707,10 @@ const std::string DocInjectionSweep::init_from_n_powerflow = R"mydelimiter(
 
     Default: ``False``, meaning every step is initialized with the input vector given to
     :func:`lightsim2grid.injectionSweep.InjectionSweepCPP.compute_Vs`.
+
+    With an ``NROuter_*`` algorithm, each step's outer loops also start from where the "n"
+    powerflow's ended (frozen buses, taps, sections, and the targets ``DistributedSlack``
+    moved where the step does not set its own), not from the grid.
 
 )mydelimiter";
 

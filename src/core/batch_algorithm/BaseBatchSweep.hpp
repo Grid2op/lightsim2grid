@@ -2229,10 +2229,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             v.layout = &active_layout();
             v.masked = (masked != nullptr && !masked->empty()) ? masked : nullptr;
             v.resume = false;
+            v.resume_from = nullptr;
             v.clear_overrides();
             _fill_outer_row_injections(i, v);
             _fill_outer_row_topo(i, v);
             _fill_outer_row_branches(i, v);
+        }
+        // where the row's loops start: a row chained on the previous one (TimeSeries) from its
+        // equations -- the buses its loops froze, the taps they moved, ... (the loops undo what
+        // this row does not call for); a row seeded from the "n" solve (init_from_n_powerflow,
+        // a TimeSeries' first one included) from that solve's; any other from the grid
+        void _set_outer_row_resume(size_t i, OuterRowView & v) const {
+            const bool chained = INIT == BatchInitKind::FromPreviousStep && i > 0;
+            v.resume_from = chained ? nullptr : _seeded_row_resume_point();
+            v.resume = chained || v.resume_from != nullptr;
         }
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void _fill_outer_row_injections(size_t i, OuterRowView & v) const {
@@ -4250,6 +4260,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         if(!ac_solver_used) control.tell_recompute_sbus();
                         if(outer){
                             _fill_outer_row_view(cont_id, &masked, row_view);
+                            _set_outer_row_resume(cont_id, row_view);
                             algo.set_outer_row_view(&row_view);
                         }
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,

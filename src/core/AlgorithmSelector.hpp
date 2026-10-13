@@ -327,6 +327,9 @@ class LS2G_API AlgorithmSelector final
         void get_outer_ratio_tap(std::vector<int> & positions) const {
             get_prt_solver("get_outer_ratio_tap", false)->get_outer_ratio_tap(positions);
         }
+        std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const {
+            return get_prt_solver("get_outer_resume_point", false)->get_outer_resume_point();
+        }
 
         // continuation powerflow primitives (ContinuationSweep) -- NR-based
         // algorithms only, guarded exactly like get_J: both read state the last

@@ -50,7 +50,7 @@ enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
  * that one with the units' targets a loop moved (DistributedSlack's target P, and the target
  * Q that follows it, see LSGrid::set_gen_raw_target_q): a unit's own output, not a residual.
  */
-struct OuterInjections
+struct LS2G_API OuterInjections
 {
     CplxVect * Sbus = nullptr;
     const CplxVect * Sbus_init = nullptr;
@@ -60,6 +60,22 @@ struct OuterInjections
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
+
+    /// the unit's active target in force, MW: the one a loop set, the row's or the grid's
+    /// otherwise (storage units in the load convention)
+    real_type gen_target_p_in_force(const OuterGridView & view, int gen_id) const;
+    real_type storage_target_p_in_force(const OuterGridView & view, int storage_id) const;
+
+    /// move the unit's active target to `mw`, and its injection at solver bus `bus_solver`
+    /// with it -- for a generator that does not regulate, its reactive target too, which
+    /// follows its limits at the new P (forceTargetQInReactiveLimits, see
+    /// LSGrid::gen_target_q_at_outer_target). Returns how much its injection moved, MW
+    /// (generator convention for both).
+    real_type move_gen_target_p(const OuterGridView & view, int gen_id, int bus_solver, real_type mw);
+    real_type move_storage_target_p(const OuterGridView & view, int storage_id, int bus_solver, real_type mw);
+
+    private:
+        void _add_injection(int bus_solver, const cplx_type & ds);
 };
 
 

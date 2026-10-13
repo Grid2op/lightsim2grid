@@ -647,6 +647,9 @@ class LS2G_API BaseAlgo : public BaseConstants
         /// the section count the outer loops left each shunt at (grid id, INT_MIN where they kept
         /// the grid's; empty: none)
         virtual void get_outer_shunt_sections(std::vector<int> & counts) const { counts.clear(); }
+        /// where the last solve's outer loops ended, for other solves to resume from (see
+        /// OuterRowView::resume_from); null when it did not converge, or without outer loops
+        virtual std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const { return nullptr; }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

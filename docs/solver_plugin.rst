@@ -360,8 +360,9 @@ A batch hands every algorithm what its row changes compared with the grid, throu
 algorithm that runs outer loops (``supports_outer_loops()``) reads it; the default does
 nothing, and a plugin keeps it. The virtual is part of the interface all the same, so a
 plugin built against an earlier version must be rebuilt. The same goes for
-``set_outer_loops``, which takes the grid's ``OuterLoopDriverParams`` next to its loops:
-only an algorithm that runs outer loops overrides it.
+``set_outer_loops``, which takes the grid's ``OuterLoopDriverParams`` next to its loops,
+and for ``get_outer_resume_point``, where a batch reads how the "n" solve's loops ended
+(the default returns none): only an algorithm that runs outer loops overrides them.
 
 
 Writing a solver plugin
