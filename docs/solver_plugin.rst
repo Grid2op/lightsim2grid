@@ -192,6 +192,14 @@ Solve the power-flow problem ``V·(Ybus·V)* = Sbus``.
 | ``tol``           | Convergence tolerance (per-unit mismatch).           |
 +-------------------+------------------------------------------------------+
 
+.. note::
+    Everything ``compute_pf`` receives is in per unit, ``tol`` included: compare your
+    per-unit mismatch with it as is. The ``tol`` a user passes to
+    :func:`lightsim2grid.network.LSGrid.ac_pf`,
+    :class:`lightsim2grid.lightSimBackend.LightSimBackend` or a batch algorithm is in MVA,
+    and lightsim2grid divides it by the grid's ``sn_mva`` before calling your algorithm. Your
+    algorithm has no ``sn_mva`` to convert with, and must not try to.
+
 Return ``true`` on convergence; store results in the protected members
 listed below and set ``err_ = ErrorType::NoError`` (or an appropriate
 error code on failure).
@@ -383,7 +391,8 @@ hand it to ``LS2G_PLUGIN_ENTRY``, which generates the exported
             int max_iter,
             ls2g::real_type tol) override
         {
-            // ... your algorithm here, starting from the initial guess `V` ...
+            // ... your algorithm here, starting from the initial guess `V`, until the
+            // per-unit mismatch is below `tol` (already in per unit, see above) ...
             ls2g::CplxVect V_solved = V;  // replace with your actual solved voltages
 
             // populate result fields when done:
@@ -568,6 +577,7 @@ Loading and using the plugin from Python
     gm.change_algorithm("MySolver")
 
     # 4. Run a powerflow — lightsim2grid now delegates to MySolver.compute_pf().
+    #    The tolerance here is in MVA: MySolver.compute_pf receives 1e-8 / gm.get_sn_mva().
     Vinit = ...  # complex initial voltage guess, size gm.total_bus()
     V = gm.ac_pf(Vinit, 20, 1e-8)
 
