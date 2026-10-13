@@ -105,12 +105,22 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             monitor_of_entry.push_back(ctrl.elem_id(c));
         }
     }
-    // resuming: the buses the previous solve left frozen (solver bus -> its state), frozen
-    // again below for this solve
-    std::vector<std::pair<int, std::pair<int, bool> > > carried;
+    // resuming: the buses the previous solve left frozen, by solver bus (0: none; of two at
+    // one bus, the first), frozen again below for this solve
+    std::vector<int> carried_state;
+    std::vector<char> carried_realistic;
     if (ctx.resume) {
+        const std::size_t nb_solver_bus = ctx.view().id_solver_to_me().size();
         for (const ControllerBus & bus : buses_) {
-            if (bus.state != 0) carried.emplace_back(bus.bus_solver, std::make_pair(bus.state, bus.realistic));
+            if (bus.state == 0 || bus.bus_solver < 0 || static_cast<std::size_t>(bus.bus_solver) >= nb_solver_bus) continue;
+            if (carried_state.empty()) {
+                carried_state.assign(nb_solver_bus, 0);
+                carried_realistic.assign(nb_solver_bus, 0);
+            }
+            const std::size_t b = static_cast<std::size_t>(bus.bus_solver);
+            if (carried_state[b] != 0) continue;
+            carried_state[b] = bus.state;
+            carried_realistic[b] = bus.realistic ? 1 : 0;
         }
     }
     buses_.clear();
@@ -120,6 +130,15 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
     const StorageContainer & storages = grid.get_storages();
     const HvdcLineContainer & hvdcs = grid.get_dclines();
     const Eigen::Ref<const RealVect> vn_kv = grid.get_bus_vn_kv();
+    // the robust mode's: the target Q of every generator, summed per solver bus once (each bus
+    // in generator order)
+    std::vector<real_type> target_q_of_bus(view.id_solver_to_me().size(), 0.);
+    for (int gen_id = 0; gen_id < gens.nb(); ++gen_id) {
+        const int b = view.gen_bus_solver(gen_id);  // -1 when off
+        if (b >= 0 && static_cast<std::size_t>(b) < target_q_of_bus.size()) {
+            target_q_of_bus[static_cast<std::size_t>(b)] += gens.get_target_q()(gen_id);
+        }
+    }
     for (std::size_t k = 0; k < plan_.buses.size(); ++k) {
         const auto & entry = plan_.buses[k];
         ControllerBus bus;
@@ -142,10 +161,7 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             const int reg_grid = ctx.view().id_solver_to_me()[bus.reg_bus_solver].cast_int();
             if (reg_grid >= 0) bus.nominal_v = vn_kv(reg_grid);
         }
-        // the robust mode's: the target Q of every generator of the bus
-        for (int gen_id = 0; gen_id < gens.nb(); ++gen_id) {
-            if (view.gen_bus_solver(gen_id) == entry.bus_solver) bus.target_q += gens.get_target_q()(gen_id);
-        }
+        bus.target_q = target_q_of_bus[static_cast<std::size_t>(entry.bus_solver)];
         // (a generator's limits follow its target P: read at each check, see _limits)
         for (int gen_id : entry.gen_ids) {
             bus.target_p += view.gen_target_p(gen_id);
@@ -169,13 +185,12 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
     }
     // ... each at the limit it holds in this solve (its target P may have moved), or at its
     // target Q for the robust mode's; the release test lets it go when this solve calls for it
-    if (!carried.empty() && ctx.injections != nullptr && ctx.controls != nullptr) {
+    if (!carried_state.empty() && ctx.injections != nullptr && ctx.controls != nullptr) {
         for (ControllerBus & bus : buses_) {
-            auto it = std::find_if(carried.begin(), carried.end(),
-                                   [&bus](const std::pair<int, std::pair<int, bool> > & c) { return c.first == bus.bus_solver; });
-            if (it == carried.end()) continue;
-            const int state = it->second.first;
-            bus.realistic = it->second.second;
+            if (bus.bus_solver < 0 || static_cast<std::size_t>(bus.bus_solver) >= carried_state.size()) continue;
+            const int state = carried_state[static_cast<std::size_t>(bus.bus_solver)];
+            if (state == 0) continue;
+            bus.realistic = carried_realistic[static_cast<std::size_t>(bus.bus_solver)] != 0;
             real_type q_min, q_max;
             _limits(ctx, bus, q_min, q_max);
             _freeze(ctx, bus, bus.realistic ? bus.target_q : (state < 0 ? q_min : q_max), state);
