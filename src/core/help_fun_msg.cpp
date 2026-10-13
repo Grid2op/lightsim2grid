@@ -108,7 +108,7 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         ``slack_weights``, an out-of-range id in ``slack_ids`` / ``pv`` / ``pq``, a bus listed in more
         than one of them, an empty ``slack_ids``, a negative ``max_iter`` (0 is accepted: it returns
         the pre-iteration state, before any Newton-Raphson / Gauss-Seidel step), or a non-finite or
-        non-positive ``tol`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
+        non-positive ``tol_pu`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
         ids) instead of touching the underlying solver. This validation is skipped on the internal
         C++ code path used by :class:`lightsim2grid.network.LSGrid` and the batch solvers
         (:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysis`,
@@ -134,8 +134,13 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         Index of the pq buses
     max_iter: ``int``
         Maximum number of iterations performed by the solver. [might be ignore by some solvers]
-    tol: ``float``
-        Solver tolerance (*eg* 1e-8) [might be ignore by some solvers]
+    tol_pu: ``float``
+        Solver tolerance (*eg* 1e-8) [might be ignore by some solvers], **in per unit** (not in MVA):
+        the solver only sees per-unit inputs and has no notion of ``sn_mva``, so it compares the
+        per-unit mismatch with ``tol_pu`` as is. This differs from the ``tol`` of
+        :func:`lightsim2grid.network.LSGrid.ac_pf`, of the batch algorithms and of
+        :class:`lightsim2grid.lightSimBackend.LightSimBackend`, which is in MVA: to reproduce
+        their criterion here, pass ``tol / sn_mva``.
 
     Examples
     ---------

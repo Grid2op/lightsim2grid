@@ -215,6 +215,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [BREAKING] ``compute_pf`` / ``solve`` of the algorithms (*eg* ``NR_KLU().solve(...)``) take
+  named arguments, and their tolerance is ``tol_pu``: in per unit, unlike the ``tol`` (in MVA)
+  of ``LSGrid.ac_pf`` and the batch algorithms.
 - [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
   algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
 

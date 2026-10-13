@@ -34,9 +34,16 @@ void bind_algo_methods(py::class_<Solver>& cls) {
         // by LSGrid / BaseBatchSolverSynch (ContingencyAnalysis, TimeSeries,
         // SecurityAnalysis) in tight loops, which never goes through pybind11
         // and so is unaffected by this binding.
-        .def("compute_pf",  &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())
+        // The tolerance is named `tol_pu` on purpose: a solver only sees per-unit
+        // matrices and has no sn_mva, unlike the `tol` (in MVA) of LSGrid.ac_pf and
+        // of the batch algorithms, which divide it by sn_mva before calling a solver.
+        .def("compute_pf",  &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str(),
+             py::arg("Ybus"), py::arg("V"), py::arg("Sbus"), py::arg("slack_ids"), py::arg("slack_weights"),
+             py::arg("pv"), py::arg("pq"), py::arg("max_iter"), py::arg("tol_pu"))
         .def("get_timers",  &Solver::get_timers,  DocSolver::get_timers.c_str())
-        .def("solve",       &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())
+        .def("solve",       &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str(),
+             py::arg("Ybus"), py::arg("V"), py::arg("Sbus"), py::arg("slack_ids"), py::arg("slack_weights"),
+             py::arg("pv"), py::arg("pq"), py::arg("max_iter"), py::arg("tol_pu"))
         ;
 }
 
