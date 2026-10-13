@@ -289,6 +289,7 @@ private:
     std::vector<int> carried_sections_;
     bool has_carry_ = false;
     OuterInjections injections_;  // what the loops inject; kept after the solve for its results
+    OuterSolveCache solve_cache_;  // what the loops share, emptied at each solve (see _context)
 };
 
 #include "OuterLoopAlgo.tpp"

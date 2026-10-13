@@ -148,8 +148,8 @@ void TransformerVoltageControlLoop::_declare(const OuterContext & ctx) const
     if (!any) return;
     // the generators the INITIAL step may freeze: every one (declaring the lot costs a few
     // pinned rows)
-    bus_q_check::BusQPlan plan;
-    bus_q_check::build_bus_q_plan(ctx.view(), plan);
+    bus_q_check::BusQPlan own;
+    const bus_q_check::BusQPlan & plan = bus_q_check::solve_bus_q_plan(ctx, own);
     for (const auto & entry : plan.buses) {
         if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) ctx.controls->reserve_bus_voltage(entry.bus_solver);
         for (int c : entry.ctrl_pos) ctx.controls->reserve_controller_hold(c);
@@ -167,8 +167,10 @@ bool TransformerVoltageControlLoop::_is_needed(const OuterContext & ctx) const
 void TransformerVoltageControlLoop::_initialize(OuterContext & ctx)
 {
     groups_ = groups(ctx.view());
-    plan_ = bus_q_check::BusQPlan();
-    bus_q_check::build_bus_q_plan(ctx.view(), plan_);
+    {
+        const bus_q_check::BusQPlan & plan = bus_q_check::solve_bus_q_plan(ctx, plan_);
+        if (&plan != &plan_) plan_ = plan;
+    }
     step_ = Step::INITIAL;
     frozen_.clear();
     const std::size_t nb = static_cast<std::size_t>(ctx.grid->get_trafos().nb());

@@ -31,6 +31,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     stats_.clear();
     total_nr_iterations_ = 0;
     unrealistic_ = false;
+    solve_cache_.reset();  // a new solve: a new view (the row, its grid)
 
     // the loops edit these, never the grid's
     Sbus_init_ = Sbus;
@@ -269,6 +270,7 @@ OuterContext OuterLoopAlgo<Inner>::_context()
     ctx.controls = &inner_.controls();
     ctx.trace = &stats_.decisions;
     ctx.row = row_;
+    ctx.solve_cache = &solve_cache_;
     inner_.fill_context(ctx, controller_q_);
     return ctx;
 }

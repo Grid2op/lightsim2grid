@@ -47,18 +47,12 @@ ReactiveLimitsLoop::ReactiveLimitsLoop(const Params & params) : params_(params)
     }
 }
 
-bus_q_check::BusQPlan ReactiveLimitsLoop::_plan(const OuterContext & ctx)
-{
-    bus_q_check::BusQPlan plan;
-    bus_q_check::build_bus_q_plan(ctx.view(), plan);
-    return plan;
-}
-
 void ReactiveLimitsLoop::_declare(const OuterContext & ctx) const
 {
     // every bus holding its own voltage through the PV path may become PQ
     OuterControls & controls = *ctx.controls;
-    const bus_q_check::BusQPlan plan = _plan(ctx);
+    bus_q_check::BusQPlan own;
+    const bus_q_check::BusQPlan & plan = bus_q_check::solve_bus_q_plan(ctx, own);
     for (const auto & entry : plan.buses) {
         if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) controls.reserve_bus_voltage(entry.bus_solver);
         // ... and the controllers of a group may be held at a limit
@@ -82,12 +76,16 @@ bool ReactiveLimitsLoop::_has_monitor(const OuterContext & ctx)
 
 bool ReactiveLimitsLoop::_is_needed(const OuterContext & ctx) const
 {
-    return !_plan(ctx).empty() || _has_monitor(ctx);
+    bus_q_check::BusQPlan own;
+    return !bus_q_check::solve_bus_q_plan(ctx, own).empty() || _has_monitor(ctx);
 }
 
 void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
 {
-    plan_ = _plan(ctx);
+    {
+        const bus_q_check::BusQPlan & plan = bus_q_check::solve_bus_q_plan(ctx, plan_);
+        if (&plan != &plan_) plan_ = plan;
+    }
     // a voltage monitor is a held controller of the plan, which bus_q_check leaves out: once
     // switched on it holds its bus like any SVC, so it gets a bus of its own here
     std::vector<int> monitor_of_entry(plan_.buses.size(), -1);

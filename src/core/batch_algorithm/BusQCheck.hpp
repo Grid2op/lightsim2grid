@@ -12,6 +12,8 @@
 #include "LSGrid.hpp"
 #include "LimitViolation.hpp"
 #include "powerflow_algorithm/outer_loop/OuterRowView.hpp"
+#include "powerflow_algorithm/outer_loop/BaseOuterLoop.hpp"
+#include "BusQPlan.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -100,41 +102,6 @@ namespace ls2g {
  * rather than counted against a bus that never saw its reactive power.
  */
 namespace bus_q_check {
-
-/// One bus whose voltage is held by machines, and everything a row needs to check it.
-/// Built once per compute() by `build_bus_q_plan`; nothing here varies from row to row.
-struct BusQEntry
-{
-    int bus_solver = -1;          ///< the bus, solver numbering
-    int bus_grid = -1;            ///< the same bus, grid numbering (what is reported)
-    /// the generators holding this bus: a row that disconnects one takes its limits out of
-    /// the sum (`min_q_mvar` / `max_q_mvar`, fixed)
-    std::vector<int> gen_ids;
-    /// the voltage-regulating storage units holding it (always through the PV path, so
-    /// never part of `ctrl_pos`): a fixed [min_q, max_q] in MVAr, generator convention
-    std::vector<int> storage_ids;
-    /// the hvdc converter stations holding it, as (hvdc line id, side): also a fixed
-    /// [min_q, max_q] in MVAr
-    std::vector<std::pair<int, int> > station_ids;
-    /// the voltage-mode SVCs holding it: a susceptance range, so their MVAr capability is
-    /// re-evaluated at every row's own voltage
-    std::vector<int> svc_ids;
-    /// positions in the algorithm's controller list of the controllers standing on this
-    /// bus (`BaseAlgo::get_controller_q`), empty for an ordinary PV bus
-    std::vector<int> ctrl_pos;
-    std::string sub_name;         ///< substation of the bus, empty if the grid has no names
-};
-
-struct BusQPlan
-{
-    std::vector<BusQEntry> buses;
-    /// whether any bus of the plan needs the controller list at all: false on an ordinary
-    /// grid of local PV machines, and then a row never asks for it
-    bool needs_controller_q = false;
-
-    bool empty() const { return buses.empty(); }
-    void clear() { buses.clear(); needs_controller_q = false; }
-};
 
 /**
  * Work out which buses can be checked at all, which machines hold each one, and where its
@@ -273,6 +240,22 @@ inline void build_bus_q_plan(const OuterGridView & view, BusQPlan & out)
         }
         out.buses.push_back(entry);
     }
+}
+
+/// build_bus_q_plan of ctx.view(): the solve's own when the driver keeps a cache (built by
+/// the first loop asking, then shared by the others), built into `own` otherwise
+inline const BusQPlan & solve_bus_q_plan(const OuterContext & ctx, BusQPlan & own)
+{
+    if(ctx.solve_cache == nullptr){
+        build_bus_q_plan(ctx.view(), own);
+        return own;
+    }
+    OuterSolveCache & cache = *ctx.solve_cache;
+    if(!cache.has_bus_q_plan){
+        build_bus_q_plan(ctx.view(), cache.bus_q_plan);
+        cache.has_bus_q_plan = true;
+    }
+    return cache.bus_q_plan;
 }
 
 }  // namespace bus_q_check

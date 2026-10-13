@@ -119,7 +119,6 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         };
 
         /// the plan of every controller bus of `ctx` (bus_q_check)
-        static bus_q_check::BusQPlan _plan(const OuterContext & ctx);
         /// whether `ctx` has a voltage monitor (a held SVC controller of the plan)
         static bool _has_monitor(const OuterContext & ctx);
         /// the generation of a PV controller bus in this solve, MVar

@@ -21,6 +21,7 @@
 #include "TaggedIdVec.hpp"
 #include "AlgoConfig.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
+#include "batch_algorithm/BusQPlan.hpp"
 #include "OuterControls.hpp"
 #include "OuterRowView.hpp"
 
@@ -98,6 +99,19 @@ struct LS2G_API OuterDecision
 };
 
 /**
+ * What several loops of one solve read alike, built on the first loop's use and shared
+ * from there (see OuterContext::solve_cache). Each depends on the solve's view only (the
+ * grid, the row): the driver empties it at the start of every solve.
+ */
+struct OuterSolveCache
+{
+    bool has_bus_q_plan = false;
+    bus_q_check::BusQPlan bus_q_plan;  ///< see bus_q_check::solve_bus_q_plan
+
+    void reset() { has_bus_q_plan = false; }
+};
+
+/**
  * Everything a loop sees, after a Newton solve. Built by the outer-loop algorithm between
  * two solves (with `state`), or by the grid after any AC solve for detection (`state` is
  * then null: a loop reports what it WOULD do, from the grid and the solve alone).
@@ -146,6 +160,8 @@ struct OuterContext
     OuterControls * controls = nullptr;
     /// where a check records its decisions (null: not recorded, eg in detection)
     std::vector<OuterDecision> * trace = nullptr;
+    /// what the loops of this solve share (null: each builds its own, eg in detection)
+    OuterSolveCache * solve_cache = nullptr;
 
     bool is_detection() const { return injections == nullptr; }
     /// the grid as this solve sees it (see OuterGridView)
