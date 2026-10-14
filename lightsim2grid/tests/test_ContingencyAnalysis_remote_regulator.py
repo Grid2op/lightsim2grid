@@ -61,6 +61,30 @@ class TestContingencyAnalysisRemoteRegulator(unittest.TestCase):
                     if connected[b] and ok:
                         self.assertTrue(conv[b], f"branch {b} did not converge")
 
+    def test_one_analyze_per_algorithm_only_factorize_again(self):
+        """The point of the batch classes, and why they are fast: ONE ``analyze`` (the
+        symbolic work) per algorithm for the whole batch, every row refactorizing after it.
+
+        A row whose matrix no longer suits the pivots of the last factorization may
+        ``factorize`` again (new pivots, symbolic analysis kept: that is what repairs the
+        rows of the issue). It must NEVER trigger another ``analyze``: a fix that
+        re-analyzes a failing row throws away the reason these classes exist.
+        """
+        for nb_thread in (1, 4, 8):
+            with self.subTest(nb_thread=nb_thread):
+                ca = ContingencyAnalysisCPP(self.grid)
+                ca.nb_thread = nb_thread
+                ca.add_all_n1()
+                ca.compute(self.V0.copy(), 30, 1e-11)
+                per_algo = ca.get_linear_solver_stats_per_algo()
+                self.assertGreaterEqual(len(per_algo), 1)
+                for i, stats in enumerate(per_algo):
+                    self.assertLessEqual(stats.nb_analyze, 1,
+                                         f"algorithm #{i} (0 is the member one) analyzed again")
+                self.assertGreaterEqual(sum(st.nb_analyze for st in per_algo), 1)
+                # the numeric re-pivot WAS needed here: the test does cover the dangerous path
+                self.assertGreater(sum(st.nb_fallback_factorize for st in per_algo), 0)
+
     def test_single_contingency_alone(self):
         ca = ContingencyAnalysisCPP(self.grid)
         ca.add_n1(5)
