@@ -299,6 +299,34 @@ Every one of them is a refactorization whose frozen pivot became exactly zero. I
    the static pivot was 29 % faster), so the fill the order adds to every refactorization
    costs KLU nearly what the fallbacks did. Not profiled further. Hence opt-in.
 
+   **Without outer loops, on public MATPOWER cases.** Full N-1 (`add_all_n1`),
+   `init_from_n_powerflow`, islands handled, one core, `NR_KLU` and `NR_KLUStaticPivot`
+   each with the order off and on (`int_params[4]` of the batch's config). The cases are
+   `case9241pegase` and the 6515-bus public MATPOWER case (its base case needs a DC start).
+
+   | | 6515-bus case | `case9241pegase` |
+   |---|---|---|
+   | `NR_KLU`, order off / on | 55.32 / 55.55 s | 163.72 / 162.97 s |
+   | `NR_KLUStaticPivot`, order off / on | 31.11 / 31.08 s (-44 %) | 92.81 / 92.66 s (-43 %) |
+   | rows not converged | 3 | 11 |
+   | factorizations (of which fallbacks) | 1 (0) | 1 (0) |
+   | refactorizations, `NR_KLU` / static pivot | 28 077 / 28 077 | 47 458 / 47 457 |
+
+   Earlier runs of the same configurations agreed within 0.6 s (55.10 / 55.02 s, 163.51 /
+   163.03 s for `NR_KLU`).
+   - With or without the order, each solver gives bit-identical voltages, the same converged
+     rows and the same counters, at a time within noise. No component declares a constraint
+     when no outer loop can switch a row, so the solver gets an empty list and stays on
+     plain AMD. Having the order on by default for the static pivot costs a Newton without
+     outer loops nothing.
+   - Between the two solvers, the same rows converge. Per-row max dVm 3.6e-13 / 5.3e-13 /
+     1.4e-12 pu and dVa 1.8e-11 / 2.7e-11 / 5.0e-11 deg on the 6515-bus case, dVm 2.8e-13 /
+     4.1e-13 / 1.1e-12 pu and dVa 3.0e-11 / 5.7e-11 / 1.2e-10 deg on `case9241pegase`
+     (median / p90 / max). No row is above 1e-6.
+   - There is no fallback to remove here, so the whole gain is the static pivot's cheaper
+     refactorization. It is larger than on the snapshot with outer loops (-43 % against
+     -29 % for the static pivot alone), where the Newton's other work weighs more.
+
 2. **A faster kernel** (33 % of `Ir`).
    - The "map" variant of Chen et al. (DATE 2016, see `static_pivot_refactorization.md`):
      precompute the address of every update, no dense work vector, no scatter / gather /
