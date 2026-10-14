@@ -223,7 +223,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
   case: they accepted points ``sn_mva`` times less converged than asked.
 - [FIXED] ``ContingencyAnalysis`` with a remote voltage regulator: connected rows failed after one
-  iteration (KLU refactorization on the bordered rows, now falling back / retried on a full factorize).
+  iteration. A KLU refactorization with a zero or collapsed pivot now re-pivots (no new ``analyze``).
 
 
 [1.2.0] 2026-10-12

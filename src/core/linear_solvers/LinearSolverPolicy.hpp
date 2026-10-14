@@ -29,6 +29,17 @@ pointer/reference), so plain method-hiding is correct here and avoids an unneces
 vtable / indirect-call overhead that a virtual interface would add to every single
 solver call for no actual polymorphism ever exercised.
 **/
+namespace detail {
+// overload on the extra int/long argument: the first is chosen (as int is the exact match)
+// when the solver has set_pivot_growth_guard, the second is the no-op for the others
+template<class S>
+auto set_pivot_growth_guard_impl(S & solver, bool val, int) noexcept -> decltype(solver.set_pivot_growth_guard(val), void()) {
+    solver.set_pivot_growth_guard(val);
+}
+template<class S>
+void set_pivot_growth_guard_impl(S &, bool, long) noexcept {}
+} // namespace detail
+
 template<class LinearSolver>
 class LinearSolverPolicy
 {
@@ -98,7 +109,19 @@ class LinearSolverPolicy
         // RefactorRetryLinearSolver is this policy with the switch on from
         // construction; the batch algorithms turn it on for whatever algorithm they
         // run when they mask buses or switch PV / PQ (BaseAlgo::set_refactor_fallback).
-        void set_refactor_fallback(bool val) noexcept { refactor_fallback_ = val; }
+        void set_refactor_fallback(bool val) noexcept {
+            refactor_fallback_ = val;
+            _apply_pivot_growth_guard();
+        }
+
+        // Asks a solver that can tell a poor refactorization from a failed one (KLU) to do
+        // so, for the algorithm that knows its Jacobian needs it (bordered voltage-control
+        // rows). Only effective with the fallback on: with nothing to catch the failure, it
+        // would turn a poor-but-working solve into an error. A no-op for the other solvers.
+        void set_pivot_growth_guard(bool val) noexcept {
+            guard_wanted_ = val;
+            _apply_pivot_growth_guard();
+        }
         bool refactor_fallback() const noexcept { return refactor_fallback_; }
 
         ErrorType solve(Eigen::Ref<RealVect> b) {
@@ -141,6 +164,10 @@ class LinearSolverPolicy
         LinearSolver inner_;
         LinearSolverStats stats_;
         bool refactor_fallback_ = false;
+        bool guard_wanted_      = false;
+        void _apply_pivot_growth_guard() noexcept {
+            detail::set_pivot_growth_guard_impl(inner_, guard_wanted_ && refactor_fallback_, 0);
+        }
 
     private:
         // no copy allowed (matches the concrete solver classes' own convention)

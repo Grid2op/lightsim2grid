@@ -568,14 +568,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                                    const Eigen::Ref<const IntVect> & bus_pv,
                                    const Eigen::Ref<const IntVect> & bus_pq,
                                    int max_iter,
-                                   double tol,
-                                   bool retry_stale_pivots = false
+                                   double tol
                                    );
-        // retry_stale_pivots: a row that does not converge after refactorizing is solved once
-        // more with a full re-analysis (the pivots it refactorized with may have been chosen
-        // for another row's matrix). For batches whose rows are independent solves; NOT for a
-        // continuation, whose corrector failing near the nose is an expected outcome and whose
-        // whole point is one analysis for the curve.
 
         // Warm up a (freshly built) solver so its symbolic factorization / DC
         // internal Ybus / sparsity pattern match the member solver after the

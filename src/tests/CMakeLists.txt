@@ -89,6 +89,7 @@ add_executable(lightsim2grid_unit_tests
     test_bus_element_count.cpp
     test_kcl_from_results.cpp
     test_solve_transpose.cpp
+    test_klu_pivot_guard.cpp
     test_batch_adjoint.cpp
     test_base_case_reuse.cpp
     test_slack_redistribution.cpp
