@@ -10,7 +10,7 @@ import pypowsybl.loadflow as pypow_lf
 from lightsim2grid.network import init_from_pypowsybl, get_pypowsybl_loopfree_parameters
 from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP
 
-from utils_benchmark import print_configuration
+from utils_benchmark import print_configuration, static_pivot_or
 TABULATE_AVAIL = False
 try:
     from tabulate import tabulate
@@ -71,7 +71,8 @@ def run_case(case_name,
         buses_for_sub=True,
         n_busbar_per_sub=1
         )
-    ls_grid.change_algorithm("NR_KLU")
+    # KLU with a static-pivot refactorization, distributed slack like NR_KLU (when KLU is compiled in)
+    ls_grid.change_algorithm(static_pivot_or(ls_grid, "NR_KLUStaticPivot", "NR_KLU"))
     
     pypowsybl_parameters = get_pypowsybl_parameters(slack_pypowysbl)
     pypowsybl_parameters.provider_parameters["networkCacheEnabled"] = "true"
@@ -225,7 +226,7 @@ def run_case(case_name,
         print(f"Total time {time_ls * 1000.:.2e}ms => {time_ls / nb_extra_powerflow * 1e3:.2e} ms/pf | {nb_extra_powerflow / time_ls:.0f} pf /s")
         print(f"Total time spent in the solver: {1e3 * ls_timer_total_nr:.2e} ms "
             f"({100. * ls_timer_total_nr / time_ls:.0f}% of total time spent in lightsim2grid)")
-        print(f"Total time spent in KLU {1e3 * (ls_timer_initialize + ls_timer_factor + ls_timer_refactor + ls_timer_solve):.2e} ms "
+        print(f"Total time spent in the linear solver {1e3 * (ls_timer_initialize + ls_timer_factor + ls_timer_refactor + ls_timer_solve):.2e} ms "
             f"({100. * (ls_timer_initialize + ls_timer_factor + ls_timer_refactor + ls_timer_solve) / ls_timer_total_nr:.0f}% of total time in the solver)")
         print(f"\t Time to pre process Ybus, Sbus etc.: {1e3 * ls_timer_pre_proc:.2e} ms ({100. * ls_timer_pre_proc / ls_timer_total_nr:.0f} % of time in solver)")
         print(f"\t Time to initialize linear solver {1e3 * ls_timer_initialize:.2e} ms ({100. * ls_timer_initialize / ls_timer_total_nr:.0f} % of time in solver)")
@@ -259,6 +260,7 @@ def run_case(case_name,
     ls_grid.update_loads_p(all_loads, load_p_init.astype(np.float32))
     ls_grid.update_loads_q(all_loads, load_q_init.astype(np.float32))
     ca_ls = ContingencyAnalysisCPP(ls_grid)
+    ca_ls.change_algorithm(static_pivot_or(ca_ls, "NR_KLUStaticPivot", "NR_KLU"))
     ca_ls.init_from_n_powerflow = True
     ca_ls.handle_disconnected_grid = True
     ca_ls.compute_limit_violations = True

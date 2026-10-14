@@ -21,7 +21,7 @@ from lightsim2grid.algorithm import AlgorithmType
 
 from tqdm import tqdm
 import os
-from utils_benchmark import print_configuration, get_env_name_displayed
+from utils_benchmark import print_configuration, get_env_name_displayed, static_pivot_or
 from benchmark_solvers import solver_names, NRSING_STATIC_PIVOT
 
 try:
@@ -386,10 +386,8 @@ if __name__ == "__main__":
                                         load_q,
                                         gen_p_g2op,
                                         sgen_p)
-        if NRSING_STATIC_PIVOT in env_lightsim.backend._grid.available_algorithm_names():
-            env_lightsim.backend.set_algo_type(NRSING_STATIC_PIVOT)
-        else:
-            env_lightsim.backend.set_algo_type(ls_solver_type)
+        env_lightsim.backend.set_algo_type(static_pivot_or(env_lightsim.backend._grid, NRSING_STATIC_PIVOT,
+                                                           ls_solver_type))
         # Perform the computation using grid2op
         reset_solver = True  # non default
         nb_step_reset = run_grid2op_env(env_lightsim, case, reset_solver,
@@ -414,6 +412,8 @@ if __name__ == "__main__":
         # Perform the computation using TimeSerie
         env_lightsim.reset()
         time_serie = TimeSerie(env_lightsim)
+        # the batch replaces the grid's algorithm by NR_KLU: use the same one as above
+        time_serie.computer.change_algorithm(static_pivot_or(time_serie.computer, NRSING_STATIC_PIVOT, "NR_KLU"))
         computer = time_serie.computer
         computer_ts = time_serie.computer
         v_init = env_lightsim.backend.V
@@ -451,6 +451,7 @@ if __name__ == "__main__":
         # Perform a securtiy analysis (up to 1000 contingencies)
         env_lightsim.reset()
         sa = ContingencyAnalysis(env_lightsim)
+        sa.change_algorithm(static_pivot_or(sa.computer, NRSING_STATIC_PIVOT, "NR_KLU"))
         for i in range(env_lightsim.n_line):
             sa.add_single_contingency(i)
             if i >= 1000:
