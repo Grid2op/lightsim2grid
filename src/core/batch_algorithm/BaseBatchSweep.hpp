@@ -4131,7 +4131,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         if(!ac_solver_used) control.tell_recompute_sbus();
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
-                                                     active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
+                                                     active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva,
+                                                     /*retry_stale_pivots=*/true);
                         _record_row_solve_stats(cont_id, algo);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
                         // before the two restores below, and before the Ybus is put

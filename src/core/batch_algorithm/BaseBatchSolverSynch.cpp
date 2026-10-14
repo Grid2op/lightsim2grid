@@ -52,13 +52,14 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
     const Eigen::Ref<const IntVect> & bus_pv,
     const Eigen::Ref<const IntVect> & bus_pq,
     int max_iter,
-    double tol
+    double tol,
+    bool retry_stale_pivots
 )
 {
     algo.tell_solver_control(control);
     bool conv;
     if(algo.ac_solver_used()){
-        const long nb_refactorize_before = algo.get_linear_solver_stats().nb_refactorize;
+        const long nb_refactorize_before = retry_stale_pivots ? algo.get_linear_solver_stats().nb_refactorize : 0;
         conv = algo.compute_pf(
             Ybus,
             V,
@@ -76,7 +77,7 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
         // although a solve of its own would. So a row that failed after refactorizing is
         // solved once more from the same start with a full re-analysis. V is left
         // untouched by a failed solve. Costs nothing on a converged row.
-        if(!conv && algo.get_linear_solver_stats().nb_refactorize > nb_refactorize_before){
+        if(retry_stale_pivots && !conv && algo.get_linear_solver_stats().nb_refactorize > nb_refactorize_before){
             AlgoControl retry_control = control;
             retry_control.tell_solver_need_reset();
             algo.tell_solver_control(retry_control);

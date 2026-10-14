@@ -70,7 +70,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
-                                         max_iter, tol_solver);
+                                         max_iter, tol_solver, /*retry_stale_pivots=*/true);
             _record_row_solve_stats(i, algo);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
             // (and _record_row_bus_q, which reads the mismatch of the system this row
@@ -98,7 +98,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
                                          Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
-                                         max_iter, tol_solver);
+                                         max_iter, tol_solver, /*retry_stale_pivots=*/true);
             _record_row_solve_stats(i, algo);
             // before the pinning is restored, and before the Ybus is put back: the
             // refreshed Jacobian has to describe the system THIS row solved, and so does
