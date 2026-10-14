@@ -58,6 +58,7 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
     algo.tell_solver_control(control);
     bool conv;
     if(algo.ac_solver_used()){
+        const long nb_refactorize_before = algo.get_linear_solver_stats().nb_refactorize;
         conv = algo.compute_pf(
             Ybus,
             V,
@@ -68,6 +69,28 @@ bool BaseBatchSolverSynch::compute_one_powerflow(
             bus_pq,
             max_iter,
             tol);
+        // A refactorization reuses the pivot order of the last full factorization, which
+        // may be the one of another row's matrix (a fallback factorize, see
+        // LinearSolverPolicy::refactorize). It only reports an exactly-zero pivot; a
+        // merely poor one gives an inaccurate step and a row that does not converge,
+        // although a solve of its own would. So a row that failed after refactorizing is
+        // solved once more from the same start with a full re-analysis. V is left
+        // untouched by a failed solve. Costs nothing on a converged row.
+        if(!conv && algo.get_linear_solver_stats().nb_refactorize > nb_refactorize_before){
+            AlgoControl retry_control = control;
+            retry_control.tell_solver_need_reset();
+            algo.tell_solver_control(retry_control);
+            conv = algo.compute_pf(
+                Ybus,
+                V,
+                Sbus,
+                slack_ids,
+                slack_weights,
+                bus_pv,
+                bus_pq,
+                max_iter,
+                tol);
+        }
     } else {
         // native real DC entry point: dc_cache_.mat is the (constant) real admittance built in
         // prepare_solver_input_base; Pbus is the real part of the (possibly per-step)

@@ -222,6 +222,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
 - [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
   case: they accepted points ``sn_mva`` times less converged than asked.
+- [FIXED] ``ContingencyAnalysis`` with a remote voltage regulator: connected rows failed after one
+  iteration (KLU refactorization on the bordered rows, now falling back / retried on a full factorize).
 
 
 [1.2.0] 2026-10-12
