@@ -22,7 +22,7 @@ from lightsim2grid.algorithm import AlgorithmType
 from tqdm import tqdm
 import os
 from utils_benchmark import print_configuration, get_env_name_displayed
-from benchmark_solvers import solver_names
+from benchmark_solvers import solver_names, NRSING_STATIC_PIVOT
 
 try:
     from tabulate import tabulate
@@ -295,6 +295,7 @@ def generate_narrative(case_names_displayed,
 
 if __name__ == "__main__":
     prng = np.random.default_rng(42)
+    # replaced by NRSing_KLUStaticPivot below when it is available
     ls_solver_type = AlgorithmType.NR_KLU
     case_names_displayed = [get_env_name_displayed(el) for el in case_names]
     solver_preproc_solver_time = []
@@ -385,7 +386,10 @@ if __name__ == "__main__":
                                         load_q,
                                         gen_p_g2op,
                                         sgen_p)
-        env_lightsim.backend.set_algo_type(ls_solver_type)
+        if NRSING_STATIC_PIVOT in env_lightsim.backend._grid.available_algorithm_names():
+            env_lightsim.backend.set_algo_type(NRSING_STATIC_PIVOT)
+        else:
+            env_lightsim.backend.set_algo_type(ls_solver_type)
         # Perform the computation using grid2op
         reset_solver = True  # non default
         nb_step_reset = run_grid2op_env(env_lightsim, case, reset_solver,
@@ -459,7 +463,10 @@ if __name__ == "__main__":
         sa_sizes.append(env_lightsim.n_sub)
                 
         # close the env
-        linear_solver_used_str = solver_names[env_lightsim.backend._grid.get_solver_type()]
+        algo_name = env_lightsim.backend._grid.get_algo_name()
+        # registry name -> displayed name (enum members print as "AlgorithmType.NR_KLU")
+        linear_solver_used_str = next((v for k, v in solver_names.items() if str(k).split(".")[-1] == algo_name),
+                                      algo_name)
         env_lightsim.close()
 
     print("Configuration:")
