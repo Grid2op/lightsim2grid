@@ -73,7 +73,9 @@ DistributedSlackLoop::DistributedSlackLoop(const Params & params) : params_(para
 
 bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
 {
-    return _has_participant(*ctx.grid, ctx.grid->id_me_to_ac_solver());
+    // a unit off the slack bus to take the mismatch: the slack bus' own units would only take
+    // what it already absorbs (see the class comment)
+    return _has_participant(*ctx.grid, ctx.grid->id_me_to_ac_solver(), ctx.slack_bus);
 }
 
 void DistributedSlackLoop::_initialize(OuterContext & ctx)
@@ -113,9 +115,7 @@ void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitVi
 {
     real_type mismatch = 0.;
     if(!_triggered(ctx, mismatch)) return;
-    // only on a grid that says who would share the slack (see is_needed), and with a unit
-    // off the slack bus to take it: the slack bus' own units would only take what it already
-    // absorbs, the same solution. The outer-loop mode never gets here otherwise
+    // the same rule as is_needed; the outer-loop mode never gets here otherwise
     if(ctx.is_detection() &&
        !_has_participant(*ctx.grid, ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver
                                                                    : ctx.grid->id_me_to_ac_solver(),
