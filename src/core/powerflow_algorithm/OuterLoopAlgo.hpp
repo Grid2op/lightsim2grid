@@ -282,6 +282,10 @@ private:
     CplxVect Sbus_init_;
     CplxVect Sbus_target_;  // see OuterInjections::Sbus_target
     Eigen::SparseMatrix<cplx_type> Ybus_;  // the grid's, its values patched by the phase shifters
+    // what the Newton is handed: the reference slack bus alone, and the other slack buses
+    // with the PV ones (see compute_pf)
+    IntVect slack_ref_;
+    IntVect pv_with_slack_;
     RealVect controller_q_;  // the context's copy, refreshed with it
     int slack_bus_ = -1;     // solver id of the slack bus of the current solve
     const OuterRowView * row_ = nullptr;  // the caller's, see set_outer_row_view

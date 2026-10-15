@@ -45,8 +45,20 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     const OuterResumePoint * from = (row_ != nullptr && row_->resume) ? row_->resume_from : nullptr;
     if (from != nullptr) _take_loops(*from);
 
+    // OpenLoadFlow's Newton has one slack bus, the reference (slack_ids(0)): sharing the
+    // imbalance is the DistributedSlack loop's job. Any other slack bus of the grid keeps
+    // its P equation, as a PV bus -- Base gives it a Vm unknown and a Q equation as well
+    // when no local regulator pins it (free_vm_slack_buses). Left as slack buses, they
+    // would take whatever P closes the balance, and a target the loop moves onto one of
+    // their units would change nothing.
+    slack_ref_ = slack_ids.head(std::min<Eigen::Index>(slack_ids.size(), 1));
+    const Eigen::Index nb_other_slack = slack_ids.size() - slack_ref_.size();
+    pv_with_slack_.resize(pv.size() + nb_other_slack);
+    pv_with_slack_.head(pv.size()) = pv;
+    pv_with_slack_.tail(nb_other_slack) = slack_ids.tail(nb_other_slack);
+
     bool need_init = false;
-    if (!inner_.setup(Ybus_, V, Sbus_, slack_ids, slack_weights, pv, pq, need_init,
+    if (!inner_.setup(Ybus_, V, Sbus_, slack_ref_, slack_weights, pv_with_slack_, pq, need_init,
                       [this](){ _declare(); })) {
         err_ = inner_.algo().get_error();
         timer_total_nr_ += timer.duration();

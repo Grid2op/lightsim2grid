@@ -222,6 +222,33 @@ class TestDistributedSlack(unittest.TestCase):
         p_ref = np.array([gen.res_p_mw for gen in ref.get_generators()])
         self.assertLess(np.abs(p - p_ref).max(), 2e-3)
 
+    def test_changed_target_shared_as_a_loaded_one(self):
+        """A unit's target changed on the grid (change_p_gen, what the grid2op backend does every
+        step) is shared like the same target loaded from the network: the unit, flagged "can
+        participate in the slack" for the loop, does not become a slack unit of the Newton."""
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
+        grid = self._grid(gen_slack_id="B1-G")
+        grid.change_algorithm(OUTER)
+        gen_id = [gen.name for gen in grid.get_generators()].index("B2-G")
+        new_p = grid.get_gen_target_p()[gen_id] + 5.
+        grid.change_p_gen(gen_id, new_p)
+        V = _solve(grid)
+        self.assertGreater(V.shape[0], 0)
+        self.assertEqual(grid.get_algo().get_outer_loop_stats().status, OuterLoopStatus.STABLE)
+
+        net = self._net()
+        net.update_generators(id="B2-G", target_p=new_p)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            ref = init_from_pypowsybl(net, olf_rules=True, gen_slack_id="B1-G")
+        ref.change_algorithm(OUTER)
+        V_ref = _solve(ref)
+        self.assertGreater(V_ref.shape[0], 0)
+        self.assertLess(np.abs(V - V_ref).max(), 1e-8)
+        self.assertLess(np.abs(np.asarray(grid.get_gen_res()[0]) - np.asarray(ref.get_gen_res()[0])).max(), 1e-6)
+        # every solve after a move iterates: the units the loop moved are not slack buses
+        self.assertNotIn(0, grid.get_algo().get_outer_loop_stats().nr_iterations[1:])
+
     def test_target_q_follows_the_moved_p(self):
         # a unit that does not regulate asks more than it can absorb: OpenLoadFlow clamps its
         # target Q into its limits at its CURRENT target P (forceTargetQInReactiveLimits),
