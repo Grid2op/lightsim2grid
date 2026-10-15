@@ -75,7 +75,9 @@ DistributedSlackLoop::DistributedSlackLoop(const Params & params) : params_(para
 
 bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
 {
-    return _has_participant(ctx.view());
+    // a unit off the slack bus to take the mismatch: the slack bus' own units would only take
+    // what it already absorbs (see the class comment)
+    return _has_participant(ctx.view(), ctx.slack_bus);
 }
 
 void DistributedSlackLoop::_initialize(OuterContext & ctx)
@@ -120,9 +122,7 @@ void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitVi
 {
     real_type mismatch = 0.;
     if(!_triggered(ctx, mismatch)) return;
-    // only on a grid that says who would share the slack (see is_needed), and with a unit
-    // off the slack bus to take it: the slack bus' own units would only take what it already
-    // absorbs, the same solution. The outer-loop mode never gets here otherwise
+    // the same rule as is_needed; the outer-loop mode never gets here otherwise
     if(ctx.is_detection() && !_has_participant(ctx.view(), ctx.slack_bus)) return;
     out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::SLACK_MISMATCH,
                                  mismatch, params_.slack_bus_p_max_mismatch_mw, std::string()});

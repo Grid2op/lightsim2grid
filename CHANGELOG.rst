@@ -3,12 +3,6 @@ Change Log
 
 [TODO]
 --------
-- Two C++ tests fail on ``dev_outer_batch_perf`` (not on ``dev_1.3.0``, which has neither): in
-  ``test_distributed_slack_loop.cpp``, "without any unit flagged, the loop has nothing to do"
-  (``DistributedSlack`` still runs with no unit flagged); in ``test_dc_slack_on_can_participate.cpp``,
-  "on: the units flagged to share the slack do, with their weights" (after new weights, the next
-  ``dc_pf`` shares the imbalance equally on all three units instead of on the two flagged).
-  Not investigated; to bisect along the outer-loop commits.
 - ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
   element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
   slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
@@ -236,6 +230,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
 - [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
   case: they accepted points ``sn_mva`` times less converged than asked.
+- [FIXED] ``DistributedSlack`` outer loop: skipped when only the slack bus' own units are flagged
+  (as detection already was), instead of failing on the slack unit's P limits.
 
 
 [1.2.0] 2026-10-12
