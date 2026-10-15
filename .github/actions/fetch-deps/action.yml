@@ -32,6 +32,14 @@ description: >
 runs:
   using: composite
   steps:
+    - name: Trust the workspace
+      shell: bash
+      # In a container job (the manylinux wheels) the workspace is owned by the runner's user while
+      # the container runs as root, and git then refuses to touch it ("dubious ownership").
+      # actions/checkout only excepts it for its own steps, which was enough while it was the only
+      # thing running git here; the steps below run git too.
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
     - name: Key of the submodule cache
       id: key
       shell: bash
