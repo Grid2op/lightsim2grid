@@ -151,6 +151,81 @@ class TestNROuter(unittest.TestCase):
         grid.clear_outer_loops()
         self.assertEqual(pickle.loads(pickle.dumps(grid)).get_outer_loops(), [])
 
+    def test_saved_grid_settings(self):
+        # what the outer loops read off the grid besides the loops themselves: a grid read
+        # back without it solves to another state
+        import tempfile
+        from lightsim2grid.network import LSGrid
+        grid = _grid(OUTER)
+        n_gen = len(grid.get_generators())
+        grid.set_keep_vinit_at_group_controlled_buses(True)
+        grid.set_hold_frozen_regulators(True)
+        grid.set_dc_distribute_slack_on_can_participate(True)
+        grid.set_reactive_dispatch_olf(True)
+        grid.set_reference_slack_bus(3)
+        grid.set_gen_reactive_range_max(np.arange(n_gen, dtype=float))
+        grid.set_gen_raw_target_q(np.full(n_gen, np.nan))
+        grid.set_gen_capability_curves(np.array([0, 0, 2], dtype=np.int32), np.array([50., 0., 10.]),
+                                       np.array([-20., -10., -5.]), np.array([30., 10., 5.]))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "grid.lsb")
+            grid.save_binary(path)
+            from_file = LSGrid.load_binary(path)
+        for other in (pickle.loads(pickle.dumps(grid)), copy.deepcopy(grid), from_file):
+            self.assertTrue(other.get_keep_vinit_at_group_controlled_buses())
+            self.assertTrue(other.get_hold_frozen_regulators())
+            self.assertTrue(other.get_dc_distribute_slack_on_can_participate())
+            self.assertTrue(other.get_reactive_dispatch_olf())
+            self.assertEqual(other.get_reference_slack_bus(), 3)
+            np.testing.assert_array_equal(other.get_gen_reactive_range_max(), np.arange(n_gen, dtype=float))
+            self.assertTrue(np.all(np.isnan(other.get_gen_raw_target_q())))
+            self.assertEqual(other.get_gen_raw_target_q().shape, (n_gen,))
+            self.assertEqual(other.get_station_reactive_range_max(1).shape, (0,))
+            self.assertEqual(other.gen_limits_at(0, 25.), (-15., 20.))
+            self.assertEqual(other.gen_limits_at(1, 25.), (None, None))
+        # the defaults read back as such
+        fresh = pickle.loads(pickle.dumps(_grid(OUTER)))
+        self.assertFalse(fresh.get_keep_vinit_at_group_controlled_buses())
+        self.assertEqual(fresh.get_reference_slack_bus(), -1)
+        self.assertEqual(fresh.get_gen_reactive_range_max().shape, (0,))
+
+    def test_same_results_after_load_binary(self):
+        # a grid built with OpenLoadFlow's loading rules and its outer loops, saved before any
+        # solve: read back, it solves to the very same state
+        try:
+            import pypowsybl as pp
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        import tempfile
+        from lightsim2grid.network import LSGrid
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        net = pp.network.create_ieee300()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, sort_index=False, buses_for_sub=False,
+                                       keep_half_open_lines=True, fuse_zero_impedance_branches=True,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack())
+        grid.add_outer_loop(ReactiveLimits())
+        grid.set_keep_vinit_at_group_controlled_buses(True)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "grid.lsb")
+            grid.save_binary(path)
+            from_file = LSGrid.load_binary(path)
+
+        def solve(model):
+            model.set_dc_distribute_slack_on_can_participate(True)
+            flat = np.full(model.total_bus(), 1.0 + 0j)
+            V0 = np.exp(1j * np.angle(model.dc_pf(flat, 30, 1e-10)))
+            return model.ac_pf(V0, 30, 1e-9)
+        V = solve(grid)
+        self.assertGreater(V.shape[0], 0)
+        self.assertGreater(grid.get_algo().get_outer_loop_stats().nb_outer_iterations, 0)
+        np.testing.assert_array_equal(solve(from_file), V)
+        np.testing.assert_array_equal(from_file.get_gen_res()[1], grid.get_gen_res()[1])
+
     def test_standalone_algorithm(self):
         from lightsim2grid import algorithm
         algo = getattr(algorithm, OUTER)()

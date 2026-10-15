@@ -344,4 +344,9 @@ Every one of them is a refactorization whose frozen pivot became exactly zero. I
 
 A grid saved with `save_binary` after its outer-loop setup and reloaded does not converge its
 base Newton solve (`TooManyIterations`) from the start voltages the original grid converges
-from. Some state the outer loops depend on does not survive the round trip. Not investigated.
+from. Some state the outer loops depend on does not survive the round trip.
+
+**Resolved (binary format 22).** `get_state` left out grid-level settings `copy()` keeps: the
+capability curves, OpenLoadFlow's reactive ranges and raw target Q, the reactive dispatch, the
+reference slack bus, and the keep-vinit / hold-frozen / DC distributed slack flags. They are
+part of `LSGrid::StateRes` now; a grid read back solves bit for bit as the original.

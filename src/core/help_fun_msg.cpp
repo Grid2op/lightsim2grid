@@ -3983,6 +3983,7 @@ const std::string DocLSGrid::set_reference_slack_bus = R"mydelimiter(
     it as the reference of the whole batch: with ``handle_disconnected_grid``, the
     contingencies that strand it are skipped. Set it before building the batch object (it
     works on a copy of the grid); ``ContingencyAnalysis.pick_reference_slack`` suggests one.
+    Kept by a pickle and by :func:`save_binary` as well.
 
 )mydelimiter";
 
@@ -6185,8 +6186,8 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
     set before :func:`dc_pf` is called, not only before :func:`ac_pf`.
 
     Buses whose magnitude is fixed (ordinary PV buses) are always set to their set-point.
-    The option is copied with the grid, so the batch algorithms built from it inherit it. It
-    is not saved by :func:`get_state` or the binary format.
+    The option is copied with the grid, so the batch algorithms built from it inherit it, and
+    kept by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------
@@ -6239,7 +6240,7 @@ const std::string DocLSGrid::set_hold_frozen_regulators = R"mydelimiter(
     check of :func:`get_physical_violations` (they hold no bus); their release is still reported.
 
     Off by default. The option is copied with the grid, so the batch algorithms built from it
-    inherit it. It is not saved by :func:`get_state` or the binary format.
+    inherit it, and kept by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------

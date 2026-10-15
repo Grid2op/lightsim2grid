@@ -346,24 +346,24 @@ void bind_gridmodel(py::module_& m) {
              "widest reactive range (`set_gen_reactive_range_max`) when every one is plausible, "
              "else equally; a unit pushed past a limit stays there and the excess is shared again, "
              "and nothing is shared below 1e-5 pu. Results only, off by default "
-             "(`init_from_pypowsybl(olf_rules=...)` turns it on); copied with the grid, not "
+             "(`init_from_pypowsybl(olf_rules=...)` turns it on); copied with the grid and "
              "serialized.")
         .def("get_reactive_dispatch_olf", &LSGrid::get_reactive_dispatch_olf)
         .def("set_gen_reactive_range_max", &LSGrid::set_gen_reactive_range_max, py::arg("range_mvar"),
              "The widest reactive range of each generator, MVar (over its whole capability curve), "
              "what `set_reactive_dispatch_olf` shares by; NaN for its range at its target P. Copied "
-             "with the grid, not serialized.")
+             "with the grid and serialized.")
         .def("get_gen_reactive_range_max", &LSGrid::get_gen_reactive_range_max)
         .def("set_station_reactive_range_max", &LSGrid::set_station_reactive_range_max,
              py::arg("range1_mvar"), py::arg("range2_mvar"),
              "The same as `set_gen_reactive_range_max` for the converter stations, one value per hvdc "
-             "line on each side (NaN for the range at its active power). Copied with the grid, not serialized.")
+             "line on each side (NaN for the range at its active power). Copied with the grid and serialized.")
         .def("get_station_reactive_range_max", &LSGrid::get_station_reactive_range_max, py::arg("side"))
         .def("set_gen_raw_target_q", &LSGrid::set_gen_raw_target_q, py::arg("q_mvar"),
              "OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target Q "
              "(MVar) before it was clamped into its limits at its target P (NaN: none). A non-regulating "
              "generator whose target P an outer loop moved injects it clamped into its limits at the new "
-             "P. Copied with the grid, not serialized.")
+             "P. Copied with the grid and serialized.")
         .def("get_gen_raw_target_q", &LSGrid::get_gen_raw_target_q)
         .def("set_gen_capability_curves", &LSGrid::set_gen_capability_curves,
              py::arg("gen_id"), py::arg("p_mw"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
@@ -371,7 +371,7 @@ void bind_gridmodel(py::module_& m) {
              "P in MW, min and max Q in MVar), read where a generator's limits must follow a target "
              "P an outer loop moved (the ReactiveLimits loop, the results), as OpenLoadFlow reads "
              "them: interpolated, extrapolated past the ends, crossed limits being their mean. "
-             "Copied with the grid, not serialized.")
+             "Copied with the grid and serialized.")
         .def("gen_limits_at", [](const LSGrid & self, int gen_id, real_type p_mw) -> py::tuple {
                  real_type lo, hi;
                  if(!self.gen_limits_at(gen_id, p_mw, lo, hi)) return py::make_tuple(py::none(), py::none());

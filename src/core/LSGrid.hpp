@@ -120,7 +120,24 @@ class LS2G_API LSGrid final
                 std::vector<std::vector<int> >,  // outer loop int params
                 std::vector<std::vector<double> >,  // outer loop real params
                 std::vector<int>,  // driver: max_outer_iterations, robust mode
-                std::vector<double>  // driver: min / max realistic voltage, min nominal voltage checked
+                std::vector<double>,  // driver: min / max realistic voltage, min nominal voltage checked
+                // the grid-level settings copy() keeps (appended), without which a grid read
+                // back solves differently: keep_vinit_at_group_controlled_buses,
+                // hold_frozen_regulators, dc_distribute_slack_on_can_participate,
+                // reactive_dispatch_olf (0 / 1), then the reference slack bus (-1: none)
+                std::vector<int>,
+                // OpenLoadFlow's reactive data (empty: none): set_gen_reactive_range_max,
+                // set_station_reactive_range_max (side 1, side 2), set_gen_raw_target_q
+                std::vector<double>,
+                std::vector<double>,
+                std::vector<double>,
+                std::vector<double>,
+                // the capability curves, one entry per point (set_gen_capability_curves):
+                // generator id, p (MW), min q, max q (MVar)
+                std::vector<int>,
+                std::vector<double>,
+                std::vector<double>,
+                std::vector<double>
                 >;
 
         // named indices into the StateRes tuple above (get_state()/set_state()
@@ -155,6 +172,15 @@ class LS2G_API LSGrid final
         static const std::size_t OUTER_LOOP_REAL_PARAMS_ID = 26;
         static const std::size_t OUTER_DRIVER_INT_PARAMS_ID = 27;
         static const std::size_t OUTER_DRIVER_REAL_PARAMS_ID = 28;
+        static const std::size_t GRID_SETTINGS_ID = 29;
+        static const std::size_t GEN_REACTIVE_RANGE_MAX_ID = 30;
+        static const std::size_t STATION_REACTIVE_RANGE_MAX1_ID = 31;
+        static const std::size_t STATION_REACTIVE_RANGE_MAX2_ID = 32;
+        static const std::size_t GEN_RAW_TARGET_Q_ID = 33;
+        static const std::size_t GEN_CURVE_GEN_ID_ID = 34;
+        static const std::size_t GEN_CURVE_P_ID = 35;
+        static const std::size_t GEN_CURVE_MIN_Q_ID = 36;
+        static const std::size_t GEN_CURVE_MAX_Q_ID = 37;
 
         LSGrid():
           timer_last_ac_pf_(0.),
@@ -503,7 +529,7 @@ class LS2G_API LSGrid final
          * would ever move them.
          *
          * Copied with the grid, so a batch algorithm built from this grid inherits it;
-         * not part of `get_state` / the binary format.
+         * part of `get_state` / the binary format.
          */
         void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
         [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
@@ -530,7 +556,7 @@ class LS2G_API LSGrid final
          * group's, a group holding an SVC -- is left out (PQ as before), never an error.
          * Its regulated bus, though, becomes a group-controlled bus like the target of an
          * active remote regulator would. Off by default; copied with the grid, so a
-         * batch algorithm built from this grid inherits it; not part of `get_state` / the
+         * batch algorithm built from this grid inherits it; part of `get_state` / the
          * binary format.
          */
         /**
@@ -541,7 +567,7 @@ class LS2G_API LSGrid final
          * one is plausible, else equally; a unit pushed past a limit stays there and the
          * excess is shared again among the others, and nothing is shared below
          * OpenLoadFlow's Q_DISPATCH_EPSILON. Results only (nothing a powerflow solves
-         * changes), off by default; copied with the grid, not part of `get_state` / the
+         * changes), off by default; copied with the grid, part of `get_state` / the
          * binary format.
          */
         void set_reactive_dispatch_olf(bool val) { reactive_dispatch_olf_ = val; }
@@ -550,7 +576,7 @@ class LS2G_API LSGrid final
          * The widest reactive range of each generator (MVar, over its whole capability
          * curve, OpenLoadFlow's reactiveRangeCheckMode MAX), what set_reactive_dispatch_olf
          * shares by; NaN (or an empty vector) for its range at its target P. Copied with the
-         * grid, not part of `get_state` / the binary format.
+         * grid, part of `get_state` / the binary format.
          */
         void set_gen_reactive_range_max(const Eigen::Ref<const RealVect> & range_mvar) {
             if(range_mvar.size() != 0 && range_mvar.size() != static_cast<Eigen::Index>(generators_.nb())){
@@ -582,7 +608,7 @@ class LS2G_API LSGrid final
          * target P an outer loop moved (the ReactiveLimits loop, the results), as
          * OpenLoadFlow reads them: interpolated inside the curve, extrapolated past its
          * ends, crossed extrapolated limits being their mean. A generator without one keeps
-         * its fixed limits. Empty vectors: none. Copied with the grid, not part of
+         * its fixed limits. Empty vectors: none. Copied with the grid, part of
          * `get_state` / the binary format.
          */
         void set_gen_capability_curves(const Eigen::Ref<const Eigen::VectorXi> & gen_id,
@@ -596,7 +622,7 @@ class LS2G_API LSGrid final
          * Q (MVar) before it was clamped into its limits at its target P, NaN where none was
          * (an empty vector: none). A generator that does not regulate and whose target P an
          * outer loop moved (DistributedSlack) injects it clamped into its limits at the new P,
-         * as LfGeneratorImpl.getTargetQ does. Copied with the grid, not serialized.
+         * as LfGeneratorImpl.getTargetQ does. Copied with the grid, serialized.
          */
         void set_gen_raw_target_q(const Eigen::Ref<const RealVect> & q_mvar) {
             if(q_mvar.size() != 0 && q_mvar.size() != static_cast<Eigen::Index>(generators_.nb())){

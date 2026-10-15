@@ -249,6 +249,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   OpenLoadFlow (or of ``olf_parameters``), read by ``olf_outer_loops``; elsewhere OpenLoadFlow's own defaults.
 - [ADDED] ``LSGrid.set_outer_loop_driver_params``: the driver's parameters are the grid's; its loops and
   driver parameters survive a copy, a pickle and ``save_binary``.
+- [FIXED] ``save_binary`` / pickle dropped grid settings the outer loops read (capability curves,
+  OpenLoadFlow's reactive data, the reference slack bus, a few flags): a grid read back solved to
+  another state. Binary format 22.
 - [FIXED] ``init_from_pypowsybl``: a battery with a capability curve was left without reactive limits (the
   curve at target P was not read); with ``olf_rules`` the curve is extrapolated as OpenLoadFlow's.
 - [FIXED] ``consider_only_main_component`` keeps the largest component, as OpenLoadFlow, not the slack's;

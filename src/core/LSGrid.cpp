@@ -199,6 +199,28 @@ LSGrid::StateRes LSGrid::get_state() const
                                                     static_cast<double>(driver.max_realistic_voltage),
                                                     static_cast<double>(driver.min_nominal_voltage_realistic_check)};
 
+    // the grid-level settings copy() keeps: a grid read back must solve as this one does
+    std::vector<int> grid_settings = {keep_vinit_group_controlled_ ? 1 : 0,
+                                      hold_frozen_regulators_ ? 1 : 0,
+                                      dc_slack_on_can_participate_ ? 1 : 0,
+                                      reactive_dispatch_olf_ ? 1 : 0,
+                                      _forced_ref_slack_bus_id};
+    const auto to_std = [](const RealVect & vect) {
+        std::vector<double> res_(static_cast<std::size_t>(vect.size()));
+        for (Eigen::Index i = 0; i < vect.size(); ++i) res_[static_cast<std::size_t>(i)] = static_cast<double>(vect(i));
+        return res_;
+    };
+    std::vector<int> curve_gen_id;
+    std::vector<double> curve_p, curve_min_q, curve_max_q;
+    for (std::size_t gen_id = 0; gen_id < gen_curves_.size(); ++gen_id) {
+        for (const auto & point : gen_curves_[gen_id]) {
+            curve_gen_id.push_back(static_cast<int>(gen_id));
+            curve_p.push_back(static_cast<double>(point[0]));
+            curve_min_q.push_back(static_cast<double>(point[1]));
+            curve_max_q.push_back(static_cast<double>(point[2]));
+        }
+    }
+
     LSGrid::StateRes res(version_major,
                             version_medium,
                             version_minor,
@@ -227,7 +249,16 @@ LSGrid::StateRes LSGrid::get_state() const
                             outer_loop_int_params,
                             outer_loop_real_params,
                             outer_driver_int_params,
-                            outer_driver_real_params
+                            outer_driver_real_params,
+                            grid_settings,
+                            to_std(gen_reactive_range_max_),
+                            to_std(station_reactive_range_max1_),
+                            to_std(station_reactive_range_max2_),
+                            to_std(gen_raw_target_q_),
+                            curve_gen_id,
+                            curve_p,
+                            curve_min_q,
+                            curve_max_q
                             );
     return res;
 };
@@ -402,6 +433,42 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
         } else {
             clear_outer_loops();
             for (const auto & loop : loops) add_outer_loop(loop);
+        }
+    }
+
+    // the grid-level settings copy() keeps, through their setters (which check the sizes and
+    // the reference bus against the grid restored above)
+    {
+        const std::vector<int> & settings = std::get<GRID_SETTINGS_ID>(my_state);
+        if (settings.size() != 5) {
+            throw std::runtime_error("LSGrid::set_state: the serialized grid settings are inconsistent "
+                                     "(expected 4 flags and the reference slack bus).");
+        }
+        set_keep_vinit_at_group_controlled_buses(settings[0] != 0);
+        set_hold_frozen_regulators(settings[1] != 0);
+        set_dc_distribute_slack_on_can_participate(settings[2] != 0);
+        set_reactive_dispatch_olf(settings[3] != 0);
+        set_reference_slack_bus(settings[4]);
+
+        const auto to_eigen = [](const std::vector<double> & vect) {
+            RealVect res_(static_cast<Eigen::Index>(vect.size()));
+            for (std::size_t i = 0; i < vect.size(); ++i) res_(static_cast<Eigen::Index>(i)) = static_cast<real_type>(vect[i]);
+            return res_;
+        };
+        set_gen_reactive_range_max(to_eigen(std::get<GEN_REACTIVE_RANGE_MAX_ID>(my_state)));
+        set_station_reactive_range_max(to_eigen(std::get<STATION_REACTIVE_RANGE_MAX1_ID>(my_state)),
+                                       to_eigen(std::get<STATION_REACTIVE_RANGE_MAX2_ID>(my_state)));
+        set_gen_raw_target_q(to_eigen(std::get<GEN_RAW_TARGET_Q_ID>(my_state)));
+
+        const std::vector<int> & curve_gen_id = std::get<GEN_CURVE_GEN_ID_ID>(my_state);
+        gen_curves_.clear();
+        if (!curve_gen_id.empty() || !std::get<GEN_CURVE_P_ID>(my_state).empty() ||
+            !std::get<GEN_CURVE_MIN_Q_ID>(my_state).empty() || !std::get<GEN_CURVE_MAX_Q_ID>(my_state).empty()) {
+            // saved sorted by generator then by p: the setter's stable sort keeps that order
+            set_gen_capability_curves(Eigen::Map<const Eigen::VectorXi>(curve_gen_id.data(), static_cast<Eigen::Index>(curve_gen_id.size())),
+                                      to_eigen(std::get<GEN_CURVE_P_ID>(my_state)),
+                                      to_eigen(std::get<GEN_CURVE_MIN_Q_ID>(my_state)),
+                                      to_eigen(std::get<GEN_CURVE_MAX_Q_ID>(my_state)));
         }
     }
 
