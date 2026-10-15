@@ -537,7 +537,8 @@ class ScenarioSweep:
         ``modify_*`` / ``set_contingency_*`` setters. Raises if nothing was ever set.
 
         ``max_iter`` / ``tol`` default to the backend's own values
-        (``self.grid2op_env.backend.max_it`` / ``.tol``) when not given.
+        (``self.grid2op_env.backend.max_it`` / ``.tol``) when not given. ``tol`` is in MVA
+        (not in per unit), as for :attr:`lightsim2grid.lightSimBackend.LightSimBackend.tol`.
         """
         if v_init is None:
             v_init_comp = self.grid2op_env.backend.V

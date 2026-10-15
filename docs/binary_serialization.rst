@@ -119,7 +119,7 @@ Benchmarks
 
 Here are some benchmarks made with:
 
-- date: 2026-09-21 10:06  CEST
+- date: 2026-10-12 19:55  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
@@ -127,10 +127,8 @@ Here are some benchmarks made with:
 - numpy version: 2.4.6
 - pandas version: 2.3.3
 - pandapower version: 3.5.4
-- pypowsybl version: 1.16.1
-- pypowsybl2grid version: 0.3.1
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.1.0
+- lightsim2grid version: 1.2.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -154,12 +152,12 @@ A first, direct comparison on a single mid-sized grid (the same fixture used by 
 =========================================  ================  ===================  ===========
 l2rpn_idf_2023 (20 repeats)                  time (ms/call)  speedup vs pickle    file size
 =========================================  ================  ===================  ===========
-save_binary (write)                                   0.374  1.2x                 33166 bytes
-load_binary (read)                                    0.301  0.9x                 -
-pickle.dump (write)                                   0.44   1.0x (reference)     34281 bytes
-pickle.load (read)                                    0.266  1.0x (reference)     -
-init_from_pandapower (case118, reference)             1.342  -                    -
-init_from_pypowsybl (ieee118, reference)             26.091  -                    -
+save_binary (write)                                   0.421  1.2x                 34444 bytes
+load_binary (read)                                    0.337  1.3x                 -
+pickle.dump (write)                                   0.487  1.0x (reference)     35639 bytes
+pickle.load (read)                                    0.448  1.0x (reference)     -
+init_from_pandapower (case118, reference)             1.362  -                    -
+init_from_pypowsybl (ieee118, reference)             26.892  -                    -
 =========================================  ================  ===================  ===========
 
 The "speedup vs pickle" column above is now computed and printed directly by
@@ -183,26 +181,26 @@ this is the "no snapshot at all" baseline:
 ================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ======================================  ========================================
 grid                nb bus    save_binary (ms)    pickle.dump (ms)  write speedup      load_binary (ms)    pickle.load (ms)  read speedup      binary size (B)    pickle size (B)    pandapower json size (B)    read pandapower file (ms, reference)  load_binary speedup vs pandapower file
 ================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ======================================  ========================================
-case14                  14               0.266               0.259  1.0x                          0.16                0.168  1.1x                         3986               3414                       69741                                  282.13  1760.6x
-case118                118               0.316               0.302  1.0x                          0.186               0.24   1.3x                        23120              24198                      108962                                  293.86  1582.9x
-case_illinois200       200               0.374               0.404  1.1x                          0.171               0.412  2.4x                        29492              30832                      127041                                  284.27  1658.6x
-case300                300               0.299               0.488  1.6x                          0.199               0.36   1.8x                        49740              52502                      161723                                  287.86  1446.2x
-case1354pegase        1354               1.861               1.895  1.0x                          0.328               1.317  4.0x                       225494             251702                      514421                                  309.78  945.2x
-case1888rte           1888               0.445               4.665  10.5x                         0.446               1.349  3.0x                       266140             298657                      656133                                  302.29  677.9x
-case2848rte           2848               0.462               5.529  12.0x                         0.551               1.998  3.6x                       399687             450352                      951381                                  313.36  569.2x
-case2869pegase        2869               0.524               3.898  7.4x                          0.563               2.51   4.5x                       499129             562920                     1061979                                  327.72  581.9x
-case3120sp            3120               0.481               3.133  6.5x                          0.457               1.881  4.1x                       377311             430711                      961372                                  326.01  713.3x
-case6495rte           6495               0.688               7.155  10.4x                         1.053               4.535  4.3x                       927521            1053991                     2140446                                  363.44  345.1x
-case6515rte           6515               0.736               9.492  12.9x                         1.175               4.572  3.9x                       930353            1056998                     2170208                                  355.16  302.4x
-case9241pegase        9241               1.14               19.004  16.7x                         1.819               9.398  5.2x                      1704530            1928651                     3458084                                  403.89  222.1x
+case14                  14               0.447               0.356  0.8x                          0.268               0.202  0.8x                         4173               3549                       69741                                  298.53  1112.5x
+case118                118               0.283               0.321  1.1x                          0.158               0.243  1.5x                        24140              25264                      108962                                  297.09  1876.8x
+case_illinois200       200               0.349               0.376  1.1x                          0.216               0.341  1.6x                        30240              31594                      127041                                  288.33  1333.4x
+case300                300               0.364               0.513  1.4x                          0.214               0.386  1.8x                        51015              53853                      161723                                  288.39  1346.8x
+case1354pegase        1354               0.411               1.844  4.5x                          0.541               1.2    2.2x                       230016             256682                      514421                                  312.01  576.8x
+case1888rte           1888               0.425               2.331  5.5x                          0.484               1.562  3.2x                       270866             303865                      656133                                  322.06  665.0x
+case2848rte           2848               0.469               3.501  7.5x                          0.617               2.262  3.7x                       406079             457422                      951381                                  327.78  531.3x
+case2869pegase        2869               0.637               4.021  6.3x                          0.586               2.609  4.5x                       507901             572650                     1061979                                  335.8   573.2x
+case3120sp            3120               0.788               3.008  3.8x                          0.465               1.951  4.2x                       381629             435463                      961372                                  334.31  718.8x
+case6495rte           6495               0.719              10.046  14.0x                         1.199               4.618  3.9x                       936004            1063398                     2140446                                  370.48  308.9x
+case6515rte           6515               0.819               9.83   12.0x                         1.281               4.488  3.5x                       938836            1066405                     2170208                                  371.06  289.7x
+case9241pegase        9241               1.138              15.665  13.8x                         1.641               8.987  5.5x                      1729197            1956152                     3458084                                  419.07  255.4x
 ================  ========  ==================  ==================  ===============  ==================  ==================  ==============  =================  =================  ==========================  ======================================  ========================================
 
 Two things stand out:
 
 - The speedup of ``save_binary`` / ``load_binary`` over pickle **grows with grid size**: at small grids
   (``case14``) the two formats are roughly on par (pickle's fixed per-call overhead dominates), but at
-  ``case9241pegase`` (~9200 buses) ``save_binary`` is **17x** faster to write and ``load_binary`` is
-  **8.4x** faster to read than pickle, and the binary file is consistently 10-15% smaller.
+  ``case9241pegase`` (~9200 buses) ``save_binary`` is **14x** faster to write and ``load_binary`` is
+  **9x** faster to read than pickle, and the binary file is consistently 10-15% smaller.
 - Reading the original pandapower json **file** (``pp.from_json`` + conversion) has a large, roughly
   constant overhead (~300-440 ms) essentially independent of grid size, dominated by pandapower's own
   json (de)serialization rather than by the (fast) lightsim2grid conversion itself. This makes

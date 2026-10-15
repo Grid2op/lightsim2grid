@@ -221,7 +221,18 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
-[1.1.1] 2026-xx-yy
+[1.3.0] 2026-xx-xx
+--------------------
+- [BREAKING] ``compute_pf`` / ``solve`` of the algorithms (*eg* ``NR_KLU().solve(...)``) take
+  named arguments, and their tolerance is ``tol_pu``: in per unit, unlike the ``tol`` (in MVA)
+  of ``LSGrid.ac_pf`` and the batch algorithms.
+- [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
+  algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
+- [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
+  case: they accepted points ``sn_mva`` times less converged than asked.
+
+
+[1.2.0] 2026-10-12
 --------------------
 - [ADDED] ``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot``, ``NROuter_KLUStaticPivot``: KLU with a
   static-pivot refactorization (Gilbert & Peierls 1988, https://doi.org/10.1137/0909058; KLU,
@@ -367,6 +378,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid2op backend and ``init_from_pypowsybl`` do.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
   ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
+- [BREAKING] ``LSGrid.get_Ybus_solver()`` / ``get_dcYbus_solver()`` return a read-only view of the
+  grid's matrix, not a copy, valid until a powerflow rebuilds it. Use ``.copy()`` to keep it or
+  to pass it to an algorithm's ``compute_pf``.
 - [ADDED] Batch classes: ``compute_branch_results()``, P and Q at both ends of every branch per
   row, ``(nb_rows, nb_branch, 4)``; ``get_row_solve_times()`` / ``get_row_nb_iter()``.
 - [IMPROVED] The ``init_from_*`` loaders select ``NR_KLU`` / ``DC_KLU`` when KLU is compiled in
@@ -547,6 +561,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] ``ScenarioSweep.redistribute_slack`` also shares, before each row's powerflow, the
   active imbalance its ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` create against
   the grid's own targets.
+- [IMPROVED] ``LSGrid.get_Ybus()``, ``get_dcYbus()`` and ``get_Bf()`` relabel the solver matrix in
+  one pass instead of sorting it again: several times faster on large grids.
+- [IMPROVED] The sparse matrices a getter builds (``get_Ybus``, ``get_dcYbus``, ``get_Bf``,
+  ``get_Bf_solver``, the batch ``get_Ybus(row)`` / ``get_dcYbus(row)``) reach python without a copy.
 
 
 [1.1.0] 2026-09-21
