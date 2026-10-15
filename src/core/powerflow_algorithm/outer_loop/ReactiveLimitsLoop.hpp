@@ -14,6 +14,10 @@
 #include "BaseOuterLoop.hpp"
 #include "batch_algorithm/BusQCheck.hpp"
 
+// ReactiveLimitsLoop::frozen_buses, VoltageMonitoringLoop::switched_on and
+// HvdcAcEmulationLimitsLoop::regimes: the loops' state, read off a resume point
+#define LS2G_HAS_OUTER_LOOP_STATE_ACCESSORS 1
+
 namespace ls2g {
 
 class LSGrid;
@@ -79,6 +83,22 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         ReactiveLimitsLoop();
         explicit ReactiveLimitsLoop(const Params & params);
         const Params & params() const { return params_; }
+
+        /// One controller bus the last solve left frozen: what a solve resuming from this
+        /// loop's state freezes again (see _initialize).
+        struct FrozenBus {
+            int bus_solver;
+            int state;          ///< -1 at its min, +1 at its max
+            bool realistic;     ///< frozen by the robust mode, at its target Q
+        };
+        /// read by an external batch solver resuming rows from this loop's state
+        /// (gpusim2grid's outer loops)
+        std::vector<FrozenBus> frozen_buses() const {
+            std::vector<FrozenBus> res;
+            for (const ControllerBus & bus : buses_)
+                if (bus.state != 0) res.push_back(FrozenBus{bus.bus_solver, bus.state, bus.realistic});
+            return res;
+        }
 
     protected:
         std::string _name() const override { return "ReactiveLimits"; }
