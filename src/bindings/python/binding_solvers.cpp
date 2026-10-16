@@ -221,6 +221,53 @@ void bind_solvers(py::module_& m) {
             return out.str();
         });
 
+    // where the outer loops' continuous controls sit in J (OuterControlLayout), read-only
+    py::class_<OuterControlLayout::Branch>(m, "OuterControlLayoutBranch",
+        "A transformer the outer loops' BranchControl handles: its grid id, solver buses and the J "
+        "rows / columns it owns (-1 where none)")
+        .def_readonly("trafo", &OuterControlLayout::Branch::trafo)
+        .def_readonly("phase", &OuterControlLayout::Branch::phase)
+        .def_readonly("shift_column", &OuterControlLayout::Branch::shift_column)
+        .def_readonly("ratio", &OuterControlLayout::Branch::ratio)
+        .def_readonly("ratio_column", &OuterControlLayout::Branch::ratio_column)
+        .def_readonly("bus1_solver", &OuterControlLayout::Branch::bus1_solver)
+        .def_readonly("bus2_solver", &OuterControlLayout::Branch::bus2_solver)
+        .def_readonly("shift_col", &OuterControlLayout::Branch::shift_col)
+        .def_readonly("shift_row", &OuterControlLayout::Branch::shift_row)
+        .def_readonly("ratio_col", &OuterControlLayout::Branch::ratio_col);
+    py::class_<OuterControlLayout::RatioGroup>(m, "OuterControlLayoutRatioGroup",
+        "The transformers of a solved ratio group: indices into `branches`, the regulated bus' Vm "
+        "column and one J row per member")
+        .def_readonly("bus_solver", &OuterControlLayout::RatioGroup::bus_solver)
+        .def_readonly("target_vm", &OuterControlLayout::RatioGroup::target_vm)
+        .def_readonly("members", &OuterControlLayout::RatioGroup::members)
+        .def_readonly("vm_col", &OuterControlLayout::RatioGroup::vm_col)
+        .def_readonly("rows", &OuterControlLayout::RatioGroup::rows);
+    py::class_<OuterControlLayout::Shunt>(m, "OuterControlLayoutShunt",
+        "A shunt controller of the outer loops' ShuntControl (the regulating shunts of one bus): "
+        "its susceptance column and its bus' Q row (-1 where none)")
+        .def_readonly("bus_solver", &OuterControlLayout::Shunt::bus_solver)
+        .def_readonly("shunts", &OuterControlLayout::Shunt::shunts)
+        .def_readonly("column", &OuterControlLayout::Shunt::column)
+        .def_readonly("col", &OuterControlLayout::Shunt::col)
+        .def_readonly("q_row", &OuterControlLayout::Shunt::q_row);
+    py::class_<OuterControlLayout::ShuntGroup>(m, "OuterControlLayoutShuntGroup",
+        "The shunt controllers of a solved group: indices into `shunts`, the regulated bus' Vm "
+        "column and one J row per member")
+        .def_readonly("bus_solver", &OuterControlLayout::ShuntGroup::bus_solver)
+        .def_readonly("target_vm", &OuterControlLayout::ShuntGroup::target_vm)
+        .def_readonly("members", &OuterControlLayout::ShuntGroup::members)
+        .def_readonly("vm_col", &OuterControlLayout::ShuntGroup::vm_col)
+        .def_readonly("rows", &OuterControlLayout::ShuntGroup::rows);
+    py::class_<OuterControlLayout>(m, "OuterControlLayout",
+        "Where the outer loops' continuous controls (phase shifters, ratio groups, shunt "
+        "controllers) sit in the Newton's system the last rebuild built: J rows and columns, solver "
+        "bus ids. For whoever reproduces that system elsewhere.")
+        .def_readonly("branches", &OuterControlLayout::branches)
+        .def_readonly("ratio_groups", &OuterControlLayout::ratio_groups)
+        .def_readonly("shunts", &OuterControlLayout::shunts)
+        .def_readonly("shunt_groups", &OuterControlLayout::shunt_groups);
+
     py::class_<OuterLoopStats>(m, "OuterLoopStats", DocSolver::OuterLoopStats.c_str())
         .def_readonly("status", &OuterLoopStats::status)
         .def_readonly("failed_loop", &OuterLoopStats::failed_loop)
@@ -702,6 +749,9 @@ void bind_solvers(py::module_& m) {
         .def("supports_outer_loops", &AlgorithmSelector::supports_outer_loops,
             "Whether the active algorithm runs outer loops (the NROuter_* family)")
         .def("get_outer_loop_stats", &AlgorithmSelector::get_outer_loop_stats, DocSolver::OuterLoopStats.c_str())
+        .def("get_outer_control_layout", &AlgorithmSelector::get_outer_control_layout,
+            "Where the outer loops' continuous controls sit in J (OuterControlLayout), as the last "
+            "rebuild of the system left them; empty without outer loops or without such controls")
         .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference_internal, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference_internal, DocLSGrid::_internal_do_not_use.c_str());
 }

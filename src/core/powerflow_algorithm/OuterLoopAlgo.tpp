@@ -72,6 +72,16 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     injections_.gen_target_p.clear();
     injections_.storage_target_p.clear();
     inner_.controls().reset_states();
+    // a controlled transformer the solve does not have (a batch row's contingency, or one the
+    // grid opened since the controls were built) holds nothing in Ybus: nothing of it may be
+    // patched in this solve, a tap carried from another solve included
+    if (lsgrid_ptr_ != nullptr) {
+        const OuterGridView view(*lsgrid_ptr_, row_);
+        inner_.drop_out_of_row([&view](int trafo, int b1, int b2) {
+            int bus1 = -1, bus2 = -1;
+            return view.trafo_closed(trafo, bus1, bus2) && bus1 == b1 && bus2 == b2;
+        });
+    }
     // a resumed solve (a time series' next step, a batch row from its "n" solve) starts from
     // where that solve left the loops; any other from the grid
     const bool resume = from != nullptr ||

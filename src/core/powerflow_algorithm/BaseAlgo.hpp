@@ -28,6 +28,7 @@
 #include "linear_solvers/LinearSolverStats.hpp"
 #include "outer_loop/BaseOuterLoop.hpp"
 #include "outer_loop/OuterLoopDriver.hpp"
+#include "outer_loop/OuterControlLayout.hpp"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -650,6 +651,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         /// where the last solve's outer loops ended, for other solves to resume from (see
         /// OuterRowView::resume_from); null when it did not converge, or without outer loops
         virtual std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const { return nullptr; }
+        /// where the outer loops' continuous controls (phase shifters, ratio groups, shunt
+        /// controllers) sit in the system the last rebuild built, see OuterControlLayout;
+        /// empty without outer loops, or with none of those controls
+        virtual OuterControlLayout get_outer_control_layout() const { return OuterControlLayout(); }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

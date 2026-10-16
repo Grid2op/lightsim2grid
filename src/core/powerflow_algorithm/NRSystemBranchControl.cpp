@@ -106,6 +106,22 @@ void BranchControl::_reset(Entry & e)
     const TapChangers & ptc = trafos.get_tap_changers(true);
     const TapChangers & rtc = trafos.get_tap_changers(false);
     const TrafoInfo info = trafos[e.trafo];
+    // The entries are those of the last rebuild, but Ybus may be a new one: update_state runs
+    // before the rebuild a change of its pattern triggers (NRAlgo::setup). Look the positions
+    // up again; a transformer the grid opened since holds nothing there (its block is 0), so
+    // it is out of this solve rather than patched back in from nothing.
+    e.out = false;
+    if (ybus_ != nullptr) {
+        e.k11 = ybus_position(*ybus_, e.b1, e.b1);
+        e.k12 = ybus_position(*ybus_, e.b1, e.b2);
+        e.k21 = ybus_position(*ybus_, e.b2, e.b1);
+        e.k22 = ybus_position(*ybus_, e.b2, e.b2);
+    }
+    const SolverBusIdVect & to_solver = lsgrid_->id_me_to_ac_solver();
+    const bool closed = trafos.get_status_global()[e.trafo] && trafos.get_status_side_1()[e.trafo] &&
+                        trafos.get_status_side_2()[e.trafo] &&
+                        to_solver[trafos.get_bus_side_1(e.trafo).cast_int()].cast_int() == e.b1 &&
+                        to_solver[trafos.get_bus_side_2(e.trafo).cast_int()].cast_int() == e.b2;
     e.sign = trafos.shift_sign(e.trafo);
     e.rexp = trafos.ratio_exponent(e.trafo);
     e.control_on = false;
@@ -121,9 +137,41 @@ void BranchControl::_reset(Entry & e)
     e.rho = e.rho_tap;
     e.rho_target = e.rho_tap;
     e.tap = trafos.pi_block_at(e.trafo, e.rpos, e.pos, e.a_tap);
+    if (!closed || e.k11 < 0 || e.k12 < 0 || e.k21 < 0 || e.k22 < 0) {
+        e.out = true;
+        e.control_on = false;
+        e.r_control_on = false;
+        e.applied = {cplx_type(0.), cplx_type(0.), cplx_type(0.), cplx_type(0.)};
+        return;
+    }
     // Ybus holds what the container stamped (a fresh copy of the grid's, see OuterLoopAlgo)
     e.applied = {info.yac_eff_11, info.yac_eff_12, info.yac_eff_21, info.yac_eff_22};
     _patch(e);
+}
+
+void BranchControl::drop_out_of_row(const std::function<bool(int, int, int)> & in_row)
+{
+    if (lsgrid_ == nullptr) return;
+    const TrafoContainer & trafos = lsgrid_->get_trafos();
+    for (Entry & e : entries_) {
+        if (e.out || in_row(e.trafo, e.b1, e.b2)) continue;
+        // The solve's Ybus does not hold the transformer (a batch row took its block out, or
+        // the grid opened it without a rebuild of these entries), but _reset took it for the
+        // container's block and patched from there: undo that, so nothing of it is stamped
+        const TrafoInfo info = trafos[e.trafo];
+        const std::array<cplx_type, 4> stamped = {info.yac_eff_11, info.yac_eff_12, info.yac_eff_21, info.yac_eff_22};
+        if (ybus_ != nullptr) {
+            cplx_type * values = ybus_->valuePtr();
+            values[e.k11] -= e.applied[0] - stamped[0];
+            values[e.k12] -= e.applied[1] - stamped[1];
+            values[e.k21] -= e.applied[2] - stamped[2];
+            values[e.k22] -= e.applied[3] - stamped[3];
+        }
+        e.out = true;
+        e.control_on = false;
+        e.r_control_on = false;
+        e.applied = {cplx_type(0.), cplx_type(0.), cplx_type(0.), cplx_type(0.)};
+    }
 }
 
 void BranchControl::_retap(Entry & e, int rpos, int pos)
@@ -144,6 +192,7 @@ void BranchControl::_retap(Entry & e, int rpos, int pos)
 
 void BranchControl::_patch(Entry & e)
 {
+    if (e.out) return;  // nothing stamped, nothing to move (see drop_out_of_row)
     const std::array<cplx_type, 4> block = _block_at(e, e.a, e.rho);
     if (ybus_ != nullptr) {
         cplx_type * values = ybus_->valuePtr();
@@ -395,6 +444,7 @@ void BranchControl::set_control_on(int trafo_id, bool on)
     const int k = _index(trafo_id);
     if (k < 0) return;
     Entry & e = entries_[static_cast<std::size_t>(k)];
+    if (e.out) return;
     if (!e.column) return;
     e.control_on = on;
     if (!on) e.a_target = e.a;
@@ -405,6 +455,7 @@ void BranchControl::set_ratio_control_on(int trafo_id, bool on)
     const int k = _index(trafo_id);
     if (k < 0) return;
     Entry & e = entries_[static_cast<std::size_t>(k)];
+    if (e.out) return;
     if (!e.r_column) return;
     e.r_control_on = on;
     if (!on) e.rho_target = e.rho;
@@ -415,6 +466,7 @@ void BranchControl::set_tap(int trafo_id, int position)
     const int k = _index(trafo_id);
     if (k < 0 || lsgrid_ == nullptr) return;
     Entry & e = entries_[static_cast<std::size_t>(k)];
+    if (e.out) return;
     const TapChangers & ptc = lsgrid_->get_trafos().get_tap_changers(true);
     if (!e.phase || !ptc.has(trafo_id) || position < ptc.low_tap(trafo_id) || position > ptc.high_tap(trafo_id)) return;
     if (position == e.pos && e.a == e.a_tap && e.rho == e.rho_tap) return;
@@ -426,6 +478,7 @@ void BranchControl::set_ratio_tap(int trafo_id, int position)
     const int k = _index(trafo_id);
     if (k < 0 || lsgrid_ == nullptr) return;
     Entry & e = entries_[static_cast<std::size_t>(k)];
+    if (e.out) return;
     const TapChangers & rtc = lsgrid_->get_trafos().get_tap_changers(false);
     if (!e.ratio || !rtc.has(trafo_id) || position < rtc.low_tap(trafo_id) || position > rtc.high_tap(trafo_id)) return;
     if (position == e.rpos && e.a == e.a_tap && e.rho == e.rho_tap) return;
@@ -477,6 +530,34 @@ void BranchControl::ratio_positions(std::vector<int> & out) const
     out.assign(index_of_trafo_.size(), std::numeric_limits<int>::min());
     for (const Entry & e : entries_) {
         if (e.ratio) out[static_cast<std::size_t>(e.trafo)] = e.rpos;
+    }
+}
+
+void BranchControl::describe(OuterControlLayout & out) const
+{
+    const int first = static_cast<int>(out.branches.size());
+    for (const Entry & e : entries_) {
+        OuterControlLayout::Branch b;
+        b.trafo = e.trafo;
+        b.phase = e.phase;
+        b.shift_column = e.column;
+        b.ratio = e.ratio;
+        b.ratio_column = e.r_column;
+        b.bus1_solver = e.b1;
+        b.bus2_solver = e.b2;
+        b.shift_col = e.column ? e.col : -1;
+        b.shift_row = e.column ? e.row : -1;
+        b.ratio_col = e.r_column ? e.rcol : -1;
+        out.branches.push_back(b);
+    }
+    for (const RatioGroup & g : groups_) {
+        OuterControlLayout::RatioGroup d;
+        d.bus_solver = g.bus;
+        d.target_vm = g.target;
+        for (int m : g.members) d.members.push_back(first + m);
+        d.vm_col = g.vm_col;
+        d.rows = g.rows;
+        out.ratio_groups.push_back(d);
     }
 }
 

@@ -232,6 +232,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   case: they accepted points ``sn_mva`` times less converged than asked.
 - [FIXED] ``DistributedSlack`` outer loop: skipped when only the slack bus' own units are flagged
   (as detection already was), instead of failing on the slack unit's P limits.
+- [FIXED] ``NROuter_*``: a solve after a regulating transformer was opened put its block back in
+  Ybus, at stale positions; a batch row tripping it, resumed from its "n" solve, kept part of it.
+- [FIXED] ``ShuntVoltageControl``: a batch row islanding a shunt controller
+  (``handle_disconnected_grid``) no longer switches it on and fails; the island's control does nothing.
+- [ADDED] ``get_algo().get_outer_control_layout()``: the J rows / columns of the phase shifters, ratio
+  groups and shunt controllers, for solvers that pose the same system (gpusim2grid).
 
 
 [1.2.0] 2026-10-12
