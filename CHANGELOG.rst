@@ -215,6 +215,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] ``propagate_contingencies(net, contingencies)`` (pypowsybl): adds to each contingency the
+  equipment powsybl trips with it on a node-breaker topology (everything up to the breakers).
+  ``group_equivalent_contingencies`` finds the ones ending in the same tripped set.
 - [BREAKING] ``compute_pf`` / ``solve`` of the algorithms (*eg* ``NR_KLU().solve(...)``) take
   named arguments, and their tolerance is ``tol_pu``: in per unit, unlike the ``tol`` (in MVA)
   of ``LSGrid.ac_pf`` and the batch algorithms.
