@@ -497,6 +497,51 @@ starts cold and rebuilds on its first powerflow. Unlike the serialization case t
 requirement -- a copy is the same grid, in the same process, so its cache would be perfectly valid
 -- and it may change in a future version. The ``allow_*_cache_reuse`` settings *are* copied.
 
+Propagating contingencies (pypowsybl)
+--------------------------------------
+
+On a node-breaker substation, tripping an element also takes down the equipment that stands
+between the same breakers. :func:`~lightsim2grid.network.propagate_contingencies` takes a
+pypowsybl network and contingencies given as lists of element names, and returns the same lists
+with that equipment added, following powsybl's rule (OpenLoadFlow's ``contingencyPropagation``):
+from each tripped terminal, walk the closed switches; a breaker stops the walk, a disconnector or
+a load-break switch does not, a busbar section is walked through, and any other equipment met is
+tripped.
+
+.. code-block:: python
+
+    from lightsim2grid.network import propagate_contingencies
+    propagate_contingencies(net, [["LINE_A"], ["GEN_B", "LOAD_C"]])
+
+Two contingencies can end in the same set of tripped equipment (the line, or the load on its
+feeder): :func:`~lightsim2grid.network.group_equivalent_contingencies` returns the distinct ones
+and, for each input, the position of its representative, so each is simulated once.
+
+For example, ``LINE_AB`` and ``LINE_BC`` meet at a junction with no breaker between them, as do
+``LINE_DE`` and ``LINE_DF``:
+
+.. code-block:: python
+
+    from lightsim2grid.network import propagate_contingencies, group_equivalent_contingencies
+
+    conts = [["LINE_AB"], ["LINE_BC"], ["LINE_DE"], ["LINE_DF"]]
+    propagated = propagate_contingencies(net, conts)
+    # [["LINE_AB", "LINE_BC"],   tripping LINE_AB also drops LINE_BC
+    #  ["LINE_BC", "LINE_AB"],   and the reverse
+    #  ["LINE_DE", "LINE_DF"],
+    #  ["LINE_DF", "LINE_DE"]]
+
+    unique, inverse = group_equivalent_contingencies(propagated)
+    # unique  = [["LINE_AB", "LINE_BC"], ["LINE_DE", "LINE_DF"]]
+    # inverse = [0, 0, 1, 1]
+
+Only ``unique`` needs simulating: the result of ``conts[i]`` is the one of ``unique[inverse[i]]``.
+The order inside a contingency does not matter, and each group is represented by its first
+contingency, in its original order.
+
+A bus-breaker voltage level has a breaker per terminal: nothing propagates there. A line tripped
+on one side only is listed by name, as a name cannot say which side.
+
 Detailed documentation
 --------------------------
 

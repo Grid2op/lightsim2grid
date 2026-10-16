@@ -17,6 +17,9 @@
 
 namespace ls2g {
 
+// out-of-class definition: the C++14 build odr-uses it (vector::assign takes a const reference)
+constexpr int OuterRowView::Units::GRID_BUS;
+
 const SolverBusLayout & OuterGridView::layout() const
 {
     return (row_ != nullptr && row_->layout != nullptr) ? *row_->layout : grid_.get_ac_layout();
