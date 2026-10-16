@@ -267,8 +267,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``get_physical_violations`` (grid and batches) reports a bus out of its reactive range, and a
   remote controller at an unrealistic voltage, with ``ReactiveLimits``' own test (OpenLoadFlow's tolerance,
   limits at the target P, robust mode by the loop's parameters).
-- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtuals ``set_outer_row_view()`` and
-  ``get_outer_resume_point()``, and ``set_outer_loops()`` takes the driver's parameters: plugins must be rebuilt.
+- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtuals ``set_outer_row_view()``,
+  ``get_outer_resume_point()`` and ``get_outer_control_layout()``, and ``set_outer_loops()`` takes the
+  driver's parameters: plugins must be rebuilt.
 - [ADDED] ``init_from_pypowsybl`` gives the grid the outer loops and driver parameters of the installed
   OpenLoadFlow (or of ``olf_parameters``), read by ``olf_outer_loops``; elsewhere OpenLoadFlow's own defaults.
 - [ADDED] ``LSGrid.set_outer_loop_driver_params``: the driver's parameters are the grid's; its loops and
