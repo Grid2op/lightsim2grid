@@ -236,6 +236,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   Ybus, at stale positions; a batch row tripping it, resumed from its "n" solve, kept part of it.
 - [FIXED] ``ShuntVoltageControl``: a batch row islanding a shunt controller
   (``handle_disconnected_grid``) no longer switches it on and fails; the island's control does nothing.
+- [FIXED] Current limit violations of a transformer whose taps the outer loops moved: checked at
+  those taps (batch rows and ``LSGrid.get_violations``), as its flows, not at the grid's.
 - [ADDED] ``get_algo().get_outer_control_layout()``: the J rows / columns of the phase shifters, ratio
   groups and shunt controllers, for solvers that pose the same system (gpusim2grid).
 
