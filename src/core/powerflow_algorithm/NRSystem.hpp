@@ -147,6 +147,7 @@ class LS2G_API Contrib final
 //                                   that switch form by value after the Vm columns
 //                                   that keep their pivot usable), read by a linear
 //                                   solver that orders with them; no-op for most.
+//                                   Optional: an extension without it declares nothing.
 //  - clear()                      : reset.
 
 /**
@@ -2331,10 +2332,18 @@ private:
 
     template <std::size_t... Is>
     void _declare_ordering_constraints_extensions(OrderingConstraints& out, std::index_sequence<Is...>) const {
-        int dummy[] = { 0, (std::get<Is>(extensions_).declare_ordering_constraints(out), 0)... };
+        int dummy[] = { 0, (_declare_ordering_constraints_of(std::get<Is>(extensions_), out, 0), 0)... };
         (void)dummy;
         (void)out;
     }
+    // optional in the protocol: an extension written before it declares nothing
+    template <class Component>
+    static auto _declare_ordering_constraints_of(const Component& component, OrderingConstraints& out, int)
+        -> decltype(component.declare_ordering_constraints(out), void()) {
+        component.declare_ordering_constraints(out);
+    }
+    template <class Component>
+    static void _declare_ordering_constraints_of(const Component&, OrderingConstraints&, long) {}
 
     template <std::size_t... Is>
     void _fill_feature_values_extensions(FeatureWriter& writer, std::index_sequence<Is...>) const {

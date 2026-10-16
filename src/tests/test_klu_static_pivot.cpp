@@ -30,6 +30,7 @@
 #include "linear_solvers/KLUSolver.hpp"
 #include "linear_solvers/KLUStaticPivotSolver.hpp"
 #include "linear_solvers/OrderingConstraints.hpp"
+#include "powerflow_algorithm/NRSystem.hpp"
 #endif
 
 #ifdef KLU_SOLVER_AVAILABLE
@@ -466,6 +467,40 @@ TEST_CASE("the policy forwards ordering constraints to a solver that takes them"
     REQUIRE(solver.factorize(q_form) == ErrorType::NoError);
     REQUIRE(solver.refactorize(with_switched_row(N, ctrl, true)) == ErrorType::NoError);
     CHECK(solver.get_linear_solver_stats().nb_refactorize_failed == 0);
+}
+
+namespace {
+// an NRSystem extension written against the component protocol as it stood before
+// declare_ordering_constraints: it has no rows switched by value, so nothing to declare
+class ExtensionWithoutOrderingConstraints
+{
+public:
+    void update_state(const ls2g::Base *, const ls2g::LSGrid *, const ls2g::EigenRefConstCplxSpMat &,
+                      const Eigen::Ref<const ls2g::CplxVect> &, const Eigen::Ref<const ls2g::RealVect> &) {}
+    void init_topology(const Eigen::Ref<const ls2g::IntVect> &, const Eigen::Ref<const ls2g::RealVect> &,
+                       const Eigen::Ref<const ls2g::IntVect> &, const Eigen::Ref<const ls2g::IntVect> &) {}
+    void register_in(ls2g::NRLedger &) {}
+    void declare_feature_entries(ls2g::FeatureSink &) {}
+    void fill_feature_values(ls2g::FeatureWriter &, const Eigen::Ref<const ls2g::RealVect> &) const {}
+    void adjust_mismatch(const Eigen::Ref<const ls2g::CplxVect> &, const Eigen::Ref<const ls2g::RealVect> &,
+                         Eigen::Ref<ls2g::CplxVect>) const {}
+    void fill_custom_rows(Eigen::Ref<ls2g::RealVect>, const Eigen::Ref<const ls2g::RealVect> &,
+                          const Eigen::Ref<const ls2g::RealVect> &, const Eigen::Ref<const ls2g::RealVect> &) const {}
+    void apply_step(const Eigen::Ref<const ls2g::RealVect> &) {}
+    void clear() {}
+};
+}  // namespace
+
+TEST_CASE("an extension that declares no ordering constraints still composes with KLU", "[linear_solver][klu][ordering]")
+{
+    // declare_ordering_constraints is optional in the component protocol: an extension that
+    // does not have it declares nothing, and NRAlgo still hands the system's (empty) set to
+    // a KLU-based solver
+    using System = ls2g::NRSystem<ls2g::Base, ExtensionWithoutOrderingConstraints>;
+    System system;
+    CHECK(system.ordering_constraints().empty());
+    LinearSolverPolicy<KLULinearSolver> solver;
+    ls2g::detail::set_ordering_constraints_impl(solver, system, true, 0);
 }
 
 #endif  // KLU_SOLVER_AVAILABLE
