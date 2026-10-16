@@ -57,9 +57,23 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     pv_with_slack_.head(pv.size()) = pv;
     pv_with_slack_.tail(nb_other_slack) = slack_ids.tail(nb_other_slack);
 
+    // a controlled transformer the solve does not have (a batch row's contingency, or one the
+    // grid opened since the controls were built) holds nothing in Ybus: it is out of the solve
+    // from setup on, so nothing of it is patched, a tap carried from another solve included
+    if (lsgrid_ptr_ != nullptr) {
+        const LSGrid * grid = lsgrid_ptr_;
+        const OuterRowView * row = row_;
+        inner_.set_in_solve([grid, row](int trafo, int b1, int b2) {
+            const OuterGridView view(*grid, row);
+            int bus1 = -1, bus2 = -1;
+            return view.trafo_closed(trafo, bus1, bus2) && bus1 == b1 && bus2 == b2;
+        });
+    }
     bool need_init = false;
-    if (!inner_.setup(Ybus_, V, Sbus_, slack_ref_, slack_weights, pv_with_slack_, pq, need_init,
-                      [this](){ _declare(); })) {
+    const bool setup_ok = inner_.setup(Ybus_, V, Sbus_, slack_ref_, slack_weights, pv_with_slack_, pq, need_init,
+                                       [this](){ _declare(); });
+    inner_.set_in_solve(nullptr);  // it reads the row, which is the caller's for this solve only
+    if (!setup_ok) {
         err_ = inner_.algo().get_error();
         timer_total_nr_ += timer.duration();
         return false;
@@ -72,16 +86,6 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     injections_.gen_target_p.clear();
     injections_.storage_target_p.clear();
     inner_.controls().reset_states();
-    // a controlled transformer the solve does not have (a batch row's contingency, or one the
-    // grid opened since the controls were built) holds nothing in Ybus: nothing of it may be
-    // patched in this solve, a tap carried from another solve included
-    if (lsgrid_ptr_ != nullptr) {
-        const OuterGridView view(*lsgrid_ptr_, row_);
-        inner_.drop_out_of_row([&view](int trafo, int b1, int b2) {
-            int bus1 = -1, bus2 = -1;
-            return view.trafo_closed(trafo, bus1, bus2) && bus1 == b1 && bus2 == b2;
-        });
-    }
     // a resumed solve (a time series' next step, a batch row from its "n" solve) starts from
     // where that solve left the loops; any other from the grid
     const bool resume = from != nullptr ||

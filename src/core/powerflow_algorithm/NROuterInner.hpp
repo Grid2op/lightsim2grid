@@ -126,11 +126,11 @@ public:
                            [&](){ controls_.clear_reservations(); declare(); _reserve(); });
     }
 
-    // the transformers this solve's Ybus does not hold (see BranchControl::drop_out_of_row),
-    // after setup
-    void drop_out_of_row(const std::function<bool(int, int, int)> & in_row) {
+    // the transformers the next setup's Ybus holds (see BranchControl::set_in_solve); empty:
+    // the grid's status alone
+    void set_in_solve(std::function<bool(int, int, int)> in_solve) {
         BranchControl * branch = algo_.system().branch_control();
-        if (branch != nullptr) branch->drop_out_of_row(in_row);
+        if (branch != nullptr) branch->set_in_solve(std::move(in_solve));
     }
 
     bool newton(int max_iter, real_type tol, bool need_init) { return algo_.newton(max_iter, tol, need_init); }

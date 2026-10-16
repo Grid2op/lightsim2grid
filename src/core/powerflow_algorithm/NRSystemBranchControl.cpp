@@ -108,8 +108,9 @@ void BranchControl::_reset(Entry & e)
     const TrafoInfo info = trafos[e.trafo];
     // The entries are those of the last rebuild, but Ybus may be a new one: update_state runs
     // before the rebuild a change of its pattern triggers (NRAlgo::setup). Look the positions
-    // up again; a transformer the grid opened since holds nothing there (its block is 0), so
-    // it is out of this solve rather than patched back in from nothing.
+    // up again; a transformer the grid opened since, or the solve's row opens (set_in_solve),
+    // holds nothing there (its block is 0), so it is out of this solve rather than patched
+    // back in from nothing.
     e.out = false;
     if (ybus_ != nullptr) {
         e.k11 = ybus_position(*ybus_, e.b1, e.b1);
@@ -121,7 +122,8 @@ void BranchControl::_reset(Entry & e)
     const bool closed = trafos.get_status_global()[e.trafo] && trafos.get_status_side_1()[e.trafo] &&
                         trafos.get_status_side_2()[e.trafo] &&
                         to_solver[trafos.get_bus_side_1(e.trafo).cast_int()].cast_int() == e.b1 &&
-                        to_solver[trafos.get_bus_side_2(e.trafo).cast_int()].cast_int() == e.b2;
+                        to_solver[trafos.get_bus_side_2(e.trafo).cast_int()].cast_int() == e.b2 &&
+                        (!in_solve_ || in_solve_(e.trafo, e.b1, e.b2));
     e.sign = trafos.shift_sign(e.trafo);
     e.rexp = trafos.ratio_exponent(e.trafo);
     e.control_on = false;
@@ -149,31 +151,6 @@ void BranchControl::_reset(Entry & e)
     _patch(e);
 }
 
-void BranchControl::drop_out_of_row(const std::function<bool(int, int, int)> & in_row)
-{
-    if (lsgrid_ == nullptr) return;
-    const TrafoContainer & trafos = lsgrid_->get_trafos();
-    for (Entry & e : entries_) {
-        if (e.out || in_row(e.trafo, e.b1, e.b2)) continue;
-        // The solve's Ybus does not hold the transformer (a batch row took its block out, or
-        // the grid opened it without a rebuild of these entries), but _reset took it for the
-        // container's block and patched from there: undo that, so nothing of it is stamped
-        const TrafoInfo info = trafos[e.trafo];
-        const std::array<cplx_type, 4> stamped = {info.yac_eff_11, info.yac_eff_12, info.yac_eff_21, info.yac_eff_22};
-        if (ybus_ != nullptr) {
-            cplx_type * values = ybus_->valuePtr();
-            values[e.k11] -= e.applied[0] - stamped[0];
-            values[e.k12] -= e.applied[1] - stamped[1];
-            values[e.k21] -= e.applied[2] - stamped[2];
-            values[e.k22] -= e.applied[3] - stamped[3];
-        }
-        e.out = true;
-        e.control_on = false;
-        e.r_control_on = false;
-        e.applied = {cplx_type(0.), cplx_type(0.), cplx_type(0.), cplx_type(0.)};
-    }
-}
-
 void BranchControl::_retap(Entry & e, int rpos, int pos)
 {
     const TrafoContainer & trafos = lsgrid_->get_trafos();
@@ -192,7 +169,7 @@ void BranchControl::_retap(Entry & e, int rpos, int pos)
 
 void BranchControl::_patch(Entry & e)
 {
-    if (e.out) return;  // nothing stamped, nothing to move (see drop_out_of_row)
+    if (e.out) return;  // nothing stamped, nothing to move (see set_in_solve)
     const std::array<cplx_type, 4> block = _block_at(e, e.a, e.rho);
     if (ybus_ != nullptr) {
         cplx_type * values = ybus_->valuePtr();

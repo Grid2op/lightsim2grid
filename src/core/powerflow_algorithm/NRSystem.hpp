@@ -845,13 +845,14 @@ class LS2G_API BranchControl
         /// the current through its `side` (1 or 2), pu of that side's base, and its derivative
         /// with respect to the shift
         void current(int trafo_id, int side, real_type & i_pu, real_type & di_da) const;
-        /// The transformers this solve's Ybus does not hold, for one solve (until the next
-        /// update_state): `in_row(trafo, b1, b2)` is false for a transformer the solve's row
-        /// opens (a batch row's contingency, which took its block out of Ybus), or connects
-        /// elsewhere than (b1, b2). Such a transformer has nothing stamped in Ybus, so it is
-        /// never patched: its taps do not move (set_tap, set_ratio_tap are no-ops, and its
-        /// positions stay the grid's) and its controls stay off.
-        void drop_out_of_row(const std::function<bool(int trafo, int b1, int b2)> & in_row);
+        /// The transformers the next solve's Ybus holds, read when the entries are reset
+        /// (update_state, init_topology): `in_solve(trafo, b1, b2)` is false for a transformer
+        /// the solve's row opens (a batch row's contingency, which took its block out of Ybus),
+        /// or connects elsewhere than (b1, b2). Such a transformer has nothing stamped in Ybus,
+        /// so it is out of the solve and never patched: its taps do not move (set_tap,
+        /// set_ratio_tap are no-ops, and its positions stay the grid's) and its controls stay
+        /// off. Empty (the default): the grid's own status alone decides.
+        void set_in_solve(std::function<bool(int trafo, int b1, int b2)> in_solve) { in_solve_ = std::move(in_solve); }
         /// where the transformers it handles and its ratio groups sit in J (appended to
         /// `out.branches` / `out.ratio_groups`), see OuterControlLayout
         void describe(OuterControlLayout & out) const;
@@ -863,7 +864,7 @@ class LS2G_API BranchControl
             bool column = false;               // ... and owning a shift column
             bool ratio = false;                // handled for its ratio (a ratio group)
             bool r_column = false;             // ... and owning a ratio column (a solved group)
-            bool out = false;                  // not in this solve's Ybus (drop_out_of_row)
+            bool out = false;                  // not in this solve's Ybus (set_in_solve)
             int b1 = -1, b2 = -1;              // solver buses
             int k11 = -1, k12 = -1, k21 = -1, k22 = -1;  // Ybus value positions
             real_type sign = 1.;               // TrafoContainer::shift_sign
@@ -922,6 +923,7 @@ class LS2G_API BranchControl
         Eigen::SparseMatrix<cplx_type> * ybus_ = nullptr;
         const CplxVect * V_ = nullptr;
         const LSGrid * lsgrid_ = nullptr;
+        std::function<bool(int, int, int)> in_solve_;  // see set_in_solve
         std::vector<Entry> entries_;
         std::vector<RatioGroup> groups_;
         std::vector<int> index_of_trafo_;
