@@ -3734,19 +3734,7 @@ std::vector<LimitViolation> LSGrid::get_violations(real_type threshold, bool ac,
         std::vector<int> phase_tap, ratio_tap;
         algo.get_outer_phase_tap(phase_tap);
         algo.get_outer_ratio_tap(ratio_tap);
-        const TapChangers & ptc = trafos_.get_tap_changers(true);
-        const TapChangers & rtc = trafos_.get_tap_changers(false);
-        const int none = std::numeric_limits<int>::min();
-        for(int t = 0; t < trafos_.nb(); ++t){
-            const std::size_t tt = static_cast<std::size_t>(t);
-            const bool ph = tt < phase_tap.size() && phase_tap[tt] != none && ptc.has(t) && ptc.position(t) != phase_tap[tt];
-            const bool ra = tt < ratio_tap.size() && ratio_tap[tt] != none && rtc.has(t) && rtc.position(t) != ratio_tap[tt];
-            if(!ph && !ra) continue;
-            const int ppos = ph ? phase_tap[tt] : (ptc.has(t) ? ptc.position(t) : 0);
-            const int rpos = ra ? ratio_tap[tt] : (rtc.has(t) ? rtc.position(t) : 0);
-            const real_type shift = ptc.has(t) ? ptc.alpha_at(t, ppos) : trafos_[t].shift_rad;
-            blocks.emplace_back(t, trafos_.pi_block_at(t, rpos, ppos, shift));
-        }
+        blocks = trafos_.moved_tap_blocks(trafos_.moved_taps(false, ratio_tap), trafos_.moved_taps(true, phase_tap));
     }
     batch_sweep_detail::check_current_violations(
         trafos_, ViolationElementType::TRAFO, V, layout.id_me_to_solver, substations_.get_bus_vn_kv(),

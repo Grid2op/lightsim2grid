@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <limits>
+#include <map>
 
 namespace ls2g {
 
@@ -342,6 +343,40 @@ std::array<cplx_type, 4> TrafoContainer::pi_block_at(int el, int ratio_position,
     const cplx_type h1 = {std::real(base_h1_(el)) * g_factor, std::imag(base_h1_(el)) * b_factor};
     const cplx_type h2 = {std::real(base_h2_(el)) * g_factor, std::imag(base_h2_(el)) * b_factor};
     return _pi_coeffs(r, x, h1, h2, ratio_at(el, rpos, ppos), shift_rad, is_tap_side1_[el], ignore_tap_side_for_shift_);
+}
+
+std::vector<std::pair<int, int> > TrafoContainer::moved_taps(bool phase, const std::vector<int> & positions) const
+{
+    const TapChangers & tc = get_tap_changers(phase);
+    std::vector<std::pair<int, int> > res;
+    for(std::size_t t = 0; t < positions.size(); ++t){
+        if(positions[t] == std::numeric_limits<int>::min()) continue;
+        const int el = static_cast<int>(t);
+        if(el < tc.nb() && tc.has(el) && tc.position(el) == positions[t]) continue;
+        res.emplace_back(el, positions[t]);
+    }
+    return res;
+}
+
+std::vector<std::pair<int, std::array<cplx_type, 4> > > TrafoContainer::moved_tap_blocks(
+    const std::vector<std::pair<int, int> > & ratio_taps,
+    const std::vector<std::pair<int, int> > & phase_taps) const
+{
+    std::map<int, std::pair<int, int> > positions;  // transformer -> (ratio, phase)
+    auto grid_pos = [this](int t){
+        return std::make_pair(ratio_taps_.has(t) ? ratio_taps_.position(t) : 0,
+                              phase_taps_.has(t) ? phase_taps_.position(t) : 0);
+    };
+    for(const auto & tp : ratio_taps) positions.emplace(tp.first, grid_pos(tp.first)).first->second.first = tp.second;
+    for(const auto & tp : phase_taps) positions.emplace(tp.first, grid_pos(tp.first)).first->second.second = tp.second;
+    std::vector<std::pair<int, std::array<cplx_type, 4> > > res;
+    res.reserve(positions.size());
+    for(const auto & tp : positions){
+        const int t = tp.first;
+        const real_type shift = phase_taps_.has(t) ? phase_taps_.alpha_at(t, tp.second.second) : shift_.coeff(t);
+        res.emplace_back(t, pi_block_at(t, tp.second.first, tp.second.second, shift));
+    }
+    return res;
 }
 
 std::vector<int> TrafoContainer::_apply_results_tap_override()

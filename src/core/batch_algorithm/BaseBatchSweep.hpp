@@ -1906,26 +1906,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             auto & out = _row_trafo_blocks_[i];
             out.clear();
             if(r.phase_tap.empty() && r.ratio_tap.empty()) return;
-            const TrafoContainer & trafos = _grid_model.get_trafos();
-            const TapChangers & ptc = trafos.get_tap_changers(true);
-            const TapChangers & rtc = trafos.get_tap_changers(false);
-            std::map<int, std::pair<int, int> > positions;  // trafo -> (ratio, phase)
-            auto grid_pos = [&](int t){
-                return std::make_pair(rtc.has(t) ? rtc.position(t) : 0, ptc.has(t) ? ptc.position(t) : 0);
-            };
-            for(const auto & tp : r.ratio_tap){
-                auto it = positions.emplace(tp.first, grid_pos(tp.first)).first;
-                it->second.first = tp.second;
-            }
-            for(const auto & tp : r.phase_tap){
-                auto it = positions.emplace(tp.first, grid_pos(tp.first)).first;
-                it->second.second = tp.second;
-            }
-            for(const auto & tp : positions){
-                const int t = tp.first;
-                const real_type shift = ptc.has(t) ? ptc.alpha_at(t, tp.second.second) : trafos[t].shift_rad;
-                out.emplace_back(t, trafos.pi_block_at(t, tp.second.first, tp.second.second, shift));
-            }
+            out = _grid_model.get_trafos().moved_tap_blocks(r.ratio_tap, r.phase_tap);
         }
 
         // what the outer loops did on row i (an algorithm that runs them only, see
@@ -1954,18 +1935,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             // a position the loops handled, where it differs from the grid's
             const TrafoContainer & trafos = _grid_model.get_trafos();
-            auto taps = [](const std::vector<int> & pos, const TapChangers & tc, std::vector<std::pair<int, int> > & out){
-                for(std::size_t t = 0; t < pos.size(); ++t){
-                    if(pos[t] == std::numeric_limits<int>::min()) continue;
-                    const int el = static_cast<int>(t);
-                    if(el < tc.nb() && tc.has(el) && tc.position(el) == pos[t]) continue;
-                    out.emplace_back(el, pos[t]);
-                }
-            };
             algo.get_outer_phase_tap(ints);
-            taps(ints, trafos.get_tap_changers(true), r.phase_tap);
+            r.phase_tap = trafos.moved_taps(true, ints);
             algo.get_outer_ratio_tap(ints);
-            taps(ints, trafos.get_tap_changers(false), r.ratio_tap);
+            r.ratio_tap = trafos.moved_taps(false, ints);
             _record_row_trafo_blocks(i, r);
             algo.get_outer_shunt_sections(ints);
             const ShuntContainer & shunts = _grid_model.get_shunts();
