@@ -16,6 +16,7 @@
 #include "HvdcDroopData.hpp"
 #include "VoltageControlData.hpp"
 #include "linear_solvers/OrderingConstraints.hpp"
+#include "outer_loop/OuterControlLayout.hpp"
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
 
@@ -26,6 +27,7 @@
 #include <cstring>
 #include <tuple>
 #include <type_traits>
+#include <functional>
 #include <vector>
 #include <set>
 #include <stdexcept>
@@ -842,6 +844,16 @@ class LS2G_API BranchControl
         /// the current through its `side` (1 or 2), pu of that side's base, and its derivative
         /// with respect to the shift
         void current(int trafo_id, int side, real_type & i_pu, real_type & di_da) const;
+        /// The transformers this solve's Ybus does not hold, for one solve (until the next
+        /// update_state): `in_row(trafo, b1, b2)` is false for a transformer the solve's row
+        /// opens (a batch row's contingency, which took its block out of Ybus), or connects
+        /// elsewhere than (b1, b2). Such a transformer has nothing stamped in Ybus, so it is
+        /// never patched: its taps do not move (set_tap, set_ratio_tap are no-ops, and its
+        /// positions stay the grid's) and its controls stay off.
+        void drop_out_of_row(const std::function<bool(int trafo, int b1, int b2)> & in_row);
+        /// where the transformers it handles and its ratio groups sit in J (appended to
+        /// `out.branches` / `out.ratio_groups`), see OuterControlLayout
+        void describe(OuterControlLayout & out) const;
 
     private:
         struct Entry {
@@ -850,6 +862,7 @@ class LS2G_API BranchControl
             bool column = false;               // ... and owning a shift column
             bool ratio = false;                // handled for its ratio (a ratio group)
             bool r_column = false;             // ... and owning a ratio column (a solved group)
+            bool out = false;                  // not in this solve's Ybus (drop_out_of_row)
             int b1 = -1, b2 = -1;              // solver buses
             int k11 = -1, k12 = -1, k21 = -1, k22 = -1;  // Ybus value positions
             real_type sign = 1.;               // TrafoContainer::shift_sign
@@ -975,6 +988,9 @@ class LS2G_API ShuntControl
         real_type b(int bus) const;
         /// the section count of every shunt handled, INT_MIN for the others (by grid id)
         void section_counts(std::vector<int> & out) const;
+        /// where its controllers and groups sit in J (appended to `out.shunts` /
+        /// `out.shunt_groups`), see OuterControlLayout
+        void describe(OuterControlLayout & out) const;
 
     private:
         struct Entry {

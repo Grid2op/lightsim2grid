@@ -126,6 +126,13 @@ public:
                            [&](){ controls_.clear_reservations(); declare(); _reserve(); });
     }
 
+    // the transformers this solve's Ybus does not hold (see BranchControl::drop_out_of_row),
+    // after setup
+    void drop_out_of_row(const std::function<bool(int, int, int)> & in_row) {
+        BranchControl * branch = algo_.system().branch_control();
+        if (branch != nullptr) branch->drop_out_of_row(in_row);
+    }
+
     bool newton(int max_iter, real_type tol, bool need_init) { return algo_.newton(max_iter, tol, need_init); }
     void finalize() { algo_.finalize(); }
     // what the loops reserve changed: rebuild the sparsity on the next setup
@@ -156,6 +163,15 @@ public:
     }
 
     // where the loops left the phase / ratio taps and the shunt sections, see
+    // BaseAlgo::get_outer_control_layout
+    void control_layout(OuterControlLayout & out) const {
+        out = OuterControlLayout();
+        const BranchControl * branch = algo_.system().branch_control();
+        if (branch != nullptr) branch->describe(out);
+        const ShuntControl * shunt = algo_.system().shunt_control();
+        if (shunt != nullptr) shunt->describe(out);
+    }
+
     // BaseAlgo::get_outer_phase_tap and friends
     void phase_tap(std::vector<int> & positions) const {
         positions.clear();

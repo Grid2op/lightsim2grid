@@ -2346,12 +2346,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_lines, _violations[i],
                                      overrides, 0);
+            // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks)
+            const auto * blocks = (i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty())
+                                  ? &_row_trafo_blocks_[i] : nullptr;
             batch_sweep_detail::check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
                                      V, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), ac_solver_used, sn_mva,
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_trafos, _violations[i],
-                                     overrides, n_line_);
+                                     overrides, n_line_, blocks);
         }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t i, const CplxVect & V, const std::vector<int> * masked_ids) {

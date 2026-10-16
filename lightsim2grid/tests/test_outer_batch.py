@@ -447,6 +447,95 @@ class TestOuterTapsInContingencyAnalysis(_Equivalence, unittest.TestCase):
         self.assertTrue(any(r.ratio_tap for r in batch.get_outer_results()))
 
 
+class TestOuterTripsTheControlledTransformer(_Equivalence, unittest.TestCase):
+    """a row that opens the transformer TransformerVoltageControl regulates with: the row has
+    no such transformer, whatever tap the "n" solve left it at -- its Ybus must not keep any
+    part of it, nor its result list a tap for it (the "n" solve moves that tap, and a row
+    resuming from it carries the positions the "n" solve settled on)"""
+
+    TRAFO = 1  # T4-9-1, the regulating one
+    LINE = 1   # a line whose opening the grid survives
+
+    def setUp(self):
+        try:
+            import pypowsybl  # noqa: F401
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        self.base = _tap_grid()
+        self.nb_line = len(self.base.get_lines())
+
+    # the rows in the batch's order: a contingency analysis sorts its contingencies by branch
+    # id, the lines then the trafos
+    def _change_row(self, i, grid):
+        if i == 0:
+            grid.deactivate_powerline(self.LINE)
+        else:
+            grid.deactivate_trafo(self.TRAFO)
+
+    def _batch(self):
+        batch = ContingencyAnalysisCPP(self.base)
+        batch.add_n1(self.LINE)
+        batch.add_n1(self.nb_line + self.TRAFO)
+        return batch
+
+    def _rows(self):
+        rows = []
+        for i in range(2):
+            grid = _tap_grid()
+            self._change_row(i, grid)
+            rows.append(grid)
+        return rows
+
+    def _batch_from_n(self):
+        batch = self._batch()
+        batch.init_from_n_powerflow = True
+        return batch
+
+    def test_the_n_solve_moves_the_tap(self):
+        # or the resumed rows would carry the grid's own tap, and check nothing
+        grid = _tap_grid()
+        grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        tr = grid.get_trafos()[self.TRAFO]
+        self.assertNotEqual(tr.res_ratio_tap_position, tr.ratio_tap_position)
+
+    def test_each_row_is_the_single_solve_of_its_grid(self):
+        self._check_rows(self._batch, self._rows())
+
+    def test_each_row_is_the_single_solve_resumed_from_n(self):
+        refs = [_from_n(_tap_grid, lambda g, i=i: self._change_row(i, g)) for i in range(2)]
+        self._check_rows(self._batch_from_n, [g for g, _ in refs], v_starts=[v for _, v in refs])
+
+    def test_a_resumed_single_solve_has_no_such_transformer(self):
+        # the reference itself: a solve resuming from the "n" one, the transformer opened in
+        # between, solves the grid without it -- its power balance is the one of its own Ybus
+        grid, v_n = _from_n(_tap_grid, lambda g: self._change_row(1, g))
+        V = grid.ac_pf(v_n, MAX_IT, TOL)
+        self.assertGreater(V.size, 0)
+        mis = V * np.conj(grid.get_Ybus_solver() @ V) - np.asarray(grid.get_Sbus_solver())
+        pq = np.asarray(grid.get_pq_solver())
+        self.assertLess(np.abs(mis[pq]).max(), 1e-6)
+
+    def test_a_second_single_solve_has_no_such_transformer(self):
+        # not resumed either: a grid solved, then the transformer opened and solved again
+        grid = _tap_grid()
+        v_n = grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        self._change_row(1, grid)
+        V = grid.ac_pf(v_n, MAX_IT, TOL)
+        self.assertGreater(V.size, 0)
+        mis = V * np.conj(grid.get_Ybus_solver() @ V) - np.asarray(grid.get_Sbus_solver())
+        pq = np.asarray(grid.get_pq_solver())
+        self.assertLess(np.abs(mis[pq]).max(), 1e-6)
+
+    def test_no_tap_for_the_opened_transformer(self):
+        batch = self._batch_from_n()
+        batch.change_algorithm(OUTER)
+        batch.compute(_v0(self.base), MAX_IT, TOL)
+        res = batch.get_outer_results()
+        # the line row keeps the tap the "n" solve moved, the trafo row has no such trafo
+        self.assertIn(self.TRAFO, [t for t, _ in res[0].ratio_tap])
+        self.assertNotIn(self.TRAFO, [t for t, _ in res[1].ratio_tap])
+
+
 class TestWrappersKeepTheOuterAlgorithm(unittest.TestCase):
     """the grid2op wrappers keep a backend's NROuter_* algorithm (any other one is replaced by
     NR_KLU, as before)"""

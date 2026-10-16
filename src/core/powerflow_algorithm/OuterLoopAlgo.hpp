@@ -108,6 +108,11 @@ public:
     void get_outer_shunt_sections(std::vector<int> & counts) const override { inner_.shunt_sections(counts); }
     void get_outer_ratio_tap(std::vector<int> & positions) const override { inner_.ratio_tap(positions); }
     std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const override;
+    OuterControlLayout get_outer_control_layout() const override {
+        OuterControlLayout out;
+        inner_.control_layout(out);
+        return out;
+    }
 
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
     // a grid solving with this algorithm hands its own over before each solve (set_outer_loops)

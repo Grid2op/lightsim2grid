@@ -330,6 +330,9 @@ class LS2G_API AlgorithmSelector final
         std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const {
             return get_prt_solver("get_outer_resume_point", false)->get_outer_resume_point();
         }
+        OuterControlLayout get_outer_control_layout() const {
+            return get_prt_solver("get_outer_control_layout", false)->get_outer_control_layout();
+        }
 
         // continuation powerflow primitives (ContinuationSweep) -- NR-based
         // algorithms only, guarded exactly like get_J: both read state the last
