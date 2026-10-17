@@ -23,7 +23,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     CplxVect & sbus_scratch, RealVect & sw_scratch,
     bool ac_solver_used, int max_iter, real_type tol_solver,
     int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
-    bool & conv, bool & invertible)
+    bool & conv, bool & invertible, OuterRowView * row_view)
 {
     // re-seed |V| at every voltage-regulating generator's regulated bus with this
     // row's own target (modify_gen_v; a no-op if it was never set, or on a
@@ -57,6 +57,18 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
         timer_modif_ybus += t1.duration();
     } else {
         invertible = true;
+    }
+
+    // the row as the outer loops see it (an algorithm that runs them only)
+    if(row_view != nullptr){
+        _fill_outer_row_view(i, nullptr, *row_view);
+        // a row chained on the previous one (TimeSeries) also starts from its equations: the
+        // buses its loops froze, the taps they moved, ... (the loops undo what this row does
+        // not call for). The first row resumes from the base solve when it starts from it,
+        // and that solve ran in this compute()
+        row_view->resume = INIT == BatchInitKind::FromPreviousStep &&
+                           (i > 0 || (_init_from_n_powerflow && !_base_case_was_reused_));
+        algo.set_outer_row_view(row_view);
     }
 
     if(invertible){
@@ -132,6 +144,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
     int & first_diverging_step, std::exception_ptr & err,
     bool needs_solver_init)
 {
+    // the row as the outer loops see it, for an algorithm that runs them
+    OuterRowView row_view;
+    OuterRowView * outer_view = algo.supports_outer_loops() ? &row_view : nullptr;
     try {
         CplxVect V = Vinit_solver;
         CplxVect sbus_scratch;   // this row's injection, where it varies
@@ -152,7 +167,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
             bool conv = false;
             bool invertible = true;
             _run_one_step(i, algo, control, Ybus, V, sbus_scratch, sw_scratch, ac_solver_used, max_iter, tol_solver,
-                          nb_solved, nb_converged, timer_solver, timer_modif_ybus, conv, invertible);
+                          nb_solved, nb_converged, timer_solver, timer_modif_ybus, conv, invertible, outer_view);
 
             control.tell_none_changed();
             if(!ac_solver_used) control.tell_recompute_sbus();
@@ -207,6 +222,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
     } catch(...) {
         err = std::current_exception();
     }
+    // the view dies here: the algorithm must not keep pointing at it
+    if(outer_view != nullptr) algo.set_outer_row_view(&_base_row_view_);
 }
 
 template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
@@ -498,6 +515,17 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         throw std::runtime_error(exc_.str());
     }
 
+    // a row solved with outer loops is several Newton solves, the last one on a system the
+    // loops edited (a bus switched PQ, a tap moved): which Jacobian the adjoint should read
+    // there is not settled, so none is kept rather than a misleading one
+    if(_keep_jacobian_ && _algo.supports_outer_loops()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::compute: `keep_jacobian` is not available with an algorithm "
+                "running outer loops (" << _algo.get_name() << "). Use `change_algorithm` for a "
+                "plain one (NR_*), or turn `keep_jacobian` off.";
+        throw std::runtime_error(exc_.str());
+    }
+
     const size_t nb_steps = _nb_steps();
 
     // ---- what of the three levels this call may keep ------------------------------
@@ -524,6 +552,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _converged_mask_.assign(nb_steps, 0);
     _row_solve_time_.assign(nb_steps, 0.);
     _row_nb_iter_.assign(nb_steps, 0);
+    if(_algo.supports_outer_loops()){
+        _outer_results_.assign(nb_steps, OuterRowResult());
+        _row_trafo_blocks_.assign(nb_steps, std::vector<std::pair<int, std::array<cplx_type, 4> > >());
+    } else {
+        _outer_results_.clear();
+        _row_trafo_blocks_.clear();
+    }
     _gen_results_ = _compute_gen_results_ ?
         RealMat::Zero(static_cast<Eigen::Index>(nb_steps), 2 * static_cast<Eigen::Index>(_grid_model.get_generators().nb())) :
         RealMat();
@@ -623,6 +658,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
     // factorization every row refactorizes into), plus this call's result buffers
+    _base_row_view_.masked = _base_masked_.empty() ? nullptr : &_base_masked_;
     bool n_powerflow_has_conv = _finish_preprocessing(
         nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v
     );

@@ -28,7 +28,7 @@ enum class LS2G_API ViolationElementType : int {
     // pinned at a reactive limit, the voltage of the bus it would regulate
     // (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q), and, for a machine regulating a REMOTE
     // bus, the voltage of its own bus (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL,
-    // see RemoteVoltageControlCheck.hpp). A REGULATING machine's reactive
+    // ReactiveLimits' robust mode). A REGULATING machine's reactive
     // violation is reported on the BUS instead, because how a bus' reactive power is
     // divided between its machines is a convention, while the active one is divided by the
     // participation factors the caller chose. See BusQCheck.hpp / GenPCheck.hpp /
@@ -110,13 +110,13 @@ enum class LS2G_API LimitViolationType : int {
     // ... and the mirror: regulated bus ABOVE the high voltage threshold (value above limit).
     HIGH_VOLTAGE_SVC_STANDBY = 12,
     // A GENERATOR regulating a REMOTE bus whose OWN bus sits BELOW the lowest voltage the
-    // caller deems realistic for a controller (LSGrid::set_remote_voltage_control_vm_range):
+    // ReactiveLimits loop deems realistic for a controller (its min_realistic_voltage):
     // OpenLoadFlow's ReactiveLimits loop, in its "robust" remote voltage control mode,
     // switches such a controller to PQ at its target reactive power rather than let it hold
     // the remote target at that price. ViolationCategory::PHYSICAL: a controller's own bus
     // at that voltage is a state the equipment is not meant to reach. `value`
     // the generator's own bus voltage and `limit` the threshold, both in kV of that bus
-    // (value below limit). See RemoteVoltageControlCheck.hpp.
+    // (value below limit). The trigger of ReactiveLimitsLoop's robust mode.
     LOW_VOLTAGE_REMOTE_CONTROL = 13,
     // ... and the mirror: own bus ABOVE the highest realistic voltage (value above limit).
     HIGH_VOLTAGE_REMOTE_CONTROL = 14,

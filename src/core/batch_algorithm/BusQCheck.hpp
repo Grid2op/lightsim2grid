@@ -11,6 +11,7 @@
 
 #include "LSGrid.hpp"
 #include "LimitViolation.hpp"
+#include "powerflow_algorithm/outer_loop/OuterRowView.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -21,8 +22,11 @@
 namespace ls2g {
 
 /**
- * Post-solve reactive-capability check, PER BUS -- one half of
- * `compute_physical_violations` (the other is HvdcPCheck.hpp).
+ * The reactive capability of a bus, PER BUS: which machines hold each bus' voltage and where
+ * their reactive output is read from. The plan `ReactiveLimitsLoop` (and
+ * `TransformerVoltageControlLoop`) builds its controller buses from, on the grid -- or the batch
+ * row -- an OuterGridView shows; that loop's trigger is what `compute_physical_violations`
+ * reports (see outer_detect).
  *
  * WHAT THIS ANSWERS. A voltage-regulating machine has no reactive setpoint: its Q is
  * whatever it takes to hold the set-point, and lightsim2grid never clamps it. So a row
@@ -30,8 +34,8 @@ namespace ls2g {
  * the reactive power they own. That is not a limit somebody chose to exceed -- it is a
  * solution the grid cannot reach at all, because a machine cannot produce reactive power
  * it does not have. See ViolationCategory::PHYSICAL. It is the condition PowSyBl
- * OpenLoadFlow's `ReactiveLimits` outer loop acts on (it would switch the bus PV -> PQ
- * and re-solve); nothing here re-solves anything, it only reports.
+ * OpenLoadFlow's `ReactiveLimits` outer loop acts on (it switches the bus PV -> PQ and
+ * re-solves).
  *
  * WHAT HOLDS A BUS' VOLTAGE, AND WHAT IT CAN DO. Exactly four families have a reactive
  * output the solver computes rather than reads, and all four are checked -- the sum of
@@ -133,21 +137,23 @@ struct BusQPlan
 };
 
 /**
- * Work out, once, which buses can be checked at all, which machines hold each one, and
- * where its reactive power will have to be read from.
+ * Work out which buses can be checked at all, which machines hold each one, and where its
+ * reactive power will have to be read from -- in the grid as `view` sees it: a batch row's
+ * own labelling (its layout) and its own machines (a generator it disconnects or places
+ * elsewhere, see OuterGridView).
  *
- * `id_me_to_solver` and `ctrl` must both describe the labelling the batch solves in
- * (`active_layout()`); `ctrl` is the plan's controller list, whose order is the order of
- * `BaseAlgo::get_controller_q()`.
+ * The controller list is the layout's voltage-control plan, whose order is the order of
+ * `BaseAlgo::get_controller_q()`. Entries come in grid bus order.
  */
-inline void build_bus_q_plan(const LSGrid & grid_model,
-                             const SolverBusIdVect & id_me_to_solver,
-                             const VoltageControlSolverData & ctrl,
-                             BusQPlan & out)
+inline void build_bus_q_plan(const OuterGridView & view, BusQPlan & out)
 {
     out.clear();
+    const LSGrid & grid_model = view.grid();
+    const SolverBusIdVect & id_me_to_solver = view.id_me_to_solver();
+    const VoltageControlSolverData & ctrl = view.layout().voltage_control.controllers();
     const int nb_bus_grid = static_cast<int>(grid_model.total_bus());
     if(nb_bus_grid == 0) return;
+    const int nb_bus_solver = static_cast<int>(view.id_solver_to_me().size());
 
     // Whether each element is a controller of the plan: the only way its reactive output
     // reaches `q_bus` other than through the residual. Keyed the way the controller list
@@ -185,33 +191,37 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
         }
     }
 
-    // per GRID bus, who holds it -- see "WHICH MACHINES COUNT" above: a controller of the
+    // per SOLVER bus, who holds it -- see "WHICH MACHINES COUNT" above: a controller of the
     // plan, or an element pinning its own bus through the classical PV path
-    std::vector<std::vector<int> > gens_of_bus(static_cast<std::size_t>(nb_bus_grid));
-    std::vector<std::vector<std::pair<int, int> > > stations_of_bus(static_cast<std::size_t>(nb_bus_grid));
-    std::vector<std::vector<int> > svcs_of_bus(static_cast<std::size_t>(nb_bus_grid));
+    auto in_range = [nb_bus_solver](int b){ return b >= 0 && b < nb_bus_solver; };
+    auto solver_of = [&id_me_to_solver, nb_bus_grid](int bus_me){
+        if(bus_me < 0 || bus_me >= nb_bus_grid) return -1;
+        const int b = id_me_to_solver[bus_me].cast_int();
+        return b == BaseConstants::_deactivated_bus_id ? -1 : b;
+    };
+    const std::size_t nb = static_cast<std::size_t>(nb_bus_solver > 0 ? nb_bus_solver : 0);
+    std::vector<std::vector<int> > gens_of_bus(nb);
+    std::vector<std::vector<std::pair<int, int> > > stations_of_bus(nb);
+    std::vector<std::vector<int> > svcs_of_bus(nb);
+    std::vector<std::vector<int> > storages_of_bus(nb);
 
-    const GlobalBusIdVect & gen_buses = generators.get_bus_id();
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         const bool is_ctrl = gen_is_ctrl[static_cast<std::size_t>(gen_id)] != 0;
-        // is_local_voltage_controller: active (connected, regulating, not treated as off)
+        // a local voltage controller: connected in this row, regulating, not treated as off,
         // AND pinning its own bus -- the residual path
-        if(!is_ctrl && !generators.is_local_voltage_controller(gen_id)) continue;
-        const int bus_me = gen_buses(gen_id).cast_int();
-        if(bus_me < 0 || bus_me >= nb_bus_grid) continue;
-        gens_of_bus[static_cast<std::size_t>(bus_me)].push_back(gen_id);
+        if(is_ctrl ? !view.gen_on(gen_id) : !view.gen_is_local_voltage_controller(gen_id)) continue;
+        const int b = view.gen_bus_solver(gen_id);
+        if(!in_range(b)) continue;
+        gens_of_bus[static_cast<std::size_t>(b)].push_back(gen_id);
     }
     // a storage unit only regulates its own bus (LSGrid::check_grid refuses anything else),
     // so it is never a controller of the plan: the PV path is the whole rule for it
-    const StorageContainer & storages = grid_model.get_storages();
-    const int nb_storage = storages.nb();
-    std::vector<std::vector<int> > storages_of_bus(static_cast<std::size_t>(nb_bus_grid));
-    const GlobalBusIdVect & storage_buses = storages.get_bus_id();
+    const int nb_storage = grid_model.get_storages().nb();
     for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
-        if(!storages.is_local_voltage_controller(storage_id)) continue;
-        const int bus_me = storage_buses(storage_id).cast_int();
-        if(bus_me < 0 || bus_me >= nb_bus_grid) continue;
-        storages_of_bus[static_cast<std::size_t>(bus_me)].push_back(storage_id);
+        if(!view.storage_is_local_voltage_controller(storage_id)) continue;
+        const int b = view.storage_bus_solver(storage_id);
+        if(!in_range(b)) continue;
+        storages_of_bus[static_cast<std::size_t>(b)].push_back(storage_id);
     }
     // a station always regulates the bus it stands on, so it is either a group controller
     // or an ordinary PV pin -- `station_is_voltage_controller` covers both
@@ -219,29 +229,31 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
         for(int side = 1; side <= 2; ++side){
             const bool is_ctrl = (side == 1 ? st1_is_ctrl : st2_is_ctrl)[static_cast<std::size_t>(hvdc_id)] != 0;
             if(!is_ctrl && !hvdcs.station_is_voltage_controller(hvdc_id, side)) continue;
-            const int bus_me = hvdcs.get_station_bus(hvdc_id, side).cast_int();
-            if(bus_me < 0 || bus_me >= nb_bus_grid) continue;
-            stations_of_bus[static_cast<std::size_t>(bus_me)].push_back(std::make_pair(hvdc_id, side));
+            const int b = solver_of(hvdcs.get_station_bus(hvdc_id, side).cast_int());
+            if(!in_range(b)) continue;
+            stations_of_bus[static_cast<std::size_t>(b)].push_back(std::make_pair(hvdc_id, side));
         }
     }
     // an SVC never takes the PV path (see SvcContainer): it holds a bus only as a
     // controller, so the controller list is the whole rule for it
     for(int svc_id = 0; svc_id < nb_svc; ++svc_id){
         if(svc_is_ctrl[static_cast<std::size_t>(svc_id)] == 0) continue;
-        const int bus_me = svcs.get_bus_id()(svc_id).cast_int();
-        if(bus_me < 0 || bus_me >= nb_bus_grid) continue;
-        svcs_of_bus[static_cast<std::size_t>(bus_me)].push_back(svc_id);
+        const int b = solver_of(svcs.get_bus_id()(svc_id).cast_int());
+        if(!in_range(b)) continue;
+        svcs_of_bus[static_cast<std::size_t>(b)].push_back(svc_id);
     }
 
     const SubstationContainer & subs = grid_model.get_substations();
     const std::vector<std::string> & sub_names = subs.get_sub_names();  // empty if never set
 
     for(int bus_me = 0; bus_me < nb_bus_grid; ++bus_me){
-        const std::size_t b = static_cast<std::size_t>(bus_me);
+        const int bus_solver = solver_of(bus_me);
+        if(!in_range(bus_solver)) continue;  // not in the solved system
+        // stranded by the row: its mismatch means nothing, and nothing holds its voltage
+        if(view.is_masked(bus_solver)) continue;
+        const std::size_t b = static_cast<std::size_t>(bus_solver);
         if(gens_of_bus[b].empty() && storages_of_bus[b].empty() && stations_of_bus[b].empty() &&
            svcs_of_bus[b].empty()) continue;
-        const int bus_solver = id_me_to_solver[bus_me].cast_int();
-        if(bus_solver == BaseConstants::_deactivated_bus_id) continue;  // not in the solved system
 
         BusQEntry entry;
         entry.bus_solver = bus_solver;
@@ -261,159 +273,6 @@ inline void build_bus_q_plan(const LSGrid & grid_model,
         }
         out.buses.push_back(entry);
     }
-}
-
-/**
- * Append to `out` one LimitViolation per bus whose machines had to produce more (or less)
- * reactive power than they own, for ONE converged row.
- *
- * `bus_mismatch` is the algorithm's own per-bus mismatch (solver numbering, pu, see
- * BaseAlgo::get_bus_mismatch), `controller_q` its converged per-controller reactive
- * injection (pu), and `V` the row's converged complex voltage (solver numbering, pu --
- * needed for the SVCs, whose capability is a susceptance). `masked_solver_ids` is this
- * row's masked (stranded) solver buses -- sorted, may be nullptr -- whose voltage is
- * reported as 0 and whose mismatch means nothing. `is_gen_off(gen_id)` tells whether this
- * row disconnected that generator (a generator contingency): it produces nothing, so it
- * leaves the summed capability, and a bus whose every machine is gone is not checked at
- * all (it is an ordinary PQ bus in that row, and the residual there is nobody's reactive
- * output). `is_storage_off(storage_id)` is the same for a regulating storage unit.
- *
- * `placed` (may be nullptr): the generators this row's topological action puts on a bus,
- * as (generator, solver bus), each in the plan's order of placement. A placed generator
- * counts on the bus the row gives it and on no other: on the entry of `plan` for that
- * bus, after the entry's own generators, and is skipped wherever else `plan` lists it.
- * A bus `plan` has no entry for is checked from `row_entries`, which the caller builds
- * for those buses only (see BaseBatchSweep::_row_bus_q_entries) -- so a row checks the
- * batch's plan as it is, rather than a copy of it edited for the row.
- */
-template<class IsGenOff, class IsStorageOff>
-inline void check_bus_q_violations(const BusQPlan & plan,
-                                   const LSGrid & grid_model,
-                                   const Eigen::Ref<const CplxVect> & bus_mismatch,
-                                   const Eigen::Ref<const CplxVect> & V,
-                                   const RealVect & controller_q,
-                                   real_type sn_mva,
-                                   real_type tol_mvar,
-                                   const std::vector<int> * masked_solver_ids,
-                                   IsGenOff is_gen_off,
-                                   IsStorageOff is_storage_off,
-                                   std::vector<LimitViolation> & out,
-                                   const std::vector<std::pair<int, int> > * placed = nullptr,
-                                   const BusQPlan * row_entries = nullptr)
-{
-    if(bus_mismatch.size() == 0) return;
-    const bool has_placed = (placed != nullptr) && !placed->empty();
-    auto is_placed = [placed, has_placed](int gen_id){
-        if(!has_placed) return false;
-        for(const auto & p : *placed) if(p.first == gen_id) return true;
-        return false;
-    };
-
-    const GeneratorContainer & generators = grid_model.get_generators();
-    const StorageContainer & storages = grid_model.get_storages();
-    const SvcContainer & svcs = grid_model.get_svcs();
-    const HvdcLineContainer & hvdcs = grid_model.get_dclines();
-    const bool has_masked = (masked_solver_ids != nullptr) && !masked_solver_ids->empty();
-
-    for(std::size_t k = 0; k < plan.buses.size(); ++k){
-        const BusQEntry & entry = plan.buses[k];
-        if(entry.bus_solver >= static_cast<int>(bus_mismatch.size())) continue;
-        // every _li_masked entry is sorted (see BaseBatchSweep::_prepare_connectivity)
-        if(has_masked && std::binary_search(masked_solver_ids->begin(), masked_solver_ids->end(),
-                                            entry.bus_solver)) continue;
-
-        // ---- what this bus' machines can produce, this row ------------------------
-        real_type q_min = 0.;
-        real_type q_max = 0.;
-        int nb_live = 0;
-        for(std::size_t g = 0; g < entry.gen_ids.size(); ++g){
-            const int gen_id = entry.gen_ids[g];
-            if(is_placed(gen_id)) continue;   // counted where the row puts it
-            if(is_gen_off(gen_id)) continue;  // disconnected by this row: produces nothing
-            ++nb_live;
-            q_min += generators.get_min_q(gen_id);
-            q_max += generators.get_max_q(gen_id);
-        }
-        if(has_placed){
-            for(const auto & p : *placed){
-                if(p.second != entry.bus_solver) continue;
-                ++nb_live;
-                q_min += generators.get_min_q(p.first);
-                q_max += generators.get_max_q(p.first);
-            }
-        }
-        for(std::size_t s = 0; s < entry.storage_ids.size(); ++s){
-            const int storage_id = entry.storage_ids[s];
-            if(is_storage_off(storage_id)) continue;  // disconnected by this row
-            ++nb_live;
-            q_min += storages.get_min_q(storage_id);
-            q_max += storages.get_max_q(storage_id);
-        }
-        for(std::size_t s = 0; s < entry.station_ids.size(); ++s){
-            const int hvdc_id = entry.station_ids[s].first;
-            const int side = entry.station_ids[s].second;
-            ++nb_live;
-            q_min += hvdcs.get_station_min_q_mvar(hvdc_id, side);
-            q_max += hvdcs.get_station_max_q_mvar(hvdc_id, side);
-        }
-        if(!entry.svc_ids.empty() && entry.bus_solver < static_cast<int>(V.size())){
-            // an SVC's capability is a susceptance range, so it is worth what the voltage
-            // makes it worth: q = b . |V|^2 (generator convention), pu -> MVAr
-            const real_type v2_sn = std::norm(V(entry.bus_solver)) * sn_mva;
-            for(std::size_t s = 0; s < entry.svc_ids.size(); ++s){
-                const int svc_id = entry.svc_ids[s];
-                ++nb_live;
-                q_min += svcs.get_b_min(svc_id) * v2_sn;
-                q_max += svcs.get_b_max(svc_id) * v2_sn;
-            }
-        }
-        if(nb_live == 0) continue;  // nothing holds this bus in this row
-
-        // ---- ... and what it had to produce ---------------------------------------
-        // (see the file comment: the raw reactive residual, which is the mismatch with
-        // every controller's own injection added back)
-        real_type q_bus = std::imag(bus_mismatch(entry.bus_solver));
-        for(std::size_t c = 0; c < entry.ctrl_pos.size(); ++c){
-            const int pos = entry.ctrl_pos[c];
-            if(pos >= static_cast<int>(controller_q.size())) continue;  // no controller data
-            q_bus += controller_q(pos);
-        }
-        q_bus *= sn_mva;
-        if(!std::isfinite(q_bus)) continue;
-
-        if(std::isfinite(q_min) && (q_bus < q_min - tol_mvar)){
-            out.push_back(LimitViolation{ViolationElementType::BUS, entry.bus_grid, 0,
-                                         LimitViolationType::LOW_Q, q_bus, q_min,
-                                         entry.sub_name});
-        } else if(std::isfinite(q_max) && (q_bus > q_max + tol_mvar)){
-            out.push_back(LimitViolation{ViolationElementType::BUS, entry.bus_grid, 0,
-                                         LimitViolationType::HIGH_Q, q_bus, q_max,
-                                         entry.sub_name});
-        }
-    }
-    if(has_placed && row_entries != nullptr && !row_entries->empty()){
-        // the buses only this row's placements hold, after the plan's own: the same
-        // check, with nothing placed left to add
-        check_bus_q_violations(*row_entries, grid_model, bus_mismatch, V, controller_q, sn_mva, tol_mvar,
-                               masked_solver_ids, is_gen_off, is_storage_off, out);
-    }
-}
-
-/** The same, for a solve that disconnects no storage unit. **/
-template<class IsGenOff>
-inline void check_bus_q_violations(const BusQPlan & plan,
-                                   const LSGrid & grid_model,
-                                   const Eigen::Ref<const CplxVect> & bus_mismatch,
-                                   const Eigen::Ref<const CplxVect> & V,
-                                   const RealVect & controller_q,
-                                   real_type sn_mva,
-                                   real_type tol_mvar,
-                                   const std::vector<int> * masked_solver_ids,
-                                   IsGenOff is_gen_off,
-                                   std::vector<LimitViolation> & out)
-{
-    check_bus_q_violations(plan, grid_model, bus_mismatch, V, controller_q, sn_mva, tol_mvar,
-                           masked_solver_ids, is_gen_off, [](int){ return false; }, out);
 }
 
 }  // namespace bus_q_check

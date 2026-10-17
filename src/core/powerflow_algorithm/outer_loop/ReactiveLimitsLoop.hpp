@@ -68,8 +68,8 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             bool robust_mode = true;
             /// OpenLoadFlow's minRealisticVoltage / maxRealisticVoltage, pu (the robust mode
             /// compares with them, with a margin)
-            real_type min_realistic_voltage = 0.8;
-            real_type max_realistic_voltage = 1.2;
+            real_type min_realistic_voltage = 0.5;
+            real_type max_realistic_voltage = 2.;
             /// OpenLoadFlow's REALISTIC_VOLTAGE_MARGIN
             real_type realistic_voltage_margin = 1.02;
             /// the magnitude the robust mode restarts a bus from, pu

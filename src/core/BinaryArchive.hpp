@@ -131,7 +131,12 @@ namespace ls2g {
 //     its sections (cumulative p / q per count, the count on, the fewest a control may leave)
 //     and their voltage regulation.
 //     Appended (see LSGrid::set_trafo_ratio_tap_changer, LSGrid::set_shunt_sections).
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 20;
+// v21: LSGrid::StateRes no longer carries the remote voltage control range of v18: the
+//     physical checks read ReactiveLimits' own realistic range instead. It carries the
+//     grid's outer loops (a flag for the default list, else each loop's name and
+//     parameters) and the outer-loop driver's parameters (see LSGrid::get_outer_loops,
+//     LSGrid::set_outer_loop_driver_params). Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 21;
 
 class LS2G_API BinaryArchive
 {

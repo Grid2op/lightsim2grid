@@ -59,11 +59,11 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
         /// The loop's parameters, OpenLoadFlow's values by default; fixed at construction.
         struct Params {
             /// OpenLoadFlow's transformerVoltageControlUseInitialTapPosition
-            bool use_initial_tap_position = true;
+            bool use_initial_tap_position = false;
             /// OpenLoadFlow's generatorVoltageControlMinNominalVoltage (kV): the generators
             /// regulating a bus of at most this are frozen while the transformers act; < 0: the
             /// highest nominal voltage the transformers regulate (OpenLoadFlow's automatic value)
-            real_type max_controlled_nominal_voltage = 120.;
+            real_type max_controlled_nominal_voltage = -1.;
             /// the deadband of a group none of whose transformers has one, kV
             /// (AbstractTransformerVoltageControlOuterLoop's MIN_TARGET_DEADBAND_KV)
             real_type min_target_deadband_kv = 0.1;
@@ -82,7 +82,7 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
             bool hidden = false;
         };
         /// the transformer voltage controls of `grid`, see the class comment
-        std::vector<Group> groups(const LSGrid & grid) const;
+        std::vector<Group> groups(const OuterGridView & view) const;
 
     protected:
         std::string _name() const override { return "TransformerVoltageControl"; }
@@ -113,8 +113,8 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
             real_type target_vm;
         };
 
-        real_type _limit(const LSGrid & grid) const;
-        bool _step_up(const LSGrid & grid, const bus_q_check::BusQEntry & entry, real_type limit) const;
+        real_type _limit(const OuterGridView & view) const;
+        bool _step_up(const OuterGridView & view, const bus_q_check::BusQEntry & entry, real_type limit) const;
         void _freeze_generators(OuterContext & ctx, real_type limit);
         void _release_generators(OuterContext & ctx);
         void _fix_controls(OuterContext & ctx);

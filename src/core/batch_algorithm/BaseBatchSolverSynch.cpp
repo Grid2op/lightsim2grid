@@ -142,6 +142,7 @@ std::unique_ptr<AlgorithmSelector> BaseBatchSolverSynch::make_thread_algo() cons
     res->set_lsgrid(&_grid_model);
     res->change_algorithm(get_algo_name());  // by name, see the declaration
     res->set_config(_algo.get_config());     // match the member solver's configuration
+    _install_outer_loops(*res);
     return res;
 }
 

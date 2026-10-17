@@ -21,7 +21,7 @@ RealVect angles(const CplxVect & V)
 
 const SolverBusIdVect & solver_map(const OuterContext & ctx)
 {
-    return ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver : ctx.grid->id_me_to_ac_solver();
+    return ctx.view().id_me_to_solver();
 }
 
 }  // namespace
@@ -54,8 +54,21 @@ bool HvdcAcEmulationLimitsLoop::_is_needed(const OuterContext & ctx) const
 
 void HvdcAcEmulationLimitsLoop::_initialize(OuterContext & ctx)
 {
-    // every line starts in its linear regime (frozen_dir 0), as in OpenLoadFlow
+    // every line starts in its linear regime (frozen_dir 0), as in OpenLoadFlow -- resuming,
+    // in the regime the previous solve left it in
+    hvdc_p_check::HvdcPPlan previous;
+    if(ctx.resume) previous = plan_;
     plan_ = _ac_emulation_lines(ctx);
+    for(auto & line : plan_.lines){
+        for(const auto & before : previous.lines){
+            if(before.hvdc_id != line.hvdc_id || before.frozen_dir == 0) continue;
+            HvdcRegimeControl * control = ctx.controls != nullptr ? ctx.controls->hvdc_regime(line.hvdc_id) : nullptr;
+            if(control == nullptr) break;
+            line.frozen_dir = before.frozen_dir;
+            control->set(before.frozen_dir);
+            break;
+        }
+    }
 }
 
 void HvdcAcEmulationLimitsLoop::_detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const
@@ -66,10 +79,10 @@ void HvdcAcEmulationLimitsLoop::_detect(const OuterContext & ctx, std::vector<Li
         // the grid's own lines and regimes, in the labelling of the solve that was checked
         hvdc_p_check::HvdcPPlan plan;
         hvdc_p_check::build_hvdc_p_plan(*ctx.grid, solver_map(ctx), plan);
-        hvdc_p_check::check_hvdc_p_violations(plan, Va, ctx.tol_mw, ctx.masked, out);
+        hvdc_p_check::check_hvdc_p_violations(plan, Va, ctx.tol_mw, ctx.view().masked(), out);
         return;
     }
-    hvdc_p_check::check_hvdc_p_violations(plan_, Va, ctx.tol_mw, ctx.masked, out);
+    hvdc_p_check::check_hvdc_p_violations(plan_, Va, ctx.tol_mw, ctx.view().masked(), out);
 }
 
 OuterLoopStatus HvdcAcEmulationLimitsLoop::_check(OuterContext & ctx)

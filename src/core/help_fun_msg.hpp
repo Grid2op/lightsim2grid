@@ -106,6 +106,7 @@ struct LS2G_API DocSolver
     static const std::string NRRefactorRetry_KLU;
     static const std::string NROuter;
     static const std::string OuterLoopStats;
+    static const std::string OuterLoopDriverParams;
     static const std::string OuterDecision;
     static const std::string BaseOuterLoop;
     static const std::string OuterLoopStatus;
@@ -606,8 +607,7 @@ struct LS2G_API DocLSGrid
     static const std::string set_init_vm_pu;
     static const std::string get_init_vm_pu;
     static const std::string set_keep_vinit_at_group_controlled_buses;
-    static const std::string set_remote_voltage_control_vm_range;
-    static const std::string get_remote_voltage_control_vm_range;
+    static const std::string set_outer_loop_driver_params;
     static const std::string get_keep_vinit_at_group_controlled_buses;
     static const std::string set_hold_frozen_regulators;
     static const std::string get_hold_frozen_regulators;

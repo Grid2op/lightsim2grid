@@ -9,6 +9,7 @@
 #include "OuterLoopDriver.hpp"
 
 #include <cmath>
+#include <stdexcept>
 
 #include "LSGrid.hpp"
 
@@ -22,6 +23,17 @@ void OuterContext::record_bus(const char * action, bool taken, int solver_bus, L
     const int me = solver_bus >= 0 && solver_bus < static_cast<int>(solver_to_me.size())
                    ? solver_to_me[solver_bus].cast_int() : -1;
     record(action, taken, ViolationElementType::BUS, me, reason, value, limit);
+}
+
+void check_driver_params(const OuterLoopDriverParams & params)
+{
+    if(params.max_outer_iterations < 0){
+        throw std::runtime_error("OuterLoopDriverParams: max_outer_iterations must be >= 0.");
+    }
+    if(!(params.min_realistic_voltage < params.max_realistic_voltage)){
+        throw std::runtime_error("OuterLoopDriverParams: min_realistic_voltage must be lower than "
+                                 "max_realistic_voltage.");
+    }
 }
 
 bool is_state_unrealistic(const LSGrid & grid,

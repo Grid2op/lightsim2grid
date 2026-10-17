@@ -21,23 +21,25 @@ namespace {
 
 const SolverBusIdVect & solver_map(const OuterContext & ctx)
 {
-    return ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver : ctx.grid->id_me_to_ac_solver();
+    return ctx.view().id_me_to_solver();
 }
 
 }  // namespace
 
-std::vector<ShuntVoltageControlLoop::Group> ShuntVoltageControlLoop::groups(const LSGrid & grid,
+std::vector<ShuntVoltageControlLoop::Group> ShuntVoltageControlLoop::groups(const OuterGridView & view,
                                                                              const std::set<int> & transformer_buses)
 {
     std::vector<Group> res;
+    const LSGrid & grid = view.grid();
     const ShuntContainer & shunts = grid.get_shunts();
-    const SolverBusIdVect & to_solver = grid.id_me_to_ac_solver();
+    const SolverBusLayout & layout = view.layout();
+    const SolverBusIdVect & to_solver = layout.id_me_to_solver;
     if (to_solver.size() == 0) return res;
     // the buses a control of a higher priority holds: a generator, an SVC, a VSC station
     std::set<int> higher(transformer_buses);
-    for (const SolverBusId & b : grid.get_ac_pv_solver()) higher.insert(b.cast_int());
-    for (const SolverBusId & b : grid.get_slack_ids_solver()) higher.insert(b.cast_int());
-    const VoltageControlSolverData & ctrl = grid.get_ac_voltage_control_plan().controllers();
+    for (const SolverBusId & b : layout.bus_pv) higher.insert(b.cast_int());
+    for (const SolverBusId & b : layout.slack_bus_id_solver) higher.insert(b.cast_int());
+    const VoltageControlSolverData & ctrl = layout.voltage_control.controllers();
     for (int g = 0; g < ctrl.n_groups(); ++g) higher.insert(ctrl.reg_bus(g));
 
     // the controllers: the regulating shunts of each bus, in shunt order
@@ -92,14 +94,14 @@ void ShuntVoltageControlLoop::_declare(const OuterContext & ctx) const
     transformer_buses_ = ctx.controls->ratio_group_buses();
     // a hidden group never acts (OpenLoadFlow's getControllerElements keeps the visible
     // controls only): nothing to reserve for it
-    for (const Group & g : groups(*ctx.grid, transformer_buses_)) {
+    for (const Group & g : groups(ctx.view(), transformer_buses_)) {
         if (!g.hidden) ctx.controls->reserve_shunt_group(g.bus_solver, g.target, g.controller_buses, g.shunts, true);
     }
 }
 
 bool ShuntVoltageControlLoop::_is_needed(const OuterContext & ctx) const
 {
-    for (const Group & g : groups(*ctx.grid, transformer_buses_)) {
+    for (const Group & g : groups(ctx.view(), transformer_buses_)) {
         if (!g.hidden) return true;
     }
     return false;
@@ -107,8 +109,9 @@ bool ShuntVoltageControlLoop::_is_needed(const OuterContext & ctx) const
 
 void ShuntVoltageControlLoop::_initialize(OuterContext & ctx)
 {
-    groups_ = groups(*ctx.grid, transformer_buses_);
-    // every controller on for the first solve
+    groups_ = groups(ctx.view(), transformer_buses_);
+    // every controller on for the first solve (no control to act through in detection mode)
+    if (ctx.controls == nullptr) return;
     for (const Group & g : groups_) {
         if (g.hidden) continue;
         for (int bus : g.controller_buses) {
@@ -187,7 +190,7 @@ void ShuntVoltageControlLoop::_detect(const OuterContext & ctx, std::vector<Limi
     if (ctx.V == nullptr || !ctx.vm_checks) return;
     const Eigen::Ref<const RealVect> vn_kv = ctx.grid->get_bus_vn_kv();
     const SolverBusIdVect & to_solver = solver_map(ctx);
-    for (const Group & g : groups(*ctx.grid, transformer_buses_)) {
+    for (const Group & g : groups(ctx.view(), transformer_buses_)) {
         if (g.hidden) continue;
         const int b = to_solver[g.bus_grid].cast_int();
         if (b < 0 || b >= ctx.V->size()) continue;

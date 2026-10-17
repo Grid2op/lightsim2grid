@@ -57,13 +57,14 @@ def _olf(net, phase_control):
         phase_shifter_regulation_on=phase_control)
     res = lf.run_ac(net, params)[0]
     assert res.status.name == "CONVERGED", res.status_text
-    return net.get_2_windings_transformers().loc[PST]
+    return net.get_2_windings_transformers().loc[PST], params
 
 
-def _grid(net):
+def _grid(net, olf_parameters=None):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
-        return init_from_pypowsybl(net, gen_slack_id=SLACK_GEN, sort_index=False, buses_for_sub=False)
+        return init_from_pypowsybl(net, gen_slack_id=SLACK_GEN, sort_index=False, buses_for_sub=False,
+                                   olf_parameters=olf_parameters)
 
 
 class TestPhaseControl(unittest.TestCase):
@@ -73,17 +74,17 @@ class TestPhaseControl(unittest.TestCase):
 
     @staticmethod
     def _initial_flow():
-        return _olf(_net("ACTIVE_POWER_CONTROL", 0., regulating=False), phase_control=False)
+        return _olf(_net("ACTIVE_POWER_CONTROL", 0., regulating=False), phase_control=False)[0]
 
     def _compare(self, mode, target):
         net = _net(mode, target)
-        olf = _olf(net, phase_control=True)
+        olf, params = _olf(net, phase_control=True)
         olf_tap = net.get_phase_tap_changers(all_attributes=True).loc[PST, "solved_tap_position"]
 
-        grid = _grid(_net(mode, target))
+        # the loops OpenLoadFlow ran, read off the same parameters
+        grid = _grid(_net(mode, target), olf_parameters=params)
+        self.assertEqual([l.name() for l in grid.get_outer_loops()], ["PhaseControl"])
         grid.change_algorithm("NROuter_KLU")
-        grid.clear_outer_loops()
-        grid.add_outer_loop(PhaseControl())
         V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-12)
         self.assertGreater(V.shape[0], 0)
         self.assertEqual(grid.get_algo().get_outer_loop_stats().status.name, "STABLE")

@@ -12,6 +12,7 @@
 #include "LSGrid.hpp"
 #include "OperationalCheck.hpp"  // BranchBusOverride
 
+#include <array>
 #include <memory>
 
 namespace ls2g {
@@ -274,6 +275,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             // pieces go together -- a stale one would be reconstructed into a voltage
             // that was never solved
             _thetas = RealMat();
+            _row_trafo_blocks_.clear();
             _dc_row_solved_.clear();
             _dc_lazy_storage_used_ = false;
             _dc_base_vm_solver_ = RealVect();
@@ -487,8 +489,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 if(is_ac){
                     const cplx_type Efrom = s1 ? V_row[from_me] : cplx_type(0., 0.);
                     const cplx_type Eto = s2 ? V_row[to_me] : cplx_type(0., 0.);
-                    const cplx_type y_ff = own_placement ? vect_yac_raw_ff(el_id) : vect_yac_ff(el_id);
-                    const cplx_type y_ft = own_placement ? vect_yac_raw_ft(el_id) : vect_yac_ft(el_id);
+                    cplx_type y_ff = own_placement ? vect_yac_raw_ff(el_id) : vect_yac_ff(el_id);
+                    cplx_type y_ft = own_placement ? vect_yac_raw_ft(el_id) : vect_yac_ft(el_id);
+                    // the taps this row's outer loops left the transformer at
+                    const std::array<cplx_type, 4> * block = is_trafo ? _row_trafo_block(i, static_cast<int>(el_id)) : nullptr;
+                    if(block != nullptr){ y_ff = (*block)[0]; y_ft = (*block)[1]; }
                     // trafo equations (to get the power at the "from" side)
                     cplx_type I_ft = y_ff * Efrom + y_ft * Eto;
                     I_ft = std::conj(I_ft);
@@ -665,10 +670,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 if(is_ac){
                     const cplx_type Ef = s1 ? V_row[from_me] : cplx_type(0., 0.);
                     const cplx_type Et = s2 ? V_row[to_me] : cplx_type(0., 0.);
-                    const cplx_type y11 = own_placement ? yac_raw_11(el_id) : yac_11(el_id);
-                    const cplx_type y12 = own_placement ? yac_raw_12(el_id) : yac_12(el_id);
-                    const cplx_type y21 = own_placement ? yac_raw_21(el_id) : yac_21(el_id);
-                    const cplx_type y22 = own_placement ? yac_raw_22(el_id) : yac_22(el_id);
+                    // the taps this row's outer loops left the transformer at, else the
+                    // container's coefficients (the raw block for a branch the row placed)
+                    const std::array<cplx_type, 4> * block = is_trafo ? _row_trafo_block(i, static_cast<int>(el_id)) : nullptr;
+                    const cplx_type y11 = block != nullptr ? (*block)[0] : (own_placement ? yac_raw_11(el_id) : yac_11(el_id));
+                    const cplx_type y12 = block != nullptr ? (*block)[1] : (own_placement ? yac_raw_12(el_id) : yac_12(el_id));
+                    const cplx_type y21 = block != nullptr ? (*block)[2] : (own_placement ? yac_raw_21(el_id) : yac_21(el_id));
+                    const cplx_type y22 = block != nullptr ? (*block)[3] : (own_placement ? yac_raw_22(el_id) : yac_22(el_id));
                     const cplx_type S_f = Ef * std::conj(y11 * Ef + y12 * Et);
                     const cplx_type S_t = Et * std::conj(y22 * Et + y21 * Ef);
                     dst[0] = std::real(S_f) * sn_mva;
@@ -699,6 +707,18 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // Only reads shared state (_grid_model, _algo's name / config), so several
         // threads may call it concurrently.
         std::unique_ptr<AlgorithmSelector> make_thread_algo() const;
+
+        // The grid's outer loops and driver parameters, handed to `algo` when it runs them
+        // (NROuter_*): a batch row is then solved with the loops, exactly as LSGrid::ac_pf
+        // solves the grid. Before the first solve of that algorithm, so that what the loops
+        // reserve is part of the one symbolic analysis; the same list again is a no-op
+        // (BaseAlgo::set_outer_loops).
+        void _install_outer_loops(AlgorithmSelector & algo) const {
+            if(!algo.supports_outer_loops()) return;
+            const auto & loops = _grid_model.get_outer_loops();
+            algo.set_outer_loops(std::vector<std::shared_ptr<const BaseOuterLoop> >(loops.begin(), loops.end()),
+                                 _grid_model.get_outer_loop_driver_params());
+        }
 
         // Contiguous split of [0, nb_items) over `nb_thread` threads: the first
         // `nb_items % nb_thread` threads get one extra item. Writes thread `t`'s share
@@ -858,6 +878,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             // ContingencyAnalysis / ScenarioSweep, feeds _record_n_case_violations --
             // so it must never be lazy, even when the per-row sweep that follows will be.
             _algo.set_lazy_v(false);
+            _install_outer_loops(_algo);
+            _base_row_view_.layout = &active_layout();
+            _algo.set_outer_row_view(&_base_row_view_);
             if(_algo.ac_solver_used()){
                 // ac_cache_.inj is already per-unit (pre_process_solver / fillSbus_me divides by
                 // sn_mva when != 1), same convention as LSGrid::ac_pf's acSbus_ -- so tol
@@ -1030,6 +1053,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // set_init_from_n_powerflow() batch starts every row from. Part of L2: it is
         // that solve's answer, and it is kept with the factorization that produced it.
         CplxVect _base_case_v_solver_;
+        // the "n" solve as the outer loops see it: the batch's labelling, its masked buses,
+        // no row override (see OuterRowView). The loops declare what they act on against it.
+        OuterRowView _base_row_view_;
 
         bool _init_from_n_powerflow = false;
         // number of OS threads used to solve the batch (see set_nb_thread)
@@ -1064,6 +1090,20 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // trafos) -- `connected` false for a disconnection, else the row's own end
         // buses. Read by _flows_of_row and the current-limit checks; empty otherwise.
         std::vector<std::vector<BranchBusOverride> > _row_branch_overrides_;
+        // with outer loops: per row, the transformers whose taps the loops left elsewhere
+        // than the grid has them, with their pi block there (y11, y12, y21, y22, pu), sorted
+        // by transformer id. Read by the flow kernels in place of the container's
+        // coefficients; empty otherwise (and on a row the loops moved no tap of).
+        std::vector<std::vector<std::pair<int, std::array<cplx_type, 4> > > > _row_trafo_blocks_;
+        // that row's block of that transformer, null where it keeps the container's
+        const std::array<cplx_type, 4> * _row_trafo_block(Eigen::Index i, int trafo_id) const {
+            if(static_cast<size_t>(i) >= _row_trafo_blocks_.size()) return nullptr;
+            const auto & row = _row_trafo_blocks_[static_cast<size_t>(i)];
+            if(row.empty()) return nullptr;
+            auto it = std::lower_bound(row.begin(), row.end(), trafo_id,
+                                       [](const std::pair<int, std::array<cplx_type, 4> > & a, int id){ return a.first < id; });
+            return (it != row.end() && it->first == trafo_id) ? &it->second : nullptr;
+        }
         RealMat _amps_flows;
         RealMat _active_power_flows;
         RealMat _branch_results;

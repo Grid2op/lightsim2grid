@@ -15,12 +15,10 @@
 #include "SbusPolicy.hpp"
 #include "LimitViolation.hpp"
 #include "OperationalCheck.hpp"
-#include "BusQCheck.hpp"
 #include "GenPCheck.hpp"
 #include "GenPvReleaseCheck.hpp"
-#include "SvcStandbyCheck.hpp"
-#include "RemoteVoltageControlCheck.hpp"
 #include "HvdcPCheck.hpp"
+#include "powerflow_algorithm/outer_loop/DefaultOuterLoops.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
 #include "element_container/SlackRedistribution.hpp"
@@ -64,6 +62,34 @@ enum class LS2G_API BatchInitKind
 };
 
 // the operational limit checks live in OperationalCheck.hpp (shared with LSGrid::get_violations)
+
+/**
+ * What the outer loops did on one row of a batch whose algorithm runs them (NROuter_*):
+ * how the row ended, and what it settled on that the grid does not say -- the active targets
+ * DistributedSlack moved, the hvdc regimes, the taps and sections. Only what differs from the
+ * grid is listed, by element id, sorted: a row the loops left alone holds nothing but its
+ * status.
+ */
+struct LS2G_API OuterRowResult
+{
+    OuterLoopStatus status = OuterLoopStatus::STABLE;
+    /// the unrealistic-voltage check stopped the row (see OuterLoopStats::unrealistic_state)
+    bool unrealistic_state = false;
+    /// the loop that failed, empty otherwise
+    std::string failed_loop;
+    int nb_outer_iterations = 0;
+    /// Newton iterations over every inner solve of the row
+    int nb_nr_iterations = 0;
+    /// (id, MW): generators and storage units (load convention) whose target a loop moved
+    std::vector<std::pair<int, real_type> > gen_target_p;
+    std::vector<std::pair<int, real_type> > storage_target_p;
+    /// (hvdc line id, regime, see HvdcRegimeControl)
+    std::vector<std::pair<int, int> > hvdc_regime;
+    /// (transformer id, position), (shunt id, section count)
+    std::vector<std::pair<int, int> > phase_tap;
+    std::vector<std::pair<int, int> > ratio_tap;
+    std::vector<std::pair<int, int> > shunt_sections;
+};
 
 /**
 Batch powerflow algorithm, policy-parameterized on what varies from step to step:
@@ -213,12 +239,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _converged_mask_.clear();
             _row_solve_time_.clear();
             _row_nb_iter_.clear();
+            _outer_results_.clear();
             _gen_results_ = RealMat();
             _violations.clear();
             _converged_n_ = false;
             _violations_n_.clear();
             _physical_violations_.clear();
-            _bus_q_plan_.clear();
             _gen_p_plan_.clear();
             // NOT _physical_violations_n_: it describes the BASE CASE, which is L2 (see
             // clear_batch_inputs). A compute() that reuses the base case does not re-solve
@@ -662,14 +688,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // an outer loop would apply -- ViolationCategory::CONTROL --, as opposed to the
         // operational limits `compute_limit_violations` reports (a voltage band, a thermal
         // rating: states the grid does reach and should not sit in). Each one a
-        // condition an OpenLoadFlow outer loop acts on, and none enforced here -- no bus is
-        // switched PV -> PQ or back, no droop is clamped, no machine leaves the slack
-        // distribution, no row is re-solved:
+        // condition an OpenLoadFlow outer loop acts on -- reported, and only enforced when the
+        // algorithm runs the loops (NROuter_*, after which they have nothing left to report):
         //
         //   * the REACTIVE CAPABILITY of each bus whose voltage is held by machines
-        //     (LOW_Q / HIGH_Q on the BUS, see BusQCheck.hpp): did it need more reactive
-        //     power than the sum of what its voltage-regulating generators, hvdc converter
-        //     stations and voltage-mode SVCs can produce? OpenLoadFlow's `ReactiveLimits`;
+        //     (LOW_Q / HIGH_Q on the BUS): did it need more reactive power than the sum of
+        //     what its voltage-regulating generators, hvdc converter stations and
+        //     voltage-mode SVCs can produce? `ReactiveLimits`' own trigger;
         //   * the RELEASE of each PQ generator the caller flagged as pinned at a reactive
         //     limit (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the GENERATOR, see
         //     GenPvReleaseCheck.hpp and LSGrid::set_gen_can_be_pv): does the bus it would
@@ -681,12 +706,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //     SvcStandbyCheck.hpp and LSGrid::set_svc_standby): does the bus it regulates
         //     sit outside the automaton's voltage thresholds? OpenLoadFlow's
         //     `MonitoringVoltageOuterLoop`;
-        //   * the OWN BUS of each generator regulating a remote bus, when the caller set a
-        //     realistic range (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the
-        //     GENERATOR, see RemoteVoltageControlCheck.hpp and
-        //     LSGrid::set_remote_voltage_control_vm_range): does holding the remote target take
-        //     it outside that range? OpenLoadFlow's `ReactiveLimits`, in its robust remote
-        //     voltage control mode;
+        //   * the OWN BUS of each generator regulating a remote bus
+        //     (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the GENERATOR):
+        //     does holding the remote target take it outside the realistic range?
+        //     `ReactiveLimits`' trigger in its robust remote voltage control mode;
         //   * the ACTIVE POWER of each angle-droop ("AC emulation") hvdc line still in the
         //     linear regime (HIGH_P on the HVDC, see HvdcPCheck.hpp): did it transmit more
         //     than `pmax_1to2_mw` / `pmax_2to1_mw` allow in that direction? OpenLoadFlow's
@@ -717,8 +740,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // and nothing is hidden by it. The release check needs a voltage magnitude, so it
         // is AC only too, and the flags themselves (LSGrid::set_gen_can_be_pv): a grid with
         // none reports nothing there. Same for the standby SVC check (voltage magnitudes,
-        // LSGrid::set_svc_standby) and the remote voltage control one (voltage magnitudes,
-        // LSGrid::set_remote_voltage_control_vm_range). The active-power check also needs the limits
+        // LSGrid::set_svc_standby) and the remote voltage control one (voltage magnitudes).
+        // The active-power check also needs the limits
         // themselves, which are optional (LSGrid::set_gen_p_limits /
         // set_storage_p_limits): a grid that has none simply reports nothing there.
         //
@@ -1232,6 +1255,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         IntVect get_row_nb_iter() const {
             return IntVect::Map(_row_nb_iter_.data(), static_cast<Eigen::Index>(_row_nb_iter_.size()));
         }
+        // What the outer loops did on each row of the last compute() (see OuterRowResult),
+        // when the algorithm runs them (NROuter_*); empty otherwise.
+        const std::vector<OuterRowResult> & get_outer_results() const { return _outer_results_; }
 
         // timers
         double total_time() const {return _timer_total;}
@@ -1870,6 +1896,85 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(i >= _row_solve_time_.size()) return;
             _row_solve_time_[i] = algo.get_computation_time();
             _row_nb_iter_[i] = algo.get_nb_iter();
+            _record_row_outer(i, algo);
+        }
+
+        // the pi block of each transformer whose taps row i's loops moved, at the row's
+        // positions (the grid's for the changer they left alone): what the row's flows read
+        void _record_row_trafo_blocks(size_t i, const OuterRowResult & r){
+            if(i >= _row_trafo_blocks_.size()) return;
+            auto & out = _row_trafo_blocks_[i];
+            out.clear();
+            if(r.phase_tap.empty() && r.ratio_tap.empty()) return;
+            const TrafoContainer & trafos = _grid_model.get_trafos();
+            const TapChangers & ptc = trafos.get_tap_changers(true);
+            const TapChangers & rtc = trafos.get_tap_changers(false);
+            std::map<int, std::pair<int, int> > positions;  // trafo -> (ratio, phase)
+            auto grid_pos = [&](int t){
+                return std::make_pair(rtc.has(t) ? rtc.position(t) : 0, ptc.has(t) ? ptc.position(t) : 0);
+            };
+            for(const auto & tp : r.ratio_tap){
+                auto it = positions.emplace(tp.first, grid_pos(tp.first)).first;
+                it->second.first = tp.second;
+            }
+            for(const auto & tp : r.phase_tap){
+                auto it = positions.emplace(tp.first, grid_pos(tp.first)).first;
+                it->second.second = tp.second;
+            }
+            for(const auto & tp : positions){
+                const int t = tp.first;
+                const real_type shift = ptc.has(t) ? ptc.alpha_at(t, tp.second.second) : trafos[t].shift_rad;
+                out.emplace_back(t, trafos.pi_block_at(t, tp.second.first, tp.second.second, shift));
+            }
+        }
+
+        // what the outer loops did on row i (an algorithm that runs them only, see
+        // _outer_results_), read while the row's solve is still the algorithm's last
+        void _record_row_outer(size_t i, const AlgorithmSelector & algo){
+            if(i >= _outer_results_.size()) return;
+            OuterRowResult & r = _outer_results_[i];
+            r = OuterRowResult();
+            const OuterLoopStats stats = algo.get_outer_loop_stats();
+            r.status = stats.status;
+            r.unrealistic_state = stats.unrealistic_state;
+            r.failed_loop = stats.failed_loop;
+            r.nb_outer_iterations = stats.nb_outer_iterations;
+            for(int n : stats.nr_iterations) r.nb_nr_iterations += n;
+            std::vector<real_type> gen_p, storage_p;
+            algo.get_outer_target_p(gen_p, storage_p);
+            auto moved = [](const std::vector<real_type> & v, std::vector<std::pair<int, real_type> > & out){
+                for(std::size_t k = 0; k < v.size(); ++k) if(!std::isnan(v[k])) out.emplace_back(static_cast<int>(k), v[k]);
+            };
+            moved(gen_p, r.gen_target_p);
+            moved(storage_p, r.storage_target_p);
+            std::vector<int> ints;
+            algo.get_outer_hvdc_status(ints);
+            for(std::size_t k = 0; k < ints.size(); ++k){
+                if(ints[k] != HvdcRegimeControl::KEEP) r.hvdc_regime.emplace_back(static_cast<int>(k), ints[k]);
+            }
+            // a position the loops handled, where it differs from the grid's
+            const TrafoContainer & trafos = _grid_model.get_trafos();
+            auto taps = [](const std::vector<int> & pos, const TapChangers & tc, std::vector<std::pair<int, int> > & out){
+                for(std::size_t t = 0; t < pos.size(); ++t){
+                    if(pos[t] == std::numeric_limits<int>::min()) continue;
+                    const int el = static_cast<int>(t);
+                    if(el < tc.nb() && tc.has(el) && tc.position(el) == pos[t]) continue;
+                    out.emplace_back(el, pos[t]);
+                }
+            };
+            algo.get_outer_phase_tap(ints);
+            taps(ints, trafos.get_tap_changers(true), r.phase_tap);
+            algo.get_outer_ratio_tap(ints);
+            taps(ints, trafos.get_tap_changers(false), r.ratio_tap);
+            _record_row_trafo_blocks(i, r);
+            algo.get_outer_shunt_sections(ints);
+            const ShuntContainer & shunts = _grid_model.get_shunts();
+            for(std::size_t k = 0; k < ints.size(); ++k){
+                if(ints[k] == std::numeric_limits<int>::min()) continue;
+                const int el = static_cast<int>(k);
+                if(el < shunts.nb() && shunts.has_sections(el) && shunts.get_section_count(el) == ints[k]) continue;
+                r.shunt_sections.emplace_back(el, ints[k]);
+            }
         }
 
         // ----- per-step Sbus: 2-way (row of sbus_policy_ vs. the fixed member) ---
@@ -2113,6 +2218,99 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<int> _row_skip_branch_ids(size_t i) const {
             return ybus_policy_.branch_ids_for_row(static_cast<Eigen::Index>(i), n_line_);
         }
+
+        // ----- the row as the outer loops see it (see OuterRowView) --------------
+        // Everything this row changes compared with the grid, read off the same per-row
+        // data the row's Sbus / Ybus are built from: its injections and generator outages
+        // (SbusPolicy::Vary), its topological action, its contingency's branches. Dense per
+        // element kind, and only for the kinds the row changes; `v` is the worker's own,
+        // refilled for every row (its vectors keep their capacity).
+        void _fill_outer_row_view(size_t i, const std::vector<int> * masked, OuterRowView & v) const {
+            v.layout = &active_layout();
+            v.masked = (masked != nullptr && !masked->empty()) ? masked : nullptr;
+            v.resume = false;
+            v.clear_overrides();
+            _fill_outer_row_injections(i, v);
+            _fill_outer_row_topo(i, v);
+            _fill_outer_row_branches(i, v);
+        }
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        void _fill_outer_row_injections(size_t i, OuterRowView & v) const {
+            const Eigen::Index row = static_cast<Eigen::Index>(i);
+            auto fill = [row](const RealMat & mat, std::vector<real_type> & out){
+                if(mat.rows() == 0 || row >= mat.rows()) return;
+                out.resize(static_cast<std::size_t>(mat.cols()));
+                for(Eigen::Index c = 0; c < mat.cols(); ++c) out[static_cast<std::size_t>(c)] = mat(row, c);
+            };
+            fill(sbus_policy_.gen_p, v.gens.target_p);
+            fill(sbus_policy_.gen_v, v.gens.target_vm);
+            fill(sbus_policy_.load_q, v.loads.target_q);
+            const int nb_gen = _grid_model.get_generators().nb();
+            if(sbus_policy_.has_gen_off()){
+                v.gens.off.assign(static_cast<std::size_t>(nb_gen), 0);
+                for(int g = 0; g < nb_gen; ++g) v.gens.off[static_cast<std::size_t>(g)] = _gen_off_in_row(i, g) ? 1 : 0;
+            }
+            if(i < sbus_policy_.topo_gens_on.size() && !sbus_policy_.topo_gens_on[i].empty()){
+                v.gens.bus_solver.assign(static_cast<std::size_t>(nb_gen), OuterRowView::Units::GRID_BUS);
+                for(const auto & gen_on : sbus_policy_.topo_gens_on[i]){
+                    if(gen_on.gen_id >= 0 && gen_on.gen_id < nb_gen) v.gens.bus_solver[static_cast<std::size_t>(gen_on.gen_id)] = gen_on.bus_solver;
+                    // a placed generator is on in its row (topo_gen_off may list its base bus)
+                    if(!v.gens.off.empty()) v.gens.off[static_cast<std::size_t>(gen_on.gen_id)] = 0;
+                }
+            }
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        void _fill_outer_row_injections(size_t, OuterRowView &) const {}
+        // loads and storage units a topological action moves or disconnects (generators come
+        // with the injections above)
+        void _fill_outer_row_topo(size_t i, OuterRowView & v) const {
+            if(i >= _row_topo_.size()) return;
+            const RowTopoPlan & plan = _row_topo_[i];
+            const SolverBusIdVect & to_solver = active_layout().id_me_to_solver;
+            auto place = [&to_solver](const std::vector<TopoElPlacement> & placements, int nb, OuterRowView::Units & u){
+                if(placements.empty()) return;
+                u.off.assign(static_cast<std::size_t>(nb), 0);
+                u.bus_solver.assign(static_cast<std::size_t>(nb), OuterRowView::Units::GRID_BUS);
+                for(const TopoElPlacement & p : placements){
+                    if(p.el_id < 0 || p.el_id >= nb) continue;
+                    if(p.row_bus_me < 0){ u.off[static_cast<std::size_t>(p.el_id)] = 1; continue; }
+                    const int b = to_solver[p.row_bus_me].cast_int();
+                    u.bus_solver[static_cast<std::size_t>(p.el_id)] = b == BaseConstants::_deactivated_bus_id ? -1 : b;
+                }
+            };
+            place(plan.loads, _grid_model.get_loads().nb(), v.loads);
+            place(plan.storages, _grid_model.get_storages().nb(), v.storages);
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _fill_outer_row_branches(size_t i, OuterRowView & v) const {
+            const int nb_lines = static_cast<int>(n_line_);
+            const int nb_trafos = static_cast<int>(n_trafos_);
+            for(int br_id : _row_skip_branch_ids(i)){
+                std::vector<char> & off = br_id < nb_lines ? v.lines.off : v.trafos.off;
+                const int nb = br_id < nb_lines ? nb_lines : nb_trafos;
+                const int el = br_id < nb_lines ? br_id : br_id - nb_lines;
+                if(el < 0 || el >= nb) continue;
+                if(off.empty()) off.assign(static_cast<std::size_t>(nb), 0);
+                off[static_cast<std::size_t>(el)] = 1;
+            }
+            if(i < ybus_policy_.topo_branches_moved.size()){
+                for(const auto & placement : ybus_policy_.topo_branches_moved[i]){
+                    const bool is_line = placement.branch_id < nb_lines;
+                    OuterRowView::Branches & b = is_line ? v.lines : v.trafos;
+                    const int nb = is_line ? nb_lines : nb_trafos;
+                    const int el = is_line ? placement.branch_id : placement.branch_id - nb_lines;
+                    if(el < 0 || el >= nb) continue;
+                    if(b.bus1_solver.empty()){
+                        b.bus1_solver.assign(static_cast<std::size_t>(nb), OuterRowView::Units::GRID_BUS);
+                        b.bus2_solver.assign(static_cast<std::size_t>(nb), OuterRowView::Units::GRID_BUS);
+                    }
+                    b.bus1_solver[static_cast<std::size_t>(el)] = placement.bus1_solver < 0 ? -1 : placement.bus1_solver;
+                    b.bus2_solver[static_cast<std::size_t>(el)] = placement.bus2_solver < 0 ? -1 : placement.bus2_solver;
+                }
+            }
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        void _fill_outer_row_branches(size_t, OuterRowView &) const {}
 
         // ----- per-row violation recording ---------------------------------------
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
@@ -2385,41 +2583,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                  return a.el_id < b.el_id; });
         }
 
-        // the reactive-capability entries of a row that places generators, on top of the
-        // batch's plan: one for each bus a placed generator stands on that no machine of
-        // the base grid holds. The plan itself is not copied: check_bus_q_violations
-        // counts a placed generator on the plan's entry for its new bus, and on no other
-        // (its `placed` argument).
-        void _row_bus_q_entries(const std::vector<std::pair<int, int> > & gens_placed,
-                                bus_q_check::BusQPlan & out) const {
-            out.clear();
-            const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
-            const SubstationContainer & subs = _grid_model.get_substations();
-            const std::vector<std::string> & sub_names = subs.get_sub_names();
-            for(const auto & g : gens_placed){
-                const int gen_id = g.first;
-                const int bus_solver = g.second;
-                bool in_plan = false;
-                for(const auto & entry : _bus_q_plan_.buses){
-                    if(entry.bus_solver == bus_solver){ in_plan = true; break; }
-                }
-                if(in_plan) continue;
-                bus_q_check::BusQEntry * target = nullptr;
-                for(auto & entry : out.buses){
-                    if(entry.bus_solver == bus_solver) target = &entry;
-                }
-                if(target == nullptr){
-                    bus_q_check::BusQEntry entry;
-                    entry.bus_solver = bus_solver;
-                    entry.bus_grid = (bus_solver >= 0 && bus_solver < solver_to_me.size()) ? solver_to_me[bus_solver] : -1;
-                    const int sub_id = entry.bus_grid >= 0 ? subs.sub_id_of_bus(entry.bus_grid) : -1;
-                    if(sub_id >= 0 && static_cast<std::size_t>(sub_id) < sub_names.size()) entry.sub_name = sub_names[static_cast<std::size_t>(sub_id)];
-                    out.buses.push_back(entry);
-                    target = &out.buses.back();
-                }
-                target->gen_ids.push_back(gen_id);
-            }
-        }
 
         // MUST be called while the row's own state is still installed on the algorithm
         // -- its Ybus edits, its masked buses, its PV pinning -- for the same reason
@@ -2535,36 +2698,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(!_compute_physical_violations_) return;
             if(i >= _physical_violations_.size()) return;
             const std::vector<int> * masked = _row_masked_ids(i);
-            // the generators this row's topological action places on a bus (moved there,
-            // or reactivated): the plan, built from the base placement, lists each of
-            // them on the bus it left, or not at all -- the check counts them where they
-            // stand instead (see _row_bus_q_entries). Empty on every other row.
-            const std::vector<std::pair<int, int> > gens_placed = _row_gens_placed(i);
-            if(_bus_q_check_on_){
-                bus_q_check::BusQPlan row_entries;
-                if(!gens_placed.empty()) _row_bus_q_entries(gens_placed, row_entries);
-                if(!_bus_q_plan_.empty() || !row_entries.empty()){
-                    // get_controller_q() returns by value: asked for only where a bus' reactive
-                    // power actually needs it (see BusQPlan::needs_controller_q), so an ordinary
-                    // grid of local PV machines pays no per-row allocation. A row's own
-                    // entries hold no controller of the plan.
-                    const RealVect ctrl_q = _bus_q_plan_.needs_controller_q ? algo.get_controller_q()
-                                                                            : RealVect();
-                    bus_q_check::check_bus_q_violations(
-                        _bus_q_plan_, _grid_model, algo.get_bus_mismatch(), V_solver, ctrl_q,
-                        _grid_model.get_sn_mva(), _physical_tol_mva_, masked,
-                        [this, i, &gens_placed](int gen_id){
-                            // a generator the row placed is live on the bus it stands on
-                            // (the check counts it there only)
-                            for(const auto & g : gens_placed) if(g.first == gen_id) return false;
-                            return this->_gen_off_in_row(i, gen_id);
-                        },
-                        // a storage unit leaving its bus is disconnected (a row places no
-                        // regulating one)
-                        [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); },
-                        _physical_violations_[i], &gens_placed, &row_entries);
-                }
-            }
+            // the outer loops' own triggers, on the row as it is: its own machines, targets,
+            // branches and stranded buses (see OuterRowView)
+            OuterRowView row;
+            _fill_outer_row_view(i, masked, row);
+            _record_outer_detect(algo, V_solver, row, _physical_violations_[i]);
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
                 // the row's converged voltage, against the target this row gives the machine
                 gen_pv_release_check::check_gen_pv_release_violations(
@@ -2573,13 +2711,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
                     _physical_violations_[i]);
             }
-            if(_gen_pv_release_check_on_ && !_remote_vc_plan_.empty()){
-                remote_voltage_control_check::check_remote_voltage_control_violations(
-                    _remote_vc_plan_, V_solver, _physical_tol_vm_pu_, masked,
-                    [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); },
-                    _physical_violations_[i]);
-            }
-            _record_outer_detect(algo, V_solver, masked, _physical_violations_[i]);
             if(!_gen_p_plan_.empty()){
                 // the weights are THIS row's (a generator contingency re-derives them),
                 // and so is the slack the solve absorbed -- both belong to the system the
@@ -2621,7 +2752,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         void _refresh_defaults_vect_cache(){
-            _li_defaults_vect_cache_ = _compute_limit_violations_ ? my_defaults_vect() : std::vector<std::vector<int> >();
+            // read by the limit checks, and by the outer loops' view of each row
+            _li_defaults_vect_cache_ = (_compute_limit_violations_ || _compute_physical_violations_ || _algo.supports_outer_loops())
+                                       ? my_defaults_vect() : std::vector<std::vector<int> >();
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
@@ -2659,12 +2792,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // diverges answers get_physical_violations() with one empty entry per row rather
         // than with an empty list.
         void _prepare_physical_check(size_t nb_steps, bool ac_solver_used){
-            _bus_q_plan_.clear();
             _gen_pv_release_plan_.clear();
-            _remote_vc_plan_.clear();
             _gen_p_plan_.clear();
             _physical_violations_.clear();
-            _bus_q_check_on_ = false;
             _gen_pv_release_check_on_ = false;
             if(!_compute_physical_violations_) return;
             // the reactive half needs a per-bus mismatch; the hvdc half needs only the bus
@@ -2682,9 +2812,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                             "`compute_physical_violations` off.";
                     throw std::runtime_error(exc_.str());
                 }
-                _bus_q_check_on_ = true;
-                // the release check compares voltage magnitudes: AC only, like the reactive one
-                // (and so does the standby SVC one, which shares this switch)
+                // the reactive and voltage checks (the loops' and the release one) read the
+                // mismatch and compare voltage magnitudes: AC only
                 _gen_pv_release_check_on_ = true;
             }
             _physical_violations_.assign(nb_steps, std::vector<LimitViolation>());
@@ -2696,32 +2825,25 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // is never carried across a compute().
         void _build_physical_plans(){
             if(!_compute_physical_violations_) return;
-            if(_bus_q_check_on_){
-                bus_q_check::build_bus_q_plan(_grid_model, active_layout().id_me_to_solver,
-                                              active_layout().voltage_control.controllers(),
-                                              _bus_q_plan_);
-            }
             if(_gen_pv_release_check_on_){
                 // which limit a flagged machine sits at is decided here, once: no batch axis
                 // varies a reactive setpoint
                 gen_pv_release_check::build_gen_pv_release_plan(
                     _grid_model, active_layout().id_me_to_solver, _gen_pv_release_plan_);
-                remote_voltage_control_check::build_remote_voltage_control_plan(
-                    _grid_model, active_layout().id_me_to_solver,
-                    active_layout().voltage_control.controllers(), _remote_vc_plan_);
             }
             gen_p_check::build_gen_p_plan(_grid_model, active_layout().id_me_to_solver,
                                           _gen_p_plan_);
             _outer_detect_loops_ = _grid_model.get_outer_loops();
         }
 
-        // The grid's outer loops' own triggers (detection mode, see BaseOuterLoop::detect),
-        // as LSGrid::get_physical_violations reads them (the hvdc droop limits, the slack
-        // left on a single slack bus, the standby SVCs' thresholds -- the voltage checks
-        // only with an algorithm that can feed the reactive ones).
+        // The grid's outer loops' own triggers (detection mode, see outer_detect), on the row
+        // `row` describes, as LSGrid::get_physical_violations reads them on a grid (a bus out
+        // of its reactive range, a remote controller at an unrealistic voltage, the hvdc droop
+        // limits, the slack left on a single slack bus, the standby SVCs' thresholds -- the
+        // voltage checks only with an algorithm that can feed the reactive ones).
         void _record_outer_detect(const AlgorithmSelector & algo,
                                   const Eigen::Ref<const CplxVect> & V_solver,
-                                  const std::vector<int> * masked,
+                                  const OuterRowView & row,
                                   std::vector<LimitViolation> & out){
             if(_outer_detect_loops_.empty()) return;
             const SolverBusLayout & layout = active_layout();
@@ -2741,9 +2863,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ctx.tol_mw = _physical_tol_mva_;
             ctx.tol_vm_pu = _physical_tol_vm_pu_;
             ctx.vm_checks = ac && _gen_pv_release_check_on_;
-            ctx.masked = masked;
-            ctx.id_me_to_solver = &layout.id_me_to_solver;
-            for(const auto & loop : _outer_detect_loops_) loop->detect(ctx, out);
+            ctx.row = &row;
+            outer_detect(_outer_detect_loops_, ctx, out);
         }
 
         // The base ("n") case's own report, read off the solve _finish_preprocessing just
@@ -2755,30 +2876,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _record_n_case_physical(){
             if(!_compute_physical_violations_) return;
             _physical_violations_n_.clear();
-            if(_bus_q_check_on_ && !_bus_q_plan_.empty()){
-                const RealVect ctrl_q = _bus_q_plan_.needs_controller_q ? _algo.get_controller_q()
-                                                                       : RealVect();
-                bus_q_check::check_bus_q_violations(
-                    _bus_q_plan_, _grid_model, _algo.get_bus_mismatch(), _algo.get_V(), ctrl_q,
-                    _grid_model.get_sn_mva(), _physical_tol_mva_, nullptr,
-                    [](int){ return false; },  // the base case disconnects no generator
-                    _physical_violations_n_);
-            }
+            // the base case is the grid's own: its targets, no contingency
+            _record_outer_detect(_algo, _algo.get_V(), _base_row_view_, _physical_violations_n_);
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
-                // the base case is the grid's own: its targets, no contingency
                 gen_pv_release_check::check_gen_pv_release_violations(
                     _gen_pv_release_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
                     [this](int gen_id){ return this->_grid_model.get_generators().get_target_vm_pu(gen_id); },
                     [](int){ return false; },
                     _physical_violations_n_);
             }
-            if(_gen_pv_release_check_on_ && !_remote_vc_plan_.empty()){
-                remote_voltage_control_check::check_remote_voltage_control_violations(
-                    _remote_vc_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,
-                    [](int){ return false; },  // the base case disconnects no generator
-                    _physical_violations_n_);
-            }
-            _record_outer_detect(_algo, _algo.get_V(), nullptr, _physical_violations_n_);
             if(!_gen_p_plan_.empty()){
                 // the base case is the grid's own: its targets, its weights, no
                 // contingency -- and, in DC, the injection _solve_n_case handed the solver
@@ -3831,6 +3937,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // this row's active set-point of a slack unit (MW, generator convention): the
         // one the slack pre-pass wrote where it moved it, the row's own otherwise
         real_type _row_target_p(size_t i, ViolationElementType el_type, int el_id) const {
+            // the target this row's outer loops moved it to (DistributedSlack), first
+            if(i < _outer_results_.size()){
+                const OuterRowResult & r = _outer_results_[i];
+                const auto & moved_by_loops = (el_type == ViolationElementType::GENERATOR) ? r.gen_target_p : r.storage_target_p;
+                auto it = std::lower_bound(moved_by_loops.begin(), moved_by_loops.end(), std::make_pair(el_id, real_type(0.)),
+                                           [](const std::pair<int, real_type> & a, const std::pair<int, real_type> & b){ return a.first < b.first; });
+                if(it != moved_by_loops.end() && it->first == el_id){
+                    // a storage unit's, in the load convention: its injection is the opposite
+                    return (el_type == ViolationElementType::GENERATOR) ? it->second : -it->second;
+                }
+            }
             if(el_type == ViolationElementType::GENERATOR){
                 const real_type * moved = _find_row_new_p(_row_gen_new_p_, i, el_id);
                 return moved != nullptr ? *moved : _gen_target_p_in_row(i, el_id);
@@ -4062,7 +4179,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                            CplxVect & sbus_scratch, RealVect & sw_scratch,
                            bool ac_solver_used, int max_iter, real_type tol_solver,
                            int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
-                           bool & conv, bool & invertible);
+                           bool & conv, bool & invertible, OuterRowView * row_view);
 
         // per-range worker: mask-mode path (ContingencyAnalysis AND ScenarioSweep --
         // shared, using _step_sbus(cont_id) instead of a hardcoded fixed ac_cache_.inj so it
@@ -4080,6 +4197,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                double & timer_modif_ybus, int & nb_solved, int & nb_converged, double & timer_solver,
                                int & first_diverging_step, std::exception_ptr & err, bool needs_solver_init)
         {
+            // the row as the outer loops see it, for an algorithm that runs them
+            OuterRowView row_view;
+            const bool outer = algo.supports_outer_loops();
             try {
                 CplxVect V;
                 CplxVect sbus_scratch;   // this row's injection, where it varies
@@ -4128,6 +4248,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         // when told to: before EVERY row, the first one included -- the
                         // algorithm last saw the base case's
                         if(!ac_solver_used) control.tell_recompute_sbus();
+                        if(outer){
+                            _fill_outer_row_view(cont_id, &masked, row_view);
+                            algo.set_outer_row_view(&row_view);
+                        }
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
@@ -4177,6 +4301,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             } catch(...) {
                 err = std::current_exception();
             }
+            // the view dies here: the algorithm must not keep pointing at it
+            if(outer) algo.set_outer_row_view(&_base_row_view_);
         }
         // dispatch into _run_range_masked only where it exists (ContingencyAnalysis
         // AND ScenarioSweep); unreachable on TimeSeries/InjectionSweep
@@ -4375,6 +4501,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // per-row solve statistics of the last compute(): see get_row_nb_iter
         std::vector<double> _row_solve_time_;
         std::vector<int> _row_nb_iter_;
+        // what the outer loops did on each row, when the algorithm runs them (empty otherwise)
+        std::vector<OuterRowResult> _outer_results_;
         std::vector<std::vector<std::pair<int, real_type> > > _row_gen_new_p_;
         std::vector<std::vector<std::pair<int, real_type> > > _row_sto_new_p_;
         std::vector<std::vector<int> > _row_sat_gens_;
@@ -4401,23 +4529,19 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // set_compute_physical_violations). The plans are the routing the per-row checks
         // need and are rebuilt once per compute(), from the labelling the batch solves in
         // -- like every other solver-keyed thing here they mean nothing against another
-        // labelling, so they are dropped with the results. `_bus_q_check_on_` is whether
-        // the algorithm of THIS compute() can feed the reactive half at all (see
-        // _prepare_physical_check): false in DC, where there is no reactive power to check.
+        // labelling, so they are dropped with the results. The outer loops' own triggers need
+        // no plan: each row's are read through its OuterRowView (see _record_outer_detect).
         bool _compute_physical_violations_ = false;
         // see set_compute_gen_results
         bool _compute_gen_results_ = false;
         RealMat _gen_results_;
         real_type _physical_tol_mva_ = 1e-4;
         real_type _physical_tol_vm_pu_ = 1e-4;
-        bool _bus_q_check_on_ = false;
-        // `_gen_pv_release_check_on_`: same idea for the PQ -> PV release check, the
-        // standby SVC check and the remote voltage control one, which compare voltage
-        // magnitudes (AC only)
+        // `_gen_pv_release_check_on_`: whether the algorithm of THIS compute() can feed the
+        // reactive and voltage checks -- the loops' own and the PQ -> PV release one -- at
+        // all (see _prepare_physical_check): false in DC
         bool _gen_pv_release_check_on_ = false;
-        bus_q_check::BusQPlan _bus_q_plan_;
         gen_pv_release_check::GenPvReleasePlan _gen_pv_release_plan_;
-        remote_voltage_control_check::RemoteVoltageControlPlan _remote_vc_plan_;
         gen_p_check::GenPPlan _gen_p_plan_;
         std::vector<std::vector<LimitViolation> > _physical_violations_;
         std::vector<LimitViolation> _physical_violations_n_;

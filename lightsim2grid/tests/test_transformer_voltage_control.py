@@ -23,7 +23,7 @@ try:
     from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
     from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
     from lightsim2grid.network.from_pypowsybl._result_network import LightsimResultNetwork
-    from lightsim2grid.algorithm import TransformerVoltageControl, ReactiveLimits
+    from lightsim2grid.algorithm import TransformerVoltageControl
     from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationCategory, ViolationElementType
     HAS_PYPOWSYBL = True
 except ImportError:
@@ -56,14 +56,15 @@ def _olf(net, reactive_limits):
         transformer_voltage_control_on=True)
     res = lf.run_ac(net, params)[0]
     assert res.status.name == "CONVERGED", res.status_text
-    return res
+    return params
 
 
-def _grid(net, reactive_limits=False):
+def _grid(net, reactive_limits=False, olf_parameters=None):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         return init_from_pypowsybl(net, gen_slack_id=SLACK_GEN, sort_index=False, buses_for_sub=False,
-                                   olf_rules=OlfLoadingParameters(reactive_limits=reactive_limits))
+                                   olf_rules=OlfLoadingParameters(reactive_limits=reactive_limits),
+                                   olf_parameters=olf_parameters)
 
 
 class TestTransformerVoltageControl(unittest.TestCase):
@@ -73,15 +74,14 @@ class TestTransformerVoltageControl(unittest.TestCase):
 
     def _compare(self, trafo, target_kv, deadband_kv, reactive_limits=False, side="TWO"):
         net = _net(trafo, target_kv, deadband_kv, side)
-        _olf(net, reactive_limits)
+        params = _olf(net, reactive_limits)
         olf_tap = int(net.get_ratio_tap_changers(all_attributes=True).loc[trafo, "solved_tap_position"])
 
-        grid = _grid(_net(trafo, target_kv, deadband_kv, side), reactive_limits)
+        # the loops OpenLoadFlow ran, read off the same parameters
+        grid = _grid(_net(trafo, target_kv, deadband_kv, side), reactive_limits, olf_parameters=params)
+        self.assertEqual([l.name() for l in grid.get_outer_loops()],
+                         (["ReactiveLimits"] if reactive_limits else []) + ["TransformerVoltageControl"])
         grid.change_algorithm("NROuter_KLU")
-        grid.clear_outer_loops()
-        if reactive_limits:
-            grid.add_outer_loop(ReactiveLimits())
-        grid.add_outer_loop(TransformerVoltageControl())
         V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10)
         self.assertGreater(V.shape[0], 0)
         self.assertEqual(grid.get_algo().get_outer_loop_stats().status.name, "STABLE")
