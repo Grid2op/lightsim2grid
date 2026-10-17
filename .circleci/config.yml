@@ -256,6 +256,7 @@ jobs:
     compile_and_test_gcc_latest:
         executor: gcc_latest
         resource_class: medium
+        parallelism: 4  # the full suite is sharded over this many containers; each one rebuilds lightsim2grid
         environment:
             CMAKE_BUILD_PARALLEL_LEVEL: "1"
         steps:
@@ -308,7 +309,11 @@ jobs:
                 command: |
                     source venv_test/bin/activate
                     cd lightsim2grid/tests/
-                    python -m unittest discover  -v
+                    # each of the `parallelism` containers runs its own slice of the test files
+                    # (modules are imported by bare name, hence the cd above and basename below)
+                    TESTS=$(circleci tests glob "test_*.py" | circleci tests split --split-by=filesize | xargs -n1 basename | sed 's/\.py$//')
+                    echo "$TESTS"
+                    python -m unittest -v $TESTS
 
     compile_clang_earliest:
         executor: clang_earliest
