@@ -223,9 +223,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
-- [ADDED] ``propagate_contingencies(net, contingencies)`` (pypowsybl): adds to each contingency the
-  equipment powsybl trips with it on a node-breaker topology (everything up to the breakers).
-  ``group_equivalent_contingencies`` finds the ones ending in the same tripped set.
+- [ADDED] ``ContingencyPropagator`` (pypowsybl): adds to each contingency the equipment powsybl
+  trips with it on a node-breaker topology (up to the breakers), and groups the ones ending in the
+  same tripped set. ``propagate_contingencies`` / ``group_equivalent_contingencies`` as shortcuts.
 - [BREAKING] ``compute_pf`` / ``solve`` of the algorithms (*eg* ``NR_KLU().solve(...)``) take
   named arguments, and their tolerance is ``tol_pu``: in per unit, unlike the ``tol`` (in MVA)
   of ``LSGrid.ac_pf`` and the batch algorithms.
@@ -243,10 +243,6 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   those taps (batch rows and ``LSGrid.get_violations``), as its flows, not at the grid's.
 - [ADDED] ``get_algo().get_outer_control_layout()``: the J rows / columns of the phase shifters, ratio
   groups and shunt controllers, for solvers that pose the same system (gpusim2grid).
-
-
-[1.2.0] 2026-10-12
---------------------
 - [ADDED] ``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot``, ``NROuter_KLUStaticPivot``: KLU with a
   static-pivot refactorization (Gilbert & Peierls 1988, https://doi.org/10.1137/0909058; KLU,
   Davis & Palamadai Natarajan 2010, https://doi.org/10.1145/1824801.1824814). Opt-in. Rows the
@@ -356,6 +352,15 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] the default distributed slack of ``init_from_pypowsybl`` follows OpenLoadFlow's
   participation rule for generators as for batteries: a negative target takes part, a
   target outside the unit's range or an implausible ``max_p`` does not.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 18 -> 22: the transformers serialize their tap changers,
+  the shunts their sections, the SVCs their standby set-points and ``b0`` (and see the
+  ``save_binary`` fix below). Files of format 18 no longer load.
+- [BREAKING] ``LSGrid.set_remote_voltage_control_vm_range`` is removed: a remote controller at an
+  unrealistic voltage is checked against ``ReactiveLimits``' own realistic range.
+
+
+[1.2.0] 2026-10-12
+--------------------
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtual ``distributes_slack()`` (false unless
   overridden, which ``redistribute_slack`` requires) and ``set_voltage_control_v_set`` takes an
   ``Eigen::Ref``: plugins must be rebuilt, and update their overrides.
@@ -377,11 +382,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] light environment: ``LightEnv`` can be copied cheaply (``copy`` / ``deepcopy``), and
   moved in C++.
 - [FIXED] light environment: the reward and ``info["survival_time"]`` were integer divisions.
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 20: ``SvcContainer`` serializes the standby automaton
-  (its set-points and ``b0`` too) and the ``can_be_pv`` flag of each SVC, the generators and storage
-  units their "can participate in the slack" weight and overshoot, the converter stations their
-  ``can_be_pv`` flag, the hvdc lines their AC-emulation frozen flag, the grid its remote voltage
-  control range, the transformers their tap changers, the shunts their sections. Files of
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 18: ``SvcContainer`` serializes the standby automaton
+  and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
+  in the slack" weight and overshoot, the converter stations their ``can_be_pv`` flag, the hvdc
+  lines their AC-emulation frozen flag, the grid its remote voltage control range. Files of
   format 11 no longer load.
 - [BREAKING] Operational limit checks ignore a value on its limit up to ``violation_rel_tol``
   (new, default ``1e-9``; ``rel_tol`` of ``LSGrid.get_violations``). They used ``>=`` /
@@ -504,9 +508,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``redistribute_slack`` after a computation returned the previous results.
 - [ADDED] ``LSGrid.set_hvdc_ac_emulation_frozen``: an hvdc line frozen at its AC-emulation limit is
   reported (``HVDC_AC_EMULATION_RELEASE``) when its droop asks for less (from the bake).
-- [ADDED] A generator holding a remote bus from an unrealistic own-bus voltage is reported
-  (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``), where OpenLoadFlow's robust
-  remote voltage control switches it to PQ.
+- [ADDED] ``LSGrid.set_remote_voltage_control_vm_range``: a generator holding a remote bus from an
+  unrealistic own-bus voltage is reported (``LOW_VOLTAGE_REMOTE_CONTROL`` /
+  ``HIGH_VOLTAGE_REMOTE_CONTROL``), as OpenLoadFlow's robust remote voltage control switches it to
+  PQ; ``init_from_pypowsybl`` sets the range of the installed OpenLoadFlow (it differs by version).
 - [ADDED] ``bake_outer_loops(bake_hvdc_ac_emulation_limits=True)`` freezes an AC-emulation hvdc line
   OpenLoadFlow saturated to a fixed setpoint at its limit.
 - [ADDED] ``LSGrid.cap_slack_at_active_limits``: OpenLoadFlow's slack rule on a solved grid -- a unit

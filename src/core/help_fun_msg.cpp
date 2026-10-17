@@ -136,8 +136,9 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         Maximum number of iterations performed by the solver. [might be ignore by some solvers]
     tol_pu: ``float``
         Solver tolerance (*eg* 1e-8) [might be ignore by some solvers], **in per unit** (not in MVA):
-        the solver only sees per-unit inputs and has no notion of ``sn_mva``, so it compares the
-        per-unit mismatch with ``tol_pu`` as is. This differs from the ``tol`` of
+        the solver has converged when the infinity norm of the mismatch vector (the largest active
+        or reactive mismatch of any bus) is below ``tol_pu``. It only sees per-unit inputs and has
+        no notion of ``sn_mva``, so it compares the per-unit mismatch with ``tol_pu`` as is. This differs from the ``tol`` of
         :func:`lightsim2grid.network.LSGrid.ac_pf`, of the batch algorithms and of
         :class:`lightsim2grid.lightSimBackend.LightSimBackend`, which is in MVA: to reproduce
         their criterion here, pass ``tol / sn_mva``.
@@ -498,7 +499,7 @@ const std::string DocSolver::constrained_ordering = R"mydelimiter(
     setting it on another algorithm raises. Part of :func:`get_config`, so a grid copy and the
     batch classes keep it. Takes effect on the next solve, which analyzes the Jacobian again.
 
-    .. seealso:: :ref:`static-pivot-refactorization`
+    .. seealso:: :ref:`constrained-ordering`
 
 )mydelimiter";
 
@@ -704,7 +705,12 @@ const std::string DocSolver::NR_KLUStaticPivot = R"mydelimiter(
     reciprocal pivot growth is too small) is rejected, and the fallback factorizes again
     with new pivots, as with KLU.
 
-    See :ref:`static-pivot-refactorization` for the references.
+    The pivot order comes from AMD with ordering constraints (``constrained_ordering``, on by
+    default here): the rows the outer loops switch by value are eliminated after the voltage
+    magnitude columns of their buses, so that a switch does not land a zero pivot.
+
+    See :ref:`static-pivot-refactorization` for the method and its references, and
+    :ref:`constrained-ordering` for the ordering.
 
 )mydelimiter";
 
@@ -5483,9 +5489,10 @@ const std::string DocLSGrid::get_dc_slack_weights_solver = R"mydelimiter(
 const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
     This function returns the (complex) `Ybus` matrix used to compute the AC powerflow.
 
-    The resulting matrix is a CSC scipy sparse matrix of complex number.
+    The resulting matrix is a CSC scipy sparse matrix of complex number, in per unit.
 
-    It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
+    It is a square matrix in the solver bus labelling: one row (and one column) per **connected**
+    bus of the grid, the row of the grid bus ``k`` being ``id_me_to_ac_solver()[k]``.
 
     .. versionchanged:: 1.2.0
         This is now a read only view of the matrix the grid holds, and no longer a copy of it.
@@ -5530,9 +5537,10 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
 const std::string DocLSGrid::get_dcYbus_solver = R"mydelimiter(
     This function returns the (real) `Ybus` matrix used to compute the DC powerflow.
 
-    The resulting matrix is a CSC scipy sparse matrix of real number.
+    The resulting matrix is a CSC scipy sparse matrix of real number, in per unit.
 
-    It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
+    It is a square matrix in the solver bus labelling: one row (and one column) per **connected**
+    bus of the grid, the row of the grid bus ``k`` being ``id_me_to_dc_solver()[k]``.
 
     .. versionchanged:: 1.2.0
         This is now a read only view of the matrix the grid holds, and no longer a copy of it.
@@ -5688,7 +5696,7 @@ const std::string DocLSGrid::get_dcYbus = R"mydelimiter(
     This function returns the (real) `Ybus` matrix (for the DC powerflow) with the gridmodel
     convention.
 
-    The resulting matrix is a CSC scipy sparse matrix of real number.
+    The resulting matrix is a CSC scipy sparse matrix of real number, in per unit.
 
     It is a square matrix, as many rows (columns) as there are **total** buses on the grid.
 
@@ -5862,7 +5870,8 @@ const std::string DocLSGrid::ac_pf = R"mydelimiter(
     
     tol: ``float``
         Tolerance criteria to stop the computation, **in MVA** (not in per unit): the powerflow
-        has converged when no bus has an active or reactive mismatch larger than ``tol`` MW / MVAr.
+        has converged when the infinity norm of the mismatch vector is below ``tol``, that is
+        when no bus has an active or reactive mismatch larger than ``tol`` MW / MVAr.
         It is divided by :func:`get_sn_mva` before reaching the solver, which works in per unit.
         This should be a > 0 real number.
 
@@ -7591,8 +7600,8 @@ const std::string DocTimeSeries::compute_Vs = R"mydelimiter(
         Total number of iteration (>0 integer)
 
     tol: ``float``
-        Solver tolerance, **in MVA** (not in per unit), as for :func:`lightsim2grid.network.LSGrid.ac_pf`
-        (> 0. float)
+        Solver tolerance, **in MVA** (not in per unit), on the infinity norm of the mismatch
+        vector, as for :func:`lightsim2grid.network.LSGrid.ac_pf` (> 0. float)
 
     Returns
     ----------
@@ -8059,8 +8068,8 @@ const std::string DocContingencyAnalysis::compute = R"mydelimiter(
         Total number of iteration (>0 integer)
 
     tol: ``float``
-        Solver tolerance, **in MVA** (not in per unit), as for :func:`lightsim2grid.network.LSGrid.ac_pf`
-        (> 0. float)
+        Solver tolerance, **in MVA** (not in per unit), on the infinity norm of the mismatch
+        vector, as for :func:`lightsim2grid.network.LSGrid.ac_pf` (> 0. float)
 
 )mydelimiter";
 

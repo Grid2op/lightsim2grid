@@ -25,7 +25,7 @@ ratio-group row, "Vm(bus) = target" or "ratio = held". A pivot order chosen in o
 the pivot on an entry the other form zeroes, and every switch then costs a refactorization
 failure and a fresh factorization. When the Vm columns of the buses involved are eliminated
 first, their pivots on the buses' Q rows (never switched) fill the row's other entry in, and
-one pivot order serves both forms (see docs/dev_notes/speed_optimisation.md).
+one pivot order serves both forms (see the "constrained-ordering" section of docs/solvers.rst).
 
 An index is a row and a column at once: the ordering is symmetric, and these rows sit on the
 diagonal of the column they pivot on. A lead index is never a follow one (the leads are Vm
