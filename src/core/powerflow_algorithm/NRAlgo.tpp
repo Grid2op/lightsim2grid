@@ -72,6 +72,8 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
     // Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).
     _system.update_state(BaseAlgo::lsgrid_ptr_, Ybus, V, Sbus, slack_weights);
+    // a few comparisons, set before the first (re)factorization of this solve
+    detail::set_pivot_growth_guard_impl(_linear_solver, _system.has_voltage_controllers(), 0);
 
     // Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).
     // std::cout << "Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).\n";

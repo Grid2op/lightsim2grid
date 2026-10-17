@@ -19,6 +19,7 @@
 #include "ScalingPolicies.hpp"
 #include "RefactorPolicies.hpp"
 #include "linear_solvers/LinearSolverStats.hpp"
+#include "linear_solvers/LinearSolverPolicy.hpp"
 
 namespace ls2g {
   

@@ -401,7 +401,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
         // the refactorize fallback the member algo got (see _maybe_prepare_masks /
         // _push_switchable_to_algo): a fresh algo starts without it
-        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary()) algos[t]->set_refactor_fallback(true);
+        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary() ||
+           (ac_solver_used && _has_voltage_control_groups())) algos[t]->set_refactor_fallback(true);
         // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
         // yet, so telling it here is enough -- its first build_J_sparsity() already
         // accounts for them. Starts fully pinned, like _algo; each row releases what
@@ -626,6 +627,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     bool n_powerflow_has_conv = _finish_preprocessing(
         nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v
     );
+    // a remote regulator / SVC border zeroes diagonal pivots a row's Ybus edit can hit
+    // (see _has_voltage_control_groups); the plan exists once the "n" solve has run
+    if(ac_solver_used && _has_voltage_control_groups()) _algo.set_refactor_fallback(true);
 
     if(!n_powerflow_has_conv){
         // a diverging base case: a Vary-carrying instantiation (TimeSeries /
