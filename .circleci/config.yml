@@ -466,11 +466,11 @@ jobs:
                     cmake ..
                     make -j$(nproc)
             - run:
-                name: "make tests"
+                name: "make basic tests"  # the full suite runs on gcc only (compile_and_test_gcc_latest); here: compile check + smoke subset
                 command: |
                     source venv_test/bin/activate
                     cd lightsim2grid/tests/
-                    python -m unittest discover  -v
+                    python -m unittest -v test_n_busbar_per_sub test_backend_pypowsybl test_ACPF test_DCPF test_solver_control test_solver_registry
     compile_and_test_windows:
         executor: 
             name: win/default  # executor type
