@@ -15,6 +15,7 @@
 #include <stdexcept>
 
 #include "LSGrid.hpp"
+#include "OuterLoopDriver.hpp"
 
 namespace ls2g {
 
@@ -36,7 +37,16 @@ ReactiveLimitsLoop::ReactiveLimitsLoop(const Params & params) : params_(params)
         throw std::runtime_error("ReactiveLimitsLoop: max_reactive_power_mismatch must be >= 0.");
     }
     if (!(params.mismatch_base_mva > 0.)) throw std::runtime_error("ReactiveLimitsLoop: mismatch_base_mva must be > 0.");
-    if (!(params.min_realistic_voltage < params.max_realistic_voltage)) {
+    if (params.robust_mode < -1 || params.robust_mode > 1) {
+        throw std::runtime_error("ReactiveLimitsLoop: robust_mode must be 1 (on), 0 (off) or -1 (the driver's).");
+    }
+    // NaN: the driver's
+    if (std::isinf(params.min_realistic_voltage) || std::isinf(params.max_realistic_voltage)) {
+        throw std::runtime_error("ReactiveLimitsLoop: min_realistic_voltage / max_realistic_voltage must be finite "
+                                 "(or NaN for the driver's).");
+    }
+    if (!std::isnan(params.min_realistic_voltage) && !std::isnan(params.max_realistic_voltage) &&
+        !(params.min_realistic_voltage < params.max_realistic_voltage)) {
         throw std::runtime_error("ReactiveLimitsLoop: min_realistic_voltage must be lower than max_realistic_voltage.");
     }
     if (!(params.realistic_voltage_margin > 0.)) {
@@ -282,8 +292,11 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
 {
     // OpenLoadFlow's tolerance, plus a detection's own (0 in the outer-loop mode)
     const real_type eps = params_.max_reactive_power_mismatch * params_.mismatch_base_mva + ctx.tol_mw;
-    const real_type v_low = params_.min_realistic_voltage * params_.realistic_voltage_margin - ctx.tol_vm_pu;
-    const real_type v_high = params_.max_realistic_voltage / params_.realistic_voltage_margin + ctx.tol_vm_pu;
+    real_type v_low, v_high;
+    _realistic_band(ctx, v_low, v_high);
+    v_low -= ctx.tol_vm_pu;
+    v_high += ctx.tol_vm_pu;
+    const bool robust = _robust(ctx);
     remaining_pv = 0;
     const std::vector<char> groups_holding = _groups_holding(ctx);
     for (std::size_t k = 0; k < buses_.size(); ++k) {
@@ -308,7 +321,7 @@ void ReactiveLimitsLoop::_evaluate(const OuterContext & ctx, std::vector<Switch>
                 to_pq.push_back(Switch{ki, LimitViolationType::LOW_Q, q, q_min});
             } else if (q > q_max + eps) {
                 to_pq.push_back(Switch{ki, LimitViolationType::HIGH_Q, q, q_max});
-            } else if (params_.robust_mode && bus.reg_bus_solver != bus.bus_solver) {
+            } else if (robust && bus.reg_bus_solver != bus.bus_solver) {
                 // a remote controller within its limits, but its own bus' voltage unrealistic
                 const real_type v = ctx.vm(bus.bus_solver);
                 if (v < v_low) {
@@ -376,8 +389,9 @@ void ReactiveLimitsLoop::_detect(const OuterContext & ctx, std::vector<LimitViol
             // voltage, on each generator holding that bus (kV of the bus)
             const bool low = sw.type == LimitViolationType::LOW_Q;
             const real_type vn = ctx.grid->get_bus_vn_kv()(entry.bus_grid);
-            const real_type bound = low ? params_.min_realistic_voltage * params_.realistic_voltage_margin
-                                        : params_.max_realistic_voltage / params_.realistic_voltage_margin;
+            real_type v_low, v_high;
+            _realistic_band(ctx, v_low, v_high);
+            const real_type bound = low ? v_low : v_high;
             const std::vector<std::string> & names = ctx.grid->get_generators().get_names();  // empty if never set
             for (int gen_id : entry.gen_ids) {
                 const std::string name = static_cast<std::size_t>(gen_id) < names.size() ? names[static_cast<std::size_t>(gen_id)] : std::string();
@@ -478,10 +492,11 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
         ++bus.nb_pv_pq;
         // the robust mode: a remote controller with an unrealistic voltage of its own
         // restarts from 1 pu
-        if (params_.robust_mode && bus.reg_bus_solver != bus.bus_solver) {
+        if (_robust(ctx) && bus.reg_bus_solver != bus.bus_solver) {
             const real_type v = ctx.vm(bus.bus_solver);
-            if (sw.realistic || v < params_.min_realistic_voltage * params_.realistic_voltage_margin ||
-                v > params_.max_realistic_voltage / params_.realistic_voltage_margin) {
+            real_type v_low, v_high;
+            _realistic_band(ctx, v_low, v_high);
+            if (sw.realistic || v < v_low || v > v_high) {
                 ctx.controls->reset_vm(bus.bus_solver, params_.robust_restart_vm_pu);
             }
         }
@@ -511,10 +526,24 @@ OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)
     return changed ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
 }
 
+bool ReactiveLimitsLoop::_robust(const OuterContext & ctx) const
+{
+    return params_.robust_mode < 0 ? ctx.driver_params().voltage_remote_control_robust_mode : params_.robust_mode != 0;
+}
+
+void ReactiveLimitsLoop::_realistic_band(const OuterContext & ctx, real_type & v_low, real_type & v_high) const
+{
+    const OuterLoopDriverParams & driver = ctx.driver_params();
+    const real_type v_min = std::isnan(params_.min_realistic_voltage) ? driver.min_realistic_voltage : params_.min_realistic_voltage;
+    const real_type v_max = std::isnan(params_.max_realistic_voltage) ? driver.max_realistic_voltage : params_.max_realistic_voltage;
+    v_low = v_min * params_.realistic_voltage_margin;
+    v_high = v_max / params_.realistic_voltage_margin;
+}
+
 AlgoConfig ReactiveLimitsLoop::_get_params() const
 {
     AlgoConfig res;
-    res.int_params = {params_.max_pq_pv_switch, params_.robust_mode ? 1 : 0};
+    res.int_params = {params_.max_pq_pv_switch, params_.robust_mode};
     res.real_params = {params_.max_reactive_power_mismatch, params_.mismatch_base_mva,
                        params_.min_realistic_voltage, params_.max_realistic_voltage,
                        params_.realistic_voltage_margin, params_.robust_restart_vm_pu};

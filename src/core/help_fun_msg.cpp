@@ -809,7 +809,10 @@ const std::string DocSolver::ReactiveLimitsLoop = R"mydelimiter(
     ``realistic_voltage_margin``) is frozen and restarted from ``robust_restart_vm_pu``.
 
     Every parameter is a keyword argument of the constructor, OpenLoadFlow's value by default,
-    and read-only afterwards.
+    and read-only afterwards. ``robust_mode`` (``None``) and the realistic band (``NaN``) are
+    by default the outer-loop driver's (``LSGrid.set_outer_loop_driver_params``): OpenLoadFlow
+    has one parameter for each, read by this loop and by the unrealistic-voltage check alike.
+    A value given here holds for this loop only.
 
 )mydelimiter";
 
@@ -4406,9 +4409,10 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the ``SVC``, ``value`` the
       regulated voltage and ``limit`` the threshold, in kV; AC only);
     - a generator regulating a remote bus whose own bus leaves the realistic range of the
-      ``ReactiveLimits`` loop (``min_realistic_voltage`` / ``max_realistic_voltage``, with its
-      margin) by more than ``tol_vm_pu``: OpenLoadFlow's robust remote voltage control would
-      switch it to PQ (``LOW_VOLTAGE_REMOTE_CONTROL`` /
+      ``ReactiveLimits`` loop (``min_realistic_voltage`` / ``max_realistic_voltage``, the
+      driver's unless the loop sets its own, with its margin) by more than ``tol_vm_pu``:
+      OpenLoadFlow's robust remote voltage control would switch it to PQ
+      (``LOW_VOLTAGE_REMOTE_CONTROL`` /
       ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the ``GENERATOR``, ``value`` its own bus voltage and
       ``limit`` the bound, in kV; AC only);
     - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
@@ -6167,7 +6171,9 @@ const std::string DocLSGrid::set_outer_loop_driver_params = R"mydelimiter(
     Set the parameters of the outer-loop driver an ``NROuter_*`` algorithm runs this grid's
     outer loops with (see :class:`lightsim2grid.algorithm.OuterLoopDriverParams`). They are
     handed to the algorithm with the loops before each solve, by a single solve and by the
-    batch algorithms alike.
+    batch algorithms alike. The ``ReactiveLimits`` loop's robust mode and realistic band are
+    these too, unless the loop was given its own (one parameter each in OpenLoadFlow), and so
+    is what :func:`get_physical_violations` reports against them.
 
     OpenLoadFlow's own defaults until set. :func:`lightsim2grid.network.init_from_pypowsybl`
     sets those of the OpenLoadFlow pypowsybl ships. Copied with the grid, and kept by a pickle

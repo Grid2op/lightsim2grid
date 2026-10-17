@@ -451,7 +451,8 @@ top), never off the containers directly.
 Detection is the loops' first check, without the action (`outer_detect`): each loop is
 initialized on a clone and detects, on the row as its view shows it, for `LSGrid` and every
 batch alike. `ReactiveLimits` reports there what `BusQCheck` and `RemoteVoltageControlCheck`
-used to (its own tolerance, limits at the target P, the robust mode by its own parameters).
+used to (its own tolerance, limits at the target P, the robust mode and realistic band by
+the driver's parameters, unless the loop was given its own).
 Two checks stay outside the loops, because no OpenLoadFlow loop has their trigger: the release
 of a unit the caller froze (`GenPvReleaseCheck`, a unit loaded without voltage control is never
 released by OpenLoadFlow) and a unit past its P limit under an in-Newton slack (`GenPCheck`).

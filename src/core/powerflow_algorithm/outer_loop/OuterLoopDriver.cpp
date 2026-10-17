@@ -25,6 +25,11 @@ void OuterContext::record_bus(const char * action, bool taken, int solver_bus, L
     record(action, taken, ViolationElementType::BUS, me, reason, value, limit);
 }
 
+const OuterLoopDriverParams & OuterContext::driver_params() const
+{
+    return driver != nullptr ? *driver : grid->get_outer_loop_driver_params();
+}
+
 void check_driver_params(const OuterLoopDriverParams & params)
 {
     if(params.max_outer_iterations < 0){

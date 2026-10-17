@@ -29,6 +29,7 @@
 namespace ls2g {
 
 class LSGrid;
+struct OuterLoopDriverParams;
 
 /**
  * What an outer loop's check() concluded, as OpenLoadFlow's OuterLoopStatus:
@@ -108,6 +109,10 @@ struct LS2G_API OuterDecision
 struct OuterContext
 {
     const LSGrid * grid = nullptr;
+    /// the outer-loop driver's parameters of the solve (null: the grid's,
+    /// LSGrid::get_outer_loop_driver_params, as in a detection); read through driver_params()
+    const OuterLoopDriverParams * driver = nullptr;
+    const OuterLoopDriverParams & driver_params() const;
     const CplxVect * V = nullptr;              ///< complex voltages, pu
     const RealVect * Va = nullptr;             ///< the angles, rad (a DC solve's are only here)
     /// the magnitudes, pu, as the Newton holds them (its own unknowns): read through vm(),

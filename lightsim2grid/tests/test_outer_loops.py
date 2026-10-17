@@ -147,6 +147,9 @@ class TestNROuter(unittest.TestCase):
             self.assertEqual([l.name() for l in loops], ["ReactiveLimits", "DistributedSlack"])
             self.assertEqual(loops[0].max_pq_pv_switch, 5)
             self.assertEqual(loops[0].min_realistic_voltage, 0.7)
+            # what the loop leaves to the driver stays so
+            self.assertTrue(np.isnan(loops[0].max_realistic_voltage))
+            self.assertIsNone(loops[0].robust_mode)
             self.assertEqual(loops[1].slack_bus_p_max_mismatch_mw, 2.)
         grid.clear_outer_loops()
         self.assertEqual(pickle.loads(pickle.dumps(grid)).get_outer_loops(), [])

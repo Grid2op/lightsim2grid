@@ -65,7 +65,7 @@ std::shared_ptr<BaseOuterLoop> make_outer_loop(const std::string & name, const A
         check_param_count(name, params, 2, 6);
         ReactiveLimitsLoop::Params p;
         p.max_pq_pv_switch = params.int_params[0];
-        p.robust_mode = params.int_params[1] != 0;
+        p.robust_mode = params.int_params[1];  // -1: the driver's
         p.max_reactive_power_mismatch = static_cast<real_type>(params.real_params[0]);
         p.mismatch_base_mva = static_cast<real_type>(params.real_params[1]);
         p.min_realistic_voltage = static_cast<real_type>(params.real_params[2]);

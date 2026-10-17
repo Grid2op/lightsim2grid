@@ -127,6 +127,37 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
         grid.add_outer_loop(ReactiveLimits(min_realistic_voltage=0.5, max_realistic_voltage=1.5))
         self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
 
+    def test_range_and_mode_follow_the_driver(self):
+        # one parameter each in OpenLoadFlow: a ReactiveLimits given none of its own reads the
+        # driver's, in a single solve and in a batch alike; one given its own keeps it
+        from lightsim2grid.algorithm import OuterLoopDriverParams, ReactiveLimits
+        grid = _ls(_ieee14_remote(14.2))
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits())
+        grid.set_outer_loop_driver_params(OuterLoopDriverParams(min_realistic_voltage=0.5, max_realistic_voltage=2.))
+        self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
+        grid.set_outer_loop_driver_params(OuterLoopDriverParams(min_realistic_voltage=0.8, max_realistic_voltage=1.2))
+        viols = _remote(grid.get_physical_violations(True, 0., 0.))
+        self.assertEqual(len(viols), 1)
+        self.assertAlmostEqual(viols[0].limit, 12. * 1.2 / 1.02, places=9)
+        ca = ContingencyAnalysisCPP(grid)
+        ca.compute_physical_violations = True
+        ca.physical_violation_tol_mva = 0.
+        ca.physical_violation_tol_vm_pu = 0.
+        ca.add_n1(0)
+        ca.compute(np.ones(grid.total_bus(), dtype=complex), 30, 1e-10)
+        self.assertEqual(len(_remote(ca.get_physical_violations_n())), 1)
+        grid.set_outer_loop_driver_params(OuterLoopDriverParams(voltage_remote_control_robust_mode=False,
+                                                                min_realistic_voltage=0.8, max_realistic_voltage=1.2))
+        self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
+        # the loop's own values win over the driver's
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits(robust_mode=True))
+        self.assertEqual(len(_remote(grid.get_physical_violations(True, 0., 0.))), 1)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits(robust_mode=True, min_realistic_voltage=0.5, max_realistic_voltage=1.5))
+        self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
+
     def test_local_controller_not_checked(self):
         # the same generator holding its own bus far above the range: not a remote controller
         n = pp.network.create_ieee14()

@@ -13,6 +13,8 @@ of the installed pypowsybl, which a grid loaded from it runs."""
 import unittest
 import warnings
 
+import numpy as np
+
 from lightsim2grid.lightsim2grid_cpp import LSGrid
 from lightsim2grid.algorithm import OuterLoopDriverParams, ReactiveLimits, TransformerVoltageControl
 
@@ -50,8 +52,10 @@ class TestDefaultsWithoutPypowsybl(unittest.TestCase):
         # DefaultAcOuterLoopConfig's order, the loops its default parameters create
         self.assertEqual(_names(grid.get_outer_loops()),
                          ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring", "ReactiveLimits"])
+        # its robust mode and realistic band are the driver's (checked above)
         loop = ReactiveLimits()
-        self.assertEqual((loop.min_realistic_voltage, loop.max_realistic_voltage), (0.5, 2.))
+        self.assertTrue(np.isnan(loop.min_realistic_voltage) and np.isnan(loop.max_realistic_voltage))
+        self.assertIsNone(loop.robust_mode)
         self.assertEqual(loop.max_reactive_power_mismatch, 1e-4)
         self.assertEqual(loop.max_pq_pv_switch, 3)
         loop = TransformerVoltageControl()
@@ -79,7 +83,7 @@ class TestOlfOuterLoops(unittest.TestCase):
                    (["ReactiveLimits"] if params.use_reactive_limits else [])
         self.assertEqual(_names(loops)[:len(expected)], expected)
         reactive = next(loop for loop in loops if loop.name() == "ReactiveLimits")
-        self.assertEqual(reactive.min_realistic_voltage, float(defaults["minRealisticVoltage"]))
+        self.assertTrue(np.isnan(reactive.min_realistic_voltage))  # the driver's, checked above
         self.assertEqual(reactive.max_pq_pv_switch, int(defaults["reactiveLimitsMaxPqPvSwitch"]))
 
     def test_parameters_are_read(self):
@@ -109,8 +113,9 @@ class TestOlfOuterLoops(unittest.TestCase):
         self.assertFalse(by_name["DistributedSlack"].fail_on_residue)
         reactive = by_name["ReactiveLimits"]
         self.assertEqual(reactive.max_pq_pv_switch, 5)
-        self.assertFalse(reactive.robust_mode)
-        self.assertEqual((reactive.min_realistic_voltage, reactive.max_realistic_voltage), (0.7, 1.4))
+        # robust mode and realistic band: the driver's (above), one parameter in OpenLoadFlow
+        self.assertIsNone(reactive.robust_mode)
+        self.assertTrue(np.isnan(reactive.min_realistic_voltage) and np.isnan(reactive.max_realistic_voltage))
         # per equation type: maxReactivePowerMismatch, MVar, in pu of 100 MVA
         self.assertAlmostEqual(reactive.max_reactive_power_mismatch, 0.5 / 100., places=15)
         self.assertTrue(by_name["TransformerVoltageControl"].use_initial_tap_position)

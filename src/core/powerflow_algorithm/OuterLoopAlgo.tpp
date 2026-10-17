@@ -260,6 +260,7 @@ OuterContext OuterLoopAlgo<Inner>::_context()
 {
     OuterContext ctx;
     ctx.grid = lsgrid_ptr_;
+    ctx.driver = &params_;
     ctx.V = &V_;
     ctx.Va = &Va_;
     ctx.Vm = &Vm_;

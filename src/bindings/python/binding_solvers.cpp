@@ -271,14 +271,15 @@ void bind_solvers(py::module_& m) {
 
     py::class_<ReactiveLimitsLoop, BaseOuterLoop, std::shared_ptr<ReactiveLimitsLoop> >(
             m, "ReactiveLimits", DocSolver::ReactiveLimitsLoop.c_str())
-        .def(py::init([](int max_pq_pv_switch, real_type max_reactive_power_mismatch, bool robust_mode,
+        .def(py::init([](int max_pq_pv_switch, real_type max_reactive_power_mismatch, py::object robust_mode,
                          real_type min_realistic_voltage, real_type max_realistic_voltage,
                          real_type mismatch_base_mva, real_type realistic_voltage_margin,
                          real_type robust_restart_vm_pu) {
                  ReactiveLimitsLoop::Params params;
                  params.max_pq_pv_switch = max_pq_pv_switch;
                  params.max_reactive_power_mismatch = max_reactive_power_mismatch;
-                 params.robust_mode = robust_mode;
+                 // None: the driver's (LSGrid.set_outer_loop_driver_params)
+                 params.robust_mode = robust_mode.is_none() ? -1 : (robust_mode.cast<bool>() ? 1 : 0);
                  params.min_realistic_voltage = min_realistic_voltage;
                  params.max_realistic_voltage = max_realistic_voltage;
                  params.mismatch_base_mva = mismatch_base_mva;
@@ -288,18 +289,25 @@ void bind_solvers(py::module_& m) {
              }),
              py::arg("max_pq_pv_switch") = ReactiveLimitsLoop::Params().max_pq_pv_switch,
              py::arg("max_reactive_power_mismatch") = ReactiveLimitsLoop::Params().max_reactive_power_mismatch,
-             py::arg("robust_mode") = ReactiveLimitsLoop::Params().robust_mode,
+             py::arg("robust_mode") = py::none(),
              py::arg("min_realistic_voltage") = ReactiveLimitsLoop::Params().min_realistic_voltage,
              py::arg("max_realistic_voltage") = ReactiveLimitsLoop::Params().max_realistic_voltage,
              py::arg("mismatch_base_mva") = ReactiveLimitsLoop::Params().mismatch_base_mva,
              py::arg("realistic_voltage_margin") = ReactiveLimitsLoop::Params().realistic_voltage_margin,
              py::arg("robust_restart_vm_pu") = ReactiveLimitsLoop::Params().robust_restart_vm_pu)
-        .def_property_readonly("robust_mode", [](const ReactiveLimitsLoop & self){ return self.params().robust_mode; },
-                               "OpenLoadFlow's voltageRemoteControlRobustMode")
+        .def_property_readonly("robust_mode", [](const ReactiveLimitsLoop & self) -> py::object {
+                                   const int mode = self.params().robust_mode;
+                                   if (mode < 0) return py::none();
+                                   return py::bool_(mode != 0);
+                               },
+                               "OpenLoadFlow's voltageRemoteControlRobustMode; None: the driver's "
+                               "(OuterLoopDriverParams.voltage_remote_control_robust_mode)")
         .def_property_readonly("min_realistic_voltage", [](const ReactiveLimitsLoop & self){ return self.params().min_realistic_voltage; },
-                               "OpenLoadFlow's minRealisticVoltage, pu")
+                               "OpenLoadFlow's minRealisticVoltage, pu; NaN: the driver's "
+                               "(OuterLoopDriverParams.min_realistic_voltage)")
         .def_property_readonly("max_realistic_voltage", [](const ReactiveLimitsLoop & self){ return self.params().max_realistic_voltage; },
-                               "OpenLoadFlow's maxRealisticVoltage, pu")
+                               "OpenLoadFlow's maxRealisticVoltage, pu; NaN: the driver's "
+                               "(OuterLoopDriverParams.max_realistic_voltage)")
         .def_property_readonly("max_pq_pv_switch", [](const ReactiveLimitsLoop & self){ return self.params().max_pq_pv_switch; },
                                "OpenLoadFlow's reactiveLimitsMaxPqPvSwitch: how many times a bus may go back PV")
         .def_property_readonly("max_reactive_power_mismatch", [](const ReactiveLimitsLoop & self){ return self.params().max_reactive_power_mismatch; },

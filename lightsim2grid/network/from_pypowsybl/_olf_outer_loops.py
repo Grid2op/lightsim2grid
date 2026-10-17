@@ -171,12 +171,11 @@ def _creators(read: _Reader, explicit: bool):
             mismatch = read.float("maxReactivePowerMismatch", 1e-2) / _OLF_SB_MVA
         else:
             mismatch = read.float("newtonRaphsonConvEpsPerEq", default.max_reactive_power_mismatch)
+        # its robust mode and realistic band are left to the driver's parameters, read below
+        # from the same voltageRemoteControlRobustMode / minRealisticVoltage / maxRealisticVoltage
         return ReactiveLimits(
             max_pq_pv_switch=read.int("reactiveLimitsMaxPqPvSwitch", default.max_pq_pv_switch),
-            max_reactive_power_mismatch=mismatch,
-            robust_mode=read.bool("voltageRemoteControlRobustMode", default.robust_mode),
-            min_realistic_voltage=read.float("minRealisticVoltage", default.min_realistic_voltage),
-            max_realistic_voltage=read.float("maxRealisticVoltage", default.max_realistic_voltage))
+            max_reactive_power_mismatch=mismatch)
 
     def phase_control(mode=None):
         if not bool(read.top("phase_shifter_regulation_on", False)):
