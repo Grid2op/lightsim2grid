@@ -18,7 +18,8 @@ import unittest
 
 try:
     import pypowsybl.network as pn
-    from lightsim2grid.network import propagate_contingencies, group_equivalent_contingencies
+    from lightsim2grid.network import (ContingencyPropagator, propagate_contingencies,
+                                       group_equivalent_contingencies)
     HAS_PYPOWSYBL = True
 except ImportError:
     HAS_PYPOWSYBL = False
@@ -129,6 +130,51 @@ class TestPropagateContingencies(unittest.TestCase):
             propagate_contingencies(net, [["S2VL1_LINES2S3_BREAKER"]])
         with self.assertRaises(TypeError):
             propagate_contingencies(net, ["LINE_S2S3"])
+
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestContingencyPropagator(unittest.TestCase):
+    def test_add_in_several_goes_propagate_and_group(self):
+        propagator = ContingencyPropagator(_net_with_stuff_on_the_feeder())
+        self.assertEqual(propagator.propagate_contingencies(), [])
+        self.assertEqual(propagator.group_contingencies(), ([], []))
+        propagator.add_contingencies([["LINE_S2S3"], ["GH1"]])
+        self.assertEqual(propagator.propagate_contingencies(), [["LINE_S2S3", "LOAD_FEEDER"], ["GH1"]])
+        propagator.add_contingencies([["LOAD_FEEDER", "LOAD_FEEDER"], ["GH1"]])
+        self.assertEqual(propagator.contingencies, [["LINE_S2S3"], ["GH1"], ["LOAD_FEEDER"], ["GH1"]])
+        self.assertEqual(propagator.propagate_contingencies(),
+                         [["LINE_S2S3", "LOAD_FEEDER"], ["GH1"], ["LOAD_FEEDER", "LINE_S2S3"], ["GH1"]])
+        unique, inverse = propagator.group_contingencies()
+        self.assertEqual(unique, [["LINE_S2S3", "LOAD_FEEDER"], ["GH1"]])
+        self.assertEqual(inverse, [0, 1, 0, 1])
+
+    def test_same_result_as_the_function(self):
+        net = _net_with_stuff_on_the_feeder()
+        conts = [["LINE_S2S3"], ["HVDC1"], ["VSC1"], ["LOAD_FEEDER"], []]
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies(conts)
+        self.assertEqual(propagator.propagate_contingencies(), propagate_contingencies(net, conts))
+
+    def test_returned_lists_are_copies(self):
+        propagator = ContingencyPropagator(_net_with_stuff_on_the_feeder())
+        propagator.add_contingencies([["LINE_S2S3"]])
+        propagator.propagate_contingencies()[0].append("X")
+        propagator.contingencies[0].append("X")
+        self.assertEqual(propagator.propagate_contingencies(), [["LINE_S2S3", "LOAD_FEEDER"]])
+        self.assertEqual(propagator.contingencies, [["LINE_S2S3"]])
+
+    def test_bad_input_adds_nothing_and_clear(self):
+        propagator = ContingencyPropagator(pn.create_four_substations_node_breaker_network())
+        propagator.add_contingencies([["GH1"]])
+        with self.assertRaises(ValueError):
+            propagator.add_contingencies([["LINE_S2S3"], ["NOT_AN_ELEMENT"]])
+        with self.assertRaises(TypeError):
+            propagator.add_contingencies(["LINE_S2S3"])
+        self.assertEqual(propagator.contingencies, [["GH1"]])
+        propagator.clear()
+        self.assertEqual(propagator.contingencies, [])
+        self.assertEqual(propagator.propagate_contingencies(), [])
 
 
 if __name__ == "__main__":

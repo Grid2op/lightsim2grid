@@ -47,7 +47,7 @@ class _PypowsyblTopology:
     one graph. Only the edges the walk can cross are kept: a closed switch that is not a breaker.
     The one thing no bulk table gives is the internal connections (a link between two nodes with
     no switch on it), which take one call per voltage level; see `internal_connections` of
-    `propagate_contingencies`."""
+    `ContingencyPropagator`."""
 
     def __init__(self, net, internal_connections=None):
         self._net = net
@@ -170,33 +170,30 @@ def _terminals_of(topo, name):
     return elements, [t for el in elements for t in topo.terminals.get(el, ())]
 
 
-def propagate_contingencies(net, contingencies, internal_connections=None):
+class ContingencyPropagator:
     """Propagate contingencies the way powsybl does on a node-breaker topology.
+
+    Built once from a pypowsybl network: it reads the topology (the switches, the terminals,
+    the hvdc and tie lines) at construction and keeps it, so that contingencies can be added
+    and propagated in several goes without reading the network again.
 
     Each contingency is a list of element names (lines, transformers, generators, loads,
     shunts, batteries, static var compensators, dangling and tie lines, converter stations,
-    HVDC lines, busbar sections). The result has one list per contingency: the same names,
-    in the same order, followed by the other equipment that goes down with them because it
-    stands between the same breakers (see this module's docstring). A name appears once.
+    HVDC lines, busbar sections). Propagating it gives the same names, in the same order,
+    followed by the other equipment that goes down with them because it stands between the
+    same breakers (see this module's docstring). A name appears once.
 
-    Parameters
-    ----------
-    net:
-        a pypowsybl network.
-    contingencies:
-        a list of lists of element names.
-    internal_connections:
-        pypowsybl has no bulk getter for the internal connections of a node-breaker voltage
-        level (links between two nodes with no switch on them), only one call per voltage
-        level, which is most of the running time on a large grid. ``None`` (default) makes that
-        call only for the voltage levels walked where a node carrying equipment has no switch,
-        the mark of an internal connection; ``True`` always makes it (exact, slower); ``False``
-        never does.
+    Examples
+    --------
 
-    Returns
-    -------
-    list of lists of str.
-        See :func:`group_equivalent_contingencies` to find the ones that need simulating once.
+    .. code-block:: python
+
+        from lightsim2grid.network import ContingencyPropagator
+
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies([["LINE_AB"], ["LINE_BC"], ["GEN_B", "LOAD_C"]])
+        propagated = propagator.propagate_contingencies()   # one list per contingency
+        unique, inverse = propagator.group_contingencies()  # the ones to simulate
 
     Notes
     -----
@@ -204,20 +201,88 @@ def propagate_contingencies(net, contingencies, internal_connections=None):
       other side stands behind a breaker of its own) is listed, as a name cannot say "one side".
     * Propagating onto one converter station lists its HVDC line, and onto one dangling line
       its tie line.
-    * A name that is not an element of the network (a switch included) is an error, since a
-      silent pass-through would hide a typo.
+    * A name that is not an element of the network (a switch included) is an error, raised by
+      :func:`add_contingencies`, since a silent pass-through would hide a typo.
+    * The topology is read at construction: build a new one after changing the network.
     """
-    topo = _PypowsyblTopology(net, internal_connections)
-    out = []
-    for contingency in contingencies:
-        if isinstance(contingency, str):
-            raise TypeError("propagate_contingencies: each contingency must be a list of names, "
-                            f"got the string {contingency!r}")
-        result = list(dict.fromkeys(contingency))
-        for name in result:
-            if name not in topo.known:
-                raise ValueError(f"propagate_contingencies: '{name}' is not a line, transformer, injection, "
-                                 f"converter station, HVDC line or busbar section of this network.")
+
+    def __init__(self, net, internal_connections=None):
+        """
+        Parameters
+        ----------
+        net:
+            a pypowsybl network.
+        internal_connections:
+            pypowsybl has no bulk getter for the internal connections of a node-breaker voltage
+            level (links between two nodes with no switch on them), only one call per voltage
+            level, which is most of the running time on a large grid. ``None`` (default) makes
+            that call only for the voltage levels walked where a node carrying equipment has no
+            switch, the mark of an internal connection; ``True`` always makes it (exact,
+            slower); ``False`` never does.
+        """
+        self._topo = _PypowsyblTopology(net, internal_connections)
+        self._contingencies = []
+        self._propagated = []  # one entry per contingency, None until propagated
+
+    @property
+    def contingencies(self):
+        """The contingencies added so far, as given (without repeated names)."""
+        return [list(el) for el in self._contingencies]
+
+    def add_contingencies(self, contingencies):
+        """Add contingencies, each a list of element names.
+
+        Raises ``TypeError`` for a contingency given as a single string, and ``ValueError`` for
+        a name that is not an element of the network; nothing is added then.
+        """
+        checked = []
+        for contingency in contingencies:
+            if isinstance(contingency, str):
+                raise TypeError("add_contingencies: each contingency must be a list of names, "
+                                f"got the string {contingency!r}")
+            names = list(dict.fromkeys(contingency))
+            for name in names:
+                if name not in self._topo.known:
+                    raise ValueError(f"add_contingencies: '{name}' is not a line, transformer, injection, "
+                                     f"converter station, HVDC line or busbar section of this network.")
+            checked.append(names)
+        self._contingencies.extend(checked)
+        self._propagated.extend([None] * len(checked))
+
+    def clear(self):
+        """Remove every contingency (the topology read at construction is kept)."""
+        self._contingencies = []
+        self._propagated = []
+
+    def propagate_contingencies(self):
+        """The contingencies added, propagated: one list of names per contingency, in the order
+        they were added. Each is propagated once, however many times this is called.
+
+        Returns
+        -------
+        list of lists of str.
+        """
+        for i, contingency in enumerate(self._contingencies):
+            if self._propagated[i] is None:
+                self._propagated[i] = self._propagate_one(contingency)
+        return [list(el) for el in self._propagated]
+
+    def group_contingencies(self):
+        """Group the propagated contingencies that trip the same set of equipment, so that
+        each is simulated once (see :func:`group_equivalent_contingencies`).
+
+        Returns
+        -------
+        unique:
+            the first propagated contingency of each distinct set, in order of first appearance.
+        inverse:
+            for each contingency added, the position in `unique` of its representative.
+        """
+        return group_equivalent_contingencies(self.propagate_contingencies())
+
+    def _propagate_one(self, contingency):
+        topo = self._topo
+        result = list(contingency)
         tripped = []
         for name in result:
             elements, nodes = _terminals_of(topo, name)
@@ -233,14 +298,34 @@ def propagate_contingencies(net, contingencies, internal_connections=None):
                     tripped.extend(_terminals_of(topo, whole)[0])
         known = set(result)
         result.extend(el for el in dict.fromkeys(tripped) if el not in known)
-        out.append(result)
-    return out
+        return result
+
+
+def propagate_contingencies(net, contingencies, internal_connections=None):
+    """Propagate contingencies in one call: a shortcut for
+
+    .. code-block:: python
+
+        propagator = ContingencyPropagator(net, internal_connections)
+        propagator.add_contingencies(contingencies)
+        propagator.propagate_contingencies()
+
+    See :class:`ContingencyPropagator` for the parameters and the rule; build one directly to
+    add contingencies in several goes, or to group them, without reading the network again.
+
+    Returns
+    -------
+    list of lists of str.
+    """
+    propagator = ContingencyPropagator(net, internal_connections)
+    propagator.add_contingencies(contingencies)
+    return propagator.propagate_contingencies()
 
 
 def group_equivalent_contingencies(contingencies):
     """Find the contingencies that trip the same set of equipment, so each is simulated once.
 
-    Meant for the output of :func:`propagate_contingencies`: tripping a line, or the load hanging
+    Meant for the output of :func:`ContingencyPropagator.propagate_contingencies`: tripping a line, or the load hanging
     on its feeder, ends in the same grid. Two contingencies are equivalent when they hold the same
     names, whatever the order.
 

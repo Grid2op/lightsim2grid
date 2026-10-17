@@ -19,6 +19,7 @@ __all__ = ["init",
            "OlfLoadingParameters",
            "olf_outer_loops",
            "set_olf_outer_loops",
+           "ContingencyPropagator",
            "propagate_contingencies",
            "group_equivalent_contingencies"]
 
@@ -34,4 +35,5 @@ from ._olf_compare import compare_baked, ComparisonResult
 from ._result_network import LightsimResultNetwork
 from ._olf_rules import OlfLoadingParameters
 from ._olf_outer_loops import olf_outer_loops, set_olf_outer_loops
-from ._propagate_contingencies import propagate_contingencies, group_equivalent_contingencies
+from ._propagate_contingencies import (ContingencyPropagator, propagate_contingencies,
+                                       group_equivalent_contingencies)
