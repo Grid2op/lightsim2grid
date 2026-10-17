@@ -133,25 +133,6 @@ def _olf_provider_params():
     return result
 
 
-    from ._olf_const import (
-        _OLF_MAX_REALISTIC_VOLTAGE_PU,
-        _OLF_MIN_REALISTIC_VOLTAGE_PU,
-        _OLF_REALISTIC_VOLTAGE_MARGIN,
-    )
-    vmin, vmax = _OLF_MIN_REALISTIC_VOLTAGE_PU, _OLF_MAX_REALISTIC_VOLTAGE_PU
-    fn = getattr(_lf, "get_provider_parameters", None)
-    if fn is not None:
-        try:
-            df = fn("OpenLoadFlow")
-            read_min = float(df.loc["minRealisticVoltage", "default"])
-            read_max = float(df.loc["maxRealisticVoltage", "default"])
-            if 0. < read_min < read_max:
-                vmin, vmax = read_min, read_max
-        except Exception:
-            pass
-    _OLF_REALISTIC_VOLTAGE = (vmin * _OLF_REALISTIC_VOLTAGE_MARGIN, vmax / _OLF_REALISTIC_VOLTAGE_MARGIN)
-    return _OLF_REALISTIC_VOLTAGE
-
 # Outer loops with an inline (inner-Newton-Raphson) alternative: switching the
 # mode keeps the modeled control active while removing the separate outer-loop
 # pass. Works on every pypowsybl version, so these are always applied unless
