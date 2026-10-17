@@ -20,8 +20,9 @@ namespace ls2g {
 namespace {
 
 // the units taking part in the slack, in the row the view shows: connected, in the solved
-// grid, with a "can participate" weight. Storage targets are in the load convention, their P
-// limits in the generator one.
+// grid, with a "can participate" weight. A unit on a bus the row strands (masked) is not in
+// the solved grid: what it would take never reaches the slack bus. Storage targets are in the
+// load convention, their P limits in the generator one.
 void collect_units(const OuterGridView & view,
                    std::vector<slack_redistribution::Participant> & units,
                    std::vector<int> & solver_bus)
@@ -31,7 +32,7 @@ void collect_units(const OuterGridView & view,
     const GlobalBusIdVect & to_me = view.id_solver_to_me();
     auto add = [&](slack_redistribution::UnitKind kind, int el_id, int bus_solver, real_type weight,
                    real_type injection_mw, real_type min_p, real_type max_p){
-        if(!(weight > 0.) || bus_solver < 0) return;
+        if(!(weight > 0.) || bus_solver < 0 || view.is_masked(bus_solver)) return;
         slack_redistribution::Participant unit;
         unit.kind = kind;
         unit.el_id = el_id;
