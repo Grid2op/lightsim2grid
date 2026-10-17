@@ -72,6 +72,11 @@ enum class LS2G_API BatchInitKind
  */
 struct LS2G_API OuterRowResult
 {
+    /// whether the row converged (as converged_mask()): false for a row whose Newton diverged
+    /// or that was never solved, which `status` alone does not tell
+    bool converged = false;
+    /// how the loops ended -- theirs only: STABLE too on a row whose Newton diverged, or that
+    /// was never solved (OpenLoadFlow keeps the solver's status apart from the loops' as well)
     OuterLoopStatus status = OuterLoopStatus::STABLE;
     /// the unrealistic-voltage check stopped the row (see OuterLoopStats::unrealistic_state)
     bool unrealistic_state = false;

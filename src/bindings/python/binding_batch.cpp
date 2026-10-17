@@ -406,7 +406,8 @@ void bind_batch_shared(py::class_<T> & cls)
              "only with an algorithm that runs them (NROuter_*), empty otherwise. Such an "
              "algorithm solves each row with the grid's outer loops (LSGrid.get_outer_loops), "
              "restarting them from the grid's own state; a row they leave UNSTABLE or FAILED "
-             "does not converge.");
+             "does not converge. Its `converged` is the row's outcome: `status` is the loops' "
+             "own, STABLE too on a row whose Newton diverged.");
 }
 
 /**
@@ -586,7 +587,12 @@ void bind_batch(py::module_& m) {
         "What the outer loops did on one row of a batch (see get_outer_results): how it ended, "
         "and, by element id, what it settled on that the grid does not say -- only what differs "
         "from the grid is listed.")
-        .def_readonly("status", &OuterRowResult::status)
+        .def_readonly("converged", &OuterRowResult::converged,
+                      "Whether the row converged (as converged_mask()): False for a row whose Newton "
+                      "diverged or that was never solved.")
+        .def_readonly("status", &OuterRowResult::status,
+                      "How the loops ended. Theirs only: STABLE too on a row whose Newton diverged, "
+                      "or that was never solved (see `converged`).")
         .def_readonly("unrealistic_state", &OuterRowResult::unrealistic_state)
         .def_readonly("failed_loop", &OuterRowResult::failed_loop)
         .def_readonly("nb_outer_iterations", &OuterRowResult::nb_outer_iterations)
@@ -606,7 +612,8 @@ void bind_batch(py::module_& m) {
                       "(shunt id, section count) ShuntVoltageControl settled on.")
         .def("__repr__", [](const OuterRowResult & self){
             std::ostringstream out;
-            out << "OuterRowResult(status=" << static_cast<int>(self.status)
+            out << "OuterRowResult(converged=" << (self.converged ? "True" : "False")
+                << ", status=" << static_cast<int>(self.status)
                 << ", nb_outer_iterations=" << self.nb_outer_iterations
                 << ", nb_nr_iterations=" << self.nb_nr_iterations << ")";
             return out.str();

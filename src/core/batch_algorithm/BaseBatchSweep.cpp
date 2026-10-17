@@ -745,6 +745,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // compute the powerflows, possibly split across several threads
     _compute_threaded(nb_steps, Vinit_solver, ac_solver_used, max_iter, tol, sn_mva, _timer_thread_init);
 
+    // each row's outcome next to what its loops did, once every worker is done
+    for(size_t i = 0; i < _outer_results_.size() && i < _converged_mask_.size(); ++i){
+        _outer_results_[i].converged = _converged_mask_[i] != 0;
+    }
+
     _results_stale_ = false;
     _timer_total = timer.duration();
 }

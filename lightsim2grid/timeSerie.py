@@ -333,7 +333,9 @@ class TimeSerie:
         ``OuterRowResult``: status, iteration counts, and the targets, hvdc regimes, taps and
         sections the loops settled on where they differ from the grid). Only when the batch
         runs outer loops -- the grid's algorithm is an ``NROuter_*`` one, kept by the batch --
-        empty otherwise. A row its loops leave ``UNSTABLE`` or ``FAILED`` did not converge."""
+        empty otherwise. A row its loops leave ``UNSTABLE`` or ``FAILED`` did not converge; its
+        ``converged`` is the row's outcome, ``status`` being the loops' own (``STABLE`` too on a
+        row whose Newton diverged, or that was never solved)."""
         return self.computer.get_outer_results()
 
     def get_injections(self, scenario_id=None, seed=None):

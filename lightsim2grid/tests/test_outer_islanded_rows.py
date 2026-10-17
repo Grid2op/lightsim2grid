@@ -10,7 +10,8 @@
 
 With handle_disconnected_grid, the island is masked: it is not solved, so its unit takes no
 share of the slack -- the row is the single solve of the grid without the island, whatever
-weight the stranded unit carries."""
+weight the stranded unit carries. Without it, the row is not solved at all, and its
+OuterRowResult says so (`converged`), although its loops never ran into anything (`status`)."""
 
 import os
 import sys
@@ -121,6 +122,19 @@ class TestOuterIslandedSlackUnit(unittest.TestCase):
         # sharing with it, the slack left on the slack bus shrinks by its weight's fraction per
         # outer iteration only: the row ran out of iterations
         self._check(leaf_weight=30000.)
+
+
+class TestOuterRowResultConverged(unittest.TestCase):
+    def test_converged_is_the_row_outcome(self):
+        # the island is not handled: that row cannot be solved, its loops never ran
+        ca, islanded, line = _batch(_grid(), handle_disconnected_grid=False)
+        converged = np.asarray(ca.converged_mask(), dtype=bool)
+        self.assertFalse(converged[islanded])
+        self.assertTrue(converged[line])
+        res = ca.get_outer_results()
+        self.assertEqual([r.converged for r in res], list(converged))
+        # the loops' own status says nothing of the row's outcome
+        self.assertEqual(res[islanded].status, OuterLoopStatus.STABLE)
 
 
 if __name__ == "__main__":

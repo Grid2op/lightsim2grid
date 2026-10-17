@@ -317,10 +317,11 @@ wrappers keep an ``NROuter_*`` one.
     res = ca.get_outer_results()               # one OuterRowResult per row
     res[3].status, res[3].nb_outer_iterations, res[3].ratio_tap
 
-`get_outer_results()` gives, per row, how the loops ended (a row they leave ``UNSTABLE`` or
-``FAILED`` does not converge) and what they settled on where it differs from the grid: the
-moved targets, the hvdc regimes, the tap positions and the shunt sections. `keep_jacobian`
-is refused with such an algorithm.
+`get_outer_results()` gives, per row, whether it converged (``converged``), how the loops
+ended (``status``: a row they leave ``UNSTABLE`` or ``FAILED`` does not converge, but a row
+whose Newton diverged reads ``STABLE`` too) and what they settled on where it differs from
+the grid: the moved targets, the hvdc regimes, the tap positions and the shunt sections.
+`keep_jacobian` is refused with such an algorithm.
 
 `compute_physical_violations` reports, with any algorithm, what each loop would still do on
 the row -- the loop's own trigger, checked on the row as it is (its machines, targets,

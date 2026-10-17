@@ -230,6 +230,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``resume_outer_state`` (``NROuter_*``): a solve starts its loops from where the last one
   left them, for a sequence of solves of a time series.
 - [IMPROVED] The batch wrappers keep the grid's algorithm when it runs outer loops, instead of ``NR_KLU``.
+- [ADDED] ``OuterRowResult.converged``: whether the row converged, which ``status`` (the loops' own) does not tell.
 - [FIXED] A batch row stranding a unit that shares the slack (``handle_disconnected_grid``): ``DistributedSlack``
   gave it a share it could not deliver, so the row differed from its single solve, or ended UNSTABLE.
 - [BREAKING] ``get_physical_violations`` (grid and batches) reports a bus out of its reactive range, and a
