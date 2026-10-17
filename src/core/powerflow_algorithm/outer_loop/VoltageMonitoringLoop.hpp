@@ -43,6 +43,11 @@ class LSGrid;
  */
 class LS2G_API VoltageMonitoringLoop final : public BaseOuterLoop
 {
+    public:
+        /// what the last solve switched on, (svc id, set-point pu): read by an external batch
+        /// solver resuming rows from this loop's state (gpusim2grid's outer loops)
+        const std::vector<std::pair<int, real_type> > & switched_on() const { return switched_on_; }
+
     protected:
         std::string _name() const override { return "VoltageMonitoring"; }
         bool _holds_svc_monitors() const override { return true; }

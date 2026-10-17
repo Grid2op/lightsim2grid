@@ -24,7 +24,9 @@ Suppose you somehow get:
 - `pv` list of PV buses
 - `pq` list of PQ buses
 - `ppci` a ppc internal pandapower test case (or dictionary, is used to retrieve the coefficients associated to each slack bus)
-- `options` list of pandapower "options" (or dictionary with keys `max_iteration` and `tolerance_mva`)
+- `options` list of pandapower "options" (or dictionary with keys `max_iteration` and `tolerance_mva`).
+  As pandapower's own `newtonpf` does, `tolerance_mva` is compared with the per-unit mismatch as
+  is, not divided by `baseMVA`.
 
 You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
 piece of code:
@@ -92,10 +94,10 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
   pv = ...  # a vector of integers giving the bus id of the PV bus
   pq = ...  # a vector of integers giving the bus id of the PQ bus
   max_it = ...  # a > 0 integer maximum number of iterations the solver is allowed to perform
-  tol = ...  # a > 0. real number giving the maximum KCL violation allowed for a all nodes
+  tol_pu = ...  # a > 0. real number giving the maximum KCL violation allowed for a all nodes, in per unit
 
   solver = NR_KLU()
-  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
+  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iter=max_it, tol_pu=tol_pu)
 
   # to retrieve the voltages related information (in case converged is True)
   solver.get_Va()  # voltage angle
@@ -147,7 +149,10 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
 (``RuntimeError`` or ``IndexError``) instead of crashing when they are not met. lightsim2grid
 expects:
 
-- `tol` to be a finite, strictly positive number (raises otherwise).
+- `tol_pu` to be a finite, strictly positive number (raises otherwise). It is **in per unit**,
+  not in MVA: a solver only sees per-unit inputs and has no notion of `sn_mva`. This differs
+  from the `tol` of :func:`lightsim2grid.network.LSGrid.ac_pf`, of the batch algorithms and of
+  :class:`lightsim2grid.lightSimBackend.LightSimBackend`, which is in MVA; pass `tol / sn_mva` to reproduce it.
 - `max_it` to be a non-negative integer (raises otherwise; `max_it = 0` is accepted -- it just
   means the solver stops immediately without converging).
 - `Ybus` to be a square matrix, with the same size as `Sbus` and `V0` (raises otherwise). `Ybus`
@@ -227,7 +232,7 @@ You can use them as:
 
   # retrieve some Ybus, V0, etc. as above
   solver = NR_KLU()
-  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
+  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iter=max_it, tol_pu=tol_pu)
   # process the results as above
 
 .. note::
@@ -284,7 +289,7 @@ There are 4 solvers of this type that are different in the way they solve `Ybus 
 
   # retrieve some Ybus, V0, etc. as above
   dc_solver = DC_SparseLU()
-  converged = dc_solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
+  converged = dc_solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iter=max_it, tol_pu=tol_pu)
   # process the results as above
 
 Fast Decoupled solvers
@@ -309,7 +314,7 @@ The list is:
 
   # retrieve some Ybus, V0, etc. as above
   solver = FDPF_XB_SparseLU()
-  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_it, tol)
+  converged = solver.solve(Ybus, V0, Sbus, ref, slack_weights, pv, pq, max_iter=max_it, tol_pu=tol_pu)
   # process the results as above
 
 .. note::

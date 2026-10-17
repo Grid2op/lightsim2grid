@@ -1,0 +1,53 @@
+# Copyright (c) 2026, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+# Keeps the cache of the vendored dependencies (eigen, SuiteSparse, Catch2: see
+# .github/actions/fetch-deps) populated on the default branch.
+#
+# Why: GitHub evicts a cache entry that has not been used for 7 days, and a pull request can only
+# restore a cache saved by its own branch, by its base branch or by the default branch. Without
+# this, a quiet week followed by a pull request means every one of its ~60 jobs fetches the three
+# repositories from their upstream at the same moment -- the very thing the cache is there to avoid.
+# A schedule only runs from the default branch, which is exactly where the entry has to live to be
+# visible to every branch.
+#
+# One job per runner kind the other workflows use (the cache key holds the OS and architecture).
+
+name: Warm the dependencies cache
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'   # Mondays, off the hour
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      # a submodule bump is a new cache key
+      - '.gitmodules'
+      - 'eigen'
+      - 'SuiteSparse'
+      - 'Catch2'
+      - '.github/actions/fetch-deps/**'
+      - '.github/workflows/warm-deps-cache.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    name: Warm the cache - ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-2022, macos-14, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps

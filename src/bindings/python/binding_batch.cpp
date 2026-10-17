@@ -14,6 +14,7 @@
 #include "batch_algorithm/LimitViolation.hpp"
 #include "light_env/topo_action.hpp"
 #include "help_fun_msg.hpp"
+#include "sparse_helpers.hpp"
 
 using namespace ls2g;
 
@@ -417,14 +418,21 @@ template<class T>
 void bind_row_ybus(py::class_<T> & cls)
 {
     cls
-        .def("get_Ybus", &T::template get_Ybus<>, py::arg("row"), py::arg("solver_numbering") = false,
+        // built by the call, so handed over to python rather than copied
+        .def("get_Ybus", [](const T & self, Eigen::Index row, bool solver_numbering){
+                 return sparse_to_scipy(self.template get_Ybus<>(row, solver_numbering));
+             },
+             py::arg("row"), py::arg("solver_numbering") = false,
              "The admittance matrix row `row` of the last compute() was solved with (AC "
              "algorithm only): the base one without the branches that row disconnects. An entry "
              "only those branches contributed to is removed, not kept as an explicit zero, so "
              "the pattern is the one a one-at-a-time solve of that topology builds. Grid bus "
              "numbering, shape (total_bus, total_bus) like LSGrid.get_Ybus, or the solver one "
              "with `solver_numbering=True`.")
-        .def("get_dcYbus", &T::template get_dcYbus<>, py::arg("row"), py::arg("solver_numbering") = false,
+        .def("get_dcYbus", [](const T & self, Eigen::Index row, bool solver_numbering){
+                 return sparse_to_scipy(self.template get_dcYbus<>(row, solver_numbering));
+             },
+             py::arg("row"), py::arg("solver_numbering") = false,
              "The DC counterpart of get_Ybus (DC algorithm only): the real Bbus of row `row`.");
 }
 
@@ -542,7 +550,9 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
              "Run the batch: one powerflow per simulation, using whatever was set by "
              "modify_* (and, on ScenarioSweep, set_contingency_lines / "
-             "set_contingency_trafos). Raises if nothing was ever set.")
+             "set_contingency_trafos). Raises if nothing was ever set. ``tol`` is in MVA "
+             "(not in per unit), as for LSGrid.ac_pf: it is divided by the grid's sn_mva "
+             "before reaching the solver.")
 
         // results
         .def("compute_flows", &T::compute_flows, DocTimeSeries::compute_flows.c_str())
@@ -907,7 +917,8 @@ void bind_batch(py::module_& m) {
         .def("compute", &ContinuationSweep::compute, py::call_guard<py::gil_scoped_release>(),
              py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
              "Trace the curve. Raises if the target is identical to the base state, or if "
-             "the selected algorithm is not Newton-Raphson based.")
+             "the selected algorithm is not Newton-Raphson based. ``tol`` is in MVA (not in "
+             "per unit), as for LSGrid.ac_pf, for the base case and every corrector alike.")
 
         // results
         .def("get_status", &ContinuationSweep::get_status,
@@ -1113,7 +1124,10 @@ void bind_batch(py::module_& m) {
                       "Whether to initialize the complex voltages of each simulation with the "
                       "results of a n-powerflow (ie a powerflow with no injection change and no "
                       "contingency) or not. Default: false, meaning each simulation is "
-                      "initialized with the given input vector.");
+                      "initialized with the given input vector. With an NROuter_* algorithm, "
+                      "each simulation's outer loops also start from where the n-powerflow's "
+                      "ended (frozen buses, taps, sections, and the targets DistributedSlack "
+                      "moved where the simulation does not set its own), not from the grid.");
 
     py::class_<ContingencyAnalysis> contingency_analysis(m, "ContingencyAnalysisCPP", DocContingencyAnalysis::ContingencyAnalysis.c_str());
     bind_batch_shared(contingency_analysis);
@@ -1215,7 +1229,10 @@ void bind_batch(py::module_& m) {
                       "each contingencies with the results of a n-powerflow "
                       "(*ie* a powerflow without any line disconnection) or not. "
                       "Default: false, meaning each simulation is initialized "
-                      "with the given input vector")
+                      "with the given input vector. With an NROuter_* algorithm, each "
+                      "contingency's outer loops also start from where the n-powerflow's "
+                      "ended (frozen buses, taps, sections, the targets DistributedSlack "
+                      "moved), not from the grid.")
         .def_property("redistribute_slack",
                       [](const ContingencyAnalysis & self){ return self.get_redistribute_slack(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_redistribute_slack(val); },

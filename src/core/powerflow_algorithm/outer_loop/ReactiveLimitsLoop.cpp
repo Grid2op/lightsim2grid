@@ -47,18 +47,12 @@ ReactiveLimitsLoop::ReactiveLimitsLoop(const Params & params) : params_(params)
     }
 }
 
-bus_q_check::BusQPlan ReactiveLimitsLoop::_plan(const OuterContext & ctx)
-{
-    bus_q_check::BusQPlan plan;
-    bus_q_check::build_bus_q_plan(ctx.view(), plan);
-    return plan;
-}
-
 void ReactiveLimitsLoop::_declare(const OuterContext & ctx) const
 {
     // every bus holding its own voltage through the PV path may become PQ
     OuterControls & controls = *ctx.controls;
-    const bus_q_check::BusQPlan plan = _plan(ctx);
+    bus_q_check::BusQPlan own;
+    const bus_q_check::BusQPlan & plan = bus_q_check::solve_bus_q_plan(ctx, own);
     for (const auto & entry : plan.buses) {
         if (entry.ctrl_pos.empty() && entry.svc_ids.empty()) controls.reserve_bus_voltage(entry.bus_solver);
         // ... and the controllers of a group may be held at a limit
@@ -82,12 +76,16 @@ bool ReactiveLimitsLoop::_has_monitor(const OuterContext & ctx)
 
 bool ReactiveLimitsLoop::_is_needed(const OuterContext & ctx) const
 {
-    return !_plan(ctx).empty() || _has_monitor(ctx);
+    bus_q_check::BusQPlan own;
+    return !bus_q_check::solve_bus_q_plan(ctx, own).empty() || _has_monitor(ctx);
 }
 
 void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
 {
-    plan_ = _plan(ctx);
+    {
+        const bus_q_check::BusQPlan & plan = bus_q_check::solve_bus_q_plan(ctx, plan_);
+        if (&plan != &plan_) plan_ = plan;
+    }
     // a voltage monitor is a held controller of the plan, which bus_q_check leaves out: once
     // switched on it holds its bus like any SVC, so it gets a bus of its own here
     std::vector<int> monitor_of_entry(plan_.buses.size(), -1);
@@ -105,12 +103,22 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             monitor_of_entry.push_back(ctrl.elem_id(c));
         }
     }
-    // resuming: the buses the previous solve left frozen (solver bus -> its state), frozen
-    // again below for this solve
-    std::vector<std::pair<int, std::pair<int, bool> > > carried;
+    // resuming: the buses the previous solve left frozen, by solver bus (0: none; of two at
+    // one bus, the first), frozen again below for this solve
+    std::vector<int> carried_state;
+    std::vector<char> carried_realistic;
     if (ctx.resume) {
+        const std::size_t nb_solver_bus = ctx.view().id_solver_to_me().size();
         for (const ControllerBus & bus : buses_) {
-            if (bus.state != 0) carried.emplace_back(bus.bus_solver, std::make_pair(bus.state, bus.realistic));
+            if (bus.state == 0 || bus.bus_solver < 0 || static_cast<std::size_t>(bus.bus_solver) >= nb_solver_bus) continue;
+            if (carried_state.empty()) {
+                carried_state.assign(nb_solver_bus, 0);
+                carried_realistic.assign(nb_solver_bus, 0);
+            }
+            const std::size_t b = static_cast<std::size_t>(bus.bus_solver);
+            if (carried_state[b] != 0) continue;
+            carried_state[b] = bus.state;
+            carried_realistic[b] = bus.realistic ? 1 : 0;
         }
     }
     buses_.clear();
@@ -120,6 +128,15 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
     const StorageContainer & storages = grid.get_storages();
     const HvdcLineContainer & hvdcs = grid.get_dclines();
     const Eigen::Ref<const RealVect> vn_kv = grid.get_bus_vn_kv();
+    // the robust mode's: the target Q of every generator, summed per solver bus once (each bus
+    // in generator order)
+    std::vector<real_type> target_q_of_bus(view.id_solver_to_me().size(), 0.);
+    for (int gen_id = 0; gen_id < gens.nb(); ++gen_id) {
+        const int b = view.gen_bus_solver(gen_id);  // -1 when off
+        if (b >= 0 && static_cast<std::size_t>(b) < target_q_of_bus.size()) {
+            target_q_of_bus[static_cast<std::size_t>(b)] += gens.get_target_q()(gen_id);
+        }
+    }
     for (std::size_t k = 0; k < plan_.buses.size(); ++k) {
         const auto & entry = plan_.buses[k];
         ControllerBus bus;
@@ -142,19 +159,20 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             const int reg_grid = ctx.view().id_solver_to_me()[bus.reg_bus_solver].cast_int();
             if (reg_grid >= 0) bus.nominal_v = vn_kv(reg_grid);
         }
-        // the robust mode's: the target Q of every generator of the bus
-        for (int gen_id = 0; gen_id < gens.nb(); ++gen_id) {
-            if (view.gen_bus_solver(gen_id) == entry.bus_solver) bus.target_q += gens.get_target_q()(gen_id);
-        }
-        // (a generator's limits follow its target P: read at each check, see _limits)
+        bus.target_q = target_q_of_bus[static_cast<std::size_t>(entry.bus_solver)];
+        // (a generator's limits follow its target P: read at each check, see _limits). The
+        // target in force: one a resumed solve's DistributedSlack moved (see
+        // OuterInjections::gen_target_p_in_force) ranks the bus (KEPT_PV_STRONGEST)
         for (int gen_id : entry.gen_ids) {
-            bus.target_p += view.gen_target_p(gen_id);
+            bus.target_p += ctx.injections != nullptr ? ctx.injections->gen_target_p_in_force(view, gen_id)
+                                                      : view.gen_target_p(gen_id);
             if (!has_target) { bus.target_vm = view.gen_target_vm(gen_id); has_target = true; }
         }
         for (int storage_id : entry.storage_ids) {
             bus.min_q += storages.get_min_q(storage_id);
             bus.max_q += storages.get_max_q(storage_id);
-            bus.target_p -= view.storage_target_p(storage_id);  // load convention
+            bus.target_p -= ctx.injections != nullptr ? ctx.injections->storage_target_p_in_force(view, storage_id)
+                                                      : view.storage_target_p(storage_id);  // load convention
             if (!has_target) { bus.target_vm = view.storage_target_vm(storage_id); has_target = true; }
         }
         for (const auto & station : entry.station_ids) {
@@ -169,13 +187,12 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
     }
     // ... each at the limit it holds in this solve (its target P may have moved), or at its
     // target Q for the robust mode's; the release test lets it go when this solve calls for it
-    if (!carried.empty() && ctx.injections != nullptr && ctx.controls != nullptr) {
+    if (!carried_state.empty() && ctx.injections != nullptr && ctx.controls != nullptr) {
         for (ControllerBus & bus : buses_) {
-            auto it = std::find_if(carried.begin(), carried.end(),
-                                   [&bus](const std::pair<int, std::pair<int, bool> > & c) { return c.first == bus.bus_solver; });
-            if (it == carried.end()) continue;
-            const int state = it->second.first;
-            bus.realistic = it->second.second;
+            if (bus.bus_solver < 0 || static_cast<std::size_t>(bus.bus_solver) >= carried_state.size()) continue;
+            const int state = carried_state[static_cast<std::size_t>(bus.bus_solver)];
+            if (state == 0) continue;
+            bus.realistic = carried_realistic[static_cast<std::size_t>(bus.bus_solver)] != 0;
             real_type q_min, q_max;
             _limits(ctx, bus, q_min, q_max);
             _freeze(ctx, bus, bus.realistic ? bus.target_q : (state < 0 ? q_min : q_max), state);
@@ -204,12 +221,11 @@ void ReactiveLimitsLoop::_limits(const OuterContext & ctx, const ControllerBus &
     const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
     // a generator: its curve at the target P an outer loop gave it, its fixed limits otherwise
     static const std::vector<real_type> none;
-    std::vector<real_type> scratch;
-    const std::vector<real_type> & target_p = ctx.view().gen_target_p_overrides(
-        ctx.injections != nullptr ? ctx.injections->gen_target_p : none, scratch);
+    const std::vector<real_type> & loops = ctx.injections != nullptr ? ctx.injections->gen_target_p : none;
+    const OuterGridView view = ctx.view();
     for (int gen_id : entry.gen_ids) {
         real_type lo, hi;
-        ctx.grid->gen_limits_at_outer_target(gen_id, target_p, lo, hi);
+        ctx.grid->gen_limits_at_outer_target(gen_id, view.gen_target_p_override(loops, gen_id), lo, hi);
         q_min += lo;
         q_max += hi;
     }
@@ -231,10 +247,9 @@ real_type ReactiveLimitsLoop::_controller_limit(const OuterContext & ctx, int ct
     switch (ctrl.kind(ctrl_pos)) {
         case VoltageControlSolverData::GEN: {
             static const std::vector<real_type> none;
-            std::vector<real_type> scratch;
             real_type lo, hi;
-            grid.gen_limits_at_outer_target(el, ctx.view().gen_target_p_overrides(
-                ctx.injections != nullptr ? ctx.injections->gen_target_p : none, scratch), lo, hi);
+            grid.gen_limits_at_outer_target(el, ctx.view().gen_target_p_override(
+                ctx.injections != nullptr ? ctx.injections->gen_target_p : none, el), lo, hi);
             return max ? hi : lo;
         }
         case VoltageControlSolverData::SVC: {

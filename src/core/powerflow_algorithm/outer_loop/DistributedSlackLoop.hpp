@@ -33,14 +33,14 @@ class LSGrid;
  *
  * Trigger (detect): the mismatch above `Params::slack_bus_p_max_mismatch_mw` (SLACK_MISMATCH).
  *
- * Only on a grid with some unit flagged "can participate in the slack" (is_needed, and the
- * same rule in detection mode): a grid where no unit is flagged has no distributed slack set
- * up at all -- OpenLoadFlow with distributedSlack off, where the loop does not exist -- and
- * its single slack is kept on purpose. Detection asks more: a participant OFF the slack bus.
- * Units on the slack bus alone (a slack unit keeps its flag, see
- * SlackParticipation::set_can_participate) would only take what that bus already absorbs,
- * the same solution: nothing to report -- such a unit past its active range is GenPCheck's
- * LOW_P / HIGH_P.
+ * Only on a grid with some unit OFF the slack bus flagged "can participate in the slack"
+ * (is_needed, and the same rule in detection mode): a grid where no unit is flagged has no
+ * distributed slack set up at all -- OpenLoadFlow with distributedSlack off, where the loop
+ * does not exist -- and its single slack is kept on purpose. Units on the slack bus alone (a
+ * slack unit keeps its flag, see SlackParticipation::set_can_participate) are the same case:
+ * they would only take what that bus already absorbs, the same solution, so the loop neither
+ * runs nor fails on their limits -- such a unit past its active range is GenPCheck's LOW_P /
+ * HIGH_P.
  * UNSTABLE when the targets moved, FAILED when some of the mismatch could not be shared
  * (every unit at a bound) and `Params::fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its
  * LEAVE_ON_SLACK_BUS: the slack bus keeps it).

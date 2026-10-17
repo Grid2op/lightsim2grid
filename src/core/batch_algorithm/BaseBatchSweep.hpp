@@ -1906,26 +1906,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             auto & out = _row_trafo_blocks_[i];
             out.clear();
             if(r.phase_tap.empty() && r.ratio_tap.empty()) return;
-            const TrafoContainer & trafos = _grid_model.get_trafos();
-            const TapChangers & ptc = trafos.get_tap_changers(true);
-            const TapChangers & rtc = trafos.get_tap_changers(false);
-            std::map<int, std::pair<int, int> > positions;  // trafo -> (ratio, phase)
-            auto grid_pos = [&](int t){
-                return std::make_pair(rtc.has(t) ? rtc.position(t) : 0, ptc.has(t) ? ptc.position(t) : 0);
-            };
-            for(const auto & tp : r.ratio_tap){
-                auto it = positions.emplace(tp.first, grid_pos(tp.first)).first;
-                it->second.first = tp.second;
-            }
-            for(const auto & tp : r.phase_tap){
-                auto it = positions.emplace(tp.first, grid_pos(tp.first)).first;
-                it->second.second = tp.second;
-            }
-            for(const auto & tp : positions){
-                const int t = tp.first;
-                const real_type shift = ptc.has(t) ? ptc.alpha_at(t, tp.second.second) : trafos[t].shift_rad;
-                out.emplace_back(t, trafos.pi_block_at(t, tp.second.first, tp.second.second, shift));
-            }
+            out = _grid_model.get_trafos().moved_tap_blocks(r.ratio_tap, r.phase_tap);
         }
 
         // what the outer loops did on row i (an algorithm that runs them only, see
@@ -1954,18 +1935,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             // a position the loops handled, where it differs from the grid's
             const TrafoContainer & trafos = _grid_model.get_trafos();
-            auto taps = [](const std::vector<int> & pos, const TapChangers & tc, std::vector<std::pair<int, int> > & out){
-                for(std::size_t t = 0; t < pos.size(); ++t){
-                    if(pos[t] == std::numeric_limits<int>::min()) continue;
-                    const int el = static_cast<int>(t);
-                    if(el < tc.nb() && tc.has(el) && tc.position(el) == pos[t]) continue;
-                    out.emplace_back(el, pos[t]);
-                }
-            };
             algo.get_outer_phase_tap(ints);
-            taps(ints, trafos.get_tap_changers(true), r.phase_tap);
+            r.phase_tap = trafos.moved_taps(true, ints);
             algo.get_outer_ratio_tap(ints);
-            taps(ints, trafos.get_tap_changers(false), r.ratio_tap);
+            r.ratio_tap = trafos.moved_taps(false, ints);
             _record_row_trafo_blocks(i, r);
             algo.get_outer_shunt_sections(ints);
             const ShuntContainer & shunts = _grid_model.get_shunts();
@@ -2229,10 +2202,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             v.layout = &active_layout();
             v.masked = (masked != nullptr && !masked->empty()) ? masked : nullptr;
             v.resume = false;
+            v.resume_from = nullptr;
             v.clear_overrides();
             _fill_outer_row_injections(i, v);
             _fill_outer_row_topo(i, v);
             _fill_outer_row_branches(i, v);
+        }
+        // where the row's loops start: a row chained on the previous one (TimeSeries) from its
+        // equations -- the buses its loops froze, the taps they moved, ... (the loops undo what
+        // this row does not call for); a row seeded from the "n" solve (init_from_n_powerflow,
+        // a TimeSeries' first one included) from that solve's; any other from the grid
+        void _set_outer_row_resume(size_t i, OuterRowView & v) const {
+            const bool chained = INIT == BatchInitKind::FromPreviousStep && i > 0;
+            v.resume_from = chained ? nullptr : _seeded_row_resume_point();
+            v.resume = chained || v.resume_from != nullptr;
         }
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void _fill_outer_row_injections(size_t i, OuterRowView & v) const {
@@ -2336,12 +2319,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_lines, _violations[i],
                                      overrides, 0);
+            // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks)
+            const auto * blocks = (i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty())
+                                  ? &_row_trafo_blocks_[i] : nullptr;
             batch_sweep_detail::check_current_violations(_grid_model.get_trafos_as_data(), ViolationElementType::TRAFO,
                                      V, active_layout().id_me_to_solver, _grid_model.get_bus_vn_kv(), ac_solver_used, sn_mva,
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_trafos, _violations[i],
-                                     overrides, n_line_);
+                                     overrides, n_line_, blocks);
         }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t i, const CplxVect & V, const std::vector<int> * masked_ids) {
@@ -4250,6 +4236,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         if(!ac_solver_used) control.tell_recompute_sbus();
                         if(outer){
                             _fill_outer_row_view(cont_id, &masked, row_view);
+                            _set_outer_row_resume(cont_id, row_view);
                             algo.set_outer_row_view(&row_view);
                         }
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,

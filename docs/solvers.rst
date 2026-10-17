@@ -113,6 +113,95 @@ Use :class:`~lightsim2grid.algorithm.LinearSolverStats` (``get_linear_solver_sta
 above) to inspect how often the fallback actually fires: ``nb_refactorize_failed`` and
 ``nb_fallback_factorize`` stay at ``0`` on a grid where refactor never fails.
 
+.. _static-pivot-refactorization:
+
+KLU with a static-pivot refactorization: ``*_KLUStaticPivot``
+---------------------------------------------------------------
+
+:class:`lightsim2grid.algorithm.NR_KLUStaticPivot` (multi-slack),
+:class:`~lightsim2grid.algorithm.NRSing_KLUStaticPivot` (single-slack) and
+:class:`~lightsim2grid.algorithm.NROuter_KLUStaticPivot` (with OpenLoadFlow's outer loops) are
+the ``*_KLU`` algorithms with a different refactorization. A Newton solve factorizes its
+Jacobian once and then refactorizes it at every iteration, on the same sparsity pattern; a
+batch (:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysis`,
+``InjectionSweep``, ...) does so thousands of times on one symbolic analysis, so
+refactorization is where the time goes.
+
+- The **factorization** is KLU's (``klu_factor``), which chooses the pivots. KLU's
+  block-triangular preordering is turned off, so that the factorization is one block.
+- Every **refactorization** keeps the row and column permutations and the nonzero pattern
+  of L and U of that factorization, and recomputes their values with the left-looking
+  column algorithm of Gilbert and Peierls: no pivot search, no symbolic step, no row
+  scaling. It is the numerical work of KLU's ``klu_refactor``, without the scaling and the
+  storage that function goes through on every call.
+- A frozen pivot order can turn bad when the values change. A zero or non-finite pivot
+  rejects the refactorization; when the refactorization fallback is on (``NROuter_*`` and
+  the batch algorithms switch it on), so does a reciprocal pivot growth below the threshold
+  OpenLoadFlow uses, as with KLU. A rejected refactorization is redone as a factorization,
+  which chooses new pivots.
+- The **ordering** keeps those rejections away from the rows the outer loops switch by
+  value. A remote voltage row switches between "Vm(regulated bus) = target" and a reactive
+  form, a transformer or shunt voltage row between "Vm(bus) = target" and holding its
+  ratio or section; each form has its entry on a different column, and a pivot chosen in
+  one form sits on an entry the other form zeroes. The Newton system tells the solver which
+  indices these are, and the solver orders them after the Vm columns of the buses involved
+  (AMD, then each such index moved down to just after the last of those columns). The
+  pivots of those columns, on the buses' Q rows, then fill in the switched row's other
+  entry, and one pivot order serves both forms. A system without such rows is ordered by
+  AMD alone.
+
+The results agree with the ``*_KLU`` algorithms to round-off, not bit for bit (the
+ordering differs, without the block-triangular step and with the constraints above, and so
+does the rounding, without the row scaling). Ordering the switched rows last costs some fill
+on a system whose rows never switch, which the refactorizations a batch saves outweigh. The algorithms are opt-in, and registered by name only: select them with
+``grid.change_algorithm("NROuter_KLUStaticPivot")``. DC and fast-decoupled algorithms
+factorize their matrices once per solve and have no ``*_KLUStaticPivot`` variant.
+
+The same ordering is available to the ``*_KLU`` algorithms, off by default so that their
+results stay what they were: KLU then orders with the constraints, without its
+block-triangular preordering, and its refactorizations keep their pivots through the same
+switches. The switch is ``constrained_ordering``, on a solver object or as the fifth entry of
+the Newton's ``int_params`` in an :class:`~lightsim2grid.algorithm.AlgoConfig`, which a grid
+copy and the batch classes keep. It can turn the ordering off on ``*_KLUStaticPivot`` too.
+
+.. code-block:: python
+
+    from lightsim2grid.algorithm import NROuter_KLU
+    solver = NROuter_KLU()
+    solver.constrained_ordering = True
+
+    # on a grid, hence on the batch classes built from it
+    grid.change_algorithm("NROuter_KLU")
+    config = grid.get_ac_algo_config()
+    int_params = list(config.int_params)
+    int_params[4] = 1  # constrained_ordering
+    config.int_params = int_params
+    grid.set_ac_algo_config(config)
+
+The algorithm is published; this implementation follows:
+
+- J. R. Gilbert, T. Peierls, "Sparse Partial Pivoting in Time Proportional to Arithmetic
+  Operations", *SIAM Journal on Scientific and Statistical Computing* 9(5):862-874, 1988.
+  https://doi.org/10.1137/0909058 -- the left-looking column algorithm.
+- T. A. Davis, E. Palamadai Natarajan, "Algorithm 907: KLU, A Direct Sparse Solver for
+  Circuit Simulation Problems", *ACM Transactions on Mathematical Software* 37(3), article
+  36, 2010. https://doi.org/10.1145/1824801.1824814 -- the ordering and the first
+  factorization.
+- E. Palamadai Natarajan, "KLU -- A High Performance Sparse Linear Solver for Circuit
+  Simulation Problems", MS thesis, University of Florida, 2005.
+  https://ufdcimages.uflib.ufl.edu/UF/E0/01/17/21/00001/palamadai_e.pdf -- refactorization
+  on the same permutations and nonzero pattern of L and U, and the reciprocal pivot growth.
+- X. Chen, L. Xia, Y. Wang, H. Yang, "Sparsity-Oriented Sparse Solver Design for Circuit
+  Simulation", DATE 2016, pp. 1580-1585. https://doi.org/10.3850/9783981537079_0839 --
+  refactorization without pivoting on a fixed pattern.
+- X. Chen, Y. Wang, H. Yang, "NICSLU: An Adaptive Sparse Matrix Solver for Parallel Circuit
+  Simulation", *IEEE Transactions on Computer-Aided Design of Integrated Circuits and
+  Systems* 32(2):261-274, 2013. https://doi.org/10.1109/TCAD.2012.2217964.
+- B. Bruned, J. Mahseredjian et al., "Sparse solver application for parallel real-time
+  electromagnetic transient simulations", *Electric Power Systems Research* 223:109585,
+  2023. https://doi.org/10.1016/j.epsr.2023.109585 -- a refactorization stopped on an
+  invalid pivot, followed by a full factorization.
+
 Default algorithm selection
 ------------------------------
 
@@ -317,7 +406,8 @@ counterparts for the DC solver) instead, which read/write a serialisable
     env = grid2op.make("l2rpn_case14_sandbox", backend=LightSimBackend())
 
     config = env.backend.get_ac_algo_config()
-    # config.int_params  == [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n]
+    # config.int_params  == [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n,
+    #                        constrained_ordering]  (an NROuter_* appends resume_outer_state)
     # config.real_params == [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]
 
     int_params = list(config.int_params)

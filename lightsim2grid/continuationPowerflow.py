@@ -278,7 +278,8 @@ class ContinuationPowerFlow:
         v_init: ``np.ndarray``, optional
             Starting voltage, one entry per grid bus. Defaults to a flat 1.04 pu start.
         max_iter, tol:
-            Passed to every corrector's Newton-Raphson.
+            Passed to every corrector's Newton-Raphson. ``tol`` is in MVA (not in per
+            unit), as for :func:`lightsim2grid.network.LSGrid.ac_pf`.
         """
         target = self._build_target(loading_factor, load_steering, gen_steering,
                                     scale_q, direction)

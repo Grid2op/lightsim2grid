@@ -305,6 +305,30 @@ class TestContinuationPowerFlow(unittest.TestCase):
         V = self._solve_at(0.5, 2.0)
         np.testing.assert_allclose(V, res.V[-1], atol=1e-8)
 
+    def test_tol_is_in_mva_for_every_corrector(self):
+        """`tol` is in MVA, as for ac_pf, for the correctors as much as for the base case:
+        no traced point may leave a larger active power mismatch than `tol` MW. Read in
+        per unit, a loose `tol` lets a corrector accept points sn_mva times further off."""
+        self.assertGreater(self.grid.get_sn_mva(), 1.)  # or MVA and per unit would agree
+        k, tol = 2.0, 0.5
+        res = ContinuationPowerFlow(_case14()).run(loading_factor=k, stop_at_lam=0.5, tol=tol)
+        self.assertTrue(res.success, res.msg)
+        self.assertGreater(res.lam.size, 2)
+        for i in range(1, res.lam.size):
+            lam = res.lam[i]
+            grid = _case14()
+            for l_id, val in enumerate(self.base_load_p * (1.0 + lam * (k - 1.0))):
+                grid.change_p_load(l_id, val)
+            for l_id, val in enumerate(self.base_load_q * (1.0 + lam * (k - 1.0))):
+                grid.change_q_load(l_id, val)
+            for g_id, val in enumerate(self.base_gen_p * (1.0 + lam * (k - 1.0))):
+                grid.change_p_gen(g_id, val)
+            grid.ac_pf(self.v_init, 100, 1e-10)  # builds what check_solution reads
+            mismatch_p = np.abs(grid.check_solution(res.V[i], False).real)
+            mismatch_p[np.array(grid.get_slack_ids())] = 0.  # the slack balances the rest
+            self.assertLessEqual(mismatch_p.max(), tol,
+                                 f"traced point {i} (lam={lam}) is not converged to {tol} MW")
+
     def test_max_steps_stops_the_curve(self):
         res = ContinuationPowerFlow(_case14()).run(loading_factor=4.0, max_steps=5)
         self.assertFalse(res.success)

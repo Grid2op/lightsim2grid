@@ -10,9 +10,11 @@
 #define OUTER_LOOP_ALGO_H
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -105,6 +107,12 @@ public:
     void get_outer_phase_tap(std::vector<int> & positions) const override { inner_.phase_tap(positions); }
     void get_outer_shunt_sections(std::vector<int> & counts) const override { inner_.shunt_sections(counts); }
     void get_outer_ratio_tap(std::vector<int> & positions) const override { inner_.ratio_tap(positions); }
+    std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const override;
+    OuterControlLayout get_outer_control_layout() const override {
+        OuterControlLayout out;
+        inner_.control_layout(out);
+        return out;
+    }
 
     const OuterLoopDriverParams & get_driver_params() const { return params_; }
     // a grid solving with this algorithm hands its own over before each solve (set_outer_loops)
@@ -129,7 +137,7 @@ public:
     void set_refactor_fallback(bool /*val*/) override {}
 
     // ----- AlgoConfig: the inner algorithm's parameters, then whether to resume --------
-    // int_params:  [the Newton's 4], resume_outer_state
+    // int_params:  [the Newton's 5], resume_outer_state
     // real_params: [the Newton's 6]
     // The driver's OpenLoadFlow parameters are the grid's (LSGrid::set_outer_loop_driver_params),
     // handed over with the loops before each solve: not part of the algorithm's configuration.
@@ -279,9 +287,18 @@ private:
     CplxVect Sbus_init_;
     CplxVect Sbus_target_;  // see OuterInjections::Sbus_target
     Eigen::SparseMatrix<cplx_type> Ybus_;  // the grid's, its values patched by the phase shifters
+    // what the Newton is handed: the reference slack bus alone, and the other slack buses
+    // with the PV ones (see compute_pf)
+    IntVect slack_ref_;
+    IntVect pv_with_slack_;
     RealVect controller_q_;  // the context's copy, refreshed with it
     int slack_bus_ = -1;     // solver id of the slack bus of the current solve
     const OuterRowView * row_ = nullptr;  // the caller's, see set_outer_row_view
+    // a row resuming from another solve (OuterRowView::resume_from): its loops, the positions
+    // they settled on and its voltages, then the targets they moved
+    void _take_loops(const OuterResumePoint & from);
+    void _take_targets(const OuterResumePoint & from);
+
     // what a resumed solve starts from: the positions the last converged solve settled on
     // (INT_MIN where nothing handled them), and whether there is such a solve
     std::vector<int> carried_phase_tap_;
@@ -289,6 +306,7 @@ private:
     std::vector<int> carried_sections_;
     bool has_carry_ = false;
     OuterInjections injections_;  // what the loops inject; kept after the solve for its results
+    OuterSolveCache solve_cache_;  // what the loops share, emptied at each solve (see _context)
 };
 
 #include "OuterLoopAlgo.tpp"

@@ -147,11 +147,14 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
         need_factorize = (need_factorize || should_refactor_policy(nr_iter_));
         if (need_factorize) {
             // Phase 3: fill J numerically with current V.
-            _system.fill_internal_variables();  // timer_dSbus_
+            _system.fill_internal_variables(true);  // timer_dSbus_ (Ybus . V: the residual's)
             _system.fill_J();  // timer_fillJ_
 
             if (need_init) {
-                // New sparsity pattern: analyze (structure) then factorize (values).
+                // New sparsity pattern: analyze (structure) then factorize (values). A
+                // solver that orders with constraints gets the system's first (or none,
+                // see set_constrained_ordering).
+                detail::set_ordering_constraints_impl(_linear_solver, _system, constrained_ordering_, 0);
                 err_ = _linear_solver.analyze(_system.J());
                 if (err_ == ErrorType::NoError) {
                     err_ = _linear_solver.factorize(_system.J());

@@ -52,6 +52,9 @@ std::vector<ShuntVoltageControlLoop::Group> ShuntVoltageControlLoop::groups(cons
         if (reg < 0 || reg >= static_cast<int>(to_solver.size()) || to_solver[reg].cast_int() < 0) continue;
         const int bus = to_solver[shunts.get_bus_id()(s).cast_int()].cast_int();
         if (bus < 0) continue;
+        // a row's island is not solved (handle_disconnected_grid): a shunt on it, or regulating
+        // a bus on it, controls nothing
+        if (view.is_masked(bus) || view.is_masked(to_solver[reg].cast_int())) continue;
         if (!shunts_of_bus.count(bus)) {
             controller_order.push_back(bus);
             regulated_of_bus[bus] = reg;

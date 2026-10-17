@@ -119,7 +119,9 @@ class TimeSerie:
     def init_from_n_powerflow(self):
         """Whether to initialize the complex voltages of the first step of the batch with
         the results of a "n" powerflow (a powerflow at the current state of the grid)
-        instead of a flat start. Default: ``False``. Must be set before the computation
+        instead of a flat start. Default: ``False``. With an ``NROuter_*`` algorithm, the
+        first step's outer loops also start from where the "n" ones ended, as every later step
+        starts from the step before it. Must be set before the computation
         actually runs (eg before ``compute_V`` is called); it has no effect on a powerflow
         that has already been solved.
         """
@@ -479,7 +481,8 @@ class TimeSerie:
         Run the batch using whatever was set by :func:`modify_gen_p` / :func:`modify_sgen_p`
         / :func:`modify_load_p` / :func:`modify_load_q` (the new setter-based API -- an
         alternative to the single bundled :func:`compute_V_from_inj` call). ``max_iter`` /
-        ``tol`` default to the backend's own values when not given.
+        ``tol`` default to the backend's own values when not given. ``tol`` is in MVA (not
+        in per unit), as for :attr:`lightsim2grid.lightSimBackend.LightSimBackend.tol`.
         """
         if v_init is None:
             v_init_comp = self.grid2op_env.backend.V

@@ -200,6 +200,10 @@ same value reported for an actual plugin solver.
     shown above instead (it works the same for a plain :class:`~lightsim2grid.algorithm.AlgorithmType`
     or a string-only / plugin name).
 
+``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot`` and ``NROuter_KLUStaticPivot`` (KLU with a
+static-pivot refactorization, see :ref:`static-pivot-refactorization`) are string-only
+built-ins in the same way, as are the ``NROuter_*`` algorithms.
+
 Usage example
 -------------
 

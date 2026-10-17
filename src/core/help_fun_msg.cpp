@@ -108,7 +108,7 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         ``slack_weights``, an out-of-range id in ``slack_ids`` / ``pv`` / ``pq``, a bus listed in more
         than one of them, an empty ``slack_ids``, a negative ``max_iter`` (0 is accepted: it returns
         the pre-iteration state, before any Newton-Raphson / Gauss-Seidel step), or a non-finite or
-        non-positive ``tol`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
+        non-positive ``tol_pu`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
         ids) instead of touching the underlying solver. This validation is skipped on the internal
         C++ code path used by :class:`lightsim2grid.network.LSGrid` and the batch solvers
         (:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysis`,
@@ -134,8 +134,13 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         Index of the pq buses
     max_iter: ``int``
         Maximum number of iterations performed by the solver. [might be ignore by some solvers]
-    tol: ``float``
-        Solver tolerance (*eg* 1e-8) [might be ignore by some solvers]
+    tol_pu: ``float``
+        Solver tolerance (*eg* 1e-8) [might be ignore by some solvers], **in per unit** (not in MVA):
+        the solver only sees per-unit inputs and has no notion of ``sn_mva``, so it compares the
+        per-unit mismatch with ``tol_pu`` as is. This differs from the ``tol`` of
+        :func:`lightsim2grid.network.LSGrid.ac_pf`, of the batch algorithms and of
+        :class:`lightsim2grid.lightSimBackend.LightSimBackend`, which is in MVA: to reproduce
+        their criterion here, pass ``tol / sn_mva``.
 
     Examples
     ---------
@@ -485,6 +490,18 @@ const std::string DocSolver::set_refactor_every_n = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::constrained_ordering = R"mydelimiter(
+    Whether the linear solver orders the rows the outer loops switch by value (remote voltage
+    control, transformer and shunt voltage control) after the voltage-magnitude columns that keep
+    their pivot valid in both forms, so that a switch does not cost a new factorization. Only the
+    KLU-based algorithms can: on by default for ``*_KLUStaticPivot``, off for ``*_KLU``, and
+    setting it on another algorithm raises. Part of :func:`get_config`, so a grid copy and the
+    batch classes keep it. Takes effect on the next solve, which analyzes the Jacobian again.
+
+    .. seealso:: :ref:`static-pivot-refactorization`
+
+)mydelimiter";
+
 const std::string DocSolver::get_config = R"mydelimiter(
     Return a :class:`lightsim2grid.algorithm.AlgoConfig` capturing every scaling/refactor policy
     type and parameter above, as a single serializable object.
@@ -668,6 +685,26 @@ const std::string DocSolver::NRRefactorRetry_KLU = R"mydelimiter(
 
     Use `get_linear_solver_stats()` on the solver to inspect how often factor/refactor
     calls happen and how often the fallback fires (see :class:`lightsim2grid.algorithm.LinearSolverStats`).
+
+)mydelimiter";
+
+const std::string DocSolver::NR_KLUStaticPivot = R"mydelimiter(
+    Newton-Raphson with KLU, refactorizing the Jacobian on a static pivot order: the
+    ``*_KLUStaticPivot`` family (``NR_KLUStaticPivot``, multi-slack; ``NRSing_KLUStaticPivot``,
+    single-slack; ``NROuter_KLUStaticPivot``, with OpenLoadFlow's outer loops).
+
+    The first factorization is KLU's own, which chooses the pivots. Every refactorization
+    after it keeps those pivots and the nonzero pattern of the factors, and recomputes the
+    values with the left-looking column algorithm of Gilbert and Peierls: the same numerical
+    work as KLU's refactorization, without the row scaling and the storage it goes through
+    each time. The results agree with the ``*_KLU`` algorithms up to round-off, not bit for
+    bit.
+
+    A refactorization whose pivot is zero (or, with the refactorization fallback on, whose
+    reciprocal pivot growth is too small) is rejected, and the fallback factorizes again
+    with new pivots, as with KLU.
+
+    See :ref:`static-pivot-refactorization` for the references.
 
 )mydelimiter";
 
@@ -3951,6 +3988,7 @@ const std::string DocLSGrid::set_reference_slack_bus = R"mydelimiter(
     it as the reference of the whole batch: with ``handle_disconnected_grid``, the
     contingencies that strand it are skipped. Set it before building the batch object (it
     works on a copy of the grid); ``ContingencyAnalysis.pick_reference_slack`` suggests one.
+    Kept by a pickle and by :func:`save_binary` as well.
 
 )mydelimiter";
 
@@ -4353,7 +4391,8 @@ const std::string DocLSGrid::cap_slack_at_active_limits = R"mydelimiter(
     distributed slack (generator or storage unit) that the last :func:`ac_pf` pushed past its
     ``[min_p, max_p]`` by more than ``tol_mw`` -- a ``LOW_P`` / ``HIGH_P`` record of
     :func:`get_physical_violations` -- leaves the slack at that limit, and the grid is solved again
-    (``max_iter``, ``tol``, starting from its current voltages), until no unit is pushed out
+    (``max_iter``, ``tol`` -- in MVA, as for :func:`ac_pf` -- starting from its current voltages),
+    until no unit is pushed out
     (``max_rounds``).
 
     The Newton solve's distributed slack has no bounds: it shares its whole mismatch between the
@@ -5448,6 +5487,17 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
 
     It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
 
+    .. versionchanged:: 1.2.0
+        This is now a read only view of the matrix the grid holds, and no longer a copy of it.
+
+    .. warning::
+        The arrays of the returned matrix are the ones the grid uses, not a copy: it is only
+        valid until a powerflow of this grid rebuilds that matrix (after a change of topology
+        or of an admittance, or a reset of the solver). Reading it after that is undefined:
+        it can show the new values, the old ones, or crash. Call `.copy()` on it to keep it,
+        and to pass it to a function of lightsim2grid taking a sparse matrix (for example
+        the `compute_pf` of an algorithm), which needs writeable arrays.
+
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
         :func:`lightsim2grid.network.LSGrid.get_Ybus`
@@ -5478,12 +5528,22 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::get_dcYbus_solver = R"mydelimiter(
-    This function returns the (complex) `Ybus` matrix used to compute the DC powerflow
-    (its imaginary part should be 0.).
+    This function returns the (real) `Ybus` matrix used to compute the DC powerflow.
 
-    The resulting matrix is a CSC scipy sparse matrix of complex number.
+    The resulting matrix is a CSC scipy sparse matrix of real number.
 
     It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
+
+    .. versionchanged:: 1.2.0
+        This is now a read only view of the matrix the grid holds, and no longer a copy of it.
+
+    .. warning::
+        The arrays of the returned matrix are the ones the grid uses, not a copy: it is only
+        valid until a powerflow of this grid rebuilds that matrix (after a change of topology
+        or of an admittance, or a reset of the solver). Reading it after that is undefined:
+        it can show the new values, the old ones, or crash. Call `.copy()` on it to keep it,
+        and to pass it to a function of lightsim2grid taking a sparse matrix (for example
+        the `compute_pf` of an algorithm), which needs writeable arrays.
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
@@ -5625,10 +5685,10 @@ const std::string DocLSGrid::get_Ybus = R"mydelimiter(
 
 
 const std::string DocLSGrid::get_dcYbus = R"mydelimiter(
-    This function returns the (complex) `Ybus` matrix (for the DC powerflow)
-    (its imaginary part should be 0.) with the gridmodel convention.
+    This function returns the (real) `Ybus` matrix (for the DC powerflow) with the gridmodel
+    convention.
 
-    The resulting matrix is a CSC scipy sparse matrix of complex number.
+    The resulting matrix is a CSC scipy sparse matrix of real number.
 
     It is a square matrix, as many rows (columns) as there are **total** buses on the grid.
 
@@ -5801,7 +5861,10 @@ const std::string DocLSGrid::ac_pf = R"mydelimiter(
         last iterate of a diverged powerflow does.
     
     tol: ``float``
-        Tolerance criteria to stop the computation. This should be > 0 real number.
+        Tolerance criteria to stop the computation, **in MVA** (not in per unit): the powerflow
+        has converged when no bus has an active or reactive mismatch larger than ``tol`` MW / MVAr.
+        It is divided by :func:`get_sn_mva` before reaching the solver, which works in per unit.
+        This should be a > 0 real number.
 
     Returns
     -------
@@ -5826,7 +5889,7 @@ const std::string DocLSGrid::ac_pf = R"mydelimiter(
         # maximum number of iteration
         nb_iter = 10  # a good default
 
-        # tolerance
+        # tolerance, in MVA
         tol = 1e-8
 
         V = grid_model.ac_pf(Vinit, nb_iter, tol)
@@ -6153,8 +6216,8 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
     set before :func:`dc_pf` is called, not only before :func:`ac_pf`.
 
     Buses whose magnitude is fixed (ordinary PV buses) are always set to their set-point.
-    The option is copied with the grid, so the batch algorithms built from it inherit it. It
-    is not saved by :func:`get_state` or the binary format.
+    The option is copied with the grid, so the batch algorithms built from it inherit it, and
+    kept by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------
@@ -6207,7 +6270,7 @@ const std::string DocLSGrid::set_hold_frozen_regulators = R"mydelimiter(
     check of :func:`get_physical_violations` (they hold no bus); their release is still reported.
 
     Off by default. The option is copied with the grid, so the batch algorithms built from it
-    inherit it. It is not saved by :func:`get_state` or the binary format.
+    inherit it, and kept by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------
@@ -7528,7 +7591,8 @@ const std::string DocTimeSeries::compute_Vs = R"mydelimiter(
         Total number of iteration (>0 integer)
 
     tol: ``float``
-        Solver tolerance (> 0. float)
+        Solver tolerance, **in MVA** (not in per unit), as for :func:`lightsim2grid.network.LSGrid.ac_pf`
+        (> 0. float)
 
     Returns
     ----------
@@ -7672,6 +7736,9 @@ const std::string DocTimeSeries::init_from_n_powerflow = R"mydelimiter(
     to :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs`. Every other step is
     initialized with the result of the step before it either way.
 
+    With an ``NROuter_*`` algorithm, the first step's outer loops also start from where the
+    "n" powerflow's ended, as every other step's start from the step before it.
+
 )mydelimiter";
 
 const std::string DocInjectionSweep::InjectionSweep = R"mydelimiter(
@@ -7704,6 +7771,10 @@ const std::string DocInjectionSweep::init_from_n_powerflow = R"mydelimiter(
 
     Default: ``False``, meaning every step is initialized with the input vector given to
     :func:`lightsim2grid.injectionSweep.InjectionSweepCPP.compute_Vs`.
+
+    With an ``NROuter_*`` algorithm, each step's outer loops also start from where the "n"
+    powerflow's ended (frozen buses, taps, sections, and the targets ``DistributedSlack``
+    moved where the step does not set its own), not from the grid.
 
 )mydelimiter";
 
@@ -7988,7 +8059,8 @@ const std::string DocContingencyAnalysis::compute = R"mydelimiter(
         Total number of iteration (>0 integer)
 
     tol: ``float``
-        Solver tolerance (> 0. float)
+        Solver tolerance, **in MVA** (not in per unit), as for :func:`lightsim2grid.network.LSGrid.ac_pf`
+        (> 0. float)
 
 )mydelimiter";
 

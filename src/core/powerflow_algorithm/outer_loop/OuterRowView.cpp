@@ -10,10 +10,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "LSGrid.hpp"
+#include "BaseOuterLoop.hpp"
 
 namespace ls2g {
+
+// out-of-class definition: the C++14 build odr-uses it (vector::assign takes a const reference)
+constexpr int OuterRowView::Units::GRID_BUS;
 
 const SolverBusLayout & OuterGridView::layout() const
 {
@@ -110,6 +115,12 @@ real_type OuterGridView::gen_target_p(int gen_id) const
     return grid_.get_generators().get_target_p()(gen_id);
 }
 
+bool OuterGridView::row_sets_gen_target_p(int gen_id) const
+{
+    real_type res;
+    return row_ != nullptr && _value(row_->gens.target_p, gen_id, res);
+}
+
 real_type OuterGridView::gen_target_vm(int gen_id) const
 {
     real_type res;
@@ -117,15 +128,12 @@ real_type OuterGridView::gen_target_vm(int gen_id) const
     return grid_.get_generators().get_target_vm_pu(gen_id);
 }
 
-const std::vector<real_type> & OuterGridView::gen_target_p_overrides(const std::vector<real_type> & loops,
-                                                                     std::vector<real_type> & scratch) const
+real_type OuterGridView::gen_target_p_override(const std::vector<real_type> & loops, int gen_id) const
 {
-    if (row_ == nullptr || row_->gens.target_p.empty()) return loops;
-    scratch = row_->gens.target_p;
-    for (std::size_t g = 0; g < loops.size() && g < scratch.size(); ++g) {
-        if (!std::isnan(loops[g])) scratch[g] = loops[g];
-    }
-    return scratch;
+    real_type res;
+    if (_value(loops, gen_id, res)) return res;
+    if (row_ != nullptr && _value(row_->gens.target_p, gen_id, res)) return res;
+    return std::numeric_limits<real_type>::quiet_NaN();
 }
 
 // ----- storage units -------------------------------------------------------------------
@@ -150,6 +158,12 @@ real_type OuterGridView::storage_target_p(int storage_id) const
     real_type res;
     if (row_ != nullptr && _value(row_->storages.target_p, storage_id, res)) return res;
     return grid_.get_storages().get_target_p()(storage_id);
+}
+
+bool OuterGridView::row_sets_storage_target_p(int storage_id) const
+{
+    real_type res;
+    return row_ != nullptr && _value(row_->storages.target_p, storage_id, res);
 }
 
 real_type OuterGridView::storage_target_vm(int storage_id) const
@@ -227,6 +241,65 @@ bool OuterGridView::trafo_closed(int trafo_id, int & bus1_solver, int & bus2_sol
 {
     return branch_closed(grid_.get_trafos(), row_ != nullptr ? &row_->trafos : nullptr, trafo_id,
                          id_me_to_solver(), bus1_solver, bus2_solver);
+}
+
+// ----- OuterInjections ----------------------------------------------------------------
+
+real_type OuterInjections::gen_target_p_in_force(const OuterGridView & view, int gen_id) const
+{
+    if (gen_id >= 0 && static_cast<std::size_t>(gen_id) < gen_target_p.size() &&
+        !std::isnan(gen_target_p[static_cast<std::size_t>(gen_id)])) {
+        return gen_target_p[static_cast<std::size_t>(gen_id)];
+    }
+    return view.gen_target_p(gen_id);
+}
+
+real_type OuterInjections::storage_target_p_in_force(const OuterGridView & view, int storage_id) const
+{
+    if (storage_id >= 0 && static_cast<std::size_t>(storage_id) < storage_target_p.size() &&
+        !std::isnan(storage_target_p[static_cast<std::size_t>(storage_id)])) {
+        return storage_target_p[static_cast<std::size_t>(storage_id)];
+    }
+    return view.storage_target_p(storage_id);
+}
+
+void OuterInjections::_add_injection(int bus_solver, const cplx_type & ds)
+{
+    if (ds == cplx_type(0., 0.)) return;
+    (*Sbus)(bus_solver) += ds;
+    if (Sbus_target != nullptr) (*Sbus_target)(bus_solver) += ds;
+}
+
+real_type OuterInjections::move_gen_target_p(const OuterGridView & view, int gen_id, int bus_solver, real_type mw)
+{
+    const LSGrid & grid = view.grid();
+    const real_type sn_mva = grid.get_sn_mva();
+    if (gen_target_p.empty()) {
+        gen_target_p.assign(static_cast<std::size_t>(grid.get_generators().nb()), std::numeric_limits<real_type>::quiet_NaN());
+    }
+    const real_type delta = mw - gen_target_p_in_force(view, gen_id);
+    cplx_type ds = {delta / sn_mva, 0.};
+    const bool pq = !grid.get_generators().get_voltage_regulator_on(gen_id);
+    const real_type q_before = pq ? grid.gen_target_q_at_outer_target(
+        gen_id, view.gen_target_p_override(gen_target_p, gen_id)) : 0.;
+    gen_target_p[static_cast<std::size_t>(gen_id)] = mw;
+    if (pq) ds += cplx_type(0., (grid.gen_target_q_at_outer_target(
+        gen_id, view.gen_target_p_override(gen_target_p, gen_id)) - q_before) / sn_mva);
+    _add_injection(bus_solver, ds);
+    return delta;
+}
+
+real_type OuterInjections::move_storage_target_p(const OuterGridView & view, int storage_id, int bus_solver, real_type mw)
+{
+    const LSGrid & grid = view.grid();
+    if (storage_target_p.empty()) {
+        storage_target_p.assign(static_cast<std::size_t>(grid.get_storages().nb()), std::numeric_limits<real_type>::quiet_NaN());
+    }
+    // load convention: the injection moves the other way
+    const real_type delta = storage_target_p_in_force(view, storage_id) - mw;
+    storage_target_p[static_cast<std::size_t>(storage_id)] = mw;
+    _add_injection(bus_solver, cplx_type(delta / grid.get_sn_mva(), 0.));
+    return delta;
 }
 
 }  // namespace ls2g

@@ -256,6 +256,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 _batch_inputs_valid_ = false;
                 _algo.reset();
                 _base_case_v_solver_ = CplxVect();
+                _base_resume_point_.reset();
                 _prepared_nb_steps_ = _nb_steps_none;
             }
             clear_batch_outputs();
@@ -908,6 +909,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     active_layout().bus_pq.as_eigen());
             }
             if(conv) _base_case_v_solver_ = _algo.get_V();
+            // ... and where its outer loops ended, which the rows seeded from it resume from
+            _base_resume_point_ = conv ? _algo.get_outer_resume_point() : nullptr;
             return conv;
         }
 
@@ -1053,6 +1056,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // set_init_from_n_powerflow() batch starts every row from. Part of L2: it is
         // that solve's answer, and it is kept with the factorization that produced it.
         CplxVect _base_case_v_solver_;
+        // where the "n" solve's outer loops ended (null without any): a set_init_from_n_powerflow()
+        // batch starts every row's loops from there -- the buses they froze, the taps, the
+        // sections, the targets DistributedSlack moved -- not from the grid. Part of L2, with it.
+        std::shared_ptr<const OuterResumePoint> _base_resume_point_;
+        /// what a row seeded from the "n" solve resumes its outer loops from (null: the grid)
+        const OuterResumePoint * _seeded_row_resume_point() const {
+            return _init_from_n_powerflow ? _base_resume_point_.get() : nullptr;
+        }
         // the "n" solve as the outer loops see it: the batch's labelling, its masked buses,
         // no row override (see OuterRowView). The loops declare what they act on against it.
         OuterRowView _base_row_view_;

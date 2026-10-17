@@ -85,6 +85,7 @@ struct LS2G_API DocSolver
     static const std::string set_iw_mu_max;
     static const std::string get_refactor_every_n;
     static const std::string set_refactor_every_n;
+    static const std::string constrained_ordering;
     static const std::string get_config;
     static const std::string set_config;
     static const std::string get_theta_to_J_col;
@@ -104,6 +105,7 @@ struct LS2G_API DocSolver
     static const std::string FDPF_XB_KLU;
     static const std::string FDPF_BX_KLU;
     static const std::string NRRefactorRetry_KLU;
+    static const std::string NR_KLUStaticPivot;
     static const std::string NROuter;
     static const std::string OuterLoopStats;
     static const std::string OuterLoopDriverParams;

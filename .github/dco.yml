@@ -1,0 +1,13 @@
+# Configuration of the DCO app (https://github.com/dcoapp/app).
+# It is read from the default branch (master) only.
+#
+# A remediation commit lets a contributor add a missing Signed-off-by to
+# earlier commits of a pull request without rewriting its history, by pushing
+# a new commit whose message reads, for each commit to fix:
+#
+#   I, Full Name <email>, hereby add my Signed-off-by to this commit: <sha>
+#
+# and which is itself signed off. Name and email must match the author of the
+# commit being fixed.
+allowRemediationCommits:
+  individual: true

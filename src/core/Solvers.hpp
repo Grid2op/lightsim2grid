@@ -19,6 +19,7 @@
 
 #include "linear_solvers/SparseLUSolver.hpp"
 #include "linear_solvers/KLUSolver.hpp"
+#include "linear_solvers/KLUStaticPivotSolver.hpp"
 #include "linear_solvers/NICSLUSolver.hpp"
 #include "linear_solvers/CKTSOSolver.hpp"
 #include "linear_solvers/LinearSolverPolicy.hpp"
@@ -68,6 +69,15 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     using NRRefactorRetry_KLU = NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
     /** Single-slack Newton-Raphson with OpenLoadFlow's outer loops, KLU linear solver **/
     using NROuter_KLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>>>;
+    // KLU's factorization, with a static-pivot refactorization (see
+    // linear_solvers/KLUStaticPivotSolver.hpp). DC and FDPF factorize once per solve and
+    // have nothing to gain from it.
+    /** Newton-Raphson (multi-slack) with KLU and a static-pivot refactorization **/
+    using NR_KLUStaticPivot = NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, MultiSlackNRSystem>;
+    /** Newton-Raphson (single-slack) with KLU and a static-pivot refactorization **/
+    using NRSing_KLUStaticPivot = NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, SingleSlackNRSystem>;
+    /** Single-slack Newton-Raphson with OpenLoadFlow's outer loops, KLU and a static-pivot refactorization **/
+    using NROuter_KLUStaticPivot = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>>>;
 #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -127,6 +137,9 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     extern template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMethod::BX>;
     extern template class LS2G_API NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
     extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>>>;
+    extern template class LS2G_API NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, MultiSlackNRSystem>;
+    extern template class LS2G_API NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, SingleSlackNRSystem>;
+    extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>>>;
 #endif
 
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)

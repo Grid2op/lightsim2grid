@@ -136,7 +136,12 @@ namespace ls2g {
 //     grid's outer loops (a flag for the default list, else each loop's name and
 //     parameters) and the outer-loop driver's parameters (see LSGrid::get_outer_loops,
 //     LSGrid::set_outer_loop_driver_params). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 21;
+// v22: LSGrid::StateRes carries the grid-level settings copy() keeps and a grid read back
+//     needs to solve the same: four flags (see set_keep_vinit_at_group_controlled_buses,
+//     set_hold_frozen_regulators, set_dc_distribute_slack_on_can_participate,
+//     set_reactive_dispatch_olf), the reference slack bus, OpenLoadFlow's reactive ranges and
+//     raw target Q, and the generators' capability curves. Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 22;
 
 class LS2G_API BinaryArchive
 {
