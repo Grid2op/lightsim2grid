@@ -34,9 +34,6 @@ std::vector<T> dense_of(const std::map<int, Control *> & of, T fill, Get get)
 
 }  // namespace
 
-// out-of-class definition: the C++14 build odr-uses it (vector::assign takes a const reference)
-constexpr int HvdcRegimeControl::KEEP;
-
 BusVoltageControl * OuterControls::reserve_bus_voltage(int bus)
 {
     BusVoltageControl * known = bus_voltage(bus);
