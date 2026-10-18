@@ -19,6 +19,19 @@ Control * find_control(const std::map<int, Control *> & of, int key)
     return it == of.end() ? nullptr : it->second;
 }
 
+// one entry per id up to the largest reserved, `fill` where none is
+template<class T, class Control, class Get>
+std::vector<T> dense_of(const std::map<int, Control *> & of, T fill, Get get)
+{
+    std::vector<T> res;
+    if (of.empty() || of.rbegin()->first < 0) return res;
+    res.assign(static_cast<std::size_t>(of.rbegin()->first) + 1, fill);
+    for (const auto & kv : of) {
+        if (kv.first >= 0) res[static_cast<std::size_t>(kv.first)] = get(*kv.second);
+    }
+    return res;
+}
+
 }  // namespace
 
 // out-of-class definition: the C++14 build odr-uses it (vector::assign takes a const reference)
@@ -34,17 +47,8 @@ BusVoltageControl * OuterControls::reserve_bus_voltage(int bus)
     return res;
 }
 
-BusVoltageControl * OuterControls::bus_voltage(int bus)
-{
-    const auto it = bus_voltage_of_.find(bus);
-    return it == bus_voltage_of_.end() ? nullptr : it->second;
-}
-
-const BusVoltageControl * OuterControls::bus_voltage(int bus) const
-{
-    const auto it = bus_voltage_of_.find(bus);
-    return it == bus_voltage_of_.end() ? nullptr : it->second;
-}
+BusVoltageControl * OuterControls::bus_voltage(int bus) { return find_control(bus_voltage_of_, bus); }
+const BusVoltageControl * OuterControls::bus_voltage(int bus) const { return find_control(bus_voltage_of_, bus); }
 
 VoltageControllerHold * OuterControls::reserve_controller_hold(int controller)
 {
@@ -58,14 +62,11 @@ VoltageControllerHold * OuterControls::reserve_controller_hold(int controller)
 
 VoltageControllerHold * OuterControls::controller_hold(int controller)
 {
-    const auto it = controller_hold_of_.find(controller);
-    return it == controller_hold_of_.end() ? nullptr : it->second;
+    return find_control(controller_hold_of_, controller);
 }
-
 const VoltageControllerHold * OuterControls::controller_hold(int controller) const
 {
-    const auto it = controller_hold_of_.find(controller);
-    return it == controller_hold_of_.end() ? nullptr : it->second;
+    return find_control(controller_hold_of_, controller);
 }
 
 StandbySvcControl * OuterControls::reserve_standby_svc(int svc)
@@ -228,37 +229,19 @@ std::vector<int> OuterControls::pinned_buses() const
 
 std::vector<real_type> OuterControls::held_q() const
 {
-    std::vector<real_type> res;
-    if (controller_hold_of_.empty() || controller_hold_of_.rbegin()->first < 0) return res;
-    res.assign(static_cast<std::size_t>(controller_hold_of_.rbegin()->first) + 1,
-               std::numeric_limits<real_type>::quiet_NaN());
-    for (const auto & ch : controller_hold_of_) {
-        if (ch.first >= 0) res[static_cast<std::size_t>(ch.first)] = ch.second->q();
-    }
-    return res;
+    return dense_of(controller_hold_of_, std::numeric_limits<real_type>::quiet_NaN(),
+                    [](const VoltageControllerHold & c){ return c.q(); });
 }
 
 std::vector<real_type> OuterControls::svc_target_vm() const
 {
-    std::vector<real_type> res;
-    if (standby_svc_of_.empty() || standby_svc_of_.rbegin()->first < 0) return res;
-    res.assign(static_cast<std::size_t>(standby_svc_of_.rbegin()->first) + 1,
-               std::numeric_limits<real_type>::quiet_NaN());
-    for (const auto & sc : standby_svc_of_) {
-        if (sc.first >= 0) res[static_cast<std::size_t>(sc.first)] = sc.second->target_vm();
-    }
-    return res;
+    return dense_of(standby_svc_of_, std::numeric_limits<real_type>::quiet_NaN(),
+                    [](const StandbySvcControl & c){ return c.target_vm(); });
 }
 
 std::vector<int> OuterControls::hvdc_regimes() const
 {
-    std::vector<int> res;
-    if (hvdc_regime_of_.empty() || hvdc_regime_of_.rbegin()->first < 0) return res;
-    res.assign(static_cast<std::size_t>(hvdc_regime_of_.rbegin()->first) + 1, HvdcRegimeControl::KEEP);
-    for (const auto & hr : hvdc_regime_of_) {
-        if (hr.first >= 0) res[static_cast<std::size_t>(hr.first)] = hr.second->regime();
-    }
-    return res;
+    return dense_of(hvdc_regime_of_, HvdcRegimeControl::KEEP, [](const HvdcRegimeControl & c){ return c.regime(); });
 }
 
 }  // namespace ls2g
