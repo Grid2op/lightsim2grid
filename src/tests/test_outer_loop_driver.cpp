@@ -251,6 +251,17 @@ TEST_CASE("the outer iterations are capped", "[outer_loop]")
     CHECK(grid.get_algo().get_error() == ErrorType::TooManyIterations);
 }
 
+TEST_CASE("a cap of zero outer iterations is refused as in OpenLoadFlow", "[outer_loop]")
+{
+    // with none, a solve no loop had to act on would still end UNSTABLE (the cap is reached)
+    ls2g::NROuter_SparseLU algo;
+    ls2g::OuterLoopDriverParams driver;
+    driver.max_outer_iterations = 0;
+    CHECK_THROWS(algo.set_driver_params(driver));
+    driver.max_outer_iterations = 1;
+    CHECK_NOTHROW(algo.set_driver_params(driver));
+}
+
 TEST_CASE("a failed loop stops the solve", "[outer_loop]")
 {
     auto log = std::make_shared<std::vector<std::string> >();

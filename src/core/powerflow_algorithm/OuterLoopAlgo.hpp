@@ -252,8 +252,9 @@ private:
     OuterContext _context();
 
     static void _check_driver_params(const OuterLoopDriverParams & params) {
-        if(params.max_outer_iterations < 0){
-            throw std::runtime_error("NROuterAlgo: max_outer_iterations must be >= 0.");
+        // OpenLoadFlow refuses less than one too: with none, every solve would end UNSTABLE
+        if(params.max_outer_iterations < 1){
+            throw std::runtime_error("NROuterAlgo: max_outer_iterations must be >= 1.");
         }
         if(!(params.min_realistic_voltage < params.max_realistic_voltage)){
             throw std::runtime_error("NROuterAlgo: min_realistic_voltage must be lower than "
