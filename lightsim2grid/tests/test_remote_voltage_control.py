@@ -28,8 +28,7 @@ try:
     import pypowsybl.loadflow as lf
     import pypowsybl.report as rp
     from lightsim2grid.network import init_from_pypowsybl
-    from lightsim2grid.network.from_pypowsybl._olf_const import (
-        _OLF_MIN_REALISTIC_VOLTAGE_PU, _OLF_MAX_REALISTIC_VOLTAGE_PU)
+    from lightsim2grid.network import olf_outer_loops
     HAS_PYPOWSYBL = True
 except ImportError:
     HAS_PYPOWSYBL = False
@@ -56,16 +55,20 @@ def _ieee14_remote(target_v_kv):
 def _olf_switches(n):
     """whether OpenLoadFlow's robust remote voltage control switched a controller to PQ.
 
-    Its realistic voltage range is passed explicitly, the one the tests give lightsim2grid's
-    ReactiveLimits loop: pypowsybl builds ship different defaults for it (the public one a range so
-    wide the robust mode never triggers here)."""
+    Its realistic voltage range is the one of the installed pypowsybl, which is also the one
+    given to lightsim2grid's ReactiveLimits loop (see ``_installed_range``): the defaults differ
+    between pypowsybl builds."""
     params = lf.Parameters()
-    params.provider_parameters = {"voltageRemoteControlRobustMode": "true",
-                                  "minRealisticVoltage": str(_OLF_MIN_REALISTIC_VOLTAGE_PU),
-                                  "maxRealisticVoltage": str(_OLF_MAX_REALISTIC_VOLTAGE_PU)}
+    params.provider_parameters = {"voltageRemoteControlRobustMode": "true"}
     report = rp.ReportNode()
     lf.run_ac(n, params, report_node=report)
     return any("remote voltage target is maintained" in line for line in str(report).splitlines())
+
+
+def _installed_range():
+    """the realistic voltage range (pu) OpenLoadFlow runs with in the installed pypowsybl"""
+    _, driver = olf_outer_loops()
+    return driver.min_realistic_voltage, driver.max_realistic_voltage
 
 
 def _ls(n, **kwargs):
@@ -96,8 +99,7 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
         # around the high bound, and far below the low one: reported iff OpenLoadFlow switches
         for target_v_kv in [9.5, 13.85, 13.8975, 13.9, 14.2]:
             olf = _olf_switches(_ieee14_remote(target_v_kv))
-            grid = _with_range(_ls(_ieee14_remote(target_v_kv)), _OLF_MIN_REALISTIC_VOLTAGE_PU,
-                               _OLF_MAX_REALISTIC_VOLTAGE_PU)
+            grid = _with_range(_ls(_ieee14_remote(target_v_kv)), *_installed_range())
             viols = _remote(grid.get_physical_violations(True, 0., 0.))
             self.assertEqual(len(viols) == 1, olf, f"target {target_v_kv} kV")
             for el in viols:
