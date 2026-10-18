@@ -98,8 +98,9 @@ struct LS2G_API OuterDecision
 
 /**
  * Everything a loop sees, after a Newton solve. Built by the outer-loop algorithm between
- * two solves (with `state`), or by the grid after any AC solve for detection (`state` is
- * then null: a loop reports what it WOULD do, from the grid and the solve alone).
+ * two solves (with `injections` and `controls`), or by the grid after any AC solve for
+ * detection (both are then null: a loop reports what it WOULD do, from the grid and the
+ * solve alone).
  *
  * Solver bus numbering for the vectors; `grid` gives the element data and the
  * grid <-> solver bus maps.

@@ -975,6 +975,17 @@ class LS2G_API LSGrid final
                                                                 const std::vector<bool> & storage_off = std::vector<bool>()) const;
 
         /**
+         * Each generator's share of the distributed slack (one per generator, summing to 1
+         * over the participants together with the storage units' shares): its weight over
+         * the total weight of every connected participant. That is the fraction of the
+         * slack a solve absorbs that it carries -- P = target_p + share * absorbed. 0 for
+         * a generator that does not take part (disconnected, not flagged, or no weight).
+         * Read off the CURRENT weights: they follow the setpoints only through
+         * update_slack_weights, not through change_p_gen.
+         */
+        [[nodiscard]] RealVect get_gen_slack_shares() const;
+
+        /**
          * The active and reactive output of every generator (MW, MVAr) at a state the
          * CALLER solved -- a batch row -- by the rules compute_results publishes them
          * with, and without writing anything into this grid (several rows, several
@@ -1001,17 +1012,6 @@ class LS2G_API LSGrid final
          * produces its setpoint, out of the distributed slack, and shares the reactive
          * residual of THAT bus; `gen_off` must not flag it.
          */
-        /**
-         * Each generator's share of the distributed slack (one per generator, summing to 1
-         * over the participants together with the storage units' shares): its weight over
-         * the total weight of every connected participant. That is the fraction of the
-         * slack a solve absorbs that it carries -- P = target_p + share * absorbed. 0 for
-         * a generator that does not take part (disconnected, not flagged, or no weight).
-         * Read off the CURRENT weights: they follow the setpoints only through
-         * update_slack_weights, not through change_p_gen.
-         */
-        [[nodiscard]] RealVect get_gen_slack_shares() const;
-
         void generator_results(bool ac,
                                const Eigen::Ref<const RealVect> & target_p_mw,
                                const std::vector<bool> & gen_off,
