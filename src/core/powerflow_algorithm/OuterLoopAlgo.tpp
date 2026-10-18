@@ -20,6 +20,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
 {
     // what changed since the last solve is told to this object (LSGrid, the batches)
     inner_.algo().tell_solver_control(_solver_control);
+    nr_iter_ = 0;  // the Newton iterations of every inner solve, summed by _solve
     if (!inner_.begin()) {
         err_ = inner_.algo().get_error();
         return false;
@@ -167,8 +168,9 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
     bool converged = inner_.newton(max_iter, tol, need_init);
     // the first iteration analyzed (or tried to): every later solve only refactorizes. A
     // solve that converged in zero iterations factorized nothing, so it does not count.
-    nr_iter_ = inner_.algo().get_nb_iter();
-    if (nr_iter_ > 0) need_init = false;
+    const int nb_iter = inner_.algo().get_nb_iter();
+    nr_iter_ += nb_iter;
+    if (nb_iter > 0) need_init = false;
     inner_.finalize();
     // the results, here: what LSGrid and the loops read
     V_ = inner_.algo().get_V();
@@ -187,12 +189,12 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
             if (dq != 0.) mis_bus_(b) += cplx_type(0., dq);
         }
     }
-    stats_.nr_iterations.push_back(nr_iter_);
+    stats_.nr_iterations.push_back(nb_iter);
     // OpenLoadFlow's Newton tests convergence only after a step, so a solve is at least one
     // iteration there, and "a pass added Newton iterations" (whether another pass runs)
     // means "a pass re-solved". Counted the same way here, where a solve already within
     // tolerance takes no step at all.
-    total_nr_iterations_ += std::max(nr_iter_, 1);
+    total_nr_iterations_ += std::max(nb_iter, 1);
     if (converged && check_unrealistic && lsgrid_ptr_ != nullptr &&
         is_state_unrealistic(*lsgrid_ptr_, V_, inner_.vm_unknown(), params_)) {
         unrealistic_ = true;

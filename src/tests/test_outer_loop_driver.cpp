@@ -262,6 +262,22 @@ TEST_CASE("a cap of zero outer iterations is refused as in OpenLoadFlow", "[oute
     CHECK_NOTHROW(algo.set_driver_params(driver));
 }
 
+TEST_CASE("the iteration count covers every Newton solve of the outer loops", "[outer_loop]")
+{
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{U, U, S}, log));
+    REQUIRE(solve(grid).size() == 3);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    REQUIRE(stats.nr_iterations.size() == 3);
+    int total = 0;
+    for (int nb : stats.nr_iterations) total += nb;
+    CHECK(stats.nr_iterations.back() < total);
+    CHECK(grid.get_algo().get_nb_iter() == total);
+}
+
 TEST_CASE("a failed loop stops the solve", "[outer_loop]")
 {
     auto log = std::make_shared<std::vector<std::string> >();
