@@ -2250,6 +2250,13 @@ void LSGrid::generator_results(bool ac,
     };
     check_size(gen_off.size(), "gen_off");
     check_size(no_slack_share.size(), "no_slack_share");
+    const std::size_t nb_storage = static_cast<std::size_t>(storages_.nb());
+    if(!storage_no_slack_share.empty() && storage_no_slack_share.size() != nb_storage){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::generator_results: 'storage_no_slack_share' has " << storage_no_slack_share.size()
+             << " elements, expected " << nb_storage << " (one per storage unit) or none.";
+        throw std::runtime_error(exc_.str());
+    }
     if(target_p_mw.size() != nb_gen){
         std::ostringstream exc_;
         exc_ << "LSGrid::generator_results: 'target_p_mw' has " << target_p_mw.size()

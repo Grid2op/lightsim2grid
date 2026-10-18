@@ -598,6 +598,30 @@ TEST_CASE("the slack can rest on storage units alone", "[LSGrid][slack][storage]
     }
 }
 
+TEST_CASE("generator_results refuses a storage mask of the wrong size", "[LSGrid][slack][storage]")
+{
+    LSGrid grid = make_three_bus_grid_two_gens();
+    add_idle_storage_on_bus1(grid);
+    grid.add_gen_slackbus(0, 0.7);
+    grid.add_storage_slackbus(0, 0.3);
+    REQUIRE(solve_ac(grid).size() == 3);
+
+    const RealVect target_p = grid.get_generators().get_target_p();
+    const ls2g::SolverBusIdVect & me_to_solver = grid.id_me_to_ac_solver();
+    const RealVect mismatch = RealVect::Zero(3);
+    const RealVect ctrl_q;
+    const ls2g::IntVect ctrl_kind, ctrl_elem;
+    RealVect p_mw, q_mvar;
+    const auto call = [&](const std::vector<bool> & storage_mask){
+        grid.generator_results(true, target_p, {}, {}, storage_mask, me_to_solver, mismatch, mismatch,
+                               ctrl_q, ctrl_kind, ctrl_elem, p_mw, q_mvar);
+    };
+    // empty, or one entry per storage unit, as for the generators' masks
+    CHECK_NOTHROW(call({}));
+    CHECK_NOTHROW(call({false}));
+    CHECK_THROWS_WITH(call({false, false, false}), ContainsSubstring("storage_no_slack_share"));
+}
+
 TEST_CASE("remote voltage control pins the regulated bus", "[LSGrid][vctrl]")
 {
     // the PV generator at bus 1 (target 1.04 pu) regulates bus 2 instead of
