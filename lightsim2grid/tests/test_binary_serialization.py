@@ -225,7 +225,7 @@ class TestBinarySerialization(unittest.TestCase):
         grid = self.env.backend._grid
 
         ac_cfg = grid.get_ac_algo_config()
-        ac_cfg.int_params = [1, 2, 3, 4]
+        ac_cfg.int_params = [1, 2, 3, 4, 0]  # the last, constrained_ordering
         ac_cfg.real_params = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
         grid.set_ac_algo_config(ac_cfg)
         # DC solver (DC_SparseLU) does not populate AlgoConfig at all (only the
@@ -574,13 +574,13 @@ class TestSerializedEnumValues(unittest.TestCase):
                          {"VSC": 0, "LCC": 1})
 
 
-# reference file saved with binary format 21 (see BINARY_FORMAT_VERSION in
+# reference file saved with binary format 22 (see BINARY_FORMAT_VERSION in
 # src/core/BinaryArchive.hpp) + a few values it is known to contain, used by
 # TestBinaryLayoutUnchanged below. Regenerate (only after a deliberate format
 # bump) with: python -m lightsim2grid.tests.test_binary_serialization regen
 FIXTURE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "binary_format_fixture",
-                            "case14_sandbox_format21.lsb")
+                            "case14_sandbox_format22.lsb")
 FIXTURE_ENV_NAME = "l2rpn_case14_sandbox"
 FIXTURE_N_SUB = 14
 FIXTURE_N_LOAD = 11

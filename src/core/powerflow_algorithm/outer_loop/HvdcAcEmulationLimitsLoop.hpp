@@ -36,6 +36,11 @@ namespace ls2g {
  */
 class LS2G_API HvdcAcEmulationLimitsLoop final : public BaseOuterLoop
 {
+    public:
+        /// the lines in AC emulation, each with the regime the last solve left it in
+        /// (frozen_dir): read by an external batch solver resuming rows from this loop's state
+        const hvdc_p_check::HvdcPPlan & regimes() const { return plan_; }
+
     protected:
         std::string _name() const override { return "AcHvdcAcEmulationLimits"; }
         void _declare(const OuterContext & ctx) const override;

@@ -200,6 +200,13 @@ Which convention each "by id" method uses:
      - get
      - Solver
 
+The ``_solver`` getters return views of what the grid holds, not copies. ``get_Ybus_solver``
+and ``get_dcYbus_solver`` give a read-only scipy matrix on the grid's own arrays, valid until
+a powerflow rebuilds that matrix (after a change of topology or of an admittance): call
+``.copy()`` on it to keep it, or to pass it to a lightsim2grid function taking a sparse
+matrix, such as an algorithm's ``compute_pf``. ``get_Ybus`` and ``get_dcYbus`` build a new
+matrix at each call, which is the caller's to keep and modify.
+
 .. _elements-modeled:
 
 Elements modeled
@@ -489,6 +496,109 @@ rebuilt, once, from data that is.
 starts cold and rebuilds on its first powerflow. Unlike the serialization case this is not a safety
 requirement -- a copy is the same grid, in the same process, so its cache would be perfectly valid
 -- and it may change in a future version. The ``allow_*_cache_reuse`` settings *are* copied.
+
+Propagating contingencies (pypowsybl)
+--------------------------------------
+
+On a node-breaker substation, tripping an element also takes down the equipment that stands
+between the same breakers. :class:`~lightsim2grid.network.ContingencyPropagator` reads that
+topology off a pypowsybl network once, then takes contingencies given as lists of element
+names and returns the same lists with that equipment added, following powsybl's rule
+(OpenLoadFlow's ``contingencyPropagation``): from each tripped terminal, walk the closed
+switches; a breaker stops the walk, a disconnector or a load-break switch does not, a busbar
+section is walked through, and any other equipment met is tripped.
+
+It has three steps, each a method:
+
+- :func:`~lightsim2grid.network.ContingencyPropagator.add_contingencies` registers
+  contingencies (it can be called several times, and checks every name against the network);
+- :func:`~lightsim2grid.network.ContingencyPropagator.propagate_contingencies` returns them
+  propagated, one list per contingency, in the order they were added;
+- :func:`~lightsim2grid.network.ContingencyPropagator.group_contingencies` finds the ones
+  that end in the same set of tripped equipment (the line, or the load on its feeder), so
+  each is simulated once: it returns the distinct ones and, for each contingency added, the
+  position of its representative.
+
+For example, ``LINE_AB`` and ``LINE_BC`` meet at a junction with no breaker between them, as do
+``LINE_DE`` and ``LINE_DF``:
+
+.. code-block:: python
+
+    from lightsim2grid.network import ContingencyPropagator
+
+    propagator = ContingencyPropagator(net)   # net: a pypowsybl network
+    propagator.add_contingencies([["LINE_AB"], ["LINE_BC"], ["LINE_DE"], ["LINE_DF"]])
+
+    propagator.propagate_contingencies()
+    # [["LINE_AB", "LINE_BC"],   tripping LINE_AB also drops LINE_BC
+    #  ["LINE_BC", "LINE_AB"],   and the reverse
+    #  ["LINE_DE", "LINE_DF"],
+    #  ["LINE_DF", "LINE_DE"]]
+
+    unique, inverse = propagator.group_contingencies()
+    # unique  = [["LINE_AB", "LINE_BC"], ["LINE_DE", "LINE_DF"]]
+    # inverse = [0, 0, 1, 1]
+
+Only ``unique`` needs simulating: the result of the ``i``-th contingency is the one of
+``unique[inverse[i]]``. The order inside a contingency does not matter, and each group is
+represented by its first contingency, in its original order. The topology is read when the
+object is built: build a new one after changing the network.
+
+:func:`~lightsim2grid.network.propagate_contingencies` (``net, contingencies``) does the three
+first lines in one call, and :func:`~lightsim2grid.network.group_equivalent_contingencies` the
+grouping of any list of contingencies.
+
+A bus-breaker voltage level has a breaker per terminal: nothing propagates there. A line tripped
+on one side only is listed by name, as a name cannot say which side.
+
+**With a contingency analysis.** The propagated contingencies name pypowsybl elements;
+:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP` takes branch ids, the lines
+first and then the transformers, in the order of the grid ``init_from_pypowsybl`` built. A
+full N-1 of the lines and transformers, simulating each distinct contingency once:
+
+.. code-block:: python
+
+    from lightsim2grid.network import init_from_pypowsybl, ContingencyPropagator
+    from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP
+
+    grid = init_from_pypowsybl(net)
+
+    propagator = ContingencyPropagator(net)
+    propagator.add_contingencies([[name] for name in net.get_lines().index])
+    propagator.add_contingencies([[name] for name in net.get_2_windings_transformers().index])
+    unique, inverse = propagator.group_contingencies()
+
+    # pypowsybl names -> branch ids of the contingency analysis
+    names = list(grid.get_line_names()) + list(grid.get_trafo_names())
+    branch_id = {name: i for i, name in enumerate(names)}
+
+    ca = ContingencyAnalysisCPP(grid)
+    branch_sets = []
+    for cont in unique:
+        ids = sorted(branch_id[name] for name in cont if name in branch_id)
+        branch_sets.append(ids)
+        ca.add_nk(ids)
+    ca.compute(v_init, max_iter, tol)
+
+    # the rows follow ca.my_defaults(), not the order of add_nk
+    row = {tuple(sorted(c)): k for k, c in enumerate(ca.my_defaults())}
+    V_unique = ca.get_voltages()[[row[tuple(ids)] for ids in branch_sets]]
+    V = V_unique[inverse]   # one row per contingency added
+
+``ContingencyAnalysisCPP`` only trips branches: the injections a contingency takes down with
+them (``name not in branch_id`` above: a load or a generator on the feeder) are left
+connected. To trip them as well, simulate the contingencies with
+:class:`~lightsim2grid.scenarioSweep.ScenarioSweepCPP` instead, one row each, with
+``set_contingency_lines`` / ``set_contingency_trafos`` / ``set_contingency_gens`` and the
+tripped loads set to zero through ``modify_load_p`` / ``modify_load_q`` (see
+:doc:`scenario_sweep`).
+
+.. autoclass:: lightsim2grid.network.ContingencyPropagator
+    :members:
+
+.. autofunction:: lightsim2grid.network.propagate_contingencies
+
+.. autofunction:: lightsim2grid.network.group_equivalent_contingencies
 
 Detailed documentation
 --------------------------

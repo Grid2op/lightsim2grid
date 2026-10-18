@@ -62,12 +62,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     // the row as the outer loops see it (an algorithm that runs them only)
     if(row_view != nullptr){
         _fill_outer_row_view(i, nullptr, *row_view);
-        // a row chained on the previous one (TimeSeries) also starts from its equations: the
-        // buses its loops froze, the taps they moved, ... (the loops undo what this row does
-        // not call for). The first row resumes from the base solve when it starts from it,
-        // and that solve ran in this compute()
-        row_view->resume = INIT == BatchInitKind::FromPreviousStep &&
-                           (i > 0 || (_init_from_n_powerflow && !_base_case_was_reused_));
+        _set_outer_row_resume(i, *row_view);
         algo.set_outer_row_view(row_view);
     }
 

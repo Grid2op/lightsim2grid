@@ -132,7 +132,10 @@ class ScenarioSweep:
     def init_from_n_powerflow(self):
         """Whether to initialize the complex voltages of **each** simulation with the results
         of a "n" powerflow (a powerflow with no injection change and no contingency) instead of
-        the vector given to ``compute``. Default: ``False``. Must be set before ``compute()``
+        the vector given to ``compute``. Default: ``False``. With an ``NROuter_*`` algorithm,
+        each simulation's outer loops also start from where the "n" ones ended (frozen buses,
+        taps, sections, and the targets ``DistributedSlack`` moved where the simulation does
+        not set its own), not from the grid. Must be set before ``compute()``
         actually runs.
         """
         return self.computer.init_from_n_powerflow
@@ -534,7 +537,8 @@ class ScenarioSweep:
         ``modify_*`` / ``set_contingency_*`` setters. Raises if nothing was ever set.
 
         ``max_iter`` / ``tol`` default to the backend's own values
-        (``self.grid2op_env.backend.max_it`` / ``.tol``) when not given.
+        (``self.grid2op_env.backend.max_it`` / ``.tol``) when not given. ``tol`` is in MVA
+        (not in per unit), as for :attr:`lightsim2grid.lightSimBackend.LightSimBackend.tol`.
         """
         if v_init is None:
             v_init_comp = self.grid2op_env.backend.V

@@ -76,7 +76,9 @@ DistributedSlackLoop::DistributedSlackLoop(const Params & params) : params_(para
 
 bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
 {
-    return _has_participant(ctx.view());
+    // a unit off the slack bus to take the mismatch: the slack bus' own units would only take
+    // what it already absorbs (see the class comment)
+    return _has_participant(ctx.view(), ctx.slack_bus);
 }
 
 void DistributedSlackLoop::_initialize(OuterContext & ctx)
@@ -84,6 +86,17 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
     units_.clear();
     unit_solver_bus_.clear();
     collect_units(ctx.view(), units_, unit_solver_bus_);
+    // a unit starts from its target in force: the one a solve resumed from left it at (a batch
+    // row from its "n" solve, as OpenLoadFlow's contingencies start from the targetP of the
+    // pre-contingency solve), the row's or the grid's otherwise
+    if(ctx.injections != nullptr){
+        const OuterGridView view = ctx.view();
+        for(auto & unit : units_){
+            unit.injection_mw = unit.kind == slack_redistribution::UnitKind::GENERATOR
+                ? ctx.injections->gen_target_p_in_force(view, unit.el_id)
+                : -ctx.injections->storage_target_p_in_force(view, unit.el_id);
+        }
+    }
     current_mw_.resize(units_.size());
     for(std::size_t k = 0; k < units_.size(); ++k) current_mw_[k] = units_[k].injection_mw;
 }
@@ -110,9 +123,7 @@ void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitVi
 {
     real_type mismatch = 0.;
     if(!_triggered(ctx, mismatch)) return;
-    // only on a grid that says who would share the slack (see is_needed), and with a unit
-    // off the slack bus to take it: the slack bus' own units would only take what it already
-    // absorbs, the same solution. The outer-loop mode never gets here otherwise
+    // the same rule as is_needed; the outer-loop mode never gets here otherwise
     if(ctx.is_detection() && !_has_participant(ctx.view(), ctx.slack_bus)) return;
     out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::SLACK_MISMATCH,
                                  mismatch, params_.slack_bus_p_max_mismatch_mw, std::string()});
@@ -153,38 +164,13 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
     }
 
     OuterInjections & state = *ctx.injections;
-    const LSGrid & grid = *ctx.grid;
-    const real_type sn_mva = grid.get_sn_mva();
-    if(state.gen_target_p.empty() && grid.get_generators().nb() > 0){
-        state.gen_target_p.assign(grid.get_generators().nb(), std::numeric_limits<real_type>::quiet_NaN());
-    }
-    if(state.storage_target_p.empty() && grid.get_storages().nb() > 0){
-        state.storage_target_p.assign(grid.get_storages().nb(), std::numeric_limits<real_type>::quiet_NaN());
-    }
+    const OuterGridView view = ctx.view();
     real_type moved = 0.;
     for(std::size_t k = 0; k < units_.size(); ++k){
-        const real_type delta = new_mw[k] - current_mw_[k];
-        moved += std::abs(delta);
-        cplx_type ds = {delta / sn_mva, 0.};
+        moved += std::abs(units_[k].kind == slack_redistribution::UnitKind::GENERATOR
+            ? state.move_gen_target_p(view, units_[k].el_id, unit_solver_bus_[k], new_mw[k])
+            : state.move_storage_target_p(view, units_[k].el_id, unit_solver_bus_[k], -new_mw[k]));
         current_mw_[k] = new_mw[k];
-        if(units_[k].kind == slack_redistribution::UnitKind::GENERATOR){
-            const int gen_id = units_[k].el_id;
-            // a unit that does not regulate: its target Q follows its limits at the new P
-            // (forceTargetQInReactiveLimits, LfGeneratorImpl.getTargetQ)
-            const bool pq = !grid.get_generators().get_voltage_regulator_on(gen_id);
-            std::vector<real_type> scratch;
-            const real_type q_before = pq ? grid.gen_target_q_at_outer_target(
-                gen_id, ctx.view().gen_target_p_overrides(state.gen_target_p, scratch)) : 0.;
-            state.gen_target_p[static_cast<std::size_t>(gen_id)] = new_mw[k];
-            if(pq) ds += cplx_type(0., (grid.gen_target_q_at_outer_target(
-                gen_id, ctx.view().gen_target_p_overrides(state.gen_target_p, scratch)) - q_before) / sn_mva);
-        } else {
-            state.storage_target_p[units_[k].el_id] = -new_mw[k];
-        }
-        if(ds != cplx_type(0., 0.)){
-            (*state.Sbus)(unit_solver_bus_[k]) += ds;
-            if(state.Sbus_target != nullptr) (*state.Sbus_target)(unit_solver_bus_[k]) += ds;
-        }
     }
     // OpenLoadFlow's PreviousStateInfo.moved, with its margin against rounding
     const bool unstable = moved > params_.moved_fraction * params_.p_residue_eps_mw;

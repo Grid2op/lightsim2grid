@@ -221,14 +221,44 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
-[1.1.1] 2026-xx-yy
+[1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] ``ContingencyPropagator`` (pypowsybl): adds to each contingency the equipment powsybl
+  trips with it on a node-breaker topology (up to the breakers), and groups the ones ending in the
+  same tripped set. ``propagate_contingencies`` / ``group_equivalent_contingencies`` as shortcuts.
+- [BREAKING] ``compute_pf`` / ``solve`` of the algorithms (*eg* ``NR_KLU().solve(...)``) take
+  named arguments, and their tolerance is ``tol_pu``: in per unit, unlike the ``tol`` (in MVA)
+  of ``LSGrid.ac_pf`` and the batch algorithms.
+- [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
+  algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
+- [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
+  case: they accepted points ``sn_mva`` times less converged than asked.
+- [FIXED] ``DistributedSlack`` outer loop: skipped when only the slack bus' own units are flagged
+  (as detection already was), instead of failing on the slack unit's P limits.
+- [FIXED] ``NROuter_*``: a solve after a regulating transformer was opened put its block back in
+  Ybus, at stale positions; a batch row tripping it, resumed from its "n" solve, kept part of it.
+- [FIXED] ``ShuntVoltageControl``: a batch row islanding a shunt controller
+  (``handle_disconnected_grid``) no longer switches it on and fails; the island's control does nothing.
+- [FIXED] Current limit violations of a transformer whose taps the outer loops moved: checked at
+  those taps (batch rows and ``LSGrid.get_violations``), as its flows, not at the grid's.
+- [ADDED] ``get_algo().get_outer_control_layout()``: the J rows / columns of the phase shifters, ratio
+  groups and shunt controllers, for solvers that pose the same system (gpusim2grid).
+- [ADDED] ``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot``, ``NROuter_KLUStaticPivot``: KLU with a
+  static-pivot refactorization (Gilbert & Peierls 1988, https://doi.org/10.1137/0909058; KLU,
+  Davis & Palamadai Natarajan 2010, https://doi.org/10.1145/1824801.1824814). Opt-in. Rows the
+  outer loops switch by value are ordered after the Vm columns that keep their pivot valid.
+- [ADDED] ``constrained_ordering`` (``NR*_KLU``, off by default): the same ordering for KLU, which
+  then keeps its pivots when the outer loops switch rows. Fifth Newton ``int_params`` entry, before
+  ``resume_outer_state``.
 - [ADDED] The batch classes run the outer loops: with an ``NROuter_*`` algorithm each row is solved with
   the grid's loops, as a single solve of the row's grid, still with one symbolic analysis per thread.
   ``get_outer_results()`` tells what they did per row. A TimeSeries row resumes from the previous
   row's loops (frozen buses, held controllers, switched SVCs, hvdc regimes, taps, sections).
 - [ADDED] ``resume_outer_state`` (``NROuter_*``): a solve starts its loops from where the last one
   left them, for a sequence of solves of a time series.
+- [IMPROVED] With ``init_from_n_powerflow``, a row of ``ContingencyAnalysis``, ``InjectionSweep`` and
+  ``ScenarioSweep`` starts its outer loops from where the "n" solve's ended, not from the grid: fewer
+  outer iterations.
 - [IMPROVED] The batch wrappers keep the grid's algorithm when it runs outer loops, instead of ``NR_KLU``.
 - [IMPROVED] ``ReactiveLimits`` takes its robust mode and realistic band from the driver's parameters unless
   given its own: one parameter each, as in OpenLoadFlow.
@@ -238,12 +268,16 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``get_physical_violations`` (grid and batches) reports a bus out of its reactive range, and a
   remote controller at an unrealistic voltage, with ``ReactiveLimits``' own test (OpenLoadFlow's tolerance,
   limits at the target P, robust mode by the loop's parameters).
-- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtual ``set_outer_row_view()``, and ``set_outer_loops()``
-  takes the driver's parameters: plugins must be rebuilt.
+- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtuals ``set_outer_row_view()``,
+  ``get_outer_resume_point()`` and ``get_outer_control_layout()``, and ``set_outer_loops()`` takes the
+  driver's parameters: plugins must be rebuilt.
 - [ADDED] ``init_from_pypowsybl`` gives the grid the outer loops and driver parameters of the installed
   OpenLoadFlow (or of ``olf_parameters``), read by ``olf_outer_loops``; elsewhere OpenLoadFlow's own defaults.
 - [ADDED] ``LSGrid.set_outer_loop_driver_params``: the driver's parameters are the grid's; its loops and
   driver parameters survive a copy, a pickle and ``save_binary``.
+- [FIXED] ``save_binary`` / pickle dropped grid settings the outer loops read (capability curves,
+  OpenLoadFlow's reactive data, the reference slack bus, a few flags): a grid read back solved to
+  another state. Binary format 22.
 - [FIXED] ``init_from_pypowsybl``: a battery with a capability curve was left without reactive limits (the
   curve at target P was not read); with ``olf_rules`` the curve is extrapolated as OpenLoadFlow's.
 - [FIXED] ``consider_only_main_component`` keeps the largest component, as OpenLoadFlow, not the slack's;
@@ -323,6 +357,15 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] the default distributed slack of ``init_from_pypowsybl`` follows OpenLoadFlow's
   participation rule for generators as for batteries: a negative target takes part, a
   target outside the unit's range or an implausible ``max_p`` does not.
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 18 -> 22: the transformers serialize their tap changers,
+  the shunts their sections, the SVCs their standby set-points and ``b0`` (and see the
+  ``save_binary`` fix below). Files of format 18 no longer load.
+- [BREAKING] ``LSGrid.set_remote_voltage_control_vm_range`` is removed: a remote controller at an
+  unrealistic voltage is checked against ``ReactiveLimits``' own realistic range.
+
+
+[1.2.0] 2026-10-12
+--------------------
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains the virtual ``distributes_slack()`` (false unless
   overridden, which ``redistribute_slack`` requires) and ``set_voltage_control_v_set`` takes an
   ``Eigen::Ref``: plugins must be rebuilt, and update their overrides.
@@ -344,11 +387,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] light environment: ``LightEnv`` can be copied cheaply (``copy`` / ``deepcopy``), and
   moved in C++.
 - [FIXED] light environment: the reward and ``info["survival_time"]`` were integer divisions.
-- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 20: ``SvcContainer`` serializes the standby automaton
-  (its set-points and ``b0`` too) and the ``can_be_pv`` flag of each SVC, the generators and storage
-  units their "can participate in the slack" weight and overshoot, the converter stations their
-  ``can_be_pv`` flag, the hvdc lines their AC-emulation frozen flag, the grid its remote voltage
-  control range, the transformers their tap changers, the shunts their sections. Files of
+- [BREAKING] ``BINARY_FORMAT_VERSION`` 11 -> 18: ``SvcContainer`` serializes the standby automaton
+  and the ``can_be_pv`` flag of each SVC, the generators and storage units their "can participate
+  in the slack" weight and overshoot, the converter stations their ``can_be_pv`` flag, the hvdc
+  lines their AC-emulation frozen flag, the grid its remote voltage control range. Files of
   format 11 no longer load.
 - [BREAKING] Operational limit checks ignore a value on its limit up to ``violation_rel_tol``
   (new, default ``1e-9``; ``rel_tol`` of ``LSGrid.get_violations``). They used ``>=`` /
@@ -359,6 +401,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid2op backend and ``init_from_pypowsybl`` do.
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 10 -> 11: ``GeneratorContainer`` serializes the
   ``can_be_pv`` flag. A file saved with format 10 must be re-exported.
+- [BREAKING] ``LSGrid.get_Ybus_solver()`` / ``get_dcYbus_solver()`` return a read-only view of the
+  grid's matrix, not a copy, valid until a powerflow rebuilds it. Use ``.copy()`` to keep it or
+  to pass it to an algorithm's ``compute_pf``.
 - [ADDED] Batch classes: ``compute_branch_results()``, P and Q at both ends of every branch per
   row, ``(nb_rows, nb_branch, 4)``; ``get_row_solve_times()`` / ``get_row_nb_iter()``.
 - [IMPROVED] The ``init_from_*`` loaders select ``NR_KLU`` / ``DC_KLU`` when KLU is compiled in
@@ -468,9 +513,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``redistribute_slack`` after a computation returned the previous results.
 - [ADDED] ``LSGrid.set_hvdc_ac_emulation_frozen``: an hvdc line frozen at its AC-emulation limit is
   reported (``HVDC_AC_EMULATION_RELEASE``) when its droop asks for less (from the bake).
-- [ADDED] A generator holding a remote bus from an unrealistic own-bus voltage is reported
-  (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``), where OpenLoadFlow's robust
-  remote voltage control switches it to PQ.
+- [ADDED] ``LSGrid.set_remote_voltage_control_vm_range``: a generator holding a remote bus from an
+  unrealistic own-bus voltage is reported (``LOW_VOLTAGE_REMOTE_CONTROL`` /
+  ``HIGH_VOLTAGE_REMOTE_CONTROL``), as OpenLoadFlow's robust remote voltage control switches it to
+  PQ; ``init_from_pypowsybl`` sets the range of the installed OpenLoadFlow (it differs by version).
 - [ADDED] ``bake_outer_loops(bake_hvdc_ac_emulation_limits=True)`` freezes an AC-emulation hvdc line
   OpenLoadFlow saturated to a fixed setpoint at its limit.
 - [ADDED] ``LSGrid.cap_slack_at_active_limits``: OpenLoadFlow's slack rule on a solved grid -- a unit
@@ -539,6 +585,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] ``ScenarioSweep.redistribute_slack`` also shares, before each row's powerflow, the
   active imbalance its ``modify_gen_p`` / ``modify_sgen_p`` / ``modify_load_p`` create against
   the grid's own targets.
+- [IMPROVED] ``LSGrid.get_Ybus()``, ``get_dcYbus()`` and ``get_Bf()`` relabel the solver matrix in
+  one pass instead of sorting it again: several times faster on large grids.
+- [IMPROVED] The sparse matrices a getter builds (``get_Ybus``, ``get_dcYbus``, ``get_Bf``,
+  ``get_Bf_solver``, the batch ``get_Ybus(row)`` / ``get_dcYbus(row)``) reach python without a copy.
 
 
 [1.1.0] 2026-09-21

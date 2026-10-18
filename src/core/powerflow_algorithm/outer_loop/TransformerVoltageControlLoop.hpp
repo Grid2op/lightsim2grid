@@ -113,11 +113,21 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
             real_type target_vm;
         };
 
+        // a branch closed in the solve: its two solver buses, its transformer id (-1: a line);
+        // lines first then transformers, each in id order
+        struct ClosedBranch {
+            int bus1;
+            int bus2;
+            int trafo;
+        };
+        static std::vector<ClosedBranch> _closed_branches(const OuterGridView & view);
+
         real_type _limit(const OuterGridView & view) const;
-        bool _step_up(const OuterGridView & view, const bus_q_check::BusQEntry & entry, real_type limit) const;
-        void _freeze_generators(OuterContext & ctx, real_type limit);
+        bool _step_up(const bus_q_check::BusQEntry & entry, real_type limit, const Eigen::Ref<const RealVect> & vn_kv,
+                      const std::vector<char> & on_controller, const std::vector<real_type> & min_connected) const;
+        void _freeze_generators(OuterContext & ctx, real_type limit, const std::vector<ClosedBranch> & closed);
         void _release_generators(OuterContext & ctx);
-        void _fix_controls(OuterContext & ctx);
+        void _fix_controls(OuterContext & ctx, const std::vector<ClosedBranch> & closed);
         int _closest_tap(const OuterContext & ctx, int trafo, real_type value) const;
         void _set_on(OuterContext & ctx, int trafo, bool on);
 

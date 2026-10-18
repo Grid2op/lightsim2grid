@@ -96,6 +96,18 @@ void ShuntControl::register_in(NRLedger & ledger)
     }
 }
 
+void ShuntControl::declare_ordering_constraints(OrderingConstraints & out) const
+{
+    // a group's rows switch by value like a ratio group's (see BranchControl's)
+    for (const Group & g : groups_) {
+        if (g.vm_col < 0 || g.rows.empty()) continue;
+        OrderingConstraint c;
+        c.follow = g.rows;
+        c.lead.push_back(g.vm_col);
+        out.push_back(std::move(c));
+    }
+}
+
 void ShuntControl::declare_feature_entries(FeatureSink & sink)
 {
     for (Entry & e : entries_) {
@@ -221,6 +233,29 @@ void ShuntControl::set_sections(int bus, const std::vector<int> & counts)
     e.b = b;
     e.b_target = b;
     _patch(e);
+}
+
+void ShuntControl::describe(OuterControlLayout & out) const
+{
+    const int first = static_cast<int>(out.shunts.size());
+    for (const Entry & e : entries_) {
+        OuterControlLayout::Shunt d;
+        d.bus_solver = e.bus;
+        d.shunts = e.shunts;
+        d.column = e.column;
+        d.col = e.column ? e.col : -1;
+        d.q_row = e.column ? e.q_row : -1;
+        out.shunts.push_back(d);
+    }
+    for (const Group & g : groups_) {
+        OuterControlLayout::ShuntGroup d;
+        d.bus_solver = g.bus;
+        d.target_vm = g.target;
+        for (int m : g.members) d.members.push_back(first + m);
+        d.vm_col = g.vm_col;
+        d.rows = g.rows;
+        out.shunt_groups.push_back(d);
+    }
 }
 
 real_type ShuntControl::b(int bus) const

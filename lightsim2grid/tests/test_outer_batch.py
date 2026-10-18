@@ -35,10 +35,10 @@ TOL = 1e-8
 N_ROWS = 8
 
 
-def _grid():
-    """case14, its generators short of reactive power (ReactiveLimits switches buses PQ) and
-    sharing the slack in proportion to their maximum output (DistributedSlack re-shares
-    whatever a row changes in the balance)"""
+def _grid(distributed=True):
+    """case14, its generators short of reactive power (ReactiveLimits switches buses PQ) and,
+    unless not `distributed`, sharing the slack in proportion to their maximum output
+    (DistributedSlack re-shares whatever a row changes in the balance)"""
     net = pn.case14()
     net.gen["min_q_mvar"] = -15.
     net.gen["max_q_mvar"] = 15.
@@ -47,13 +47,34 @@ def _grid():
         grid = init_from_pandapower(net)
     nb_gen = len(grid.get_generators())
     grid.set_gen_p_limits(np.zeros(nb_gen), np.full(nb_gen, 300.))
-    grid.set_gen_can_participate_slack([True] * nb_gen, np.full(nb_gen, 300.))
+    if distributed:
+        grid.set_gen_can_participate_slack([True] * nb_gen, np.full(nb_gen, 300.))
     grid.change_algorithm(OUTER)
     return grid
 
 
 def _v0(grid):
     return np.full(grid.total_bus(), 1.04 + 0j)
+
+
+def _resume_on(grid):
+    """a grid whose next solves start their loops from where the last one left them"""
+    cfg = grid.get_ac_algo_config()
+    ip = list(cfg.int_params)
+    ip[5] = 1  # resume_outer_state, after the Newton's 5
+    cfg.int_params = ip
+    grid.set_ac_algo_config(cfg)
+    return grid
+
+
+def _from_n(make_grid, change_row):
+    """a row's reference when the batch starts it from its "n" solve: the "n" grid solved, then
+    the row's change, solved from the "n" voltages AND equations (the buses its loops froze,
+    ...). Returns the grid, to solve, and the voltages to start from."""
+    grid = _resume_on(make_grid())
+    v_n = grid.ac_pf(_v0(grid), MAX_IT, TOL)
+    change_row(grid)
+    return grid, v_n
 
 
 def _branch_results(grid):
@@ -72,7 +93,9 @@ class _Equivalence:
     # whether row i starts from row i - 1's voltages (TimeSeries) rather than from the seed
     CHAINED = False
 
-    def _check_rows(self, make_batch, row_grids, nb_thread=1):
+    def _check_rows(self, make_batch, row_grids, nb_thread=1, v_starts=None):
+        """`v_starts`: the voltages each row's reference starts from (the batch's seed, or the
+        previous row's for a chained one, by default)"""
         batch = make_batch()
         if nb_thread > 1:
             batch.nb_thread = nb_thread
@@ -88,7 +111,10 @@ class _Equivalence:
             # the loops stop on thresholds (DistributedSlack leaves less than its threshold
             # on the slack), so where they stop depends on where the solve starts: the same
             # start as the row's
-            v_start = Vs[i - 1] if self.CHAINED and i > 0 else _v0(grid)
+            if v_starts is not None:
+                v_start = v_starts[i]
+            else:
+                v_start = Vs[i - 1] if self.CHAINED and i > 0 else _v0(grid)
             if self.CHAINED and i > 0:
                 # a chained row also starts from the previous row's equations: the reference
                 # resumes from the previous row's solve (see resume_outer_state)
@@ -230,12 +256,7 @@ class TestOuterTimeSeries(_InjectionRows, unittest.TestCase):
 
     def _rows(self):
         # one grid solved row after row, its loops resuming from the previous solve
-        grid = _grid()
-        cfg = grid.get_ac_algo_config()
-        ip = list(cfg.int_params)
-        ip[4] = 1  # resume_outer_state, after the Newton's 4
-        cfg.int_params = ip
-        grid.set_ac_algo_config(cfg)
+        grid = _resume_on(_grid())
         rows = []
         for i in range(N_ROWS):
             row = _grid()
@@ -263,6 +284,121 @@ class TestOuterTimeSeries(_InjectionRows, unittest.TestCase):
         fresh.compute(_v0(self.base), MAX_IT, TOL)
         restarted = [r.nb_outer_iterations for r in fresh.get_outer_results()]
         self.assertLess(sum(resumed[1:]), sum(restarted[1:]))
+
+
+class _FromN(_Equivalence):
+    """init_from_n_powerflow: every row starts from the "n" solve -- its voltages, and the
+    equations its loops left (frozen buses, taps, ...) -- not from the grid's"""
+
+    def _make_grid(self):
+        return _grid()
+
+    def _change_row(self, i, grid):
+        raise NotImplementedError
+
+    def _make(self):
+        raise NotImplementedError
+
+    def _batch_from_n(self):
+        batch = self._make()
+        batch.init_from_n_powerflow = True
+        return batch
+
+    def _references(self):
+        refs = [_from_n(self._make_grid, lambda g, i=i: self._change_row(i, g)) for i in range(N_ROWS)]
+        return [g for g, _ in refs], [v for _, v in refs]
+
+    def test_each_row_is_the_single_solve_resumed_from_n(self):
+        grids, v_starts = self._references()
+        self._check_rows(self._batch_from_n, grids, v_starts=v_starts)
+
+    def test_each_row_is_the_single_solve_resumed_from_n_two_threads(self):
+        grids, v_starts = self._references()
+        self._check_rows(self._batch_from_n, grids, nb_thread=2, v_starts=v_starts)
+
+    def test_rows_need_fewer_outer_iterations(self):
+        # what the "n" solve's loops did is not redone: fewer outer iterations than each row
+        # starting its loops afresh from the "n" voltages
+        batch = self._batch_from_n()
+        batch.change_algorithm(OUTER)
+        batch.compute(_v0(self.base), MAX_IT, TOL)
+        resumed = sum(r.nb_outer_iterations for r in batch.get_outer_results())
+        afresh = 0
+        for i in range(N_ROWS):
+            grid = self._make_grid()
+            v_n = grid.ac_pf(_v0(grid), MAX_IT, TOL)
+            self._change_row(i, grid)
+            grid.ac_pf(v_n, MAX_IT, TOL)
+            afresh += grid.get_algo().get_outer_loop_stats().nb_outer_iterations
+        self.assertLess(resumed, afresh)
+
+
+class TestOuterContingencyAnalysisFromN(_FromN, unittest.TestCase):
+    # no DistributedSlack: a row that keeps the grid's targets starts from where the "n" solve's
+    # moved them, which no single solve does (see TestOuterRowThatChangesNothing)
+    def _make_grid(self):
+        return _grid(distributed=False)
+
+    def setUp(self):
+        self.base = self._make_grid()
+
+    def _change_row(self, i, grid):
+        grid.deactivate_powerline(i)
+
+    def _make(self):
+        batch = ContingencyAnalysisCPP(self.base)
+        for line_id in range(N_ROWS):
+            batch.add_n1(line_id)
+        return batch
+
+
+class TestOuterScenarioSweepFromN(_FromN, unittest.TestCase):
+    def setUp(self):
+        TestOuterScenarioSweep.setUp(self)
+
+    def _change_row(self, i, grid):
+        for load_id, p in enumerate(self.load_p[i]):
+            grid.change_p_load(load_id, float(p))
+        grid.deactivate_powerline(i + 1)
+
+    def _make(self):
+        return TestOuterScenarioSweep._batch(self)
+
+
+class TestOuterInjectionSweepFromN(_FromN, _InjectionRows, unittest.TestCase):
+    def _change_row(self, i, grid):
+        for load_id, p in enumerate(self.load_p[i]):
+            grid.change_p_load(load_id, float(p))
+
+    def _make(self):
+        return self._fill(InjectionSweepCPP(self.base))
+
+
+class TestOuterRowThatChangesNothing(unittest.TestCase):
+    """a row seeded from the "n" solve that changes nothing IS the "n" solve: its loops have
+    nothing to do -- DistributedSlack included, its units starting from the targets the "n"
+    solve moved them to, where the row does not set its own"""
+
+    def test_it_is_the_n_solve(self):
+        base = _grid()
+        grid = _grid()
+        v_n = grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        self.assertGreater(grid.get_algo().get_outer_loop_stats().nb_outer_iterations, 0)
+        p_n, q_n, _ = grid.get_gen_res()
+        sweep = InjectionSweepCPP(base)
+        # the loads only: the rows keep the grid's generator targets
+        sweep.modify_load_p(np.outer(np.ones(N_ROWS), base.get_load_target_p()))
+        sweep.init_from_n_powerflow = True
+        sweep.change_algorithm(OUTER)
+        sweep.compute_gen_results = True
+        sweep.compute(_v0(base), MAX_IT, TOL)
+        gens = sweep.get_gen_results()
+        for i, (res, V) in enumerate(zip(sweep.get_outer_results(), sweep.get_voltages())):
+            with self.subTest(row=i):
+                self.assertEqual(res.nb_outer_iterations, 0)
+                np.testing.assert_allclose(V, v_n, rtol=0., atol=1e-10)
+                np.testing.assert_allclose(gens[i, :, 0], p_n, rtol=0., atol=1e-6)
+                np.testing.assert_allclose(gens[i, :, 1], q_n, rtol=0., atol=1e-6)
 
 
 def _tap_grid():
@@ -309,6 +445,95 @@ class TestOuterTapsInContingencyAnalysis(_Equivalence, unittest.TestCase):
         batch.change_algorithm(OUTER)
         batch.compute(_v0(self.base), MAX_IT, TOL)
         self.assertTrue(any(r.ratio_tap for r in batch.get_outer_results()))
+
+
+class TestOuterTripsTheControlledTransformer(_Equivalence, unittest.TestCase):
+    """a row that opens the transformer TransformerVoltageControl regulates with: the row has
+    no such transformer, whatever tap the "n" solve left it at -- its Ybus must not keep any
+    part of it, nor its result list a tap for it (the "n" solve moves that tap, and a row
+    resuming from it carries the positions the "n" solve settled on)"""
+
+    TRAFO = 1  # T4-9-1, the regulating one
+    LINE = 1   # a line whose opening the grid survives
+
+    def setUp(self):
+        try:
+            import pypowsybl  # noqa: F401
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        self.base = _tap_grid()
+        self.nb_line = len(self.base.get_lines())
+
+    # the rows in the batch's order: a contingency analysis sorts its contingencies by branch
+    # id, the lines then the trafos
+    def _change_row(self, i, grid):
+        if i == 0:
+            grid.deactivate_powerline(self.LINE)
+        else:
+            grid.deactivate_trafo(self.TRAFO)
+
+    def _batch(self):
+        batch = ContingencyAnalysisCPP(self.base)
+        batch.add_n1(self.LINE)
+        batch.add_n1(self.nb_line + self.TRAFO)
+        return batch
+
+    def _rows(self):
+        rows = []
+        for i in range(2):
+            grid = _tap_grid()
+            self._change_row(i, grid)
+            rows.append(grid)
+        return rows
+
+    def _batch_from_n(self):
+        batch = self._batch()
+        batch.init_from_n_powerflow = True
+        return batch
+
+    def test_the_n_solve_moves_the_tap(self):
+        # or the resumed rows would carry the grid's own tap, and check nothing
+        grid = _tap_grid()
+        grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        tr = grid.get_trafos()[self.TRAFO]
+        self.assertNotEqual(tr.res_ratio_tap_position, tr.ratio_tap_position)
+
+    def test_each_row_is_the_single_solve_of_its_grid(self):
+        self._check_rows(self._batch, self._rows())
+
+    def test_each_row_is_the_single_solve_resumed_from_n(self):
+        refs = [_from_n(_tap_grid, lambda g, i=i: self._change_row(i, g)) for i in range(2)]
+        self._check_rows(self._batch_from_n, [g for g, _ in refs], v_starts=[v for _, v in refs])
+
+    def test_a_resumed_single_solve_has_no_such_transformer(self):
+        # the reference itself: a solve resuming from the "n" one, the transformer opened in
+        # between, solves the grid without it -- its power balance is the one of its own Ybus
+        grid, v_n = _from_n(_tap_grid, lambda g: self._change_row(1, g))
+        V = grid.ac_pf(v_n, MAX_IT, TOL)
+        self.assertGreater(V.size, 0)
+        mis = V * np.conj(grid.get_Ybus_solver() @ V) - np.asarray(grid.get_Sbus_solver())
+        pq = np.asarray(grid.get_pq_solver())
+        self.assertLess(np.abs(mis[pq]).max(), 1e-6)
+
+    def test_a_second_single_solve_has_no_such_transformer(self):
+        # not resumed either: a grid solved, then the transformer opened and solved again
+        grid = _tap_grid()
+        v_n = grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        self._change_row(1, grid)
+        V = grid.ac_pf(v_n, MAX_IT, TOL)
+        self.assertGreater(V.size, 0)
+        mis = V * np.conj(grid.get_Ybus_solver() @ V) - np.asarray(grid.get_Sbus_solver())
+        pq = np.asarray(grid.get_pq_solver())
+        self.assertLess(np.abs(mis[pq]).max(), 1e-6)
+
+    def test_no_tap_for_the_opened_transformer(self):
+        batch = self._batch_from_n()
+        batch.change_algorithm(OUTER)
+        batch.compute(_v0(self.base), MAX_IT, TOL)
+        res = batch.get_outer_results()
+        # the line row keeps the tap the "n" solve moved, the trafo row has no such trafo
+        self.assertIn(self.TRAFO, [t for t, _ in res[0].ratio_tap])
+        self.assertNotIn(self.TRAFO, [t for t, _ in res[1].ratio_tap])
 
 
 class TestWrappersKeepTheOuterAlgorithm(unittest.TestCase):

@@ -207,3 +207,21 @@ TEST_CASE("without any unit flagged, the loop has nothing to do", "[outer_loop][
     for (const auto & it : stats.loop_iterations) CHECK(it.first != "DistributedSlack");
     CHECK(gen_p(grid)(1) == Approx(40.));
 }
+
+TEST_CASE("only the slack unit flagged: the loop leaves it past its limit, no failure", "[outer_loop][distributed_slack]")
+{
+    // the slack generator keeps its flag (it is in the slack) but has nothing to share with:
+    // OpenLoadFlow with distributedSlack off, which converges with it beyond its max_p
+    LSGrid grid = make_grid({1., 2., 3.}, {80., 1000., 1000.});
+    grid.set_gen_can_participate_slack({false, false, false}, RealVect::Zero(3));
+    REQUIRE(grid.get_generators().get_can_participate_slack(0));
+    use_loop(grid, 1e-6, true);
+    REQUIRE(solve(grid).size() == 4);
+    const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    for (const auto & it : stats.loop_iterations) CHECK(it.first != "DistributedSlack");
+    const RealVect p = gen_p(grid);
+    CHECK(p(0) > 80.);
+    CHECK(p(1) == Approx(40.));
+    CHECK(p(2) == Approx(60.));
+}

@@ -253,7 +253,7 @@ jobs:
                     # still compiles with the oldest supported gcc, so it doesn't need LTO.
                     CC=gcc uv pip install -C "cmake.define.INSTALL_LEGACY_LIGHTSIM2GRID_CPP=OFF" -C "cmake.define.CMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF" -v .
 
-    compile_and_test_gcc_latest:
+    compile_gcc_latest:
         executor: gcc_latest
         resource_class: medium
         environment:
@@ -303,12 +303,33 @@ jobs:
                     mkdir build && cd build
                     cmake ..
                     make -j$(nproc)
+            # everything is persisted at the same absolute path it is attached at in
+            # test_gcc_latest (same image, same working directory): the venv and the
+            # editable install both hold absolute paths into it.
+            - persist_to_workspace:
+                  root: .
+                  paths:
+                      - .
+
+    test_gcc_latest:
+        executor: gcc_latest
+        resource_class: medium
+        parallelism: 4  # the full suite is sharded over this many containers; they all reuse the build of compile_gcc_latest
+        steps:
+            - attach_workspace:
+                  at: .
+            # the venv's python is the image's /usr/bin/python3, which the bare gcc image lacks
+            - run: apt-get update && apt install -y python3 python3-dev python3-venv
             - run:
                 name: "make tests"
                 command: |
                     source venv_test/bin/activate
                     cd lightsim2grid/tests/
-                    python -m unittest discover  -v
+                    # each of the `parallelism` containers runs its own slice of the test files
+                    # (modules are imported by bare name, hence the cd above and basename below)
+                    TESTS=$(circleci tests glob "test_*.py" | circleci tests split --split-by=filesize | xargs -n1 basename | sed 's/\.py$//')
+                    echo "$TESTS"
+                    python -m unittest -v $TESTS
 
     compile_clang_earliest:
         executor: clang_earliest
@@ -466,11 +487,11 @@ jobs:
                     cmake ..
                     make -j$(nproc)
             - run:
-                name: "make tests"
+                name: "make basic tests"  # the full suite runs on gcc only (compile_and_test_gcc_latest); here: compile check + smoke subset
                 command: |
                     source venv_test/bin/activate
                     cd lightsim2grid/tests/
-                    python -m unittest discover  -v
+                    python -m unittest -v test_n_busbar_per_sub test_backend_pypowsybl test_ACPF test_DCPF test_solver_control test_solver_registry
     compile_and_test_windows:
         executor: 
             name: win/default  # executor type
@@ -677,5 +698,9 @@ workflows:
               filters: *tag_filter
           - compile_and_test_clang_latest:
               filters: *tag_filter
-          - compile_and_test_gcc_latest:
+          - compile_gcc_latest:
+              filters: *tag_filter
+          - test_gcc_latest:
+              requires:
+                  - compile_gcc_latest
               filters: *tag_filter

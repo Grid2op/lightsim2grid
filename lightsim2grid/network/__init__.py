@@ -27,6 +27,9 @@ try:
     from lightsim2grid.network.from_pypowsybl import compare_baked, ComparisonResult  # noqa
     from lightsim2grid.network.from_pypowsybl import LightsimResultNetwork  # noqa
     from lightsim2grid.network.from_pypowsybl import olf_outer_loops, set_olf_outer_loops  # noqa
+    from lightsim2grid.network.from_pypowsybl import (ContingencyPropagator,  # noqa
+                                                      propagate_contingencies,
+                                                      group_equivalent_contingencies)
     __all__.append("init_from_pypowsybl")
     __all__.append("bake_outer_loops")
     __all__.append("remove_outer_loops")
@@ -37,6 +40,9 @@ try:
     __all__.append("LightsimResultNetwork")
     __all__.append("olf_outer_loops")
     __all__.append("set_olf_outer_loops")
+    __all__.append("ContingencyPropagator")
+    __all__.append("propagate_contingencies")
+    __all__.append("group_equivalent_contingencies")
 except ImportError:
     # pypowsybl is not installed
     pass
