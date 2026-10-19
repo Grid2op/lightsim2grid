@@ -505,8 +505,12 @@ between the same breakers. :class:`~lightsim2grid.network.ContingencyPropagator`
 topology off a pypowsybl network once, then takes contingencies given as lists of element
 names and returns the same lists with that equipment added, following powsybl's rule
 (OpenLoadFlow's ``contingencyPropagation``): from each tripped terminal, walk the closed
-switches; a breaker stops the walk, a disconnector or a load-break switch does not, a busbar
-section is walked through, and any other equipment met is tripped.
+switches; a breaker stops the walk, a disconnector, a load-break switch or a fictitious breaker
+does not, a busbar section is walked through, and any other equipment met is tripped, then
+walked out of from its other terminals in turn (a line reached at a breakerless tee takes its
+far end down too). Behind each breaker the walk opens, what is left with no busbar section is
+disconnected too, at that end only, when it is a single piece of equipment (each feeder of a
+tripped busbar section, for example) or only injections.
 
 It has three steps, each a method:
 

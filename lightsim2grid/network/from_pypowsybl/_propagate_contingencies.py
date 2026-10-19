@@ -14,10 +14,20 @@ same piece of the substation, without a breaker in between, goes down with it.
 
 The rule is powsybl's own (`TrippingTopologyTraverser`): from the node of a tripped
 terminal, walk the closed switches; a breaker stops the walk (and is the switch that
-opens), a disconnector or a load-break switch does not, a busbar section is walked through,
-and any other equipment met on the way is tripped and not walked through. An open switch
-is not a way through. A bus-breaker voltage level has one breaker per terminal, so nothing
-propagates there.
+opens), a disconnector, a load-break switch or a fictitious breaker (powsybl never opens one)
+does not, a busbar section is walked through,
+and any other equipment met on the way is tripped. An open switch is not a way through.
+The equipment tripped that way is tripped as a whole, so the walk starts again from each of
+its other terminals, until nothing new is met: a line reached at one end of a breakerless
+tee takes down what hangs on its far end too, as OpenLoadFlow does.
+
+Behind each breaker the walk opens, what the remaining closed switches (breakers included)
+still join is cut off from the walked part. With no busbar section, it is disconnected when it
+holds a single piece of equipment (left hanging: a transformer whose bay hangs on a busbar that
+a breakerless line takes down, or each feeder of a tripped busbar section), or only injections
+(nothing feeds them any more), at that end only, so it is not walked any further. A part still
+holding a busbar section, or several pieces of equipment one of which is a branch, stays: it is
+still fed. A bus-breaker voltage level has one breaker per terminal, so nothing propagates there.
 """
 
 import numpy as np
@@ -44,7 +54,8 @@ class _PypowsyblTopology:
     """What the walk needs of a network, read from a few bulk tables (only the columns it needs).
 
     A node is an integer ``voltage level number * stride + node``, so that the whole network is
-    one graph. Only the edges the walk can cross are kept: a closed switch that is not a breaker.
+    one graph. Only the edges the walk can cross are kept: a closed switch that is not a breaker
+    (or a fictitious one); the closed breakers are kept apart.
     The one thing no bulk table gives is the internal connections (a link between two nodes with
     no switch on it), which take one call per voltage level; see `internal_connections` of
     `ContingencyPropagator`."""
@@ -62,6 +73,7 @@ class _PypowsyblTopology:
         self.tie_dangling = {}     # tie line id -> [dangling line ids]
         self.dangling_to_tie = {}  # dangling line id -> tie line id
         self.known = set()         # every id the contingency may name
+        self.branches = set()      # lines, transformers, and dangling lines of a tie line
 
         # ---- the terminals: (element id, voltage level number, node, is a busbar section)
         parts = []
@@ -71,13 +83,15 @@ class _PypowsyblTopology:
                 getter = "get_boundary_lines"  # the old name is deprecated
             df = getattr(net, getter)(attributes=cols)
             self.known.update(df.index)
+            if len(sides) > 1:
+                self.branches.update(df.index)
             for side in sides:
                 code = vl_index.get_indexer(df[f"voltage_level{side}_id"].values)
                 keep = code >= 0
                 parts.append((df.index.values[keep], code[keep].astype(np.int64),
                               df[f"node{side}"].values[keep].astype(np.int64),
                               getter == "get_busbar_sections"))
-        sw = net.get_switches(attributes=["voltage_level_id", "node1", "node2", "kind", "open"])
+        sw = net.get_switches(attributes=["voltage_level_id", "node1", "node2", "kind", "open", "fictitious"])
         sw_code = vl_index.get_indexer(sw["voltage_level_id"].values)
         sw = sw[sw_code >= 0]
         sw_code = sw_code[sw_code >= 0].astype(np.int64)
@@ -95,12 +109,21 @@ class _PypowsyblTopology:
 
         # ---- the edges the walk can cross
         k1, k2 = sw_code * self.stride + n1, sw_code * self.stride + n2
-        passes = (sw["kind"].astype(str).values != "BREAKER") & ~sw["open"].values.astype(bool)
+        closed = ~sw["open"].values.astype(bool)
+        # powsybl does not open a fictitious breaker: the walk goes through it
+        breaker = (sw["kind"].astype(str).values == "BREAKER") & ~sw["fictitious"].values.astype(bool)
+        passes = ~breaker & closed
         u, v = np.concatenate([k1[passes], k2[passes]]), np.concatenate([k2[passes], k1[passes]])
         order = np.argsort(u, kind="stable")
         u, self._nbr = u[order], v[order].tolist()
         first, count = np.unique(u, return_index=True, return_counts=True)[1:]
         self._span = dict(zip(np.unique(u).tolist(), zip(first.tolist(), (first + count).tolist())))
+        # the closed breakers: where a walk stops (and what is behind them, see `cut_off`)
+        self._breakers = {}        # node -> [node]
+        brk = breaker & closed
+        for a, b in zip(k1[brk].tolist(), k2[brk].tolist()):
+            self._breakers.setdefault(a, []).append(b)
+            self._breakers.setdefault(b, []).append(a)
         # a node carrying equipment that no switch touches: only an internal connection can join it
         unswitched = ~np.isin(keys, np.concatenate([k1, k2]))
         self._suspect = set((keys[unswitched] // self.stride).tolist())
@@ -119,6 +142,7 @@ class _PypowsyblTopology:
             self.tie_dangling[line] = [d1, d2]
             self.dangling_to_tie[d1] = line
             self.dangling_to_tie[d2] = line
+            self.branches.update((d1, d2))
 
     def read_internal_connections(self, code):
         """Make the internal connections of one voltage level part of the graph (once)."""
@@ -136,14 +160,19 @@ class _PypowsyblTopology:
             self._extra.setdefault(base + a, []).append(base + b)
             self._extra.setdefault(base + b, []).append(base + a)
 
-    def walk(self, start, tripped):
-        """Walk out of one terminal (see the module docstring); the equipment met goes to `tripped`."""
+    def walk(self, start, tripped, seen, behind_breakers):
+        """Walk out of one terminal (see the module docstring); the equipment met goes to `tripped`,
+        the node on the far side of each breaker met to `behind_breakers`.
+        `seen` holds the nodes already met by the walks of the same contingency: everything
+        reachable from them is already found, so they are not walked again (`start` is, since an
+        equipment node is met but not walked out of)."""
         self.read_internal_connections(start // self.stride)
-        span, nbr, extra, equip, bbs = self._span, self._nbr, self._extra, self._equip, self._bbs
-        seen = {start}
+        span, nbr, extra, equip, breakers = self._span, self._nbr, self._extra, self._equip, self._breakers
+        seen.add(start)
         stack = [start]
         while stack:
             node = stack.pop()
+            behind_breakers.extend(breakers.get(node, ()))
             lo_hi = span.get(node)
             others = nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else []
             if node in extra:
@@ -157,6 +186,40 @@ class _PypowsyblTopology:
                     tripped.append(el)  # equipment is not a way through
                 else:
                     stack.append(other)  # a busbar section, or a bare node
+
+    def cut_off(self, start, seen, visited):
+        """The equipment left hanging behind an opened breaker (see the module docstring): the
+        equipment `start` is joined to by the closed switches, breakers included, once the walked
+        nodes (`seen`) are out, when no busbar section is joined and it is a single piece of
+        equipment or only injections; else nothing. `visited` holds the nodes already looked at behind another breaker
+        of the same contingency."""
+        if start in seen or start in visited:
+            return []
+        self.read_internal_connections(start // self.stride)
+        span, nbr, extra, equip, breakers = self._span, self._nbr, self._extra, self._equip, self._breakers
+        visited.add(start)
+        stack = [start]
+        found = []
+        live = False  # a busbar section stays energized, with whatever it still holds
+        while stack:
+            node = stack.pop()
+            live = live or node in self._bbs
+            el = equip.get(node)
+            if el is not None:
+                found.append(el)
+            lo_hi = span.get(node)
+            others = nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else []
+            others = others + breakers.get(node, []) + extra.get(node, [])
+            for other in others:
+                if other in seen or other in visited:
+                    continue
+                visited.add(other)
+                stack.append(other)
+        # (the whole part is walked before deciding, so that another breaker into it finds it visited)
+        found = list(dict.fromkeys(found))
+        if live or (len(found) > 1 and any(el in self.branches for el in found)):
+            return []  # still fed
+        return found
 
 
 def _terminals_of(topo, name):
@@ -285,17 +348,35 @@ class ContingencyPropagator:
         result = list(contingency)
         tripped = []
         for name in result:
-            elements, nodes = _terminals_of(topo, name)
-            tripped.extend(elements)
-            for node in nodes:
-                topo.walk(node, tripped)
-        # what the loss of a piece of equipment takes with it: a station its HVDC line (and the
-        # other station), a dangling line its tie line (and the other dangling line)
-        for el in list(tripped):
+            tripped.extend(_terminals_of(topo, name)[0])
+        # every element tripped is walked out of from all its terminals, the ones the walks trip
+        # included (appended to `tripped` while it is read), until nothing new is met
+        seen, done, behind_breakers = set(), set(), []
+        pos = 0
+        while pos < len(tripped):
+            el = tripped[pos]
+            pos += 1
+            if el in done:
+                continue
+            done.add(el)
+            # what the loss of a piece of equipment takes with it: a station its HVDC line (and
+            # the other station), a dangling line its tie line (and the other dangling line)
             for whole in (topo.station_to_hvdc.get(el), topo.dangling_to_tie.get(el)):
                 if whole is not None:
                     tripped.append(whole)
                     tripped.extend(_terminals_of(topo, whole)[0])
+            for node in topo.terminals.get(el, ()):
+                topo.walk(node, tripped, seen, behind_breakers)
+        # what the opened breakers leave hanging, once the walked part is complete (disconnected at
+        # that end only: not walked out of, but it still takes its HVDC or tie line with it)
+        visited = set()
+        for node in behind_breakers:
+            for el in topo.cut_off(node, seen, visited):
+                tripped.append(el)
+                for whole in (topo.station_to_hvdc.get(el), topo.dangling_to_tie.get(el)):
+                    if whole is not None:
+                        tripped.append(whole)
+                        tripped.extend(_terminals_of(topo, whole)[0])
         known = set(result)
         result.extend(el for el in dict.fromkeys(tripped) if el not in known)
         return result

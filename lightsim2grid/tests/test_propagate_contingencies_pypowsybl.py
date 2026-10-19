@@ -37,6 +37,37 @@ def _net_with_stuff_on_the_feeder(kind="DISCONNECTOR", is_open=False):
     return net
 
 
+def _net_with_a_transformer_bay(line_has_breaker):
+    """A substation S5: S5VL1 holds a busbar section, the bay of line L5 (to S3VL1, with or
+    without a breaker at S5VL1) and the bay of transformer T5 (behind a breaker); S5VL2, the other
+    side of T5, is connected to S2VL1 by line L6, and L7 joins S3VL1 and S2VL1."""
+    net = pn.create_four_substations_node_breaker_network()
+    net.create_substations(id="S5", country="FR")
+    net.create_voltage_levels(id=["S5VL1", "S5VL2"], substation_id=["S5", "S5"],
+                              topology_kind=["NODE_BREAKER"] * 2, nominal_v=[400., 400.],
+                              high_voltage_limit=[440., 440.], low_voltage_limit=[360., 360.])
+    net.create_busbar_sections(id=["S5VL1_BBS", "S5VL2_BBS"], voltage_level_id=["S5VL1", "S5VL2"], node=[0, 0])
+    switches = [("S5VL1", "S5_L5_D", 0, 4 if line_has_breaker else 1, "DISCONNECTOR")]
+    if line_has_breaker:
+        switches.append(("S5VL1", "S5_L5_B", 4, 1, "BREAKER"))
+    switches += [("S5VL1", "S5_T5_D", 0, 2, "DISCONNECTOR"), ("S5VL1", "S5_T5_B", 2, 3, "BREAKER"),
+                 ("S5VL2", "S5b_T5_D", 0, 2, "DISCONNECTOR"), ("S5VL2", "S5b_T5_B", 2, 1, "BREAKER"),
+                 ("S5VL2", "S5b_L6_D", 0, 4, "DISCONNECTOR"), ("S5VL2", "S5b_L6_B", 4, 3, "BREAKER"),
+                 ("S3VL1", "S3_L5_D", 0, 60, "DISCONNECTOR"), ("S3VL1", "S3_L5_B", 60, 61, "BREAKER"),
+                 ("S2VL1", "S2_L6_D", 0, 60, "DISCONNECTOR"), ("S2VL1", "S2_L6_B", 60, 61, "BREAKER"),
+                 ("S3VL1", "S3_L7_D", 0, 62, "DISCONNECTOR"), ("S3VL1", "S3_L7_B", 62, 63, "BREAKER"),
+                 ("S2VL1", "S2_L7_D", 0, 62, "DISCONNECTOR"), ("S2VL1", "S2_L7_B", 62, 63, "BREAKER")]
+    net.create_switches(id=[s[1] for s in switches], voltage_level_id=[s[0] for s in switches],
+                        node1=[s[2] for s in switches], node2=[s[3] for s in switches],
+                        kind=[s[4] for s in switches], open=[False] * len(switches))
+    net.create_lines(id=["L5", "L6", "L7"], voltage_level1_id=["S5VL1", "S5VL2", "S3VL1"], node1=[1, 3, 63],
+                     voltage_level2_id=["S3VL1", "S2VL1", "S2VL1"], node2=[61, 61, 63],
+                     r=[1.] * 3, x=[10.] * 3, g1=[0.] * 3, b1=[0.] * 3, g2=[0.] * 3, b2=[0.] * 3)
+    net.create_2_windings_transformers(id="T5", voltage_level1_id="S5VL1", node1=3, voltage_level2_id="S5VL2",
+                                       node2=1, rated_u1=400., rated_u2=400., r=0.1, x=10., g=0., b=0.)
+    return net
+
+
 @unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
 class TestPropagateContingencies(unittest.TestCase):
     def test_nothing_to_propagate_with_a_breaker_on_every_feeder(self):
@@ -57,13 +88,32 @@ class TestPropagateContingencies(unittest.TestCase):
         res = propagate_contingencies(net, [["LINE_S2S3"]])
         self.assertEqual(res, [["LINE_S2S3", "LOAD_FEEDER", "LOAD_S3"]])
 
+    def test_equipment_tripped_on_the_way_is_walked_out_of(self):
+        # LINE_X hangs on the feeder of LINE_S2S3 (a breakerless tee), LOAD_X on the far end of
+        # LINE_X: tripping either end of the chain takes the whole chain down
+        net = pn.create_four_substations_node_breaker_network()
+        net.create_switches(id=["SW_X2", "SW_X3"], voltage_level_id=["S2VL1", "S3VL1"],
+                            node1=[6, 31], node2=[23, 32], kind=["DISCONNECTOR", "DISCONNECTOR"],
+                            open=[False, False])
+        net.create_lines(id="LINE_X", voltage_level1_id="S2VL1", node1=23, voltage_level2_id="S3VL1",
+                         node2=31, r=0.1, x=1., g1=0., b1=0., g2=0., b2=0.)
+        net.create_loads(id="LOAD_X", voltage_level_id="S3VL1", node=32, p0=1., q0=0.)
+        res = propagate_contingencies(net, [["LINE_S2S3"], ["LOAD_X"], ["LINE_X"]])
+        self.assertEqual(res, [["LINE_S2S3", "LINE_X", "LOAD_X"],
+                               ["LOAD_X", "LINE_X", "LINE_S2S3"],
+                               ["LINE_X", "LINE_S2S3", "LOAD_X"]])
+        unique, inverse = group_equivalent_contingencies(res)
+        self.assertEqual(inverse, [0, 0, 0])
+
     def test_a_load_break_switch_is_not_a_breaker(self):
         res = propagate_contingencies(_net_with_stuff_on_the_feeder(kind="LOAD_BREAK_SWITCH"), [["LINE_S2S3"]])
         self.assertEqual(res, [["LINE_S2S3", "LOAD_FEEDER"]])
 
     def test_a_breaker_stops_the_walk(self):
+        # the walk stops at the load's breaker, which opens: the load is then left alone behind
+        # it, so it is disconnected, but not walked out of
         res = propagate_contingencies(_net_with_stuff_on_the_feeder(kind="BREAKER"), [["LINE_S2S3"]])
-        self.assertEqual(res, [["LINE_S2S3"]])
+        self.assertEqual(res, [["LINE_S2S3", "LOAD_FEEDER"]])
 
     def test_an_open_switch_stops_the_walk(self):
         res = propagate_contingencies(_net_with_stuff_on_the_feeder(is_open=True), [["LINE_S2S3"]])
@@ -86,10 +136,51 @@ class TestPropagateContingencies(unittest.TestCase):
         self.assertEqual(propagate_contingencies(net, [["VSC1"]]), [["VSC1", "HVDC1", "VSC2"]])
 
     def test_busbar_section_is_walked_through(self):
-        # tripping a busbar section opens its breakers and trips what is on the way, here nothing
-        # since every feeder has a breaker: the section does not pull the other sections in
+        # tripping a busbar section opens the breakers around it: each feeder of that section is
+        # left alone behind its breaker, so it is disconnected; the coupler leads to the other
+        # section, still energized, so that section and its feeders stay
         net = pn.create_four_substations_node_breaker_network()
-        self.assertEqual(propagate_contingencies(net, [["S1VL2_BBS1"]]), [["S1VL2_BBS1"]])
+        self.assertEqual(propagate_contingencies(net, [["S1VL2_BBS1"]]),
+                         [["S1VL2_BBS1", "SHUNT", "GH3", "GH2", "GH1", "TWT"]])
+
+    def test_equipment_left_alone_behind_an_opened_breaker(self):
+        # S5VL1: a busbar section, the bay of L5 and the bay of T5 (behind its breaker); T5's
+        # other side is connected through L6, so nothing is islanded (OpenLoadFlow's security
+        # analysis reports the same disconnected elements on this network)
+        for line_has_breaker, expected in (
+                (True, [["L5"], ["T5"], ["S5VL1_BBS", "T5", "L5"]]),
+                # L5 has no breaker at S5VL1: its walk takes the busbar section, whose breakers
+                # open, which leaves T5 alone in its bay
+                (False, [["L5", "T5"], ["T5"], ["S5VL1_BBS", "L5", "T5"]])):
+            with self.subTest(line_has_breaker=line_has_breaker):
+                net = _net_with_a_transformer_bay(line_has_breaker)
+                self.assertEqual(propagate_contingencies(net, [["L5"], ["T5"], ["S5VL1_BBS"]]), expected)
+
+    def test_a_fictitious_breaker_is_walked_through(self):
+        # powsybl does not open a fictitious breaker: L5's is then as if L5 had none
+        net = _net_with_a_transformer_bay(line_has_breaker=True)
+        net.update_switches(id="S5_L5_B", fictitious=True)
+        self.assertEqual(propagate_contingencies(net, [["L5"]]), [["L5", "T5"]])
+
+    def test_what_is_left_behind_an_opened_breaker(self):
+        # L5 has no breaker at S5VL1, so the walk takes the busbar section and opens T5's breaker
+        # and the breakers of the other feeders
+        net = _net_with_a_transformer_bay(line_has_breaker=False)
+        # a load next to T5, behind its breaker: still fed through T5, both stay
+        net.create_loads(id="LD_T5", voltage_level_id="S5VL1", node=10, p0=1., q0=0.)
+        net.create_switches(id="S5_LDT5_D", voltage_level_id="S5VL1", node1=3, node2=10,
+                            kind="DISCONNECTOR", open=False)
+        self.assertEqual(propagate_contingencies(net, [["L5"]]), [["L5"]])
+
+        # a feeder holding only injections: nothing feeds them any more, they are disconnected
+        net = _net_with_a_transformer_bay(line_has_breaker=False)
+        net.create_switches(id=["S5_INJ_B", "S5_INJ_D1", "S5_INJ_D2"], voltage_level_id=["S5VL1"] * 3,
+                            node1=[0, 20, 20], node2=[20, 21, 22], kind=["BREAKER", "DISCONNECTOR", "DISCONNECTOR"],
+                            open=[False] * 3)
+        net.create_loads(id="LD_INJ", voltage_level_id="S5VL1", node=21, p0=1., q0=0.)
+        net.create_generators(id="G_INJ", voltage_level_id="S5VL1", node=22, target_p=1., min_p=0., max_p=10.,
+                              target_v=400., voltage_regulator_on=False, target_q=0.)
+        self.assertEqual(sorted(propagate_contingencies(net, [["L5"]])[0]), ["G_INJ", "L5", "LD_INJ", "T5"])
 
     def test_bus_breaker_network_does_not_propagate(self):
         net = pn.create_eurostag_tutorial_example1_network()
