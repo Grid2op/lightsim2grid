@@ -55,6 +55,33 @@ to / from other data sources.
     ("n") case instead of a flat start -- this is usually faster. See
     :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.init_from_n_powerflow`.
 
+Tripping shunts, loads and generators
+-------------------------------------------
+
+A contingency is not limited to branches. `add_contingency` registers one contingency
+tripping, together, powerlines / transformers, shunts, loads and generators (by name or id),
+and `add_contingency_shunt` / `add_contingency_load` / `add_contingency_gen` one tripping
+elements of a single kind:
+
+.. code-block:: python
+
+    security_analysis.add_contingency(lines=[env.name_line[2]], loads=[env.name_load[1]])
+    security_analysis.add_contingency_shunt(0)
+    security_analysis.add_contingency_gen(env.name_gen[3])
+
+A shunt leaves the admittance matrix (it is an admittance), a load and a generator the
+injection; a generator that was the last one regulating its bus turns that bus PQ for the
+contingency, and the distributed slack makes up what is lost (`redistribute_slack` shares it
+OpenLoadFlow-style before the solve). `run()` reports, for each contingency, the branches in
+`element_ids` and the rest in `shunt_ids` / `load_ids` / `gen_ids`. The C++ class
+:class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP` takes ids
+(`add_contingency(branch_ids, shunt_ids, load_ids, gen_ids)`), and `my_contingencies()` lists
+what each row trips.
+
+Two limits for now: a generator regulating a remote bus, or standing on a bus a control group
+holds, is refused, and so is a shunt that regulates a voltage when the algorithm runs outer
+loops (its sections belong to the ShuntVoltageControl loop).
+
 Handling contingencies that split the grid
 -------------------------------------------
 

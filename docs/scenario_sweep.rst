@@ -61,8 +61,8 @@ The setter-based API
 Unlike `TimeSerie` / `InjectionSweep`'s single bundled `compute_V_from_inj` call,
 `ScenarioSweep` is built up incrementally: call as many of `modify_gen_p` /
 `modify_sgen_p` / `modify_load_p` / `modify_load_q` / `modify_gen_v` /
-`set_contingency_lines` / `set_contingency_trafos` / `set_contingency_gens` as are
-relevant, then `compute()`.
+`set_contingency_lines` / `set_contingency_trafos` / `set_contingency_gens` /
+`set_contingency_shunts` / `set_contingency_loads` as are relevant, then `compute()`.
 
 - **Row-count locking.** The first setter you call fixes the number of simulations for
   the whole object; every later setter is checked against it immediately -- a shape
@@ -70,7 +70,8 @@ relevant, then `compute()`.
 - **Unset axes.** Any injection axis you never call (eg `modify_gen_p`) defaults to the
   grid's own current target value, broadcast across every row -- not zero. Any
   contingency mask you never call (`set_contingency_lines` / `set_contingency_trafos` /
-  `set_contingency_gens`) defaults to all-`False` -- nothing disconnected. `compute()` raises if you never call
+  `set_contingency_gens` / `set_contingency_shunts` / `set_contingency_loads`) defaults to
+  all-`False` -- nothing disconnected. `compute()` raises if you never call
   *any* setter (a degenerate call -- use `ac_pf()` / `dc_pf()` directly for a single
   powerflow).
 - **`modify_gen_v` is different from the other four `modify_*` setters.** It does not
@@ -98,7 +99,9 @@ naming inconsistency:
   `True` = "deactivate this branch for this simulation") is the natural fit instead.
 
 `ScenarioSweep` does not have `add_n1` / `add_nk`; `ContingencyAnalysis` does not have
-`set_contingency_lines` / `set_contingency_trafos`.
+`set_contingency_lines` / `set_contingency_trafos`. The same split holds for the other
+elements: `ContingencyAnalysis.add_contingency` registers one contingency tripping branches,
+shunts, loads and generators together, `ScenarioSweep` takes one mask per kind of element.
 
 .. note::
 
@@ -173,6 +176,27 @@ the change in the losses it causes is left to the powerflow's distributed slack.
     a bus whose voltage a control group holds (a remote generator, an SVC or an HVDC
     converter station). Those go through a different part of the Jacobian, with columns
     and rows of their own that this feature does not yet reserve and mask.
+
+Shunt and load contingencies
+------------------------------------
+
+`set_contingency_shunts(mask)` (shape `(n_simul, n_shunt)`) and `set_contingency_loads(mask)`
+(shape `(n_simul, n_load)`) take the elements out of the rows where the mask is `True`:
+
+- a shunt is an admittance: the row loses its diagonal coefficient of the admittance matrix
+  (in DC, its active part leaves the injection), as a branch mask edits it;
+- a load leaves the row's injection, with the row's own value (`modify_load_p` /
+  `modify_load_q`, or the grid's).
+
+What that changes in the balance is made up by the distributed slack, and with
+`redistribute_slack = True` it is shared OpenLoadFlow-style before the solve, as for a
+generator. A row naming a load in both the mask and its topological action is refused.
+
+.. warning::
+
+    With an algorithm running outer loops, `compute()` raises if the mask names a shunt that
+    regulates a voltage: its sections belong to the ShuntVoltageControl loop, which does not
+    know of a row taking it out yet.
 
 Topological actions
 ---------------------

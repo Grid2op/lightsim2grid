@@ -556,9 +556,12 @@ A bus-breaker voltage level has a breaker per terminal: nothing propagates there
 on one side only is listed by name, as a name cannot say which side.
 
 **With a contingency analysis.** The propagated contingencies name pypowsybl elements;
-:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP` takes branch ids, the lines
-first and then the transformers, in the order of the grid ``init_from_pypowsybl`` built. A
-full N-1 of the lines and transformers, simulating each distinct contingency once:
+:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP` takes ids: branch ids, the
+lines first and then the transformers, and the ids of the shunts, loads and generators, in the
+order of the grid ``init_from_pypowsybl`` built.
+:func:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency` registers one
+contingency tripping all of them together. A full N-1 of the lines and transformers, simulating
+each distinct contingency once:
 
 .. code-block:: python
 
@@ -572,30 +575,34 @@ full N-1 of the lines and transformers, simulating each distinct contingency onc
     propagator.add_contingencies([[name] for name in net.get_2_windings_transformers().index])
     unique, inverse = propagator.group_contingencies()
 
-    # pypowsybl names -> branch ids of the contingency analysis
-    names = list(grid.get_line_names()) + list(grid.get_trafo_names())
-    branch_id = {name: i for i, name in enumerate(names)}
+    # pypowsybl names -> ids of the contingency analysis, per kind of element
+    def ids(elements):
+        return {el.name: i for i, el in enumerate(elements)}
+    branch_id = {name: i for i, name in enumerate(list(grid.get_line_names()) + list(grid.get_trafo_names()))}
+    kinds = (branch_id, ids(grid.get_shunts()), ids(grid.get_loads()), ids(grid.get_generators()))
 
     ca = ContingencyAnalysisCPP(grid)
-    branch_sets = []
+    ca.handle_disconnected_grid = True
+    keys = []
     for cont in unique:
-        ids = sorted(branch_id[name] for name in cont if name in branch_id)
-        branch_sets.append(ids)
-        ca.add_nk(ids)
+        key = tuple(tuple(sorted(kind[name] for name in cont if name in kind)) for kind in kinds)
+        keys.append(key)
+        ca.add_contingency(*key)
     ca.compute(v_init, max_iter, tol)
 
-    # the rows follow ca.my_defaults(), not the order of add_nk
-    row = {tuple(sorted(c)): k for k, c in enumerate(ca.my_defaults())}
-    V_unique = ca.get_voltages()[[row[tuple(ids)] for ids in branch_sets]]
+    # the rows follow ca.my_contingencies(), not the order of add_contingency
+    row = {tuple(map(tuple, c)): k for k, c in enumerate(ca.my_contingencies())}
+    V_unique = ca.get_voltages()[[row[key] for key in keys]]
     V = V_unique[inverse]   # one row per contingency added
 
-``ContingencyAnalysisCPP`` only trips branches: the injections a contingency takes down with
-them (``name not in branch_id`` above: a load or a generator on the feeder) are left
-connected. To trip them as well, simulate the contingencies with
-:class:`~lightsim2grid.scenarioSweep.ScenarioSweepCPP` instead, one row each, with
-``set_contingency_lines`` / ``set_contingency_trafos`` / ``set_contingency_gens`` and the
-tripped loads set to zero through ``modify_load_p`` / ``modify_load_q`` (see
-:doc:`scenario_sweep`).
+A shunt leaves the admittance matrix, a load and a generator the injection (a generator that
+was the last one regulating its bus turns that bus PQ), and what the contingency loses is made
+up by the distributed slack. An element the grid does not model under that name (a branch fused
+away as a zero impedance one, for example) is left connected by the loop above; one the
+branches leave stranded is dropped with its island (``handle_disconnected_grid``) whether it is
+listed or not. :class:`~lightsim2grid.scenarioSweep.ScenarioSweepCPP` trips them per row with
+``set_contingency_lines`` / ``set_contingency_trafos`` / ``set_contingency_shunts`` /
+``set_contingency_loads`` / ``set_contingency_gens`` (see :doc:`scenario_sweep`).
 
 .. autoclass:: lightsim2grid.network.ContingencyPropagator
     :members:

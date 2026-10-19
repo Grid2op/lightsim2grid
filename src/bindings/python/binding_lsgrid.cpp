@@ -152,6 +152,15 @@ void bind_gridmodel(py::module_& m) {
              py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
         .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
              DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
+        .def("get_group_controlled_buses",
+             [](const LSGrid & self){
+                 const std::set<int> buses = self.get_group_controlled_buses();
+                 return std::vector<int>(buses.begin(), buses.end());
+             },
+             "The buses (gridmodel ids, sorted) whose voltage a control group holds: a generator "
+             "regulating a remote bus, a voltage-mode SVC or an HVDC converter station regulates "
+             "them. A generator standing on one cannot be tripped by a batch contingency yet "
+             "(ContingencyAnalysisCPP.add_contingency_gen, ScenarioSweepCPP.set_contingency_gens).")
         .def("set_hold_frozen_regulators", &LSGrid::set_hold_frozen_regulators,
              py::arg("hold"), DocLSGrid::set_hold_frozen_regulators.c_str())
         .def("get_hold_frozen_regulators", &LSGrid::get_hold_frozen_regulators,

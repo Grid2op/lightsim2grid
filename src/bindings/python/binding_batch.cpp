@@ -1058,6 +1058,20 @@ void bind_batch(py::module_& m) {
              "if the mask names a generator that regulates a remote bus, or one whose "
              "bus a control group holds (a remote generator, an SVC or an HVDC "
              "converter station): remote voltage control is not supported yet.")
+        .def("set_contingency_shunts", &ScenarioSweep::set_contingency_shunts<>, py::arg("mask"),
+             "Per-step shunt contingency mask, shape (n_simul, n_shunt), dtype bool. "
+             "True means 'disconnect this shunt for this simulation'. A shunt is an "
+             "admittance: the step loses its diagonal Ybus coefficient (in DC, its active "
+             "part leaves the injection), as the branch masks edit Ybus. compute() raises "
+             "with an algorithm running outer loops if the mask names a shunt that "
+             "regulates a voltage (the ShuntVoltageControl loop owns its sections).")
+        .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
+             "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "
+             "True means 'disconnect this load for this simulation': the step's own load "
+             "(modify_load_p / modify_load_q, or the grid's) leaves its injection, and "
+             "the distributed slack makes up the balance (redistribute_slack shares it "
+             "OLF-like before the solve). A step naming a load in both this mask and its "
+             "topological action is refused.")
 
         // limit violations + "handle disconnected grid": same names/semantics as
         // ContingencyAnalysisCPP (see below), now also available here. Deliberately
@@ -1310,6 +1324,24 @@ void bind_batch(py::module_& m) {
         .def("add_n1", &ContingencyAnalysis::add_n1<>, DocContingencyAnalysis::add_n1.c_str())
         .def("add_nk", &ContingencyAnalysis::add_nk<>, DocContingencyAnalysis::add_nk.c_str())
         .def("add_multiple_n1", &ContingencyAnalysis::add_multiple_n1<>, DocContingencyAnalysis::add_multiple_n1.c_str())
+        .def("add_contingency", &ContingencyAnalysis::add_contingency<>,
+             py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
+             py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
+             DocContingencyAnalysis::add_contingency.c_str())
+        // the shortcuts take one id (an n-1 of that element) or a list (one contingency
+        // tripping them all)
+        .def("add_contingency_shunt", &ContingencyAnalysis::add_contingency_shunt<>, py::arg("shunt_ids"),
+             DocContingencyAnalysis::add_contingency_shunt.c_str())
+        .def("add_contingency_shunt", [](ContingencyAnalysis & self, int shunt_id){ self.add_contingency_shunt(std::vector<int>(1, shunt_id)); },
+             py::arg("shunt_id"), DocContingencyAnalysis::add_contingency_shunt.c_str())
+        .def("add_contingency_load", &ContingencyAnalysis::add_contingency_load<>, py::arg("load_ids"),
+             DocContingencyAnalysis::add_contingency_load.c_str())
+        .def("add_contingency_load", [](ContingencyAnalysis & self, int load_id){ self.add_contingency_load(std::vector<int>(1, load_id)); },
+             py::arg("load_id"), DocContingencyAnalysis::add_contingency_load.c_str())
+        .def("add_contingency_gen", &ContingencyAnalysis::add_contingency_gen<>, py::arg("gen_ids"),
+             DocContingencyAnalysis::add_contingency_gen.c_str())
+        .def("add_contingency_gen", [](ContingencyAnalysis & self, int gen_id){ self.add_contingency_gen(std::vector<int>(1, gen_id)); },
+             py::arg("gen_id"), DocContingencyAnalysis::add_contingency_gen.c_str())
 
         // remove contingencies
         .def("reset", &ContingencyAnalysis::clear, DocContingencyAnalysis::clear.c_str())
@@ -1319,9 +1351,14 @@ void bind_batch(py::module_& m) {
         .def("remove_n1", &ContingencyAnalysis::remove_n1<>, DocContingencyAnalysis::remove_n1.c_str())
         .def("remove_nk", &ContingencyAnalysis::remove_nk<>, DocContingencyAnalysis::remove_nk.c_str())
         .def("remove_multiple_n1", &ContingencyAnalysis::remove_multiple_n1<>, DocContingencyAnalysis::remove_multiple_n1.c_str())
+        .def("remove_contingency", &ContingencyAnalysis::remove_contingency<>,
+             py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
+             py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
+             DocContingencyAnalysis::remove_contingency.c_str())
 
         // inspect
         .def("my_defaults", &ContingencyAnalysis::my_defaults_vect<>, DocContingencyAnalysis::my_defaults_vect.c_str())
+        .def("my_contingencies", &ContingencyAnalysis::my_contingencies<>, DocContingencyAnalysis::my_contingencies.c_str())
         .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency<>, DocLSGrid::_internal_do_not_use.c_str())
         .def("pick_reference_slack", &ContingencyAnalysis::pick_reference_slack<>,
              "Over the registered contingencies, return the slack bus (gridmodel id) "

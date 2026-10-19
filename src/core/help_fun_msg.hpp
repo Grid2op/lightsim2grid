@@ -842,12 +842,18 @@ struct LS2G_API DocContingencyAnalysis
     static const std::string add_n1;
     static const std::string add_nk;
     static const std::string add_multiple_n1;
+    static const std::string add_contingency;
+    static const std::string add_contingency_shunt;
+    static const std::string add_contingency_load;
+    static const std::string add_contingency_gen;
     static const std::string clear;
     static const std::string remove_n1;
     static const std::string remove_nk;
     static const std::string remove_multiple_n1;
+    static const std::string remove_contingency;
 
     static const std::string my_defaults_vect;
+    static const std::string my_contingencies;
 
     static const std::string compute;
     static const std::string compute_flows;

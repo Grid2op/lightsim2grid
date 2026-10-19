@@ -481,6 +481,41 @@ class ScenarioSweep:
         self.computer.set_contingency_gens(mask)
         self.__computed = False
 
+    def set_contingency_shunts(self, mask):
+        """Per-step shunt contingency mask, shape ``(n_simul, n_shunt)``, dtype bool.
+        ``True`` means "disconnect this shunt for this simulation".
+
+        A shunt is an admittance: the step loses its diagonal coefficient of the
+        admittance matrix (in DC its active part leaves the injection), as
+        :func:`set_contingency_lines` edits it for a powerline. :func:`compute` raises
+        with an algorithm running outer loops if the mask names a shunt that regulates a
+        voltage (the ShuntVoltageControl loop owns its sections).
+        """
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        n_shunt = len(self.grid2op_env.backend._grid.get_shunts())
+        if mask.shape[1] != n_shunt:
+            raise RuntimeError(f"The number of shunts on the grid ({n_shunt}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        self.computer.set_contingency_shunts(mask)
+        self.__computed = False
+
+    def set_contingency_loads(self, mask):
+        """Per-step load contingency mask, shape ``(n_simul, n_load)``, dtype bool.
+        ``True`` means "disconnect this load for this simulation".
+
+        An injection only: the step's own load (:func:`modify_load_p` /
+        :func:`modify_load_q`, or the grid's) leaves its injection, and the distributed
+        slack makes up the balance (``redistribute_slack`` shares it OLF-like before the
+        solve). A step naming a load in both this mask and its topological action
+        (:func:`set_topo_actions`) is refused.
+        """
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        if mask.shape[1] != self.grid2op_env.n_load:
+            raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        self.computer.set_contingency_loads(mask)
+        self.__computed = False
+
     def set_topo_actions(self, actions):
         """One topological action per row, played by that row on top of its injections
         and contingency masks.

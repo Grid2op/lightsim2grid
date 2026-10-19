@@ -81,6 +81,10 @@ class ContingencyResult:
     limit_violations: List[LimitViolation]
     #: see `PreContingencyResult.physical_violations`
     physical_violations: List[LimitViolation] = field(default_factory=list)
+    #: the shunts, loads and generators this contingency trips (see `add_contingency`)
+    shunt_ids: List[int] = field(default_factory=list)
+    load_ids: List[int] = field(default_factory=list)
+    gen_ids: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -777,6 +781,92 @@ class ContingencyAnalysis(object):
             self._contingency_names[li_disc_tup] = None
         self.__computed = False   # see add_single_contingency
 
+    @staticmethod
+    def _cont_key(branches, shunts=(), loads=(), gens=()):
+        """internal: the key a contingency is known by on this side. A branch-only one keeps
+        the flat tuple of its branch ids (what `add_single_contingency` always used); one
+        tripping shunts, loads or generators is the nested tuple of its four sorted lists."""
+        if not shunts and not loads and not gens:
+            return tuple(branches)
+        return (tuple(sorted(branches)), tuple(sorted(shunts)), tuple(sorted(loads)), tuple(sorted(gens)))
+
+    def _cpp_keys(self):
+        """internal: the key of every contingency of the c++ side, in its row order"""
+        return [self._cont_key(*cont) for cont in self.computer.my_contingencies()]
+
+    def _ids_of(self, stuff, names, kind):
+        """internal: ids of the elements of one kind, given by id or by name"""
+        if isinstance(stuff, (int, np.integer)) or isinstance(stuff, type(self).STR_TYPES):
+            stuff = [stuff]
+        res = []
+        for el in stuff:
+            if isinstance(el, type(self).STR_TYPES):
+                matches = np.where(np.asarray(names) == el)[0]
+                if matches.shape[0] == 0:
+                    raise RuntimeError(f"Impossible to find a {kind} named \"{el}\" in the environment")
+                el = int(matches[0])
+            res.append(int(el))
+        return res
+
+    def add_contingency(self, lines=(), shunts=(), loads=(), gens=(), name=None):
+        """
+        Adds a single contingency tripping, together, powerlines (and transformers, both by
+        `env.name_line` or id), shunts (`env.name_shunt` or id), loads (`env.name_load` or id)
+        and generators (`env.name_gen` or id). Any of the four may be empty, not all of them.
+
+        A shunt leaves the admittance matrix, a load and a generator the injection (a
+        generator that is the last one regulating its bus turns that bus PQ); the
+        distributed slack makes up what the contingency loses. See
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`.
+
+        `name`: see `add_single_contingency`.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # a line and the load hanging on its feeder, together
+            contingency_analysis.add_contingency(lines=[env.name_line[2]], loads=[env.name_load[1]])
+        """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        branch_ids = self._single_cont_to_li_int(list(lines) if not isinstance(lines, (int, np.integer) + type(self).STR_TYPES) else lines)
+        shunt_ids = self._ids_of(shunts, getattr(type(self._ls_backend), "name_shunt", []), "shunt")
+        load_ids = self._ids_of(loads, type(self._ls_backend).name_load, "load")
+        gen_ids = self._ids_of(gens, type(self._ls_backend).name_gen, "generator")
+        if not shunt_ids and not load_ids and not gen_ids:
+            # a branch-only contingency: the same one as add_single_contingency's
+            self.add_single_contingency(*branch_ids, name=name)
+            return
+        key = self._cont_key(branch_ids, shunt_ids, load_ids, gen_ids)
+        if key in self._contingency_order:
+            return
+        try:
+            self.computer.add_contingency(branch_ids, shunt_ids, load_ids, gen_ids)
+        except Exception as exc_:
+            raise RuntimeError(f"Impossible to add the contingency (lines={lines}, shunts={shunts}, "
+                               f"loads={loads}, gens={gens}): {exc_}") from exc_
+        self._contingency_order[key] = len(self._contingency_order)
+        self._all_contingencies.append(key)
+        self._contingency_names[key] = name
+        self.__computed = False   # see add_single_contingency
+
+    def add_contingency_shunt(self, shunts, name=None):
+        """A single contingency tripping these shunts only (one id / name, or several). See
+        `add_contingency`."""
+        self.add_contingency(shunts=shunts, name=name)
+
+    def add_contingency_load(self, loads, name=None):
+        """A single contingency tripping these loads only (one id / name, or several). See
+        `add_contingency`."""
+        self.add_contingency(loads=loads, name=name)
+
+    def add_contingency_gen(self, gens, name=None):
+        """A single contingency tripping these generators only (one id / name, or several). See
+        `add_contingency`."""
+        self.add_contingency(gens=gens, name=name)
+
     def get_flows(self, *args):
         """
         Retrieve the flows after each contingencies has been simulated.
@@ -808,17 +898,15 @@ class ContingencyAnalysis(object):
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
         
-        all_defaults = self.computer.my_defaults()
+        all_defaults = self._cpp_keys()
         if len(args) == 0:
             # default: i consider all contingencies
             orders_ = np.zeros(len(all_defaults), dtype=int)
-            for id_cpp, cont_ in enumerate(all_defaults):
-                tup_ = tuple(cont_)
+            for id_cpp, tup_ in enumerate(all_defaults):
                 orders_[self._contingency_order[tup_]] = id_cpp
         else:
-            # a list of interesting contingencies has been provided
+            # a list of interesting contingencies has been provided (branch-only ones)
             orders_ = np.zeros(len(args), dtype=int)
-            all_defaults = [tuple(cont) for cont in all_defaults]
             for id_me, cont_ in enumerate(args):
                 cont_li = self._single_cont_to_li_int(cont_)
                 tup_ = tuple(cont_li)
@@ -830,9 +918,12 @@ class ContingencyAnalysis(object):
 
         if not self.__computed:
             self.compute_V()
+        # run() computes the voltages only
+        if self._ampss is None:
             self.compute_A()
+        if self._mws is None:
             self.compute_P()
-        
+
         return self._mws[orders_], self._ampss[orders_], self._vs[orders_]
 
     def run(self) -> SecurityAnalysisResult:
@@ -895,11 +986,11 @@ class ContingencyAnalysis(object):
         if not self.__computed:
             self.compute_V()
 
-        all_defaults = self.computer.my_defaults()
+        all_conts = self.computer.my_contingencies()
+        all_defaults = [list(cont[0]) for cont in all_conts]
         orders_ = np.zeros(len(all_defaults), dtype=int)
-        for id_cpp, cont_ in enumerate(all_defaults):
-            tup_ = tuple(cont_)
-            orders_[self._contingency_order[tup_]] = id_cpp
+        for id_cpp, cont_ in enumerate(all_conts):
+            orders_[self._contingency_order[self._cont_key(*cont_)]] = id_cpp
 
         converged = self.computer.converged()
         violations = self.computer.get_violations()
@@ -921,6 +1012,9 @@ class ContingencyAnalysis(object):
                 converged=bool(converged[id_cpp]),
                 limit_violations=list(violations[id_cpp]),
                 physical_violations=list(phys[id_cpp]) if phys is not None else [],
+                shunt_ids=list(all_conts[id_cpp][1]),
+                load_ids=list(all_conts[id_cpp][2]),
+                gen_ids=list(all_conts[id_cpp][3]),
             )
             for id_me, id_cpp in enumerate(orders_)
         ]
@@ -976,6 +1070,9 @@ class ContingencyAnalysis(object):
                               self._ls_backend.max_it,
                               self._ls_backend.tol)
         self._vs = self.computer.get_voltages().copy()
+        # the flows of the previous voltages, if any, are not these ones'
+        self._ampss = None
+        self._mws = None
         self.__computed = True
         return self._vs
 

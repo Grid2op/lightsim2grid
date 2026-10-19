@@ -7992,6 +7992,78 @@ const std::string DocContingencyAnalysis::add_multiple_n1 = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
+    Adds one contingency tripping, together, branches, shunts, loads and generators (any of the four lists may be
+    empty, not all of them). A contingency registers once: adding one already registered changes nothing.
+
+    - a branch (powerline or transformer, numbered lines then transformers) is taken out of Ybus, as with
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_nk`;
+    - a shunt too: it is an admittance, one diagonal coefficient (in DC its active part leaves the injection).
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` raises with an algorithm running outer
+      loops if the shunt regulates a voltage (the ShuntVoltageControl loop owns its sections);
+    - a load leaves the injection, its active and reactive power;
+    - a generator leaves it too (its active power, and the reactive setpoint of one that does not regulate voltage)
+      and the distributed slack is re-weighted without it. When it is the last one regulating its own bus, that bus
+      turns PQ for the contingency, as :func:`lightsim2grid.scenarioSweep.ScenarioSweepCPP.set_contingency_gens`
+      does it. A generator regulating a remote bus, or standing on a bus a control group holds, is refused by
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute`.
+
+    What the contingency loses is made up by the distributed slack (``redistribute_slack`` shares it OLF-like before
+    the solve), and a bus it strands is handled as a branch contingency strands one (``handle_disconnected_grid``).
+
+    Parameters
+    ----------
+    branch_ids: ``list`` (of ``int``)
+        The powerlines / transformers to disconnect (lines first, then transformers).
+    shunt_ids: ``list`` (of ``int``)
+        The shunts to disconnect.
+    load_ids: ``list`` (of ``int``)
+        The loads to disconnect.
+    gen_ids: ``list`` (of ``int``)
+        The generators to disconnect.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::add_contingency_shunt = R"mydelimiter(
+    Adds one contingency tripping shunts only: a single shunt id, or a list of them all tripped together. See
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::add_contingency_load = R"mydelimiter(
+    Adds one contingency tripping loads only: a single load id, or a list of them all tripped together. See
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::add_contingency_gen = R"mydelimiter(
+    Adds one contingency tripping generators only: a single generator id, or a list of them all tripped together.
+    See :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::remove_contingency = R"mydelimiter(
+    Removes the contingency tripping exactly these branches, shunts, loads and generators (see
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`).
+
+    Returns
+    -------
+    success: ``bool``
+        Whether such a contingency was registered.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::my_contingencies = R"mydelimiter(
+    Everything each contingency trips, in the row order of the results.
+
+    Returns
+    -------
+    my_contingencies: ``list``
+        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids)`` per contingency, each a sorted list.
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults` lists the branches only.
+
+)mydelimiter";
+
 const std::string DocContingencyAnalysis::clear = R"mydelimiter(
     Clear the list of all contingencies. After a call to this method, you will need to re add some contingencies with
 

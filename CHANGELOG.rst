@@ -223,6 +223,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] contingencies tripping shunts, loads and generators: ``add_contingency`` /
+  ``add_contingency_shunt`` / ``_load`` / ``_gen`` (``ContingencyAnalysis``), ``set_contingency_shunts`` /
+  ``set_contingency_loads`` (``ScenarioSweep``), ``shunt_status`` / ``load_status`` (``BatchCPUPowerFlow``).
+- [FIXED] ``BatchCPUPowerFlow``: a generator a row disconnects no longer gets a ``gen_p`` gradient in that row.
+- [FIXED] ``ContingencyAnalysis.get_flows`` after ``run`` raised (the flows were never computed).
 - [ADDED] ``ContingencyPropagator`` (pypowsybl): adds to each contingency the equipment powsybl
   trips with it on a node-breaker topology (up to the breakers), and groups the ones ending in the
   same tripped set. ``propagate_contingencies`` / ``group_equivalent_contingencies`` as shortcuts.

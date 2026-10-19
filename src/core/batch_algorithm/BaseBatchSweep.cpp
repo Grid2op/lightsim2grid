@@ -605,6 +605,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _maybe_resolve_topology(nb_steps);
         // the per-row Ybus edit lists (a no-op where Ybus does not vary)
         _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
+        // ... a regulating shunt a row trips is refused under the outer loops
+        _check_shunt_trips(nb_steps);
         // ... and settle, once, which contingencies split the grid and what they strand
         // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
         // row skips a contingency that splits the grid, and the masked mode strands the
@@ -616,7 +618,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         // true elsewhere, since no setter exists to set it there)
         _maybe_prepare_masks();
 
-        // generator contingencies (ScenarioSweep only; no-op elsewhere). Must run after
+        // generator contingencies (ScenarioSweep and ContingencyAnalysis; no-op
+        // elsewhere). Must run after
         // prepare_solver_input_base (it reads the solver labelling) and BEFORE
         // _finish_preprocessing, whose "n" solve builds the Jacobian sparsity this has to
         // enlarge. See _maybe_prepare_gen_contingency.
