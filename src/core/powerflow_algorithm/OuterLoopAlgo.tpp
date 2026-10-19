@@ -106,7 +106,12 @@ bool OuterLoopAlgo<Inner>::compute_pf(
         for (auto & loop : loops_) {
             if (loop->is_needed(ctx)) active.push_back(loop.get());
         }
-        for (BaseOuterLoop * loop : active) loop->initialize(ctx);
+        for (BaseOuterLoop * loop : active) {
+            const std::size_t first_decision = stats_.decisions.size();
+            loop->initialize(ctx);
+            // what a loop decides before the first solve (DistributedSlack's SHARE_LOST_P)
+            for (std::size_t d = first_decision; d < stats_.decisions.size(); ++d) stats_.decisions[d].loop = loop->name();
+        }
     }
     for (BaseOuterLoop * loop : active) stats_.loop_iterations.emplace_back(loop->name(), 0);
 

@@ -273,7 +273,10 @@ class ContingencyAnalysis(object):
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
         clamp anything. Same as ``LSGrid.consider_only_main_component(redistribute_slack=True)``,
         contingency by contingency. Needs an algorithm with a distributed slack: ``compute``
-        refuses it with a single-slack one (``NRSing_*``, Gauss-Seidel).
+        refuses it with a single-slack one (``NRSing_*``, Gauss-Seidel). With outer loops
+        (``NROuter_*``), the ``DistributedSlack`` loop shares the loss itself before the
+        contingency's first solve, from the targets in force (those of the "n" solve with
+        :attr:`init_from_n_powerflow`), as OpenLoadFlow's security analysis does.
         """
         return self.computer.redistribute_slack
 

@@ -41,6 +41,12 @@ class LSGrid;
  * they would only take what that bus already absorbs, the same solution, so the loop neither
  * runs nor fails on their limits -- such a unit past its active range is GenPCheck's LOW_P /
  * HIGH_P.
+ * A batch row whose contingency loses active power (OuterRowView::lost_p_mw, a batch's
+ * `redistribute_slack`) has it shared on the participants before its first solve, the same
+ * way, and those targets are the initial ones the loop then starts from: OpenLoadFlow's
+ * security analysis (its Default ContingencyActivePowerLossDistribution) before its
+ * post-contingency load flow. Without it, the first solve puts the whole loss on the slack bus.
+ *
  * UNSTABLE when the targets moved, FAILED when some of the mismatch could not be shared
  * (every unit at a bound) and `Params::fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its
  * LEAVE_ON_SLACK_BUS: the slack bus keeps it).
@@ -66,6 +72,17 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         explicit DistributedSlackLoop(const Params & params);
         const Params & params() const { return params_; }
 
+        /// What a row's DistributedSlack shares before its first solve (MW, generator
+        /// convention), NaN when nothing is to be shared: the row's OuterRowView::lost_p_mw,
+        /// counted at the units' row or grid targets, moved to the targets in force OpenLoadFlow
+        /// counts the lost units at -- the ones `resumed_gen_p` / `resumed_sto_p` (a resumed
+        /// solve's moved targets, MW, NaN untouched, storage units in the load convention; empty:
+        /// none) give the generators and storage units the row disconnects or strands, unless
+        /// the row sets their target itself.
+        static real_type lost_p_to_share_mw(const OuterGridView & view,
+                                            const std::vector<real_type> & resumed_gen_p,
+                                            const std::vector<real_type> & resumed_sto_p);
+
     protected:
         std::string _name() const override { return "DistributedSlack"; }
         bool _is_needed(const OuterContext & ctx) const override;
@@ -86,6 +103,9 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         /// whether some unit of the grid `view` shows takes part in the slack, on another
         /// solver bus than `skip_solver_bus` (-1: anywhere)
         static bool _has_participant(const OuterGridView & view, int skip_solver_bus = -1);
+        /// the row's loss shared on the participants (see lost_p_to_share_mw), their targets
+        /// moved and taken as the initial ones; nothing without a loss to share
+        void _share_lost_p(OuterContext & ctx);
 
         // per solve (see _initialize): the participants, with their initial injection
         // (generator convention, MW), and where each one is now

@@ -90,7 +90,9 @@ struct LS2G_API OuterInjections
  * (see LimitViolation), except where an action says otherwise. The actions:
  *
  * - DistributedSlack: DISTRIBUTE (every check: the slack mismatch, MW, against the threshold),
- *   UNITS_MOVED (how much the units moved, MW, against what counts as a move), FAIL_RESIDUE.
+ *   UNITS_MOVED (how much the units moved, MW, against what counts as a move), FAIL_RESIDUE;
+ *   SHARE_LOST_P (at initialize, outer iteration 0: the row's loss shared before the first
+ *   solve, MW, see OuterRowView::lost_p_mw).
  * - ReactiveLimits, on a controller bus: PV_TO_PQ (PV_TO_PQ_UNREALISTIC, the robust mode's),
  *   KEPT_PV_STRONGEST; PQ_TO_PV, KEPT_PQ_MAX_SWITCH, and, every check for every frozen bus,
  *   KEPT_PQ / KEPT_PQ_GROUP_HOLDS (the release test that did not trigger: the regulated voltage

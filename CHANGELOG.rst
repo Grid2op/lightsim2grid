@@ -223,6 +223,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] ``redistribute_slack`` with outer loops (``NROuter_*``): the ``DistributedSlack`` loop shares
+  what a contingency loses before its first solve, as OpenLoadFlow's security analysis does.
 - [ADDED] contingencies tripping shunts, loads and generators: ``add_contingency`` /
   ``add_contingency_shunt`` / ``_load`` / ``_gen`` (``ContingencyAnalysis``), ``set_contingency_shunts`` /
   ``set_contingency_loads`` (``ScenarioSweep``), ``shunt_status`` / ``load_status`` (``BatchCPUPowerFlow``).

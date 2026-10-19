@@ -9,6 +9,7 @@
 #ifndef OUTER_ROW_VIEW_H
 #define OUTER_ROW_VIEW_H
 
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -73,6 +74,12 @@ struct OuterRowView
     /// with `resume`, the solve they start from instead of the algorithm's own last one: the
     /// batch's "n" solve, for a row seeded from it (init_from_n_powerflow). Null: the last one.
     const OuterResumePoint * resume_from = nullptr;
+    /// the active power the row's contingency takes out of the balance (MW, generator
+    /// convention: lost generation minus lost load), at the units' row or grid targets: the
+    /// DistributedSlack loop shares it on its participants before the first solve, as
+    /// OpenLoadFlow's security analysis does (a batch's `redistribute_slack`). NaN: nothing to
+    /// share.
+    real_type lost_p_mw = std::numeric_limits<real_type>::quiet_NaN();
 
     /// One element kind's overrides. Each vector is empty, or sized by the element count.
     struct Units

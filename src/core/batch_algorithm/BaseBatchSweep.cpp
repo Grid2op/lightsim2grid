@@ -500,11 +500,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // the slack pre-pass moves set-points by the slack weights and takes the units it
     // saturates out of them: a single-slack algorithm ignores both, and the physical
-    // checks would read targets the solve never used
-    if(_redistribute_slack_ && !_algo.distributes_slack()){
+    // checks would read targets the solve never used. With outer loops, the
+    // DistributedSlack loop shares what a row loses instead (see _prepare_slack_redistribution)
+    if(_redistribute_slack_ && !_algo.distributes_slack() && !_algo.supports_outer_loops()){
         std::ostringstream exc_;
         exc_ << algo_name() << "::compute: `redistribute_slack` needs an algorithm with a distributed "
-                "slack (a Newton-Raphson NR_*, the DC or the fast-decoupled one): the active one, "
+                "slack (a Newton-Raphson NR_*, the DC or the fast-decoupled one) or outer loops (NROuter_*): "
+                "the active one, "
              << _algo.get_name() << ", puts the whole imbalance on the reference bus. Use "
                 "`change_algorithm`, or turn `redistribute_slack` off.";
         throw std::runtime_error(exc_.str());

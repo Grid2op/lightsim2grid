@@ -99,6 +99,62 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
     }
     current_mw_.resize(units_.size());
     for(std::size_t k = 0; k < units_.size(); ++k) current_mw_[k] = units_[k].injection_mw;
+    _share_lost_p(ctx);
+}
+
+real_type DistributedSlackLoop::lost_p_to_share_mw(const OuterGridView & view,
+                                                   const std::vector<real_type> & resumed_gen_p,
+                                                   const std::vector<real_type> & resumed_sto_p)
+{
+    const OuterRowView * row = view.row();
+    if(row == nullptr || std::isnan(row->lost_p_mw)) return std::numeric_limits<real_type>::quiet_NaN();
+    // a unit the row loses: off in the row, or on a bus it strands
+    const auto lost = [&view](bool on, int bus_solver){ return !on || view.is_masked(bus_solver); };
+    real_type res = row->lost_p_mw;
+    // only a unit a solve moved has a resumed target: one in the solved grid
+    for(std::size_t g = 0; g < resumed_gen_p.size(); ++g){
+        const int gen_id = static_cast<int>(g);
+        if(std::isnan(resumed_gen_p[g]) || view.row_sets_gen_target_p(gen_id)) continue;
+        if(!lost(view.gen_on(gen_id), view.gen_bus_solver(gen_id))) continue;
+        res += resumed_gen_p[g] - view.gen_target_p(gen_id);
+    }
+    for(std::size_t s = 0; s < resumed_sto_p.size(); ++s){
+        const int storage_id = static_cast<int>(s);
+        if(std::isnan(resumed_sto_p[s]) || view.row_sets_storage_target_p(storage_id)) continue;
+        if(!lost(view.storage_on(storage_id), view.storage_bus_solver(storage_id))) continue;
+        // load convention: what it consumed more is generation lost less
+        res -= resumed_sto_p[s] - view.storage_target_p(storage_id);
+    }
+    return res;
+}
+
+void DistributedSlackLoop::_share_lost_p(OuterContext & ctx)
+{
+    if(ctx.injections == nullptr || units_.empty()) return;
+    const OuterGridView view = ctx.view();
+    const OuterResumePoint * from = (ctx.row != nullptr && ctx.row->resume) ? ctx.row->resume_from : nullptr;
+    static const std::vector<real_type> none;
+    const real_type lost = lost_p_to_share_mw(view, from != nullptr ? from->gen_target_p : none,
+                                              from != nullptr ? from->storage_target_p : none);
+    if(!(std::abs(lost) > params_.p_residue_eps_mw)) return;
+
+    std::vector<real_type> new_mw;
+    std::vector<char> saturated;
+    // what cannot be shared (every unit at a bound) stays on the slack bus: the checks then
+    // find it in the mismatch, as OpenLoadFlow's DistributedSlack loop does
+    slack_redistribution::distribute(units_, lost, params_.p_residue_eps_mw, new_mw, saturated);
+    OuterInjections & state = *ctx.injections;
+    for(std::size_t k = 0; k < units_.size(); ++k){
+        if(units_[k].kind == slack_redistribution::UnitKind::GENERATOR){
+            state.move_gen_target_p(view, units_[k].el_id, unit_solver_bus_[k], new_mw[k]);
+        } else {
+            state.move_storage_target_p(view, units_[k].el_id, unit_solver_bus_[k], -new_mw[k]);
+        }
+        units_[k].injection_mw = new_mw[k];
+        current_mw_[k] = new_mw[k];
+    }
+    ctx.record("SHARE_LOST_P", true, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
+               lost, params_.p_residue_eps_mw);
 }
 
 real_type DistributedSlackLoop::_mismatch_mw(const OuterContext & ctx) const

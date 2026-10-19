@@ -199,7 +199,9 @@ class ScenarioSweep:
         injection: the change in the losses it causes is left to the powerflow.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
         clamp anything. Needs an algorithm with a distributed slack: ``compute`` refuses it
-        with a single-slack one (``NRSing_*``, Gauss-Seidel). Same name/semantics as
+        with a single-slack one (``NRSing_*``, Gauss-Seidel). With outer loops (``NROuter_*``),
+        the ``DistributedSlack`` loop shares the loss itself before the row's first solve, from
+        the targets in force, as OpenLoadFlow's security analysis does. Same name/semantics as
         :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
         """
         return self.computer.redistribute_slack

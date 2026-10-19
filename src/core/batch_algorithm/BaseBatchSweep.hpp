@@ -2343,6 +2343,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             v.masked = (masked != nullptr && !masked->empty()) ? masked : nullptr;
             v.resume = false;
             v.resume_from = nullptr;
+            v.lost_p_mw = i < _row_lost_p_mw_.size() ? _row_lost_p_mw_[i] : std::numeric_limits<real_type>::quiet_NaN();
             v.clear_overrides();
             _fill_outer_row_injections(i, v);
             _fill_outer_row_trips(i, v);
@@ -4155,6 +4156,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         //                        of that row's distributed slack (_row_slack_weights),
         //                        so the solve only shares what is left (the change in
         //                        the losses) on the units that can still move
+        // With outer loops (NROuter_*) none of these: the Newton has a single slack, the
+        // DistributedSlack loop owns the participants and shares the loss itself, before
+        // the row's first solve, from the targets in force (OuterRowView::lost_p_mw):
+        //   _row_lost_p_mw_    : per row, what it loses (MW), NaN where nothing is shared
         // Nothing the size of nb_rows x nb_bus exists; a row that loses nothing has
         // every entry empty and solves exactly as before.
         void _clear_slack_redistribution(){
@@ -4163,6 +4168,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _row_sto_new_p_.clear();
             _row_sat_gens_.clear();
             _row_sat_storages_.clear();
+            _row_lost_p_mw_.clear();
         }
 
         // this row's own active set-point of a static generator / a load (MW): its
@@ -4333,6 +4339,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _row_sto_new_p_.assign(nb_steps, std::vector<std::pair<int, real_type> >());
             _row_sat_gens_.assign(nb_steps, std::vector<int>());
             _row_sat_storages_.assign(nb_steps, std::vector<int>());
+            const bool outer = _algo.supports_outer_loops();
+            if(outer) _row_lost_p_mw_.assign(nb_steps, std::numeric_limits<real_type>::quiet_NaN());
 
             const auto & generators = _grid_model.get_generators();
             const auto & sgens = _grid_model.get_static_generators();
@@ -4398,6 +4406,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // them out)
                 lost_mw += _row_trip_lost_mw(i);
                 if(std::abs(lost_mw) <= eps_mw) continue;
+                if(outer){
+                    // the DistributedSlack loop shares it (see OuterRowView::lost_p_mw)
+                    _row_lost_p_mw_[i] = lost_mw;
+                    continue;
+                }
 
                 units.clear();
                 const auto keep_bus = [&in_island](int bus_me){ return !in_island(bus_me); };
@@ -4802,6 +4815,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<std::pair<int, real_type> > > _row_sto_new_p_;
         std::vector<std::vector<int> > _row_sat_gens_;
         std::vector<std::vector<int> > _row_sat_storages_;
+        std::vector<real_type> _row_lost_p_mw_;  // outer loops: see _clear_slack_redistribution
         // per contingency, the solver buses it strands (sorted, empty if none) and
         // whether the grid stays connected -- both settled by _prepare_connectivity
         // from bus_graph_, the DFS tree of the base graph built there.
