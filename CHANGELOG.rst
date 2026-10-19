@@ -223,6 +223,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] ``ContingencyAnalysis.add_contingency(branch_ids_side1=, branch_ids_side2=)``: a branch opened at one
+  end only keeps its charging from the other, as OpenLoadFlow. ``ContingencyPropagator.opened_sides`` gives them.
 - [ADDED] ``redistribute_slack`` with outer loops (``NROuter_*``): the ``DistributedSlack`` loop shares
   what a contingency loses before its first solve, as OpenLoadFlow's security analysis does.
 - [ADDED] contingencies tripping shunts, loads and generators: ``add_contingency`` /

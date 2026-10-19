@@ -8006,7 +8006,13 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
       and the distributed slack is re-weighted without it. When it is the last one regulating its own bus, that bus
       turns PQ for the contingency, as :func:`lightsim2grid.scenarioSweep.ScenarioSweepCPP.set_contingency_gens`
       does it. A generator regulating a remote bus, or standing on a bus a control group holds, is refused by
-      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute`.
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute`;
+    - a branch of ``branch_ids_side1`` (``branch_ids_side2``) is opened at side 1 (side 2) only: its other end stays
+      connected and still carries the branch's charging, as a branch open at one end in the grid does. This is how
+      OpenLoadFlow models a branch whose breaker opens at one end only (see
+      :func:`lightsim2grid.network.ContingencyPropagator.opened_sides`). Its flows read 0, it is not checked against
+      its current limits and the outer loops see it as open, as for a branch opened at both ends. A branch named at
+      both sides, or also in ``branch_ids``, is opened at both.
 
     What the contingency loses is made up by the distributed slack (``redistribute_slack`` shares it OLF-like before
     the solve), and a bus it strands is handled as a branch contingency strands one (``handle_disconnected_grid``).
@@ -8021,6 +8027,10 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
         The loads to disconnect.
     gen_ids: ``list`` (of ``int``)
         The generators to disconnect.
+    branch_ids_side1: ``list`` (of ``int``)
+        The powerlines / transformers to open at side 1 only (same numbering as ``branch_ids``).
+    branch_ids_side2: ``list`` (of ``int``)
+        The powerlines / transformers to open at side 2 only.
 
 )mydelimiter";
 
@@ -8043,7 +8053,8 @@ const std::string DocContingencyAnalysis::add_contingency_gen = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocContingencyAnalysis::remove_contingency = R"mydelimiter(
-    Removes the contingency tripping exactly these branches, shunts, loads and generators (see
+    Removes the contingency tripping exactly these branches, shunts, loads and generators, and opening these branches
+    at one end (see
     :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`).
 
     Returns
@@ -8059,8 +8070,10 @@ const std::string DocContingencyAnalysis::my_contingencies = R"mydelimiter(
     Returns
     -------
     my_contingencies: ``list``
-        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids)`` per contingency, each a sorted list.
-        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults` lists the branches only.
+        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2)`` per contingency,
+        each a sorted list (the last two: the branches opened at that side only).
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults` lists the branches opened at both
+        ends only.
 
 )mydelimiter";
 

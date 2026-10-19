@@ -156,6 +156,31 @@ class TestPropagateContingencies(unittest.TestCase):
                 net = _net_with_a_transformer_bay(line_has_breaker)
                 self.assertEqual(propagate_contingencies(net, [["L5"], ["T5"], ["S5VL1_BBS"]]), expected)
 
+    def test_opened_sides(self):
+        # what is cut off behind an opened breaker is disconnected at that end only (as
+        # OpenLoadFlow opens the side of each terminal it disconnects); what the walk meets, and
+        # the contingency itself, at all ends
+        for line_has_breaker, expected in (
+                (True, [{}, {}, {"T5": 1, "L5": 1}]),
+                (False, [{"T5": 1}, {}, {"T5": 1}])):
+            with self.subTest(line_has_breaker=line_has_breaker):
+                net = _net_with_a_transformer_bay(line_has_breaker)
+                propagator = ContingencyPropagator(net)
+                propagator.add_contingencies([["L5"], ["T5"], ["S5VL1_BBS"]])
+                self.assertEqual(propagator.opened_sides(), expected)
+        # the line itself, met by the walk: opened at both ends
+        net = _net_with_stuff_on_the_feeder()
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies([["LOAD_FEEDER"]])
+        self.assertEqual(propagator.propagate_contingencies(), [["LOAD_FEEDER", "LINE_S2S3"]])
+        self.assertEqual(propagator.opened_sides(), [{}])
+
+    def test_group_tells_the_opened_sides_apart(self):
+        unique, inverse = group_equivalent_contingencies([["A", "B"], ["B", "A"], ["A", "B"]],
+                                                         [{"B": 1}, {"B": 1}, {}])
+        self.assertEqual(unique, [["A", "B"], ["A", "B"]])
+        self.assertEqual(inverse, [0, 0, 1])
+
     def test_a_fictitious_breaker_is_walked_through(self):
         # powsybl does not open a fictitious breaker: L5's is then as if L5 had none
         net = _net_with_a_transformer_bay(line_has_breaker=True)

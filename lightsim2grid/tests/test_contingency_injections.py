@@ -89,7 +89,8 @@ class TestContingencyAnalysisCPP(_Base):
         V = np.asarray(ca.get_voltages())
         conts = ca.my_contingencies()
         self.assertEqual(len(conts), len(self.TRIPS))
-        for row, (br, sh, ld, gn) in enumerate(conts):
+        for row, (br, sh, ld, gn, br1, br2) in enumerate(conts):
+            self.assertEqual((br1, br2), ([], []))
             self.assertTrue(ca.converged_mask()[row])
             np.testing.assert_allclose(V[row], self._reference_V(br, sh, ld, gn), atol=1e-8, rtol=0.)
 
@@ -101,9 +102,9 @@ class TestContingencyAnalysisCPP(_Base):
         ca.add_contingency_load(1)
         conts = ca.my_contingencies()
         self.assertEqual(len(conts), 4)
-        self.assertIn(([], [0], [], []), [tuple(c) for c in conts])
-        self.assertIn(([], [], [1, 2], []), [tuple(c) for c in conts])
-        self.assertIn(([], [], [], [self.gen_alone]), [tuple(c) for c in conts])
+        self.assertIn(([], [0], [], [], [], []), [tuple(c) for c in conts])
+        self.assertIn(([], [], [1, 2], [], [], []), [tuple(c) for c in conts])
+        self.assertIn(([], [], [], [self.gen_alone], [], []), [tuple(c) for c in conts])
         # my_defaults lists the branches only
         self.assertEqual(ca.my_defaults(), [[], [], [], []])
         self.assertTrue(ca.remove_contingency(load_ids=[1, 2]))
@@ -112,6 +113,64 @@ class TestContingencyAnalysisCPP(_Base):
             ca.add_contingency_shunt(self.n_shunt)
         with self.assertRaises(RuntimeError):
             ca.add_contingency()
+
+
+class TestOneSideTrips(_Base):
+    """``branch_ids_side1`` / ``branch_ids_side2``: a branch opened at one end only keeps its
+    other end, with its charging, as LSGrid.deactivate_powerline_side1 (and co) leave it"""
+
+    def _reference_one_side(self, branch, side):
+        grid = copy.deepcopy(self.grid)
+        grid.set_synch_status_both_side(False)
+        n_line = len(grid.get_lines())
+        if branch < n_line:
+            getattr(grid, f"deactivate_powerline_side{side}")(int(branch))
+        else:
+            getattr(grid, f"deactivate_trafo_side{side}")(int(branch) - n_line)
+        grid.tell_solver_need_reset()
+        V = grid.ac_pf(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertGreater(V.shape[0], 0)
+        solved = np.zeros(V.shape[0], dtype=bool)
+        solved[np.asarray(grid.id_ac_solver_to_me())] = True
+        V[~solved] = 0.
+        return V
+
+    def test_matches_a_half_open_branch(self):
+        n_line = len(self.grid.get_lines())
+        # lines 1 and 3 have charging (opened at side 1, it shows); line 5 at side 2; the
+        # transformers have no shunt admittance, half-open or tripped is the same for them
+        trips = [(1, 1), (3, 1), (5, 2), (n_line, 1), (n_line + 1, 2)]
+        ca = ContingencyAnalysisCPP(self.grid)
+        for br, side in trips:
+            ca.add_contingency([], [], [], [], [br] if side == 1 else [], [br] if side == 2 else [])
+        ca.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        V = np.asarray(ca.get_voltages())
+        row_of = {(tuple(c[4]), tuple(c[5])): row for row, c in enumerate(ca.my_contingencies())}
+        for br, side in trips:
+            row = row_of[((br,), ()) if side == 1 else ((), (br,))]
+            self.assertTrue(ca.converged_mask()[row])
+            V_ref = self._reference_one_side(br, side)
+            np.testing.assert_allclose(V[row], V_ref, atol=1e-8, rtol=0.)
+            if br in (1, 3):
+                # not the same as tripping it at both ends
+                self.assertGreater(np.abs(V_ref - self._reference_V(branches=(br,))).max(), 1e-4)
+
+    def test_both_ends_is_a_trip(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.add_contingency(branch_ids_side1=[3, 5], branch_ids_side2=[3])
+        ca.add_contingency(branch_ids=[4], branch_ids_side2=[4])
+        conts = sorted(tuple(c) for c in ca.my_contingencies())
+        self.assertEqual(conts, [([3], [], [], [], [5], []), ([4], [], [], [], [], [])])
+        self.assertTrue(ca.remove_contingency(branch_ids=[3], branch_ids_side1=[5]))
+        self.assertEqual(len(ca.my_contingencies()), 1)
+        with self.assertRaises(RuntimeError):
+            ca.add_contingency(branch_ids_side1=[len(self.grid.get_lines()) + len(self.grid.get_trafos())])
+
+    def test_flows_read_zero(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.add_contingency(branch_ids_side1=[3])
+        ca.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(float(np.asarray(ca.compute_flows())[0, 3]), 0.)
 
 
 class TestContingencyAnalysisWrapper(_Base):

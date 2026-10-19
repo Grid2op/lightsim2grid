@@ -566,6 +566,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *    ScenarioSweep (the same machinery, see _maybe_prepare_gen_contingency, and
          *    the same scope: a generator regulating a remote bus, or on a bus a control
          *    group holds, is refused by compute()).
+         *  - a branch of `branch_ids_side1` (`branch_ids_side2`) is opened at side 1 (2)
+         *    only: its other end stays connected and keeps the Kron-reduced part of the
+         *    branch (its charging), as a branch open at one end in the grid does. That
+         *    is OpenLoadFlow's model of a branch whose breaker opens at one end only.
+         *    For the flows, the current checks and the outer loops it counts as open.
+         *    Named at both ends, or also in `branch_ids`, it is opened at both.
          * What it loses is made up by the distributed slack (redistribute_slack shares
          * it OLF-like before the solve), and a bus it strands is handled as a branch
          * contingency strands one (handle_disconnected_grid).
@@ -575,8 +581,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void add_contingency(const std::vector<int> & branch_ids,
                              const std::vector<int> & shunt_ids,
                              const std::vector<int> & load_ids,
-                             const std::vector<int> & gen_ids){
-            const ContingencyElements cont = _checked_contingency(branch_ids, shunt_ids, load_ids, gen_ids, "add_contingency");
+                             const std::vector<int> & gen_ids,
+                             const std::vector<int> & branch_ids_side1 = std::vector<int>(),
+                             const std::vector<int> & branch_ids_side2 = std::vector<int>()){
+            const ContingencyElements cont = _checked_contingency(branch_ids, shunt_ids, load_ids, gen_ids, "add_contingency",
+                                                                  branch_ids_side1, branch_ids_side2);
             // a contingency registration (L2), as add_nk
             clear_batch_inputs();
             ybus_policy_.li_defaults.insert(cont);
@@ -609,8 +618,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         bool remove_contingency(const std::vector<int> & branch_ids,
                                 const std::vector<int> & shunt_ids,
                                 const std::vector<int> & load_ids,
-                                const std::vector<int> & gen_ids){
-            const ContingencyElements cont = _checked_contingency(branch_ids, shunt_ids, load_ids, gen_ids, "remove_contingency");
+                                const std::vector<int> & gen_ids,
+                                const std::vector<int> & branch_ids_side1 = std::vector<int>(),
+                                const std::vector<int> & branch_ids_side2 = std::vector<int>()){
+            const ContingencyElements cont = _checked_contingency(branch_ids, shunt_ids, load_ids, gen_ids, "remove_contingency",
+                                                                  branch_ids_side1, branch_ids_side2);
             clear_batch_inputs();
             return ybus_policy_.li_defaults.erase(cont) >= 1;
         }
@@ -650,8 +662,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         const std::set<ContingencyElements> & my_defaults() const {return ybus_policy_.li_defaults;}
-        // the branches each contingency trips, in row order (a contingency tripping only
-        // shunts, loads or generators lists none: see my_contingencies)
+        // the branches each contingency trips, at both ends, in row order (a contingency
+        // tripping only shunts, loads or generators, or opening branches at one end, lists
+        // none of those: see my_contingencies)
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         std::vector<std::vector<int> > my_defaults_vect() const {
@@ -662,9 +675,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             return res;
         }
+        // every branch each contingency opens, at both ends or at one, in row order: what
+        // the flows, the current checks and the outer loops see as open (see add_contingency)
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        std::vector<std::vector<int> > _branches_out_vect() const {
+            std::vector<std::vector<int> > res;
+            res.reserve(ybus_policy_.li_defaults.size());
+            for(const auto & cont: ybus_policy_.li_defaults) res.push_back(cont.branches_out());
+            return res;
+        }
         // everything each contingency trips, in row order: (branches, shunts, loads,
-        // generators), each sorted
-        using ContingencyTuple = std::tuple<std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int> >;
+        // generators, branches opened at side 1 only, at side 2 only), each sorted
+        using ContingencyTuple = std::tuple<std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>,
+                                            std::vector<int>, std::vector<int> >;
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         std::vector<ContingencyTuple> my_contingencies() const {
@@ -674,7 +698,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 res.push_back(ContingencyTuple(std::vector<int>(cont.branches.begin(), cont.branches.end()),
                                                std::vector<int>(cont.shunts.begin(), cont.shunts.end()),
                                                std::vector<int>(cont.loads.begin(), cont.loads.end()),
-                                               std::vector<int>(cont.gens.begin(), cont.gens.end())));
+                                               std::vector<int>(cont.gens.begin(), cont.gens.end()),
+                                               std::vector<int>(cont.branches_side1.begin(), cont.branches_side1.end()),
+                                               std::vector<int>(cont.branches_side2.begin(), cont.branches_side2.end())));
             }
             return res;
         }
@@ -1493,14 +1519,25 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return res;
         }
         // what add_contingency* / remove_contingency are given, checked: every id exists,
-        // and something is tripped at all
+        // and something is tripped at all. A branch opened at both ends one way or another
+        // (named at both sides, or also among `branch_ids`) is in `branches` only, as
+        // OpenLoadFlow merges the two ends of a branch it opens.
         ContingencyElements _checked_contingency(const std::vector<int> & branch_ids,
                                                  const std::vector<int> & shunt_ids,
                                                  const std::vector<int> & load_ids,
                                                  const std::vector<int> & gen_ids,
-                                                 const char * fun_name) const {
+                                                 const char * fun_name,
+                                                 const std::vector<int> & branch_ids_side1 = std::vector<int>(),
+                                                 const std::vector<int> & branch_ids_side2 = std::vector<int>()) const {
             ContingencyElements res;
             for(int el : branch_ids){ _check_ok_id(el, static_cast<int>(n_total_), "powerline / trafo", fun_name); res.branches.insert(el); }
+            for(int el : branch_ids_side1){ _check_ok_id(el, static_cast<int>(n_total_), "powerline / trafo", fun_name); res.branches_side1.insert(el); }
+            for(int el : branch_ids_side2){
+                _check_ok_id(el, static_cast<int>(n_total_), "powerline / trafo", fun_name);
+                if(res.branches_side1.erase(el) > 0) res.branches.insert(el);
+                else res.branches_side2.insert(el);
+            }
+            for(int el : res.branches){ res.branches_side1.erase(el); res.branches_side2.erase(el); }
             for(int el : shunt_ids){ _check_ok_id(el, _grid_model.get_shunts().nb(), "shunt", fun_name); res.shunts.insert(el); }
             for(int el : load_ids){ _check_ok_id(el, _grid_model.get_loads().nb(), "load", fun_name); res.loads.insert(el); }
             for(int el : gen_ids){ _check_ok_id(el, _grid_model.get_generators().nb(), "generator", fun_name); res.gens.insert(el); }
@@ -1975,7 +2012,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<int> > _rows_tripped_branch_ids() const { return {}; }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
-        std::vector<std::vector<int> > _rows_tripped_branch_ids() const { return my_defaults_vect(); }
+        std::vector<std::vector<int> > _rows_tripped_branch_ids() const { return _branches_out_vect(); }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         std::vector<std::vector<int> > _rows_tripped_branch_ids() const {
@@ -2318,7 +2355,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // branches from that row's current-limit checks (they still look "connected"
         // via get_status_global(), only the Ybus coefficients were edited). Two
         // sources of truth, per instantiation: ContingencyAnalysis has a cache built
-        // once per compute() from my_defaults_vect() (the sparse, add_n1-driven
+        // once per compute() from _branches_out_vect() (the sparse, add_n1-driven
         // representation); ScenarioSweep has no such cache (no li_defaults at all)
         // and instead reads the row directly off line_mask/trafo_mask.
         template<class Y = YbusPolicy, class S = SbusPolicy,
@@ -2988,7 +3025,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _refresh_defaults_vect_cache(){
             // read by the limit checks, and by the outer loops' view of each row
             _li_defaults_vect_cache_ = (_compute_limit_violations_ || _compute_physical_violations_ || _algo.supports_outer_loops())
-                                       ? my_defaults_vect() : std::vector<std::vector<int> >();
+                                       ? _branches_out_vect() : std::vector<std::vector<int> >();
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
@@ -4683,7 +4720,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             auto timer = CustTimer();
             size_t cont_id = 0;
             for(const auto & this_cont: ybus_policy_.li_defaults){
-                for(auto l_id : this_cont.branches){
+                // a branch opened at one end only reads 0 too (see add_contingency)
+                for(auto l_id : this_cont.branches_out()){
                     real_type & el = is_amps ? _amps_flows(cont_id, l_id): _active_power_flows(cont_id, l_id);
                     if(isfinite(el)) el = 0.;
                 }

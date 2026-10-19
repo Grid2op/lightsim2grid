@@ -28,6 +28,11 @@ a breakerless line takes down, or each feeder of a tripped busbar section), or o
 (nothing feeds them any more), at that end only, so it is not walked any further. A part still
 holding a busbar section, or several pieces of equipment one of which is a branch, stays: it is
 still fed. A bus-breaker voltage level has one breaker per terminal, so nothing propagates there.
+
+A branch cut off that way is opened at that end only: its other end stays connected, and the
+branch keeps its charging from there (OpenLoadFlow opens the side of each terminal it
+disconnects, see `ContingencyPropagator.opened_sides`). Equipment the walk meets is tripped as
+a whole, at every end.
 """
 
 import numpy as np
@@ -68,6 +73,7 @@ class _PypowsyblTopology:
         vl_index = pd.Index(self._vl_ids)
 
         self.terminals = {}        # element id -> [node]
+        self.side_of = {}          # equipment node -> the side of the terminal on it (1, 2, 3; 0 one-sided)
         self.station_to_hvdc = {}  # converter station id -> hvdc line id
         self.hvdc_stations = {}    # hvdc line id -> [station ids]
         self.tie_dangling = {}     # tie line id -> [dangling line ids]
@@ -90,7 +96,7 @@ class _PypowsyblTopology:
                 keep = code >= 0
                 parts.append((df.index.values[keep], code[keep].astype(np.int64),
                               df[f"node{side}"].values[keep].astype(np.int64),
-                              getter == "get_busbar_sections"))
+                              getter == "get_busbar_sections", int(side) if side else 0))
         sw = net.get_switches(attributes=["voltage_level_id", "node1", "node2", "kind", "open", "fictitious"])
         sw_code = vl_index.get_indexer(sw["voltage_level_id"].values)
         sw = sw[sw_code >= 0]
@@ -102,9 +108,11 @@ class _PypowsyblTopology:
         ids = np.concatenate([p[0] for p in parts]) if parts else np.empty(0, dtype=object)
         keys = np.concatenate([p[1] * self.stride + p[2] for p in parts]) if parts else np.empty(0, np.int64)
         is_bbs = np.concatenate([np.full(p[0].shape[0], p[3]) for p in parts]) if parts else np.empty(0, bool)
+        sides = np.concatenate([np.full(p[0].shape[0], p[4]) for p in parts]) if parts else np.empty(0, np.int64)
         for el, key in zip(ids.tolist(), keys.tolist()):
             self.terminals.setdefault(el, []).append(key)
         self._equip = dict(zip(keys[~is_bbs].tolist(), ids[~is_bbs].tolist()))
+        self.side_of = dict(zip(keys[~is_bbs].tolist(), sides[~is_bbs].tolist()))
         self._bbs = set(keys[is_bbs].tolist())
 
         # ---- the edges the walk can cross
@@ -192,7 +200,8 @@ class _PypowsyblTopology:
         equipment `start` is joined to by the closed switches, breakers included, once the walked
         nodes (`seen`) are out, when no busbar section is joined and it is a single piece of
         equipment or only injections; else nothing. `visited` holds the nodes already looked at behind another breaker
-        of the same contingency."""
+        of the same contingency. Each piece comes with the side of its terminal there (0 for a
+        one-sided element), the only end it is disconnected at."""
         if start in seen or start in visited:
             return []
         self.read_internal_connections(start // self.stride)
@@ -206,7 +215,7 @@ class _PypowsyblTopology:
             live = live or node in self._bbs
             el = equip.get(node)
             if el is not None:
-                found.append(el)
+                found.append((el, self.side_of.get(node, 0)))
             lo_hi = span.get(node)
             others = nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else []
             others = others + breakers.get(node, []) + extra.get(node, [])
@@ -217,7 +226,7 @@ class _PypowsyblTopology:
                 stack.append(other)
         # (the whole part is walked before deciding, so that another breaker into it finds it visited)
         found = list(dict.fromkeys(found))
-        if live or (len(found) > 1 and any(el in self.branches for el in found)):
+        if live or (len({el for el, _ in found}) > 1 and any(el in self.branches for el, _ in found)):
             return []  # still fed
         return found
 
@@ -260,8 +269,9 @@ class ContingencyPropagator:
 
     Notes
     -----
-    * Names come back as pypowsybl knows them; a line that is only tripped on one side (the
-      other side stands behind a breaker of its own) is listed, as a name cannot say "one side".
+    * Names come back as pypowsybl knows them; a branch that is only opened at one end (the
+      other end stands behind a breaker of its own) is listed too, and :func:`opened_sides`
+      says which end.
     * Propagating onto one converter station lists its HVDC line, and onto one dangling line
       its tie line.
     * A name that is not an element of the network (a switch included) is an error, raised by
@@ -286,6 +296,7 @@ class ContingencyPropagator:
         self._topo = _PypowsyblTopology(net, internal_connections)
         self._contingencies = []
         self._propagated = []  # one entry per contingency, None until propagated
+        self._sides = []       # aligned with _propagated: {branch: side opened}, see opened_sides
 
     @property
     def contingencies(self):
@@ -311,11 +322,13 @@ class ContingencyPropagator:
             checked.append(names)
         self._contingencies.extend(checked)
         self._propagated.extend([None] * len(checked))
+        self._sides.extend([None] * len(checked))
 
     def clear(self):
         """Remove every contingency (the topology read at construction is kept)."""
         self._contingencies = []
         self._propagated = []
+        self._sides = []
 
     def propagate_contingencies(self):
         """The contingencies added, propagated: one list of names per contingency, in the order
@@ -325,10 +338,33 @@ class ContingencyPropagator:
         -------
         list of lists of str.
         """
+        self._propagate_all()
+        return [list(el) for el in self._propagated]
+
+    def opened_sides(self):
+        """The branches each propagated contingency opens at one end only: one dict per
+        contingency, in the order they were added, ``{branch name: side opened}`` (1 or 2, 3 for
+        the third leg of a three-winding transformer). Every other branch of
+        :func:`propagate_contingencies` is opened at all its ends.
+
+        A branch cut off behind a breaker the propagation opens (a feeder alone on its piece of
+        the substation) is disconnected at that end only. OpenLoadFlow keeps it connected at its
+        other end, where it still draws its charging current: simulate it opened at that side
+        only (*eg* ``branch_ids_side1`` / ``branch_ids_side2`` of
+        ``ContingencyAnalysisCPP.add_contingency``), not tripped. A tie line is always opened as
+        a whole, as OpenLoadFlow does.
+
+        Returns
+        -------
+        list of dicts.
+        """
+        self._propagate_all()
+        return [dict(el) for el in self._sides]
+
+    def _propagate_all(self):
         for i, contingency in enumerate(self._contingencies):
             if self._propagated[i] is None:
-                self._propagated[i] = self._propagate_one(contingency)
-        return [list(el) for el in self._propagated]
+                self._propagated[i], self._sides[i] = self._propagate_one(contingency)
 
     def group_contingencies(self):
         """Group the propagated contingencies that trip the same set of equipment, so that
@@ -341,7 +377,7 @@ class ContingencyPropagator:
         inverse:
             for each contingency added, the position in `unique` of its representative.
         """
-        return group_equivalent_contingencies(self.propagate_contingencies())
+        return group_equivalent_contingencies(self.propagate_contingencies(), self.opened_sides())
 
     def _propagate_one(self, contingency):
         topo = self._topo
@@ -369,17 +405,29 @@ class ContingencyPropagator:
                 topo.walk(node, tripped, seen, behind_breakers)
         # what the opened breakers leave hanging, once the walked part is complete (disconnected at
         # that end only: not walked out of, but it still takes its HVDC or tie line with it)
+        whole_ids = set(tripped)
+        cut_sides = {}  # element only cut off -> the sides it is cut at
         visited = set()
         for node in behind_breakers:
-            for el in topo.cut_off(node, seen, visited):
+            for el, side in topo.cut_off(node, seen, visited):
                 tripped.append(el)
+                cut_sides.setdefault(el, set()).add(side)
                 for whole in (topo.station_to_hvdc.get(el), topo.dangling_to_tie.get(el)):
                     if whole is not None:
                         tripped.append(whole)
+                        whole_ids.add(whole)
                         tripped.extend(_terminals_of(topo, whole)[0])
         known = set(result)
         result.extend(el for el in dict.fromkeys(tripped) if el not in known)
-        return result
+        # a branch cut off at one of its ends, and not tripped as a whole otherwise, stays
+        # connected at the other ones (a dangling line goes with its tie line, a whole)
+        sides = {}
+        for el, el_sides in cut_sides.items():
+            if el in whole_ids or el not in topo.branches or el in topo.dangling_to_tie:
+                continue
+            if len(el_sides) == 1:
+                sides[el] = next(iter(el_sides))
+        return result, sides
 
 
 def propagate_contingencies(net, contingencies, internal_connections=None):
@@ -403,12 +451,14 @@ def propagate_contingencies(net, contingencies, internal_connections=None):
     return propagator.propagate_contingencies()
 
 
-def group_equivalent_contingencies(contingencies):
+def group_equivalent_contingencies(contingencies, opened_sides=None):
     """Find the contingencies that trip the same set of equipment, so each is simulated once.
 
     Meant for the output of :func:`ContingencyPropagator.propagate_contingencies`: tripping a line, or the load hanging
     on its feeder, ends in the same grid. Two contingencies are equivalent when they hold the same
-    names, whatever the order.
+    names, whatever the order, and (`opened_sides`, one dict per contingency as
+    :func:`ContingencyPropagator.opened_sides` gives, optional) open the same branches at the
+    same single end.
 
     Returns
     -------
@@ -421,8 +471,10 @@ def group_equivalent_contingencies(contingencies):
     seen = {}
     unique = []
     inverse = []
-    for contingency in contingencies:
+    for pos, contingency in enumerate(contingencies):
         key = frozenset(contingency)
+        if opened_sides is not None and opened_sides[pos]:
+            key = (key, frozenset(opened_sides[pos].items()))
         pos = seen.get(key)
         if pos is None:
             pos = seen[key] = len(unique)

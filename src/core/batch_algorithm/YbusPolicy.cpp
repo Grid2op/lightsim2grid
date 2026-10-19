@@ -92,6 +92,59 @@ std::vector<Coeff> YbusPolicy::Contingency::_coeffs_for_branch_ids(
     return res;
 }
 
+void YbusPolicy::Contingency::_append_one_side_trips(
+    const std::set<int> & branch_ids,
+    int open_side,
+    const LSGrid & grid_model,
+    bool ac_solver_used,
+    const SolverBusIdVect & id_me_to_solver,
+    size_t n_line,
+    std::vector<Coeff> & coeffs,
+    std::vector<std::pair<int, cplx_type> > & dc_shift_dp)
+{
+    const auto & powerlines = grid_model.get_powerlines_as_data();
+    const auto & trafos = grid_model.get_trafos_as_data();
+    std::vector<std::pair<int, cplx_type> > whole_dp;
+    for(int br_id : branch_ids){
+        const bool is_line = static_cast<size_t>(br_id) < n_line;
+        const int el_id = is_line ? br_id : br_id - static_cast<int>(n_line);
+        const BranchContainer & branch = is_line ? static_cast<const BranchContainer &>(powerlines)
+                                                 : static_cast<const BranchContainer &>(trafos);
+        if(!branch.get_status_global()[el_id]) continue;
+        const bool on_open = open_side == 1 ? branch.get_status_side_1()[el_id] : branch.get_status_side_2()[el_id];
+        const bool on_kept = open_side == 1 ? branch.get_status_side_2()[el_id] : branch.get_status_side_1()[el_id];
+        if(!on_open) continue;  // already open at that end: nothing changes
+        if(!on_kept || !ac_solver_used){
+            // open at its other end already (it goes entirely), or DC (one open end is
+            // the whole branch out)
+            const std::vector<Coeff> whole = _coeffs_for_branch_ids(std::vector<int>(1, br_id), grid_model, ac_solver_used,
+                                                                   id_me_to_solver, n_line, whole_dp);
+            coeffs.insert(coeffs.end(), whole.begin(), whole.end());
+            dc_shift_dp.insert(dc_shift_dp.end(), whole_dp.begin(), whole_dp.end());
+            continue;
+        }
+        // both ends closed in the grid: the stamped block is the raw one
+        const int glob_open = (open_side == 1 ? branch.get_bus_side_1(el_id) : branch.get_bus_side_2(el_id)).cast_int();
+        const int glob_kept = (open_side == 1 ? branch.get_bus_side_2(el_id) : branch.get_bus_side_1(el_id)).cast_int();
+        const int bus_open = glob_open == GenericContainer::_deactivated_bus_id ?
+            GenericContainer::_deactivated_bus_id : id_me_to_solver[glob_open].cast_int();
+        const int bus_kept = glob_kept == GenericContainer::_deactivated_bus_id ?
+            GenericContainer::_deactivated_bus_id : id_me_to_solver[glob_kept].cast_int();
+        const cplx_type y_oo = open_side == 1 ? branch.yac_11()[el_id] : branch.yac_22()[el_id];
+        const cplx_type y_ok = open_side == 1 ? branch.yac_12()[el_id] : branch.yac_21()[el_id];
+        const cplx_type y_ko = open_side == 1 ? branch.yac_21()[el_id] : branch.yac_12()[el_id];
+        if(bus_open != GenericContainer::_deactivated_bus_id) coeffs.push_back({bus_open, bus_open, y_oo});
+        if(bus_kept != GenericContainer::_deactivated_bus_id){
+            // y_kk - (y_kk - y_ko * y_ok / y_oo): the kept end keeps its Kron-reduced part
+            coeffs.push_back({bus_kept, bus_kept, y_ko * y_ok / y_oo});
+        }
+        if(bus_open != GenericContainer::_deactivated_bus_id && bus_kept != GenericContainer::_deactivated_bus_id){
+            coeffs.push_back({bus_open, bus_kept, y_ok});
+            coeffs.push_back({bus_kept, bus_open, y_ko});
+        }
+    }
+}
+
 namespace {
 // the solver bus of a one-sided element that is in the base grid's matrix / injection,
 // -1 for one off (status off, or on a disconnected bus)
@@ -193,6 +246,10 @@ void YbusPolicy::Contingency::init_li_coeffs(
         const std::vector<int> branch_ids(this_cont.branches.begin(), this_cont.branches.end());
         std::vector<Coeff> coeffs = _coeffs_for_branch_ids(branch_ids, grid_model, ac_solver_used, id_me_to_solver, n_line,
                                                            sbus_dp);
+        _append_one_side_trips(this_cont.branches_side1, 1, grid_model, ac_solver_used, id_me_to_solver, n_line,
+                               coeffs, sbus_dp);
+        _append_one_side_trips(this_cont.branches_side2, 2, grid_model, ac_solver_used, id_me_to_solver, n_line,
+                               coeffs, sbus_dp);
         _append_shunt_trips(std::vector<int>(this_cont.shunts.begin(), this_cont.shunts.end()),
                             grid_model, ac_solver_used, id_me_to_solver, coeffs, sbus_dp);
         _append_load_trips(std::vector<int>(this_cont.loads.begin(), this_cont.loads.end()),

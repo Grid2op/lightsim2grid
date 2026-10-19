@@ -785,10 +785,12 @@ class ContingencyAnalysis(object):
         self.__computed = False   # see add_single_contingency
 
     @staticmethod
-    def _cont_key(branches, shunts=(), loads=(), gens=()):
+    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=()):
         """internal: the key a contingency is known by on this side. A branch-only one keeps
         the flat tuple of its branch ids (what `add_single_contingency` always used); one
-        tripping shunts, loads or generators is the nested tuple of its four sorted lists."""
+        tripping shunts, loads or generators is the nested tuple of its four sorted lists.
+        (This class never opens a branch at one end only: the last two lists
+        `my_contingencies` gives are empty.)"""
         if not shunts and not loads and not gens:
             return tuple(branches)
         return (tuple(sorted(branches)), tuple(sorted(shunts)), tuple(sorted(loads)), tuple(sorted(gens)))

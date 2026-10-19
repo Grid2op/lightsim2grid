@@ -1332,6 +1332,7 @@ void bind_batch(py::module_& m) {
         .def("add_contingency", &ContingencyAnalysis::add_contingency<>,
              py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
              py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
+             py::arg("branch_ids_side1") = std::vector<int>(), py::arg("branch_ids_side2") = std::vector<int>(),
              DocContingencyAnalysis::add_contingency.c_str())
         // the shortcuts take one id (an n-1 of that element) or a list (one contingency
         // tripping them all)
@@ -1359,6 +1360,7 @@ void bind_batch(py::module_& m) {
         .def("remove_contingency", &ContingencyAnalysis::remove_contingency<>,
              py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
              py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
+             py::arg("branch_ids_side1") = std::vector<int>(), py::arg("branch_ids_side2") = std::vector<int>(),
              DocContingencyAnalysis::remove_contingency.c_str())
 
         // inspect

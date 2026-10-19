@@ -21,20 +21,40 @@ namespace ls2g {
 /** What one contingency of a ContingencyAnalysis trips: branches (lines then
     transformers, the gridmodel numbering every batch class uses), shunts, loads and
     generators, by their own ids. Ordered field by field, branches first, so a set of
-    branch-only contingencies keeps the order a set of branch sets had. **/
+    branch-only contingencies keeps the order a set of branch sets had.
+
+    `branches_side1` / `branches_side2`: the branches the contingency opens at that end
+    only, the other end staying connected (half-open, as OpenLoadFlow keeps a branch
+    whose breaker opens at one end: it still carries its charging current from the
+    other end). A branch is in one of the three branch sets at most. **/
 struct LS2G_API ContingencyElements {
     std::set<int> branches;
     std::set<int> shunts;
     std::set<int> loads;
     std::set<int> gens;
+    std::set<int> branches_side1;
+    std::set<int> branches_side2;
 
     bool operator<(const ContingencyElements & other) const {
-        return std::tie(branches, shunts, loads, gens) < std::tie(other.branches, other.shunts, other.loads, other.gens);
+        return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2) <
+               std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2);
     }
     bool operator==(const ContingencyElements & other) const {
-        return std::tie(branches, shunts, loads, gens) == std::tie(other.branches, other.shunts, other.loads, other.gens);
+        return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2) ==
+               std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2);
     }
-    bool empty() const { return branches.empty() && shunts.empty() && loads.empty() && gens.empty(); }
+    bool empty() const {
+        return branches.empty() && shunts.empty() && loads.empty() && gens.empty() &&
+               branches_side1.empty() && branches_side2.empty();
+    }
+    /** every branch the contingency opens, at both ends or at one (sorted): what carries
+        no flow worth reporting, and what the outer loops see as open **/
+    std::vector<int> branches_out() const {
+        std::set<int> res(branches);
+        res.insert(branches_side1.begin(), branches_side1.end());
+        res.insert(branches_side2.begin(), branches_side2.end());
+        return std::vector<int>(res.begin(), res.end());
+    }
 };
 
 /**
@@ -248,6 +268,20 @@ struct LS2G_API YbusPolicy
                                                               const SolverBusIdVect & id_me_to_solver,
                                                               size_t n_line,
                                                               std::vector<std::pair<int, cplx_type> > & dc_shift_dp);
+            // the coefficients (and DC injections, appended to `dc_shift_dp`) that open
+            // `branch_ids` at side `open_side` (1 or 2) only, appended to `coeffs`. AC: the
+            // branch's block goes, and the Kron-reduced end it keeps comes back (what
+            // BranchContainer stamps for a branch open at one end). DC: one open end is
+            // the whole branch out, as fillBdc has it. A branch already open at that end
+            // in the grid changes nothing; one open at its other end goes entirely.
+            static void _append_one_side_trips(const std::set<int> & branch_ids,
+                                               int open_side,
+                                               const LSGrid & grid_model,
+                                               bool ac_solver_used,
+                                               const SolverBusIdVect & id_me_to_solver,
+                                               size_t n_line,
+                                               std::vector<Coeff> & coeffs,
+                                               std::vector<std::pair<int, cplx_type> > & dc_shift_dp);
     };
 };
 
