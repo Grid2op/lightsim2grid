@@ -61,6 +61,25 @@ cmake.source-dir = "."
 wheel.packages = ["lightsim2grid"]
 # set to true temporarily for a verbose build while debugging
 build.verbose = false
+# The wheel embeds KLU and its dependencies and ships their headers and Eigen's,
+# so it carries their licenses too. Setting this replaces scikit-build-core's
+# default list, hence the first four entries.
+wheel.license-files = [
+    "LICEN[CS]E*",
+    "COPYING*",
+    "NOTICE*",
+    "AUTHORS*",
+    "eigen/COPYING.*",
+    "SuiteSparse/KLU/Doc/License.txt",
+    "SuiteSparse/KLU/Doc/lesser.txt",
+    "SuiteSparse/BTF/Doc/License.txt",
+    "SuiteSparse/BTF/Doc/lesser.txt",
+    "SuiteSparse/CXSparse/Doc/License.txt",
+    "SuiteSparse/CXSparse/Doc/lesser.txt",
+    "SuiteSparse/AMD/Doc/License.txt",
+    "SuiteSparse/COLAMD/Doc/License.txt",
+    "SuiteSparse/SuiteSparse_config/README.txt",
+]
 
 [tool.scikit-build.metadata.version]
 provider = "scikit_build_core.metadata.regex"
@@ -76,6 +95,18 @@ CMAKE_BUILD_TYPE = "Release"
 # scikit-build-core uses `git ls-files --recurse-submodules` as the file list,
 # so MANIFEST.in is *not* read — all filtering must be done here.
 [tool.scikit-build.sdist]
+# The licenses of the SuiteSparse components kept below: their Doc/ directories
+# are excluded for their size, and include takes precedence over exclude.
+include = [
+    "SuiteSparse/KLU/Doc/License.txt",
+    "SuiteSparse/KLU/Doc/lesser.txt",
+    "SuiteSparse/BTF/Doc/License.txt",
+    "SuiteSparse/BTF/Doc/lesser.txt",
+    "SuiteSparse/CXSparse/Doc/License.txt",
+    "SuiteSparse/CXSparse/Doc/lesser.txt",
+    "SuiteSparse/AMD/Doc/License.txt",
+    "SuiteSparse/COLAMD/Doc/License.txt",
+]
 exclude = [
     # files in git not usefull for release
     ".gitignore",
