@@ -222,6 +222,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
 - [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
   case: they accepted points ``sn_mva`` times less converged than asked.
+- [ADDED] (C++ / plugins) the wheel ships the KLU headers (``include/suitesparse/``, on
+  ``lightsim2grid::core``'s include path): plugins no longer need a SuiteSparse checkout.
+- [FIXED] the wheel and the sdist ship the licenses of the bundled SuiteSparse and Eigen code.
 - [FIXED] ``ContingencyAnalysis`` with a remote voltage regulator: connected rows failed after one
   iteration. A KLU refactorization with a zero or collapsed pivot now re-pivots (no new ``analyze``).
 

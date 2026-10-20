@@ -48,7 +48,12 @@ C++ consumer needs, inside the installed package directory:
 - ``liblightsim2grid_core.so`` (or ``.dylib`` / ``.dll``) next to the python
   extension;
 - the headers (including the bundled ``Eigen/``) under
-  ``lightsim2grid/include/``;
+  ``lightsim2grid/include/``, and the SuiteSparse headers ``KLU_SOLVER_AVAILABLE``
+  needs (``klu.h``, ``cs.h`` and the four they include) under
+  ``lightsim2grid/include/suitesparse/``, already on the include path of the
+  CMake target;
+- the licenses of the bundled Eigen and SuiteSparse code under
+  ``lightsim2grid/include/licenses/``;
 - a CMake package config under
   ``lightsim2grid/share/cmake/lightsim2grid_core/``.
 
@@ -90,7 +95,9 @@ always-available Eigen ``SparseLU`` algorithms (which are also the
 ``LSGrid`` defaults), and only the ``*_KLU`` entries of ``AlgorithmType``
 disappear. When KLU is found, ``KLU_SOLVER_AVAILABLE`` is defined on the
 target (and propagated to consumers) and the KLU code is baked into the
-shared library.
+shared library. When that KLU came from the submodule, its headers are installed
+to ``include/lightsim2grid/suitesparse/`` and put on the target's include path;
+a system KLU is expected to come with its own.
 
 A few environment variables tune the compilation, following the same
 convention as the python build: ``__O3_OPTIM`` (``-O3``, on by default),
