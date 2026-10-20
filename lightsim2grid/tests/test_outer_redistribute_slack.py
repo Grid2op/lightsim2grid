@@ -114,7 +114,8 @@ class TestOuterRedistributeSlack(unittest.TestCase):
         np.testing.assert_array_equal(np.flatnonzero(np.abs(V) == 0.), [LEAF_BUS])  # the island
         main = np.abs(V) > 0.
         np.testing.assert_allclose(V[main], V_ref[main], rtol=0., atol=1e-10)
-        p, _, _ = ref.get_gen_res()
+        # a copy: get_gen_res views the grid's own buffers, and `ref` dies with this call
+        p = np.array(ref.get_gen_res()[0])
         np.testing.assert_allclose(ca.get_gen_results()[0, :, 0], p, rtol=0., atol=1e-6)
         return p
 
