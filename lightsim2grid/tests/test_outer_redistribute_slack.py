@@ -114,7 +114,8 @@ class TestOuterRedistributeSlack(unittest.TestCase):
         np.testing.assert_array_equal(np.flatnonzero(np.abs(V) == 0.), [LEAF_BUS])  # the island
         main = np.abs(V) > 0.
         np.testing.assert_allclose(V[main], V_ref[main], rtol=0., atol=1e-10)
-        p, _, _ = ref.get_gen_res()
+        # get_gen_res is a view into `ref`, which does not keep it alive: `p` outlives it
+        p = ref.get_gen_res()[0].copy()
         np.testing.assert_allclose(ca.get_gen_results()[0, :, 0], p, rtol=0., atol=1e-6)
         return p
 

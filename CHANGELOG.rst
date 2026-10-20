@@ -3,6 +3,9 @@ Change Log
 
 [TODO]
 --------
+- ``LSGrid``'s result getters (``get_gen_res``...) return views that do not keep the grid alive:
+  read after the grid is gone, they show freed memory. ``reference_internal`` would fix it; to
+  benchmark and weigh first (``docs/dev_notes/result_view_lifetime.md``).
 - ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
   element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
   slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
