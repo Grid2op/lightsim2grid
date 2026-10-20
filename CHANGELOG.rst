@@ -223,6 +223,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [FIXED] ``LSGrid``'s result and target getters (``get_gen_res``, ``get_load_target_p``, ...) returned views
+  that did not keep the grid alive: read after the grid was collected, they read freed memory.
 - [ADDED] gradients with the outer loops (``NROuter_*``, ``NROuterDist_*``): ``keep_jacobian`` in the batch
   classes, ``solve_JT`` and the bus maps on ``LSGrid``. The last Newton's Jacobian, the loops' decisions held.
 - [ADDED] ``lightsim2grid.differentiable.GridPowerFlow``: one grid's powerflow as a pytorch operation.

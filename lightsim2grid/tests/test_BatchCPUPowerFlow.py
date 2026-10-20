@@ -662,8 +662,7 @@ class TestBatchCPUPowerFlowOuterLoops(unittest.TestCase):
         pf, tensors = self._check(lambda: self._make(distributed=True), inputs)
         # the capped unit: held at its bound whatever its set-point where that is below the
         # cap, left where its set-point puts it where that is already above (never pulled back)
-        grid = self._grid()   # alive while its targets are read: they are a view into it
-        p_max = float(grid.get_gen_target_p()[0]) + 1.
+        p_max = float(self._grid().get_gen_target_p()[0]) + 1.
         below = gen_p[:, 0] < p_max
         self.assertTrue(below.any() and (~below).any())
         for row in range(self.N_SCEN):
