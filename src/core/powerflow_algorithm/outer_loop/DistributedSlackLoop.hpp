@@ -99,6 +99,23 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
                                             const std::vector<real_type> & resumed_gen_p,
                                             const std::vector<real_type> & resumed_sto_p);
 
+        /// One unit the last solve left out of the Newton's share, at a bound (around a
+        /// distributed-slack Newton only): what a solve resuming from this loop's state parks
+        /// again (see _initialize).
+        struct ParkedUnit {
+            slack_redistribution::UnitKind kind;
+            int el_id;
+            bool high;          ///< at its upper bound, else at its lower one
+        };
+        /// read by _initialize on a resumed solve, and by an external batch solver resuming
+        /// rows from this loop's state (gpusim2grid's outer loops)
+        std::vector<ParkedUnit> parked_units() const {
+            std::vector<ParkedUnit> res;
+            for (std::size_t k = 0; k < units_.size() && k < parked_.size() && k < parked_high_.size(); ++k)
+                if (parked_[k]) res.push_back(ParkedUnit{units_[k].kind, units_[k].el_id, parked_high_[k] != 0});
+            return res;
+        }
+
     protected:
         std::string _name() const override { return "DistributedSlack"; }
         void _declare(const OuterContext & ctx) const override;
@@ -136,10 +153,9 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         /// unit k's upper (`high`) or lower bound, MW, as slack_redistribution::distribute has it
         /// (0 MW on the side of 0 its initial target is not on); NaN without one
         real_type _bound(std::size_t k, bool high) const;
-        /// park the units the solve this one resumes from parked (`was_parked`: kind, id, at the
-        /// upper bound), their targets moved to that bound
-        void _keep_parked(OuterContext & ctx,
-                          const std::vector<std::pair<std::pair<slack_redistribution::UnitKind, int>, char> > & was_parked);
+        /// park the units the solve this one resumes from parked, their targets moved to the
+        /// bound they were parked at
+        void _keep_parked(OuterContext & ctx, const std::vector<ParkedUnit> & was_parked);
         /// _check around a distributed-slack Newton
         OuterLoopStatus _check_in_newton(OuterContext & ctx);
 

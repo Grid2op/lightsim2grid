@@ -461,3 +461,41 @@ TEST_CASE("the reactive limits a solve's report reads are at the target P the lo
         check_no_reactive_violation(ca.get_physical_violations_n());
     }
 }
+
+TEST_CASE("in the Newton: the resume point tells which units were parked", "[outer_loop][distributed_slack]")
+{
+    // what an external batch solver reads to start its rows with the same units parked
+    const auto parked_of = [](const LSGrid & grid) {
+        const std::shared_ptr<const ls2g::OuterResumePoint> point = grid.get_algo().get_outer_resume_point();
+        REQUIRE(point != nullptr);
+        REQUIRE(point->loops.size() == 1);
+        const auto * loop = dynamic_cast<const DistributedSlackLoop *>(point->loops[0].get());
+        REQUIRE(loop != nullptr);
+        return loop->parked_units();
+    };
+    SECTION("a unit capped at its max_p") {
+        LSGrid grid = make_grid({1., 2., 3.}, {1000., 1000., 70.});
+        use_loop_in_newton(grid);
+        REQUIRE(solve(grid).size() == 4);
+        const std::vector<DistributedSlackLoop::ParkedUnit> parked = parked_of(grid);
+        REQUIRE(parked.size() == 1);
+        CHECK(parked[0].kind == ls2g::slack_redistribution::UnitKind::GENERATOR);
+        CHECK(parked[0].el_id == 2);
+        CHECK(parked[0].high);
+    }
+    SECTION("a unit capped at its min_p") {
+        LSGrid grid = make_grid({1., 2., 3.}, {1000., 1000., 1000.}, {50., 40., 160.}, {0., 30., 0.});
+        use_loop_in_newton(grid);
+        REQUIRE(solve(grid).size() == 4);
+        const std::vector<DistributedSlackLoop::ParkedUnit> parked = parked_of(grid);
+        REQUIRE(parked.size() == 1);
+        CHECK(parked[0].el_id == 1);
+        CHECK_FALSE(parked[0].high);
+    }
+    SECTION("no unit at a limit") {
+        LSGrid grid = make_grid({1., 2., 3.});
+        use_loop_in_newton(grid);
+        REQUIRE(solve(grid).size() == 4);
+        CHECK(parked_of(grid).empty());
+    }
+}

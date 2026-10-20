@@ -140,12 +140,8 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
     // the units the solve this one resumes from left out of the Newton's share (this object is
     // that solve's loop, or a clone of it): they stay out, rather than being pushed past their
     // bound again by the first solve. Matched by unit: a batch row may solve other units.
-    std::vector<std::pair<std::pair<slack_redistribution::UnitKind, int>, char> > was_parked;
-    if (ctx.resume) {
-        for (std::size_t k = 0; k < units_.size() && k < parked_.size() && k < parked_high_.size(); ++k) {
-            if (parked_[k]) was_parked.emplace_back(std::make_pair(units_[k].kind, units_[k].el_id), parked_high_[k]);
-        }
-    }
+    std::vector<ParkedUnit> was_parked;
+    if (ctx.resume) was_parked = parked_units();
     _solve_units(ctx);
     units_ = solve_units_;
     unit_solver_bus_ = solve_unit_bus_;
@@ -194,9 +190,7 @@ real_type DistributedSlackLoop::_bound(std::size_t k, bool high) const
     return lo;
 }
 
-void DistributedSlackLoop::_keep_parked(
-        OuterContext & ctx,
-        const std::vector<std::pair<std::pair<slack_redistribution::UnitKind, int>, char> > & was_parked)
+void DistributedSlackLoop::_keep_parked(OuterContext & ctx, const std::vector<ParkedUnit> & was_parked)
 {
     // At the bound it was parked at: a time series' step restarts its units from its own targets.
     // Safe either way: each check shares from the initial targets, so a unit kept out that should
@@ -205,10 +199,9 @@ void DistributedSlackLoop::_keep_parked(
     OuterInjections & state = *ctx.injections;
     const OuterGridView view = ctx.view();
     for (std::size_t k = 0; k < units_.size(); ++k) {
-        const std::pair<slack_redistribution::UnitKind, int> unit(units_[k].kind, units_[k].el_id);
-        for (const auto & parked : was_parked) {
-            if (parked.first != unit) continue;
-            const real_type bound = _bound(k, parked.second != 0);
+        for (const ParkedUnit & parked : was_parked) {
+            if (parked.kind != units_[k].kind || parked.el_id != units_[k].el_id) continue;
+            const real_type bound = _bound(k, parked.high);
             if (std::isnan(bound)) break;
             if (units_[k].kind == slack_redistribution::UnitKind::GENERATOR) {
                 state.move_gen_target_p(view, units_[k].el_id, unit_solver_bus_[k], bound);
@@ -217,7 +210,7 @@ void DistributedSlackLoop::_keep_parked(
             }
             current_mw_[k] = bound;
             parked_[k] = 1;
-            parked_high_[k] = parked.second;
+            parked_high_[k] = parked.high ? 1 : 0;
             break;
         }
     }
