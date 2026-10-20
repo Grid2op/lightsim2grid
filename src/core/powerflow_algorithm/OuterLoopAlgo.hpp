@@ -213,7 +213,9 @@ public:
     IntVect   get_controller_q_col()   const override { return inner_.algo().get_controller_q_col(); }
     IntVect   get_group_v_row()        const override { return inner_.algo().get_group_v_row(); }
     int       get_slack_col()          const override { return inner_.algo().get_slack_col(); }
-    real_type get_slack_absorbed()     const override { return inner_.algo().get_slack_absorbed(); }
+    // 0 after a solve: a distributed-slack Newton's share is in the units' targets (see
+    // _fold_slack_share), and a single-slack one has none
+    real_type get_slack_absorbed()     const override { return inner_.published_slack_absorbed(); }
 
     // the inner algorithm's timers, over every solve of the last compute_pf, with the
     // driver's total
@@ -254,6 +256,8 @@ private:
     bool _solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic);
     // the loops' reservations, on a rebuild of the topology (see Inner::setup)
     void _declare();
+    // the slack a distributed-slack Newton shared, moved into the units' targets (see the .tpp)
+    void _fold_slack_share();
     // OuterContext on the algorithm's current state
     OuterContext _context();
     // resuming: the taps and sections the last solve settled on, asked of the controls

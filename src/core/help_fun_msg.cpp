@@ -737,6 +737,25 @@ const std::string DocSolver::NROuter = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::NROuterDist = R"mydelimiter(
+    The ``NROuter_*`` algorithms around a distributed-slack Newton (the ``NROuterDist_*``
+    family: ``NROuterDist_SparseLU``, ``NROuterDist_KLU``, ...): the same outer loops and the
+    same driver, but the Newton shares the active power imbalance itself, inside its Jacobian,
+    on the units flagged "can participate in the slack" (by weight, without bounds).
+
+    The ``DistributedSlack`` loop then only steps in for the units this sharing pushes past a
+    limit -- above ``max_p``, below ``min_p`` or across 0 MW --: it sets them at that limit and
+    takes them out of the sharing, in the Newton as in its own redistribution, until the
+    sharing would bring them back inside. When no unit hits a limit, the first solve is the
+    answer and the loop costs no re-solve.
+
+    The dispatch differs from OpenLoadFlow's by at most the loop's
+    ``slack_bus_p_max_mismatch_mw``: OpenLoadFlow stops once the reference bus' mismatch is
+    below it and leaves that on the reference, where the Newton shares it out.
+    ``NROuter_*`` stays OpenLoadFlow's exact reproduction.
+
+)mydelimiter";
+
 const std::string DocSolver::OuterLoopDriverParams = R"mydelimiter(
     The parameters of the outer-loop driver of the ``NROuter_*`` algorithms, with OpenLoadFlow's
     names: ``maxOuterLoopIterations``, ``voltageRemoteControlRobustMode``,

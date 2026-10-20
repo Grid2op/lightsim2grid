@@ -50,6 +50,22 @@ class LSGrid;
  * UNSTABLE when the targets moved, FAILED when some of the mismatch could not be shared
  * (every unit at a bound) and `Params::fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its
  * LEAVE_ON_SLACK_BUS: the slack bus keeps it).
+ *
+ * Around a distributed-slack Newton (NROuterDist_*, OuterControls::supports_slack_share) the
+ * Newton shares the slack itself, by weight and without bounds, on the same units: the loop
+ * reserves their buses (declare) and hands it their weights (SlackShareControl). After a solve
+ * the driver has moved each unit's target by its share; the loop then shares the same cumulative
+ * mismatch from the initial targets as above. A unit that sharing saturates -- above `max_p`,
+ * below `min_p`, across 0 MW -- is set at its bound and takes no share in the Newton any more
+ * (weight 0); one that comes back inside its bounds gets its weight back. When no unit is pushed
+ * past a bound the targets do not move: the loop is stable after the first solve. A solve resumed
+ * from another (a batch row from its "n" solve, a time series' next step) starts with the units
+ * that solve left out still out, and a batch row with the units the share of its lost power put
+ * at a bound out as well. Both bet that the next solve pushes them the same way; when it does
+ * not, the check gives them their weight back, at the cost of a re-solve. Every unit at a
+ * bound: FAILED as above, or the reference bus takes the rest (LEAVE_ON_SLACK_BUS). The
+ * dispatch differs from OpenLoadFlow's by at most `Params::slack_bus_p_max_mismatch_mw`, which
+ * OpenLoadFlow leaves on the reference bus and the Newton shares out.
  */
 class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
 {
@@ -85,6 +101,7 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
 
     protected:
         std::string _name() const override { return "DistributedSlack"; }
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;
@@ -106,12 +123,34 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         /// the row's loss shared on the participants (see lost_p_to_share_mw), their targets
         /// moved and taken as the initial ones; nothing without a loss to share
         void _share_lost_p(OuterContext & ctx);
+        /// whether the Newton shares the slack itself (see the class comment)
+        static bool _in_newton(const OuterContext & ctx);
+        /// the units' targets in force now, MW, generator convention
+        void _targets_in_force(const OuterContext & ctx, std::vector<real_type> & out) const;
+        /// hand the Newton the units' weights, 0 for the parked ones
+        void _set_newton_weights(OuterContext & ctx) const;
+        /// unit k's upper (`high`) or lower bound, MW, as slack_redistribution::distribute has it
+        /// (0 MW on the side of 0 its initial target is not on); NaN without one
+        real_type _bound(std::size_t k, bool high) const;
+        /// park the units the solve this one resumes from parked (`was_parked`: kind, id, at the
+        /// upper bound), their targets moved to that bound
+        void _keep_parked(OuterContext & ctx,
+                          const std::vector<std::pair<std::pair<slack_redistribution::UnitKind, int>, char> > & was_parked);
+        /// _check around a distributed-slack Newton
+        OuterLoopStatus _check_in_newton(OuterContext & ctx);
 
         // per solve (see _initialize): the participants, with their initial injection
         // (generator convention, MW), and where each one is now
         std::vector<slack_redistribution::Participant> units_;
         std::vector<int> unit_solver_bus_;
         std::vector<real_type> current_mw_;
+        // around a distributed-slack Newton: the units at a bound, out of its share, and for each
+        // whether at its upper one (else its lower one)
+        std::vector<char> parked_;
+        std::vector<char> parked_high_;
+        // the units the row's lost-power share (_share_lost_p) put at a bound, and on which side
+        std::vector<char> lost_p_saturated_;
+        bool lost_p_high_ = false;
 
         const Params params_;
 };

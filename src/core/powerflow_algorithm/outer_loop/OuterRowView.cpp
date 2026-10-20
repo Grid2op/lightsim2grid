@@ -89,6 +89,11 @@ bool OuterGridView::gen_on(int gen_id) const
     return unit_on(grid_.get_generators(), row_ != nullptr ? &row_->gens : nullptr, gen_id);
 }
 
+real_type OuterGridView::sn_mva() const
+{
+    return grid_.get_sn_mva();
+}
+
 int OuterGridView::gen_bus_solver(int gen_id) const
 {
     return unit_bus_solver(grid_.get_generators(), row_ != nullptr ? &row_->gens : nullptr, gen_id, id_me_to_solver());

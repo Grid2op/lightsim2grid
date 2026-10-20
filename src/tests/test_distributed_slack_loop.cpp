@@ -38,7 +38,9 @@ namespace {
 // 1 (40 MW) and 2 (60 MW), every one flagged "can participate in the slack" with the given
 // weights, between 0 and its `max_p` MW
 LSGrid make_grid(const std::vector<real_type> & weights,
-                 const std::vector<real_type> & max_p = {1000., 1000., 1000.})
+                 const std::vector<real_type> & max_p = {1000., 1000., 1000.},
+                 const std::vector<real_type> & target_p = {50., 40., 60.},
+                 const std::vector<real_type> & min_p = {0., 0., 0.})
 {
     LSGrid grid;
     grid.set_sn_mva(100.);
@@ -56,7 +58,7 @@ LSGrid make_grid(const std::vector<real_type> & weights,
     load_bus << 3;
     grid.init_loads(load_p, load_q, load_bus);
     RealVect gen_p(3), gen_v(3), gen_min_q(3), gen_max_q(3);
-    gen_p << 50., 40., 60.;
+    gen_p << target_p[0], target_p[1], target_p[2];
     gen_v << 1.02, 1.01, 1.01;
     gen_min_q << -500., -500., -500.;
     gen_max_q << 500., 500., 500.;
@@ -67,9 +69,12 @@ LSGrid make_grid(const std::vector<real_type> & weights,
     RealVect w(3);
     for (int i = 0; i < 3; ++i) w(i) = weights[i];
     grid.set_gen_can_participate_slack({true, true, true}, w);
-    RealVect p_max(3);
-    for (int i = 0; i < 3; ++i) p_max(i) = max_p[i];
-    grid.set_gen_p_limits(RealVect::Zero(3), p_max);
+    RealVect p_min(3), p_max(3);
+    for (int i = 0; i < 3; ++i) {
+        p_min(i) = min_p[i];
+        p_max(i) = max_p[i];
+    }
+    grid.set_gen_p_limits(p_min, p_max);
     return grid;
 }
 
@@ -86,6 +91,31 @@ void use_loop(LSGrid & grid, real_type threshold_mw = 1e-6, bool fail_on_residue
     params.slack_bus_p_max_mismatch_mw = threshold_mw;
     params.fail_on_residue = fail_on_residue;
     grid.add_outer_loop(std::make_shared<DistributedSlackLoop>(params));
+}
+
+// the same loop around the distributed-slack Newton (NROuterDist_*)
+void use_loop_in_newton(LSGrid & grid, bool fail_on_residue = true)
+{
+    grid.change_algorithm("NROuterDist_SparseLU");
+    grid.clear_outer_loops();
+    DistributedSlackLoop::Params params;
+    params.fail_on_residue = fail_on_residue;
+    grid.add_outer_loop(std::make_shared<DistributedSlackLoop>(params));
+}
+
+// lightsim2grid's own distributed slack on `grid`, the units `in_slack` sharing it with their
+// "can participate" weights, the others at their target: what the loop in the Newton must give
+// once it has capped the others. The slack set is set from scratch: a unit flagged "can
+// participate" whose target was changed (change_p_gen) joined it.
+CplxVect solve_with_slack_units(LSGrid & grid, const std::vector<int> & in_slack)
+{
+    const ls2g::GeneratorContainer & gens = grid.get_generators();
+    std::vector<real_type> w;
+    for (int gen_id : in_slack) w.push_back(gens.get_can_participate_slack_weight(gen_id));
+    for (int gen_id = 0; gen_id < gens.nb(); ++gen_id) grid.remove_gen_slackbus(gen_id);
+    for (std::size_t k = 0; k < in_slack.size(); ++k) grid.add_gen_slackbus(in_slack[k], w[k]);
+    grid.change_algorithm("NR_SparseLU");
+    return solve(grid);
 }
 
 RealVect gen_p(const LSGrid & grid)
@@ -224,4 +254,121 @@ TEST_CASE("only the slack unit flagged: the loop leaves it past its limit, no fa
     CHECK(p(0) > 80.);
     CHECK(p(1) == Approx(40.));
     CHECK(p(2) == Approx(60.));
+}
+
+// ---------------------------------------------------------------------------------------------
+// the loop around the distributed-slack Newton (NROuterDist_*): the Newton shares the slack on the
+// units flagged "can participate", the loop only caps the units it pushes past a limit
+// ---------------------------------------------------------------------------------------------
+
+TEST_CASE("in the Newton: no unit at a limit, the first solve is the answer", "[outer_loop][distributed_slack]")
+{
+    const std::vector<real_type> weights{1., 2., 3.};
+    LSGrid ref = make_grid(weights);
+    const CplxVect V_ref = solve_with_slack_units(ref, {0, 1, 2});
+    REQUIRE(V_ref.size() == 4);
+
+    LSGrid grid = make_grid(weights);
+    use_loop_in_newton(grid);
+    const CplxVect V = solve(grid);
+    REQUIRE(V.size() == 4);
+    const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    CHECK(stats.nb_outer_iterations == 0);
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+    // nothing left on the slack bus: the same solution as the in-Newton slack's
+    for (int i = 0; i < 4; ++i) CHECK(std::abs(V(i) - V_ref(i)) < 1e-9);
+    const RealVect p = gen_p(grid), p_ref = gen_p(ref);
+    for (int i = 0; i < 3; ++i) CHECK(p(i) == Approx(p_ref(i)).margin(1e-6));
+}
+
+TEST_CASE("in the Newton: a unit pushed past a limit is capped and leaves the slack", "[outer_loop][distributed_slack]")
+{
+    struct Case { const char * name; std::vector<real_type> max_p, target_p, min_p; int capped; real_type at; };
+    const std::vector<Case> cases{
+        // 150 MW for a 200 MW load: the third unit would take more than 10 MW
+        {"above max_p", {1000., 1000., 70.}, {50., 40., 60.}, {0., 0., 0.}, 2, 70.},
+        // 250 MW for the same load: the second unit would drop below 30 MW
+        {"below min_p", {1000., 1000., 1000.}, {50., 40., 160.}, {0., 30., 0.}, 1, 30.},
+        // the same surplus, the second unit at 5 MW: it would go below 0 MW, its min_p allowing it
+        {"across 0 MW", {1000., 1000., 1000.}, {50., 5., 190.}, {-100., -100., -100.}, 1, 0.},
+    };
+    for (const Case & c : cases) {
+        SECTION(c.name) {
+            const std::vector<real_type> weights{1., 2., 3.};
+            LSGrid grid = make_grid(weights, c.max_p, c.target_p, c.min_p);
+            use_loop_in_newton(grid);
+            const CplxVect V = solve(grid);
+            REQUIRE(V.size() == 4);
+            const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+            CHECK(stats.status == OuterLoopStatus::STABLE);
+            CHECK(stats.nb_outer_iterations >= 1);
+            CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+            const RealVect p = gen_p(grid);
+            CHECK(p(c.capped) == Approx(c.at).margin(1e-6));
+
+            // the others share the rest by weight, inside the Newton: as lightsim2grid's own
+            // distributed slack with the capped unit at its limit
+            LSGrid ref = make_grid(weights, c.max_p, c.target_p, c.min_p);
+            ref.change_p_gen(c.capped, c.at);
+            std::vector<int> others;
+            for (int i = 0; i < 3; ++i) if (i != c.capped) others.push_back(i);
+            const CplxVect V_ref = solve_with_slack_units(ref, others);
+            REQUIRE(V_ref.size() == 4);
+            for (int i = 0; i < 4; ++i) CHECK(std::abs(V(i) - V_ref(i)) < 1e-9);
+            const RealVect p_ref = gen_p(ref);
+            for (int i = 0; i < 3; ++i) CHECK(p(i) == Approx(p_ref(i)).margin(1e-6));
+        }
+    }
+}
+
+TEST_CASE("in the Newton: every unit at its limit fails, or the slack bus keeps the rest", "[outer_loop][distributed_slack]")
+{
+    SECTION("fail_on_residue (OpenLoadFlow's FAIL)") {
+        LSGrid grid = make_grid({1., 2., 3.}, {65., 65., 65.});  // 195 MW at most for a 200 MW load
+        use_loop_in_newton(grid, true);
+        CHECK(solve(grid).size() == 0);
+        CHECK(grid.get_algo().get_error() == ErrorType::OuterLoopFailed);
+        CHECK(grid.get_algo().get_outer_loop_stats().failed_loop == "DistributedSlack");
+    }
+    SECTION("leave it on the slack bus") {
+        LSGrid grid = make_grid({1., 2., 3.}, {65., 65., 65.});
+        use_loop_in_newton(grid, false);
+        REQUIRE(solve(grid).size() == 4);
+        CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+        const RealVect p = gen_p(grid);
+        CHECK(p(1) == Approx(65.).margin(1e-6));
+        CHECK(p(2) == Approx(65.).margin(1e-6));
+        CHECK(p(0) > 65.);  // the slack generator: its limit plus what is left
+        // as a single slack with the two others at their limit
+        LSGrid ref = make_grid({1., 2., 3.}, {65., 65., 65.});
+        ref.change_p_gen(0, 65.);
+        ref.change_p_gen(1, 65.);
+        ref.change_p_gen(2, 65.);
+        ref.change_algorithm("NRSing_SparseLU");
+        const CplxVect V_ref = solve(ref);
+        REQUIRE(V_ref.size() == 4);
+        const CplxVect V = grid.get_V();
+        for (int i = 0; i < 4; ++i) CHECK(std::abs(V(i) - V_ref(i)) < 1e-9);
+        CHECK(p(0) == Approx(gen_p(ref)(0)).margin(1e-6));
+    }
+}
+
+TEST_CASE("in the Newton, without the loop: the single slack", "[outer_loop][distributed_slack]")
+{
+    // no DistributedSlack loop: nothing is shared, the reference bus takes it all, as NROuter_*
+    LSGrid ref = make_grid({1., 2., 3.});
+    ref.change_algorithm("NROuter_SparseLU");
+    ref.clear_outer_loops();
+    const CplxVect V_ref = solve(ref);
+    REQUIRE(V_ref.size() == 4);
+
+    LSGrid grid = make_grid({1., 2., 3.});
+    grid.change_algorithm("NROuterDist_SparseLU");
+    grid.clear_outer_loops();
+    const CplxVect V = solve(grid);
+    REQUIRE(V.size() == 4);
+    for (int i = 0; i < 4; ++i) CHECK(std::abs(V(i) - V_ref(i)) < 1e-9);
+    const RealVect p = gen_p(grid), p_ref = gen_p(ref);
+    for (int i = 0; i < 3; ++i) CHECK(p(i) == Approx(p_ref(i)).margin(1e-6));
 }

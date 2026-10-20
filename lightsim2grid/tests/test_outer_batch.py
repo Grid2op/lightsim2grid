@@ -57,6 +57,12 @@ def _v0(grid):
     return np.full(grid.total_bus(), 1.04 + 0j)
 
 
+def _plain(algo):
+    """the Newton-Raphson an outer-loop algorithm wraps, as a plain algorithm (its batch counts
+    the analyses and factorizations the outer one must not exceed)"""
+    return algo.replace("NROuterDist", "NR").replace("NROuter", "NR")
+
+
 def _resume_on(grid):
     """a grid whose next solves start their loops from where the last one left them"""
     cfg = grid.get_ac_algo_config()
@@ -92,6 +98,13 @@ class _Equivalence:
 
     # whether row i starts from row i - 1's voltages (TimeSeries) rather than from the seed
     CHAINED = False
+    # the algorithm of the batch and of the single solves
+    ALGO = OUTER
+
+    def _grid(self, distributed=True):
+        grid = _grid(distributed)
+        grid.change_algorithm(self.ALGO)
+        return grid
 
     def _check_rows(self, make_batch, row_grids, nb_thread=1, v_starts=None):
         """`v_starts`: the voltages each row's reference starts from (the batch's seed, or the
@@ -99,7 +112,7 @@ class _Equivalence:
         batch = make_batch()
         if nb_thread > 1:
             batch.nb_thread = nb_thread
-        batch.change_algorithm(OUTER)
+        batch.change_algorithm(self.ALGO)
         batch.compute_gen_results = True
         batch.compute(_v0(self.base), MAX_IT, TOL)
         Vs = batch.get_voltages()
@@ -140,7 +153,7 @@ class _Equivalence:
         plain = make_batch()
         if nb_thread > 1:
             plain.nb_thread = nb_thread
-        plain.change_algorithm(OUTER.replace("NROuter", "NR"))
+        plain.change_algorithm(_plain(self.ALGO))
         plain.compute(_v0(self.base), MAX_IT, TOL)
         stats = batch.get_linear_solver_stats()
         ref = plain.get_linear_solver_stats()
@@ -152,12 +165,12 @@ class _Equivalence:
 
 class TestOuterContingencyAnalysis(_Equivalence, unittest.TestCase):
     def setUp(self):
-        self.base = _grid()
+        self.base = self._grid()
 
     def _rows(self):
         rows = []
         for line_id in range(N_ROWS):
-            grid = _grid()
+            grid = self._grid()
             grid.deactivate_powerline(line_id)
             rows.append(grid)
         return rows
@@ -177,7 +190,7 @@ class TestOuterContingencyAnalysis(_Equivalence, unittest.TestCase):
 
 class TestOuterScenarioSweep(_Equivalence, unittest.TestCase):
     def setUp(self):
-        self.base = _grid()
+        self.base = self._grid()
         gen_p = np.array([g.target_p_mw for g in self.base.get_generators()])
         load_p = np.asarray(self.base.get_load_target_p())
         scale = 1. + 0.05 * np.arange(N_ROWS)
@@ -190,7 +203,7 @@ class TestOuterScenarioSweep(_Equivalence, unittest.TestCase):
     def _rows(self):
         rows = []
         for i in range(N_ROWS):
-            grid = _grid()
+            grid = self._grid()
             for load_id, p in enumerate(self.load_p[i]):
                 grid.change_p_load(load_id, float(p))
             grid.deactivate_powerline(i + 1)
@@ -215,7 +228,7 @@ class _InjectionRows(_Equivalence):
     """a load increase per row"""
 
     def setUp(self):
-        self.base = _grid()
+        self.base = self._grid()
         load_p = np.asarray(self.base.get_load_target_p())
         self.load_p = np.outer(1. + 0.05 * np.arange(N_ROWS), load_p)
         self.gen_p = np.outer(np.ones(N_ROWS), [g.target_p_mw for g in self.base.get_generators()])
@@ -223,7 +236,7 @@ class _InjectionRows(_Equivalence):
     def _rows(self):
         rows = []
         for i in range(N_ROWS):
-            grid = _grid()
+            grid = self._grid()
             for load_id, p in enumerate(self.load_p[i]):
                 grid.change_p_load(load_id, float(p))
             rows.append(grid)
@@ -256,10 +269,10 @@ class TestOuterTimeSeries(_InjectionRows, unittest.TestCase):
 
     def _rows(self):
         # one grid solved row after row, its loops resuming from the previous solve
-        grid = _resume_on(_grid())
+        grid = _resume_on(self._grid())
         rows = []
         for i in range(N_ROWS):
-            row = _grid()
+            row = self._grid()
             for load_id, p in enumerate(self.load_p[i]):
                 row.change_p_load(load_id, float(p))
             rows.append(row)
@@ -276,11 +289,11 @@ class TestOuterTimeSeries(_InjectionRows, unittest.TestCase):
     def test_rows_resume_from_the_previous_one(self):
         # resuming, a row needs fewer outer iterations than starting the loops afresh
         ts = self._fill(TimeSeriesCPP(self.base))
-        ts.change_algorithm(OUTER)
+        ts.change_algorithm(self.ALGO)
         ts.compute(_v0(self.base), MAX_IT, TOL)
         resumed = [r.nb_outer_iterations for r in ts.get_outer_results()]
         fresh = self._fill(InjectionSweepCPP(self.base))
-        fresh.change_algorithm(OUTER)
+        fresh.change_algorithm(self.ALGO)
         fresh.compute(_v0(self.base), MAX_IT, TOL)
         restarted = [r.nb_outer_iterations for r in fresh.get_outer_results()]
         self.assertLess(sum(resumed[1:]), sum(restarted[1:]))
@@ -291,7 +304,7 @@ class _FromN(_Equivalence):
     equations its loops left (frozen buses, taps, ...) -- not from the grid's"""
 
     def _make_grid(self):
-        return _grid()
+        return self._grid()
 
     def _change_row(self, i, grid):
         raise NotImplementedError
@@ -320,7 +333,7 @@ class _FromN(_Equivalence):
         # what the "n" solve's loops did is not redone: fewer outer iterations than each row
         # starting its loops afresh from the "n" voltages
         batch = self._batch_from_n()
-        batch.change_algorithm(OUTER)
+        batch.change_algorithm(self.ALGO)
         batch.compute(_v0(self.base), MAX_IT, TOL)
         resumed = sum(r.nb_outer_iterations for r in batch.get_outer_results())
         afresh = 0
@@ -337,7 +350,7 @@ class TestOuterContingencyAnalysisFromN(_FromN, unittest.TestCase):
     # no DistributedSlack: a row that keeps the grid's targets starts from where the "n" solve's
     # moved them, which no single solve does (see TestOuterRowThatChangesNothing)
     def _make_grid(self):
-        return _grid(distributed=False)
+        return self._grid(distributed=False)
 
     def setUp(self):
         self.base = self._make_grid()

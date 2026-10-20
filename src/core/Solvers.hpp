@@ -45,6 +45,8 @@ using FDPF_XB_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, 
 using FDPF_BX_SparseLU = BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::BX>;
 /** Single-slack Newton-Raphson with OpenLoadFlow's outer loops, Eigen SparseLU linear solver **/
 using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLULinearSolver>>>;
+/** NROuter_SparseLU around a distributed-slack Newton: the loops only cap the units it pushes past a limit **/
+using NROuterDist_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLULinearSolver>, OuterDistNRSystem>>;
 // NB: SparseLU's factorize()==refactorize() already (Eigen has no cheaper "reuse pivot
 // order" refactor), so there is deliberately no NRRefactorRetry_SparseLU -- wrapping it
 // would be a no-op retry.
@@ -69,6 +71,8 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     using NRRefactorRetry_KLU = NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
     /** Single-slack Newton-Raphson with OpenLoadFlow's outer loops, KLU linear solver **/
     using NROuter_KLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>>>;
+    /** NROuter_KLU around a distributed-slack Newton: the loops only cap the units it pushes past a limit **/
+    using NROuterDist_KLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>, OuterDistNRSystem>>;
     // KLU's factorization, with a static-pivot refactorization (see
     // linear_solvers/KLUStaticPivotSolver.hpp). DC and FDPF factorize once per solve and
     // have nothing to gain from it.
@@ -78,6 +82,8 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     using NRSing_KLUStaticPivot = NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, SingleSlackNRSystem>;
     /** Single-slack Newton-Raphson with OpenLoadFlow's outer loops, KLU and a static-pivot refactorization **/
     using NROuter_KLUStaticPivot = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>>>;
+    /** NROuter_KLUStaticPivot around a distributed-slack Newton: the loops only cap the units it pushes past a limit **/
+    using NROuterDist_KLUStaticPivot = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>, OuterDistNRSystem>>;
 #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -98,6 +104,8 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     using NRRefactorRetry_NICSLU = NRAlgo<RefactorRetryLinearSolver<NICSLULinearSolver>, MultiSlackNRSystem>;
     /** Single-slack Newton-Raphson with OpenLoadFlow's outer loops, NICSLU linear solver (requires license) **/
     using NROuter_NICSLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<NICSLULinearSolver>>>;
+    /** NROuter_NICSLU around a distributed-slack Newton: the loops only cap the units it pushes past a limit **/
+    using NROuterDist_NICSLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<NICSLULinearSolver>, OuterDistNRSystem>>;
 #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -118,6 +126,8 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     using NRRefactorRetry_CKTSO = NRAlgo<RefactorRetryLinearSolver<CKTSOLinearSolver>, MultiSlackNRSystem>;
     /** Single-slack Newton-Raphson with OpenLoadFlow's outer loops, CKTSO linear solver (requires license) **/
     using NROuter_CKTSO = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<CKTSOLinearSolver>>>;
+    /** NROuter_CKTSO around a distributed-slack Newton: the loops only cap the units it pushes past a limit **/
+    using NROuterDist_CKTSO = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<CKTSOLinearSolver>, OuterDistNRSystem>>;
 #endif  // CKTSO_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 
@@ -128,6 +138,7 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     extern template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::XB>;
     extern template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::BX>;
     extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLULinearSolver>>>;
+    extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLULinearSolver>, OuterDistNRSystem>>;
 
 #if defined(KLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<KLULinearSolver>, MultiSlackNRSystem>;
@@ -137,9 +148,11 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     extern template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMethod::BX>;
     extern template class LS2G_API NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
     extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>>>;
+    extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>, OuterDistNRSystem>>;
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, MultiSlackNRSystem>;
     extern template class LS2G_API NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, SingleSlackNRSystem>;
     extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>>>;
+    extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>, OuterDistNRSystem>>;
 #endif
 
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -150,6 +163,7 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     extern template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<NICSLULinearSolver>, FDPFMethod::BX>;
     extern template class LS2G_API NRAlgo<RefactorRetryLinearSolver<NICSLULinearSolver>, MultiSlackNRSystem>;
     extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<NICSLULinearSolver>>>;
+    extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<NICSLULinearSolver>, OuterDistNRSystem>>;
 #endif
 
 #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -160,6 +174,7 @@ using NROuter_SparseLU = OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLUL
     extern template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<CKTSOLinearSolver>, FDPFMethod::BX>;
     extern template class LS2G_API NRAlgo<RefactorRetryLinearSolver<CKTSOLinearSolver>, MultiSlackNRSystem>;
     extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<CKTSOLinearSolver>>>;
+    extern template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<CKTSOLinearSolver>, OuterDistNRSystem>>;
 #endif
 #endif // LS2G_BUILDING_CORE
 

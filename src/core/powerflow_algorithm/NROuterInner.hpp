@@ -30,6 +30,7 @@ protected:
     bool _supports_phase_shifters() const override { return system_.branch_control() != nullptr; }
     bool _supports_ratio_groups() const override { return system_.branch_control() != nullptr; }
     bool _supports_shunt_groups() const override { return system_.shunt_control() != nullptr; }
+    bool _supports_slack_share() const override { return system_.has_multi_slack(); }
     bool _shunt_handled(int bus) const override {
         const ShuntControl * shunt = system_.shunt_control();
         return shunt != nullptr && shunt->handles(bus);
@@ -81,6 +82,8 @@ private:
  *
  * NRSystem must carry the extensions the loops act through (VoltageControl, BranchControl,
  * ShuntControl, Hvdc); a missing BranchControl or ShuntControl only disables what needs it.
+ * With MultiSlack (OuterDistNRSystem), the Newton shares the slack itself, on the units a loop
+ * hands it (SlackShareControl), the reference bus alone when there is none.
  */
 template<class LinearSolver, class NRSystem = SingleSlackNRSystem>
 class NROuterInner
@@ -122,6 +125,8 @@ public:
                Declare                          && declare)
     {
         algo_.system().set_branch_mutable_ybus(&Ybus);
+        nb_bus_ = V.size();
+        ref_bus_ = slack_ids.size() > 0 ? slack_ids(0) : -1;
         return algo_.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, need_init,
                            [&](){ controls_.clear_reservations(); declare(); _reserve(); });
     }
@@ -133,7 +138,24 @@ public:
         if (branch != nullptr) branch->set_in_solve(std::move(in_solve));
     }
 
-    bool newton(int max_iter, real_type tol, bool need_init) { return algo_.newton(max_iter, tol, need_init); }
+    bool newton(int max_iter, real_type tol, bool need_init) {
+        slack_taken_ = false;
+        return algo_.newton(max_iter, tol, need_init);
+    }
+
+    // The slack the last newton shared inside the Jacobian (pu, < 0 when the units must produce
+    // more), once: the caller moves it into the units' targets (OuterLoopAlgo::_fold_slack_share),
+    // and from then on the Newton holds none of it (0 here, in the loops' context and in
+    // published_slack_absorbed) until the next newton, which re-derives it from the balance.
+    // 0 without MultiSlack.
+    real_type take_slack_absorbed() {
+        if (slack_taken_) return 0.;
+        slack_taken_ = true;
+        return algo_.system().slack_absorbed();
+    }
+    real_type published_slack_absorbed() const { return slack_taken_ ? 0. : algo_.system().slack_absorbed(); }
+    // the reference bus of the last setup (solver id), -1 without one
+    int reference_bus() const { return ref_bus_; }
     void finalize() { algo_.finalize(); }
     // what the loops reserve changed: rebuild the sparsity on the next setup
     void request_rebuild() { algo_.request_rebuild(); }
@@ -147,7 +169,7 @@ public:
     void fill_context(OuterContext & ctx, RealVect & controller_q) const {
         controller_q = algo_.system().controller_q();
         ctx.controller_q = &controller_q;
-        ctx.slack_absorbed = algo_.system().slack_absorbed();
+        ctx.slack_absorbed = published_slack_absorbed();
     }
 
     // per solver bus, whether its magnitude is an unknown of the last solve; a pinned bus
@@ -196,6 +218,9 @@ private:
     Algo algo_;
     NROuterControls<NRSystem> controls_;
     std::vector<int> pinned_;  // the buses pinned PV in the last solve
+    Eigen::Index nb_bus_ = 0;  // of the last setup
+    int ref_bus_ = -1;         // of the last setup
+    bool slack_taken_ = false; // see take_slack_absorbed
 };
 
 template<class LinearSolver, class NRSystem>
@@ -235,6 +260,9 @@ void NROuterInner<LinearSolver, NRSystem>::_reserve()
         shunt_groups.push_back(d);
     }
     system.set_shunt_groups(shunt_groups);
+    // the buses whose units share the slack inside the Newton
+    const SlackShareControl * share = controls_.slack_share();
+    system.set_slack_participant_buses(share != nullptr ? share->buses() : std::vector<int>());
 }
 
 template<class LinearSolver, class NRSystem>
@@ -286,6 +314,19 @@ void NROuterInner<LinearSolver, NRSystem>::apply_controls()
     std::vector<real_type> vm;
     controls_.take_pending_vm(buses, vm);
     if(!buses.empty()) system.set_vm_at(buses, vm);
+    // the units' weights in the Newton's share of the slack, normalised; none: the reference
+    // bus takes it all
+    if(system.has_multi_slack()) {
+        RealVect weights = RealVect::Zero(nb_bus_);
+        const SlackShareControl * share = controls_.slack_share();
+        const real_type total = share != nullptr ? share->total_weight() : 0.;
+        if(total > 0.) {
+            for(const auto & unit : share->units()) weights(unit.bus_solver) += unit.weight / total;
+        } else if(ref_bus_ >= 0 && ref_bus_ < nb_bus_) {
+            weights(ref_bus_) = 1.;
+        }
+        system.set_slack_weights(weights);
+    }
 }
 
 }  // namespace ls2g

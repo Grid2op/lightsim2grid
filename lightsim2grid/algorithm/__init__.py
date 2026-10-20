@@ -24,6 +24,7 @@ __all__ = ["AlgorithmType",
            "FDPF_XB_SparseLU",
            "FDPF_BX_SparseLU",
            "NROuter_SparseLU",
+           "NROuterDist_SparseLU",
            "BaseOuterLoop",
            "OuterLoopStatus",
            "OuterLoopStats",
@@ -55,6 +56,7 @@ from ..lightsim2grid_cpp import DC_SparseLU  # AlgorithmType.DC_SparseLU  # pyri
 from ..lightsim2grid_cpp import FDPF_XB_SparseLU  # AlgorithmType.FDPF_XB_SparseLU  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import FDPF_BX_SparseLU  # AlgorithmType.FDPF_BX_SparseLU  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import NROuter_SparseLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import NROuterDist_SparseLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import BaseOuterLoop  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import OuterLoopStatus  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import OuterLoopStats  # pyright: ignore[reportMissingImports]
@@ -75,6 +77,7 @@ try:
     from ..lightsim2grid_cpp import FDPF_BX_KLU  # AlgorithmType.FDPF_BX_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import NRRefactorRetry_KLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import NROuter_KLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NROuterDist_KLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("NR_KLU")
     __all__.append("NRSing_KLU")
     __all__.append("DC_KLU")
@@ -82,12 +85,15 @@ try:
     __all__.append("FDPF_BX_KLU")
     __all__.append("NRRefactorRetry_KLU")
     __all__.append("NROuter_KLU")
+    __all__.append("NROuterDist_KLU")
     from ..lightsim2grid_cpp import NR_KLUStaticPivot  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import NRSing_KLUStaticPivot  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import NROuter_KLUStaticPivot  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NROuterDist_KLUStaticPivot  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("NR_KLUStaticPivot")
     __all__.append("NRSing_KLUStaticPivot")
     __all__.append("NROuter_KLUStaticPivot")
+    __all__.append("NROuterDist_KLUStaticPivot")
 except Exception as exc_:  # noqa: F841
     # KLU is not available
     pass
@@ -100,6 +106,7 @@ try:
     from ..lightsim2grid_cpp import FDPF_BX_NICSLU  # AlgorithmType.FDPF_BX_NICSLU  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import NRRefactorRetry_NICSLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import NROuter_NICSLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NROuterDist_NICSLU  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("NR_NICSLU")
     __all__.append("NRSing_NICSLU")
     __all__.append("DC_NICSLU")
@@ -107,6 +114,7 @@ try:
     __all__.append("FDPF_BX_NICSLU")
     __all__.append("NRRefactorRetry_NICSLU")
     __all__.append("NROuter_NICSLU")
+    __all__.append("NROuterDist_NICSLU")
 except Exception as exc_:  # noqa: F841
     # NICSLU is not available
     pass
@@ -119,6 +127,7 @@ try:
     from ..lightsim2grid_cpp import FDPF_BX_CKTSO  # AlgorithmType.FDPF_BX_CKTSO  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import NRRefactorRetry_CKTSO  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     from ..lightsim2grid_cpp import NROuter_CKTSO  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
+    from ..lightsim2grid_cpp import NROuterDist_CKTSO  # not in AlgorithmType (string-registered only)  # pyright: ignore[reportMissingImports]  # noqa: F401
     __all__.append("NR_CKTSO")
     __all__.append("NRSing_CKTSO")
     __all__.append("DC_CKTSO")
@@ -126,6 +135,7 @@ try:
     __all__.append("FDPF_BX_CKTSO")
     __all__.append("NRRefactorRetry_CKTSO")
     __all__.append("NROuter_CKTSO")
+    __all__.append("NROuterDist_CKTSO")
 except Exception as exc_:  # noqa: F841
     # CKTSO is not available
     pass

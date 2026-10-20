@@ -223,6 +223,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] ``NROuterDist_*`` algorithms: the outer loops around a Newton that shares the slack itself.
+  ``DistributedSlack`` only caps the units pushed past ``min_p`` / ``max_p`` / 0 MW, out of the share.
 - [FIXED] ``ContingencyPropagator``: a branch alone behind an opened breaker, but not right behind it, stays
   in service, as in OpenLoadFlow. ``ContingencyPropagator.dead_ends`` gives them.
 - [ADDED] ``ContingencyAnalysis.add_contingency(branch_ids_side1=, branch_ids_side2=)``: a branch opened at one

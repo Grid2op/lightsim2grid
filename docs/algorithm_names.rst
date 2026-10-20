@@ -202,7 +202,9 @@ same value reported for an actual plugin solver.
 
 ``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot`` and ``NROuter_KLUStaticPivot`` (KLU with a
 static-pivot refactorization, see :ref:`static-pivot-refactorization`) are string-only
-built-ins in the same way, as are the ``NROuter_*`` algorithms.
+built-ins in the same way, as are the ``NROuter_*`` algorithms and the ``NROuterDist_*`` ones
+(the same outer loops around a Newton that shares the slack itself, see
+:class:`~lightsim2grid.algorithm.NROuterDist_SparseLU`).
 
 Usage example
 -------------

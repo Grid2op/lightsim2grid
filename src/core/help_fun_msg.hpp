@@ -107,6 +107,7 @@ struct LS2G_API DocSolver
     static const std::string NRRefactorRetry_KLU;
     static const std::string NR_KLUStaticPivot;
     static const std::string NROuter;
+    static const std::string NROuterDist;
     static const std::string OuterLoopStats;
     static const std::string OuterLoopDriverParams;
     static const std::string OuterDecision;

@@ -526,6 +526,14 @@ void bind_solvers(py::module_& m) {
         bind_outer_algo(cls);
     }
     {
+        auto cls = py::class_<NROuterDist_SparseLU>(m, "NROuterDist_SparseLU", DocSolver::NROuterDist.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
         auto cls = py::class_<DC_SparseLU>(m, "DC_SparseLU", DocSolver::DC_SparseLU.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
@@ -597,6 +605,14 @@ void bind_solvers(py::module_& m) {
         bind_outer_algo(cls);
     }
     {
+        auto cls = py::class_<NROuterDist_KLU>(m, "NROuterDist_KLU", DocSolver::NROuterDist.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
         auto cls = py::class_<NR_KLUStaticPivot>(m, "NR_KLUStaticPivot", DocSolver::NR_KLUStaticPivot.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
@@ -612,6 +628,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NROuter_KLUStaticPivot>(m, "NROuter_KLUStaticPivot", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
+        auto cls = py::class_<NROuterDist_KLUStaticPivot>(m, "NROuterDist_KLUStaticPivot", DocSolver::NROuterDist.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
@@ -668,6 +692,14 @@ void bind_solvers(py::module_& m) {
         bind_linear_solver_stats(cls);
         bind_outer_algo(cls);
     }
+    {
+        auto cls = py::class_<NROuterDist_NICSLU>(m, "NROuterDist_NICSLU", DocSolver::NROuterDist.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
 #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -712,6 +744,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NROuter_CKTSO>(m, "NROuter_CKTSO", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
+        auto cls = py::class_<NROuterDist_CKTSO>(m, "NROuterDist_CKTSO", DocSolver::NROuterDist.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);

@@ -61,6 +61,11 @@ struct LS2G_API OuterInjections
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
+    /// how much reactive injection the targets moved that no solve saw yet, MVar: a
+    /// distributed-slack Newton's share moved into the targets after the solve (see
+    /// OuterLoopAlgo::_fold_slack_share) took the target Q of a unit that does not regulate
+    /// with it. DistributedSlack re-solves on it, and sets it back to 0.
+    real_type unsolved_q_mvar = 0.;
 
     /// the unit's active target in force, MW: the one a loop set, the row's or the grid's
     /// otherwise (storage units in the load convention)
@@ -92,7 +97,10 @@ struct LS2G_API OuterInjections
  * - DistributedSlack: DISTRIBUTE (every check: the slack mismatch, MW, against the threshold),
  *   UNITS_MOVED (how much the units moved, MW, against what counts as a move), FAIL_RESIDUE;
  *   SHARE_LOST_P (at initialize, outer iteration 0: the row's loss shared before the first
- *   solve, MW, see OuterRowView::lost_p_mw).
+ *   solve, MW, see OuterRowView::lost_p_mw). Around a distributed-slack Newton (NROuterDist_*),
+ *   no DISTRIBUTE, and on a unit: PARK / UNPARK (out of the Newton's share at a bound, or back
+ *   in it: its P after the solve and the bound, MW); TARGET_Q_FOLLOWED (the reactive injection
+ *   the share moved with the targets after the solve, MVar, against what counts as a move).
  * - ReactiveLimits, on a controller bus: PV_TO_PQ (PV_TO_PQ_UNREALISTIC, the robust mode's),
  *   KEPT_PV_STRONGEST; PQ_TO_PV, KEPT_PQ_MAX_SWITCH, and, every check for every frozen bus,
  *   KEPT_PQ / KEPT_PQ_GROUP_HOLDS (the release test that did not trigger: the regulated voltage

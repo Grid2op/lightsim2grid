@@ -138,73 +138,62 @@ Test first at every step (a test failing on the current code, then the change).
    `docs/solvers.rst` and `docs/use_solver.rst` made consistent (DC and FDPF do distribute
    today, both pages say they do not); `[BREAKING]` entries.
 
-## A distributed-slack Newton inside `NROuter_*`
+## A distributed-slack Newton inside the outer loops: `NROuterDist_*`
 
-Today `NROuter_*` wraps a single-slack Newton: the reference bus absorbs the whole
-imbalance, and the `DistributedSlack` loop moves the participants' targets after each solve
-until the reference's mismatch falls under `slack_bus_p_max_mismatch_mw`. Every pass is a
-full Newton re-solve, run even when no unit is anywhere near a limit.
+**Implemented**, as a family of its own; `NROuter_*` is untouched and stays the exact
+OpenLoadFlow reproduction. It needed none of the refactor above: everything lives in the
+outer-loop driver and the Newton's `MultiSlack`.
 
-Proposal: an `NROuter_*` variant whose inner Newton is the distributed-slack one
-(`MultiSlack`), the imbalance shared inside the Newton by `slack_absorbed`. The outer loop
-then only has the limits to enforce -- what the in-Newton slack cannot do, since it has no
-bounds. After each solve:
+- **The algorithms.** `NROuterDist_*` = `OuterLoopAlgo<NROuterInner<LS, OuterDistNRSystem>>`,
+  `OuterDistNRSystem` = `NRSystem<Base, MultiSlack, VoltageControl, BranchControl,
+  ShuntControl, Hvdc>`. The reference (`slack_ids(0)`) stays the only slack bus, and the
+  other slack buses are PV with their P equation, as in `NROuter_*`.
+- **Participants stay pv / pq buses.** `MultiSlack::set_slack_participant_buses` gives each
+  one an entry in the `slack_absorbed` column, at the P row Base already gave it: no new
+  row or column, so voltage pinning, PV / PQ switching and the TVC / shunt loops see them as
+  before. Their weights are values (`set_slack_weights`), so parking a unit costs no
+  `analyze`. With no participant listed, the layout is `NR_*`'s, bit for bit.
+- **Who sets what.** `DistributedSlack` reserves the buses (`SlackShareControl`, in
+  `declare`): every unit flagged "can participate", on its own bus in the grid and on the
+  one the declaring row places it on. It then hands the units' weights over each solve.
+  The driver normalises them, and gives the reference weight 1 when there is none (no
+  loop, every unit parked): a single slack in the Newton's form, so J is never singular.
+- **Publication.** After every solve the driver moves each unit's share into its target
+  (`OuterLoopAlgo::_fold_slack_share`), and `get_slack_absorbed()` is 0. The share enters
+  the mismatch only through `+ slack_absorbed * weight`, so the mismatch does not change.
+  Whatever reads the solve then reads what it reads after `NROuter_*`: the loops, the
+  results (`get_outer_target_p`), resume points, `GenPCheck`.
+- **The loop.** It shares the same cumulative mismatch as around a single slack, from the
+  initial targets, with `slack_redistribution::distribute`. A unit that this saturates
+  (above `max_p`, below `min_p`, across 0 MW) is set at its bound with weight 0. One that
+  comes back inside its bounds gets its weight back. UNSTABLE when the targets moved, so
+  the loop is stable after the first solve when no unit hits a limit. A resumed solve (a
+  batch row from its "n" solve, a time series' next step) starts with the units the solve
+  it resumes from parked still parked, at their bound: a snapshot's units already at
+  `max_p` are then not pushed past it again by every row's first solve. A batch row also
+  parks the units the share of its lost power (`_share_lost_p`) put at a bound. That one is
+  a bet on the sign of the change in the losses: it saves the re-solve where the
+  contingency raises them, and costs one where it lowers them. On real grid snapshots, it
+  wins clearly overall. When every unit is
+  saturated it is FAILED, or with LEAVE_ON_SLACK_BUS every unit is parked and the
+  reference takes the rest.
+- **Batch.** The reservation holds for every row. A row's off or stranded unit is not
+  among the loop's units, so it gets no weight. Rows are tested against single solves in
+  `test_outer_dist_batch.py`.
 
-1. **cap**: a participant whose solved P (`target + slack_absorbed * w`) is past a limit by
-   more than a threshold -- below `min_p`, above `max_p`, or across 0 MW (OpenLoadFlow never
-   pushes a unit across 0) -- is set to that limit and parked: its weight goes to 0;
-2. **redistribute a priori**: what the capped units no longer take (their solved P minus
-   the limit) is shared on the remaining active participants' targets, bounded, by
-   `slack_redistribution::distribute` -- exactly what the loop does today for the
-   single-slack Newton;
-3. **re-solve**, and repeat on the same condition, until no participant is past a limit.
+The dispatch differs from OpenLoadFlow's by at most `slackBusPMaxMismatch`, which OpenLoadFlow
+leaves on the reference bus and this variant shares out. The in-Newton alternative to the
+loop (projection rows solved by a semismooth Newton) is in `nr_control_limits.md`
+("Distributed slack with min_p / max_p").
 
-It is the inner Newton's rule extended to bounds: the same participants and weights, with
-the loop stepping in only when a limit is hit, so it should run far less often than today's
-loop, which re-solves on every move. It is also the bake's rule (`_olf_bake.py` caps the
-units OpenLoadFlow saturated and redistributes a priori), applied inside the solve instead
-of before it: the participant states are the same (active / parked, see "Target model").
+Left open:
 
-What it needs:
-
-- **The inner system.** `MultiSlackNRSystem` is `NRSystem<Base, MultiSlack, VoltageControl,
-  Hvdc>`; the outer loops act through `BranchControl` and `ShuntControl` as well, so the
-  variant is `NRSystem<Base, MultiSlack, VoltageControl, BranchControl, ShuntControl,
-  Hvdc>` -- a combination never instantiated so far, to check (registration order, ledger
-  layout). New algorithm names (`NROuterDist_*` or similar).
-- **Weights edited by value.** `MultiSlack` declares one entry per slack bus (its P row,
-  the `slack_absorbed` column) and writes the weight as its value
-  (`declare_feature_entries` / `fill_feature_values`), so parking a unit is a value edit
-  as long as every participant's bus is in `slack_ids` from the start: no new `analyze`.
-  `OuterLoopAlgo` holds a private copy of the weights, as it does of `Sbus`, and the inner
-  system reads that copy between outer solves. A bus with several participants keeps the
-  sum of its active units' weights.
-- **Release, not only cap.** OpenLoadFlow lets a unit at `max_p` take a share of a negative
-  mismatch. A parked unit that the next solve's `slack_absorbed` would move back inside its
-  limits becomes active again -- the same rejoin / leave rule as "Target model".
-- **Keep one.** When every participant is parked, the `slack_absorbed` column is zero and J
-  is singular. Keep the last one active, as `cap_slack_at_active_limits` does ("OpenLoadFlow
-  keeps every unit in the slack when all of them saturate"), and let the reference absorb
-  the rest.
-- **Results.** `compute_results` splits `slack_absorbed * w_bus` onto a bus' units by their
-  raw weights: it must read the loop's weights (parked units 0), as it reads the loop's
-  moved targets today (`get_outer_target_p`).
-- **Detection.** The trigger is a unit past its limit -- `GenPCheck`'s `LOW_P` / `HIGH_P`
-  condition -- so detection and trigger stay the same check, the requirement every loop
-  follows. `cap_slack_at_active_limits` is this loop run from outside the solve, one full
-  `ac_pf` per round: it becomes a thin wrapper, or goes.
-- **Batch.** The per-row weights already vary by value (`_row_slack_weights_vary`, with the
-  refactor fallback on): parking inside a row is the same kind of edit.
-
-It is not OpenLoadFlow's result to the last MW. OpenLoadFlow stops once the reference's
-mismatch is under `slackBusPMaxMismatch` and leaves that residue on the reference bus; this
-variant leaves nothing on the reference and shares the residue on the participants. Both
-dispatches differ by at most that threshold. The existing single-slack `NROuter_*` stays as
-the exact OpenLoadFlow reproduction. The in-Newton alternative to steps 1 to 3 -- projection
-rows solved by a semismooth Newton, no outer iteration at all -- is in
-`nr_control_limits.md` ("Distributed slack with min_p / max_p", and step 1 of its
-incremental path); this proposal is its outer-loop counterpart, and shares its oracle
-(`GenPCheck`).
+- A batch row that places a participant on a bus no row declared: `SlackShareControl::
+  set_units` leaves the unit out of the Newton's share.
+- Detection outside a solve (`LSGrid::get_physical_violations`, a context without
+  controls) keeps the single-slack rule (SLACK_MISMATCH on the reference).
+- A parked unit coming back is handled by construction (each pass shares from the initial
+  targets), but no test builds that case.
 
 ## Decisions to take first
 
@@ -219,9 +208,8 @@ incremental path); this proposal is its outer-loop counterpart, and shares its o
 4. **API**: keep `add_gen_slackbus` / `set_gen_can_participate_slack` as deprecated
    wrappers mapping onto the new model, or remove them in the same `[BREAKING]` release?
 5. **Loads as participants** (`[TODO]`, problem 5): in this refactor, or later on top of it?
-6. **The distributed-slack `NROuter_*` variant**: in this refactor (it reuses the
-   participant states) or after it; and is a dispatch that differs from OpenLoadFlow's by
-   up to `slackBusPMaxMismatch` acceptable for it, given the single-slack variant stays?
+6. ~~The distributed-slack `NROuter_*` variant~~: done before this refactor, as
+   `NROuterDist_*` (see above).
 
 Rejected shortcut for problem 4: a dummy 0 MW PQ generator on the bus, tagged slack. It
 needs no C++ change -- the leftover lands on it -- but adds an element users and grid2op

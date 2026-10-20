@@ -85,6 +85,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     injections_.Sbus_target = &Sbus_target_;
     injections_.gen_target_p.clear();
     injections_.storage_target_p.clear();
+    injections_.unsolved_q_mvar = 0.;
     inner_.controls().reset_states();
     // a resumed solve (a time series' next step, a batch row from its "n" solve) starts from
     // where that solve left the loops; any other from the grid
@@ -228,6 +229,7 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
     Vm_ = inner_.algo().get_Vm();
     mis_bus_ = inner_.algo().get_bus_mismatch();
     err_ = inner_.algo().get_error();
+    _fold_slack_share();
     // the residual is published against the units' targets: the reactive power a loop froze
     // into the algorithm's (a bus held at a limit) is its units' output, which the results
     // and the physical checks read off this residual. Overwritten by the next solve's copy.
@@ -251,6 +253,45 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
         converged = false;
     }
     return converged;
+}
+
+template<class Inner>
+void OuterLoopAlgo<Inner>::_fold_slack_share()
+{
+    // A distributed-slack Newton (NROuterDist_*) shared the slack inside its Jacobian: each unit
+    // taking part gets its share added to its target, so that whatever reads the solve -- the
+    // loops, the results, a solve resuming from this one -- finds the units' outputs in their
+    // targets and the reference bus' leftover in its mismatch, as after a single-slack Newton.
+    // The share enters the mismatch only through `+ slack_absorbed * weight`, so moving it into
+    // the injection leaves the mismatch where it is.
+    const real_type sa = inner_.take_slack_absorbed();
+    if (sa == 0. || lsgrid_ptr_ == nullptr) return;
+    const SlackShareControl * share = inner_.controls().slack_share();
+    const real_type total = share != nullptr ? share->total_weight() : 0.;
+    if (total > 0.) {
+        const OuterGridView view(*lsgrid_ptr_, row_);
+        const real_type sn_mva = view.sn_mva();
+        for (const auto & unit : share->units()) {
+            // the target Q of a unit that does not regulate follows its P: that, the solve did
+            // not see
+            const real_type q_before = std::imag(Sbus_(unit.bus_solver));
+            // generation convention; slack_absorbed < 0 when the units produce more
+            const real_type mw = -sa * sn_mva * unit.weight / total;
+            if (unit.kind == slack_redistribution::UnitKind::GENERATOR) {
+                injections_.move_gen_target_p(view, unit.el_id, unit.bus_solver,
+                                              injections_.gen_target_p_in_force(view, unit.el_id) + mw);
+            } else {
+                // load convention
+                injections_.move_storage_target_p(view, unit.el_id, unit.bus_solver,
+                                                  injections_.storage_target_p_in_force(view, unit.el_id) - mw);
+            }
+            injections_.unsolved_q_mvar += std::abs(std::imag(Sbus_(unit.bus_solver)) - q_before) * sn_mva;
+        }
+    } else {
+        // the reference bus took it all (weight 1): what is left on it, as a single slack leaves it
+        const int ref = inner_.reference_bus();
+        if (ref >= 0 && ref < mis_bus_.size()) mis_bus_(ref) -= cplx_type(sa, 0.);
+    }
 }
 
 template<class Inner>
