@@ -23,6 +23,7 @@
 // are built by hand through the init_* API, like test_lsgrid.cpp: no python,
 // no grid2op, no external file. C++14 only (project policy).
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <set>
@@ -34,6 +35,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "Solvers.hpp"
 #include "powerflow_algorithm/NRSystem.hpp"
 
 using Catch::Approx;
@@ -668,6 +670,99 @@ TEST_CASE("the initial slack_absorbed is read off the residual, not off sum(Sbus
     // correcting in place is an optimisation, not a different answer
     const RealVect F_again = sys.mismatch();
     CHECK((F - F_again).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+namespace {
+
+// the distributed-slack grid with bus 0 alone in the slack set: bus 1 is an ordinary PV bus
+LSGrid make_single_slack_twin(int n_bus = 4)
+{
+    LSGrid grid = make_radial_skeleton(n_bus);
+    add_generators(grid, {0, 1}, {1.02, 1.02}, {2000., 2000.});
+    grid.add_gen_slackbus(0, 1.);
+    return grid;
+}
+
+RealVect two_bus_weights(int nb_bus, real_type w0, real_type w1)
+{
+    RealVect w = RealVect::Zero(nb_bus);
+    w(0) = w0;
+    w(1) = w1;
+    return w;
+}
+
+}  // anonymous namespace
+
+TEST_CASE("MultiSlack shares on participant buses that keep their own rows", "[NRSystem][slack]")
+{
+    // the reference: buses 0 and 1 both in the slack set, 70 / 30 %
+    LSGrid ref = make_dist_slack_grid();
+    const SolverInputs in_ref = solved_inputs(ref, AlgorithmType::NR_SparseLU);
+    const real_type sa_ref = ref.get_slack_absorbed_solver();
+
+    // the same grid with bus 0 the only slack bus: bus 1 stays a PV bus of the Newton, and
+    // takes its 30 % as a participant, through its own P row. Every solve starts from the
+    // twin's solution, which holds the generators' magnitudes (LSGrid seeds them, not NRAlgo)
+    LSGrid grid = make_single_slack_twin();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    REQUIRE(in.slack_ids.size() == 1);
+    REQUIRE(std::find(in.pv.data(), in.pv.data() + in.pv.size(), 1) != in.pv.data() + in.pv.size());
+
+    ls2g::NR_SparseLU algo;
+    algo.system().set_slack_participant_buses({1});
+    const RealVect w = two_bus_weights(in.nb_bus(), 0.7, 0.3);
+    REQUIRE(algo.compute_pf(in.Ybus, in.V, in.Sbus, in.slack_ids, w, in.pv, in.pq, 30, 1e-10));
+    CHECK((algo.get_V() - in_ref.V).cwiseAbs().maxCoeff() < 1e-9);
+    CHECK(algo.get_slack_absorbed() == Approx(sa_ref).margin(1e-9));
+
+    // bus 1 owns one P row and one theta column (Base's): the participant adds no
+    // equation, only its entry in the slack_absorbed column, worth its weight
+    const auto & sys = algo.system();
+    check_system_invariants(sys, in.nb_bus());
+    CHECK(static_cast<int>(sys.total_state_variables()) == expected_dim(in, grid, 0, true));
+    const SpMatReal J = sys.J();
+    const int slack_col = sys.slack_col();
+    REQUIRE(slack_col >= 0);
+    std::vector<int> rows;
+    for (int p = J.outerIndexPtr()[slack_col]; p < J.outerIndexPtr()[slack_col + 1]; ++p) {
+        rows.push_back(J.innerIndexPtr()[p]);
+    }
+    CHECK(rows.size() == 2);
+    CHECK(std::find(rows.begin(), rows.end(), sys.p_to_J_row()[0]) != rows.end());
+    CHECK(std::find(rows.begin(), rows.end(), sys.p_to_J_row()[1]) != rows.end());
+}
+
+TEST_CASE("participant weights change by value, without a new analysis", "[NRSystem][slack]")
+{
+    LSGrid grid = make_single_slack_twin();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+
+    ls2g::NR_SparseLU algo;
+    algo.system().set_slack_participant_buses({1});
+    REQUIRE(algo.compute_pf(in.Ybus, in.V, in.Sbus, in.slack_ids,
+                            two_bus_weights(in.nb_bus(), 0.7, 0.3), in.pv, in.pq, 30, 1e-10));
+
+    // the next solve: same topology, the weights set on the system after the setup
+    ls2g::AlgoControl nothing;
+    nothing.tell_none_changed();
+    algo.tell_solver_control(nothing);
+    bool need_init = false;
+    REQUIRE(algo.setup(in.Ybus, in.V, in.Sbus, in.slack_ids,
+                       two_bus_weights(in.nb_bus(), 0.7, 0.3), in.pv, in.pq, need_init, []() {}));
+    CHECK_FALSE(need_init);
+    algo.system().set_slack_weights(two_bus_weights(in.nb_bus(), 0., 1.));
+    REQUIRE(algo.newton(30, 1e-10, need_init));
+    algo.finalize();  // the results (get_V and friends) of that newton
+    CHECK(algo.get_nb_iter() > 0);
+    CHECK(algo.get_linear_solver_stats().nb_analyze == 1);
+
+    // the same as a fresh solve where bus 1 takes everything
+    ls2g::NR_SparseLU fresh;
+    fresh.system().set_slack_participant_buses({1});
+    REQUIRE(fresh.compute_pf(in.Ybus, in.V, in.Sbus, in.slack_ids,
+                             two_bus_weights(in.nb_bus(), 0., 1.), in.pv, in.pq, 30, 1e-10));
+    CHECK((algo.get_V() - fresh.get_V()).cwiseAbs().maxCoeff() < 1e-9);
+    CHECK(algo.get_slack_absorbed() == Approx(fresh.get_slack_absorbed()).margin(1e-9));
 }
 
 TEST_CASE("calibrating the slack is a no-op without the MultiSlack extension", "[NRSystem][slack]")

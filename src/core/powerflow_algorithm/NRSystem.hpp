@@ -386,6 +386,15 @@ class LS2G_API Base
  * the generic dS pass of NRSystem. The only feature-specific entries are the
  * slack_absorbed column coefficients: slack_weights(bus) at each slack bus'
  * P row.
+ *
+ * Participant buses (set_slack_participant_buses): buses that take a share of
+ * the slack without being slack buses. They stay ordinary pv / pq buses, whose
+ * theta and P row Base already registered, and only get their entry in the
+ * slack_absorbed column. Their weights can then be changed by value
+ * (set_slack_weights) without touching the sparsity. That is how the outer-loop
+ * driver shares the slack inside the Newton (NROuterDist_*) while its single
+ * reference stays the only slack bus. None by default: the layout is the plain
+ * one above.
  */
 class LS2G_API MultiSlack   // distributed-slack extension
 {
@@ -437,23 +446,60 @@ class LS2G_API MultiSlack   // distributed-slack extension
             }
             slack_p_rows_.push_back(ledger.add_p_equation(ref_slack_id_));
             slack_col_ = ledger.add_custom_col();  // slack_absorbed unknown
+
+            // the buses carrying a weight: the slack buses, then the participants that
+            // are not slack buses, on the P row Base gave them (none: not in the solve)
+            weighted_buses_ = slack_buses_;
+            weighted_rows_ = slack_p_rows_;
+            for (int bus : participant_buses_) {
+                if (std::find(slack_buses_.begin(), slack_buses_.end(), bus) != slack_buses_.end()) continue;
+                const int row = (bus >= 0 && bus < ledger.n_bus()) ? ledger.p_row(bus) : -1;
+                if (row < 0) continue;
+                weighted_buses_.push_back(bus);
+                weighted_rows_.push_back(row);
+            }
         }
 
-        // one entry per slack bus: (that bus' P row, slack_absorbed column)
         void declare_ordering_constraints(OrderingConstraints& /*out*/) const {}
 
+        // one entry per weighted bus: (that bus' P row, slack_absorbed column)
         void declare_feature_entries(FeatureSink& sink)
         {
             feature_handles_.clear();
-            feature_handles_.reserve(my_size_);
-            for (int k = 0; k < my_size_; ++k)
-                feature_handles_.push_back(sink.add(slack_p_rows_[k], slack_col_));
+            feature_handles_.reserve(weighted_rows_.size());
+            for (int row : weighted_rows_)
+                feature_handles_.push_back(sink.add(row, slack_col_));
         }
 
         void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& /*Va*/) const
         {
-            for (int k = 0; k < my_size_; ++k)
-                writer.add(feature_handles_[k], slack_weights_(slack_buses_[k]));
+            for (size_t k = 0; k < weighted_buses_.size(); ++k)
+                writer.add(feature_handles_[k], slack_weights_(weighted_buses_[k]));
+        }
+
+        /**
+         * The buses that share the slack without being slack buses (solver ids), see
+         * the class comment. Caller-set run configuration, like
+         * Base::set_switchable_vm_buses: set it before the sparsity build that is to
+         * account for it, and neither update_state() nor clear() resets it.
+         */
+        void set_slack_participant_buses(const std::vector<int>& solver_bus_ids) {
+            participant_buses_ = solver_bus_ids;
+            std::sort(participant_buses_.begin(), participant_buses_.end());
+            participant_buses_.erase(std::unique(participant_buses_.begin(), participant_buses_.end()),
+                                     participant_buses_.end());
+        }
+        const std::vector<int>& slack_participant_buses() const { return participant_buses_; }
+
+        /**
+         * Replace the weights of this solve (per solver bus), by value: the next
+         * fill_J writes them, and NRAlgo::newton re-derives slack_absorbed from them
+         * (calibrate_slack_absorbed). Only the slack and participant buses' weights are
+         * read in J; a weight elsewhere would add a share to a mismatch no equation
+         * holds, so the caller leaves those at 0. Lasts until the next update_state.
+         */
+        void set_slack_weights(const Eigen::Ref<const RealVect>& slack_weights) {
+            slack_weights_ = slack_weights;
         }
 
         // adjust the per-bus complex power mismatch by (slack_absorbed + dx step) * slack_weights
@@ -516,17 +562,17 @@ class LS2G_API MultiSlack   // distributed-slack extension
         {
             if (my_size_ == 0 || slack_weights_.size() != mis.size()) return false;
             real_type total_w = static_cast<real_type>(0.);
-            for (int k = 0; k < my_size_; ++k) total_w += slack_weights_(slack_buses_[k]);
+            for (int bus : weighted_buses_) total_w += slack_weights_(bus);
             // A degenerate participation -- every weight zero, or a sweep row that
             // masked the last participant out -- leaves the guess as it was: there
             // is no bus to distribute to, and dividing by what is left would
             // amplify the imbalance rather than place it.
             if (std::abs(total_w) <= BaseConstants::_tol_equal_float) return false;
             const real_type delta = sum_p / total_w;
-            for (int k = 0; k < my_size_; ++k) {
-                const int bus = slack_buses_[k];
+            for (size_t k = 0; k < weighted_buses_.size(); ++k) {
+                const int bus = weighted_buses_[k];
                 const real_type shift = delta * slack_weights_(bus);
-                res(slack_p_rows_[k]) -= shift;
+                res(weighted_rows_[k]) -= shift;
                 mis(bus) += static_cast<cplx_type>(shift);
             }
             slack_absorbed_ += delta;
@@ -539,6 +585,8 @@ class LS2G_API MultiSlack   // distributed-slack extension
             slack_col_ = -1;
             slack_buses_.clear();
             slack_p_rows_.clear();
+            weighted_buses_.clear();
+            weighted_rows_.clear();
             feature_handles_.clear();
             slack_weights_ = RealVect();
             slack_absorbed_ = static_cast<real_type>(0.);
@@ -562,7 +610,10 @@ class LS2G_API MultiSlack   // distributed-slack extension
         int                slack_col_;        // J column of the slack_absorbed unknown
         std::vector<int>   slack_buses_;      // non-ref slacks sorted, then ref slack
         std::vector<int>   slack_p_rows_;     // P row of each slack bus (same order)
-        std::vector<int>   feature_handles_;  // FeatureSink handles (same order)
+        std::vector<int>   participant_buses_;  // caller-set, sorted (see set_slack_participant_buses)
+        std::vector<int>   weighted_buses_;   // the slack buses, then the participants' (register_in)
+        std::vector<int>   weighted_rows_;    // P row of each weighted bus (same order)
+        std::vector<int>   feature_handles_;  // FeatureSink handles (weighted_buses_ order)
         RealVect           slack_weights_;    // size: nb_bus
         real_type          slack_absorbed_;
 
@@ -1772,8 +1823,21 @@ public:
         if (hvdc != nullptr) hvdc->set_status_override(status_per_line, keep);
     }
 
+    // Slack participants that stay pv / pq buses, and their weights by value, see
+    // MultiSlack::set_slack_participant_buses / set_slack_weights. No-ops without the
+    // extension (has_multi_slack).
+    bool has_multi_slack() const { return _find_extension<MultiSlack>() != nullptr; }
+    void set_slack_participant_buses(const std::vector<int> & solver_bus_ids) {
+        MultiSlack* ms = _find_extension<MultiSlack>();
+        if (ms != nullptr) ms->set_slack_participant_buses(solver_bus_ids);
+    }
+    void set_slack_weights(const Eigen::Ref<const RealVect> & slack_weights) {
+        MultiSlack* ms = _find_extension<MultiSlack>();
+        if (ms != nullptr) ms->set_slack_weights(slack_weights);
+    }
+
     // Holding voltage controllers by value, see VoltageControl::set_may_hold_controllers /
-    // set_held_controllers. No-op without the extension.
+    // set_held_voltage_controllers. No-op without the extension.
     void set_may_hold_voltage_controllers(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_hold_controllers(val);
@@ -2436,6 +2500,9 @@ private:
 
 using SingleSlackNRSystem = NRSystem<Base, VoltageControl, BranchControl, ShuntControl, Hvdc>;
 using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, VoltageControl, Hvdc>;
+// the Newton the outer loops wrap when it shares the slack itself (NROuterDist_*): the
+// single-slack one's extensions, with MultiSlack's slack_absorbed column
+using OuterDistNRSystem   = NRSystem<Base, MultiSlack, VoltageControl, BranchControl, ShuntControl, Hvdc>;
 
 } // namespace ls2g
 
