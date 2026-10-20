@@ -33,6 +33,13 @@ A branch cut off that way is opened at that end only: its other end stays connec
 branch keeps its charging from there (OpenLoadFlow opens the side of each terminal it
 disconnects, see `ContingencyPropagator.opened_sides`). Equipment the walk meets is tripped as
 a whole, at every end.
+
+A branch alone behind an opened breaker is only disconnected when its terminal sits right behind
+that breaker, with no other closed switch nor internal connection on that node (powsybl's
+`NodeBreakerTraverser` then disconnects the terminal instead of opening the breaker). Further
+behind (another closed switch, a fictitious breaker for instance, in between), powsybl opens the
+breaker only and the branch stays in service, energized from its other end and feeding a bus that
+holds nothing else: it is not tripped, and `ContingencyPropagator.dead_ends` lists it.
 """
 
 import numpy as np
@@ -201,9 +208,11 @@ class _PypowsyblTopology:
         nodes (`seen`) are out, when no busbar section is joined and it is a single piece of
         equipment or only injections; else nothing. `visited` holds the nodes already looked at behind another breaker
         of the same contingency. Each piece comes with the side of its terminal there (0 for a
-        one-sided element), the only end it is disconnected at."""
+        one-sided element), the only end it is disconnected at.
+        Also says whether that is a branch left at a dead end (not right behind the breaker, see the
+        module docstring), which stays in service."""
         if start in seen or start in visited:
-            return []
+            return [], False
         self.read_internal_connections(start // self.stride)
         span, nbr, extra, equip, breakers = self._span, self._nbr, self._extra, self._equip, self._breakers
         visited.add(start)
@@ -227,8 +236,13 @@ class _PypowsyblTopology:
         # (the whole part is walked before deciding, so that another breaker into it finds it visited)
         found = list(dict.fromkeys(found))
         if live or (len({el for el, _ in found}) > 1 and any(el in self.branches for el, _ in found)):
-            return []  # still fed
-        return found
+            return [], False  # still fed
+        # a branch alone is disconnected when its terminal is right behind the breaker, the only
+        # closed switch on its node (NodeBreakerTraverser.isEquivalentToStopAfterSwitch)
+        lo_hi = span.get(start)
+        nb_closed = (lo_hi[1] - lo_hi[0] if lo_hi is not None else 0) + len(breakers.get(start, ()))
+        right_behind = equip.get(start) is not None and nb_closed == 1 and start not in extra
+        return found, len(found) == 1 and found[0][0] in self.branches and not right_behind
 
 
 def _terminals_of(topo, name):
@@ -271,7 +285,8 @@ class ContingencyPropagator:
     -----
     * Names come back as pypowsybl knows them; a branch that is only opened at one end (the
       other end stands behind a breaker of its own) is listed too, and :func:`opened_sides`
-      says which end.
+      says which end. A branch left in service at a dead end is not listed: see
+      :func:`dead_ends`.
     * Propagating onto one converter station lists its HVDC line, and onto one dangling line
       its tie line.
     * A name that is not an element of the network (a switch included) is an error, raised by
@@ -297,6 +312,7 @@ class ContingencyPropagator:
         self._contingencies = []
         self._propagated = []  # one entry per contingency, None until propagated
         self._sides = []       # aligned with _propagated: {branch: side opened}, see opened_sides
+        self._dead_ends = []   # aligned with _propagated: {branch: side of the dead end}, see dead_ends
 
     @property
     def contingencies(self):
@@ -323,12 +339,14 @@ class ContingencyPropagator:
         self._contingencies.extend(checked)
         self._propagated.extend([None] * len(checked))
         self._sides.extend([None] * len(checked))
+        self._dead_ends.extend([None] * len(checked))
 
     def clear(self):
         """Remove every contingency (the topology read at construction is kept)."""
         self._contingencies = []
         self._propagated = []
         self._sides = []
+        self._dead_ends = []
 
     def propagate_contingencies(self):
         """The contingencies added, propagated: one list of names per contingency, in the order
@@ -361,10 +379,32 @@ class ContingencyPropagator:
         self._propagate_all()
         return [dict(el) for el in self._sides]
 
+    def dead_ends(self):
+        """The branches each propagated contingency leaves in service at a dead end: one dict per
+        contingency, in the order they were added, ``{branch name: side of the dead end}``.
+
+        Such a branch stands alone behind a breaker the propagation opens, but not right behind
+        it (another closed switch is in between). powsybl then opens the breaker only: the branch
+        is not disconnected, it stays energized from its other end and feeds a bus that holds
+        nothing else (OpenLoadFlow monitors that bus and the branch). It is not in
+        :func:`propagate_contingencies`.
+
+        A model built on the bus view (lightsim2grid's) has that bus merged with the rest of the
+        substation, which may still be fed: simulate the branch opened at that side (as for
+        :func:`opened_sides`). The flows at its other end are the same; only the voltage of the
+        dead-end bus and the branch's own current are not seen.
+
+        Returns
+        -------
+        list of dicts.
+        """
+        self._propagate_all()
+        return [dict(el) for el in self._dead_ends]
+
     def _propagate_all(self):
         for i, contingency in enumerate(self._contingencies):
             if self._propagated[i] is None:
-                self._propagated[i], self._sides[i] = self._propagate_one(contingency)
+                self._propagated[i], self._sides[i], self._dead_ends[i] = self._propagate_one(contingency)
 
     def group_contingencies(self):
         """Group the propagated contingencies that trip the same set of equipment, so that
@@ -377,7 +417,9 @@ class ContingencyPropagator:
         inverse:
             for each contingency added, the position in `unique` of its representative.
         """
-        return group_equivalent_contingencies(self.propagate_contingencies(), self.opened_sides())
+        # a branch at a dead end is simulated opened at that side: it tells the sets apart too
+        sides = [{**opened, **dead} for opened, dead in zip(self.opened_sides(), self.dead_ends())]
+        return group_equivalent_contingencies(self.propagate_contingencies(), sides)
 
     def _propagate_one(self, contingency):
         topo = self._topo
@@ -407,16 +449,33 @@ class ContingencyPropagator:
         # that end only: not walked out of, but it still takes its HVDC or tie line with it)
         whole_ids = set(tripped)
         cut_sides = {}  # element only cut off -> the sides it is cut at
+        dead = {}       # branch left at a dead end -> the sides of its dead ends
         visited = set()
         for node in behind_breakers:
-            for el, side in topo.cut_off(node, seen, visited):
-                tripped.append(el)
-                cut_sides.setdefault(el, set()).add(side)
-                for whole in (topo.station_to_hvdc.get(el), topo.dangling_to_tie.get(el)):
-                    if whole is not None:
-                        tripped.append(whole)
-                        whole_ids.add(whole)
-                        tripped.extend(_terminals_of(topo, whole)[0])
+            found, dead_end = topo.cut_off(node, seen, visited)
+            for el, side in found:
+                (dead if dead_end else cut_sides).setdefault(el, set()).add(side)
+        # a branch at a dead end at one end only, and not reached in any other way, stays in
+        # service; at several ends, or also cut off at another, nothing feeds it any more
+        dead_ends = {}
+        for el, el_sides in dead.items():
+            if el in whole_ids:
+                continue
+            if len(el_sides) == 1 and el not in cut_sides:
+                tie = topo.dangling_to_tie.get(el)
+                if tie is None:
+                    dead_ends[el] = next(iter(el_sides))
+                else:
+                    dead_ends[tie] = topo.tie_dangling[tie].index(el) + 1
+                continue
+            cut_sides.setdefault(el, set()).update(el_sides)
+        for el in cut_sides:
+            tripped.append(el)
+            for whole in (topo.station_to_hvdc.get(el), topo.dangling_to_tie.get(el)):
+                if whole is not None:
+                    tripped.append(whole)
+                    whole_ids.add(whole)
+                    tripped.extend(_terminals_of(topo, whole)[0])
         known = set(result)
         result.extend(el for el in dict.fromkeys(tripped) if el not in known)
         # a branch cut off at one of its ends, and not tripped as a whole otherwise, stays
@@ -427,7 +486,9 @@ class ContingencyPropagator:
                 continue
             if len(el_sides) == 1:
                 sides[el] = next(iter(el_sides))
-        return result, sides
+        # (a tie line at a dead end at one end may still be tripped through its other one)
+        listed = set(result)
+        return result, sides, {el: side for el, side in dead_ends.items() if el not in listed}
 
 
 def propagate_contingencies(net, contingencies, internal_connections=None):

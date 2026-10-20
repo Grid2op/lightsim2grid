@@ -223,6 +223,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [FIXED] ``ContingencyPropagator``: a branch alone behind an opened breaker, but not right behind it, stays
+  in service, as in OpenLoadFlow. ``ContingencyPropagator.dead_ends`` gives them.
 - [ADDED] ``ContingencyAnalysis.add_contingency(branch_ids_side1=, branch_ids_side2=)``: a branch opened at one
   end only keeps its charging from the other, as OpenLoadFlow. ``ContingencyPropagator.opened_sides`` gives them.
 - [ADDED] ``redistribute_slack`` with outer loops (``NROuter_*``): the ``DistributedSlack`` loop shares

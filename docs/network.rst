@@ -510,7 +510,9 @@ does not, a busbar section is walked through, and any other equipment met is tri
 walked out of from its other terminals in turn (a line reached at a breakerless tee takes its
 far end down too). Behind each breaker the walk opens, what is left with no busbar section is
 disconnected too, at that end only, when it is a single piece of equipment (each feeder of a
-tripped busbar section, for example) or only injections.
+tripped busbar section, for example) or only injections. A branch alone there but not right
+behind the breaker (another closed switch in between) stays in service, energized from its other
+end: it is not listed, :func:`~lightsim2grid.network.ContingencyPropagator.dead_ends` gives it.
 
 It has three steps, each a method:
 

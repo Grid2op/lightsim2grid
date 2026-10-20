@@ -175,6 +175,42 @@ class TestPropagateContingencies(unittest.TestCase):
         self.assertEqual(propagator.propagate_contingencies(), [["LOAD_FEEDER", "LINE_S2S3"]])
         self.assertEqual(propagator.opened_sides(), [{}])
 
+    def test_a_branch_left_at_a_dead_end(self):
+        # L5 has no breaker at S5VL1: its walk takes the busbar section and opens T5's breaker.
+        # With T5 further behind it (a disconnector, a fictitious breaker or an internal
+        # connection in between), powsybl only opens the breaker: T5 stays in service, fed from
+        # S5VL2, with a bus of its own at S5VL1 (OpenLoadFlow's security analysis reports it so)
+        for link in ("DISCONNECTOR", "BREAKER", "INTERNAL_CONNECTION"):
+            with self.subTest(link=link):
+                net = _net_with_a_transformer_bay(line_has_breaker=False)
+                net.remove_elements(["T5"])
+                if link == "INTERNAL_CONNECTION":
+                    net.create_internal_connections(voltage_level_id="S5VL1", node1=3, node2=30)
+                else:
+                    net.create_switches(id="S5_T5_X", voltage_level_id="S5VL1", node1=3, node2=30, kind=link,
+                                        open=False, fictitious=(link == "BREAKER"))
+                net.create_2_windings_transformers(id="T5", voltage_level1_id="S5VL1", node1=30,
+                                                   voltage_level2_id="S5VL2", node2=1, rated_u1=400.,
+                                                   rated_u2=400., r=0.1, x=10., g=0., b=0.)
+                propagator = ContingencyPropagator(net)
+                propagator.add_contingencies([["L5"], ["T5"]])
+                self.assertEqual(propagator.propagate_contingencies(), [["L5"], ["T5"]])
+                self.assertEqual(propagator.opened_sides(), [{}, {}])
+                self.assertEqual(propagator.dead_ends(), [{"T5": 1}, {}])
+                # simulated opened at that side, which tells it apart from L5 alone
+                self.assertEqual(group_equivalent_contingencies([["L5"], ["L5"]], propagator.dead_ends()[:1] + [{}]),
+                                 ([["L5"], ["L5"]], [0, 1]))
+                self.assertEqual(propagator.group_contingencies(), ([["L5"], ["T5"]], [0, 1]))
+        # an open switch on T5's node does not count: T5 is still right behind its breaker
+        net = _net_with_a_transformer_bay(line_has_breaker=False)
+        net.create_loads(id="LD_X", voltage_level_id="S5VL1", node=31, p0=1., q0=0.)
+        net.create_switches(id="S5_X", voltage_level_id="S5VL1", node1=3, node2=31, kind="DISCONNECTOR", open=True)
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies([["L5"]])
+        self.assertEqual(propagator.propagate_contingencies(), [["L5", "T5"]])
+        self.assertEqual(propagator.opened_sides(), [{"T5": 1}])
+        self.assertEqual(propagator.dead_ends(), [{}])
+
     def test_group_tells_the_opened_sides_apart(self):
         unique, inverse = group_equivalent_contingencies([["A", "B"], ["B", "A"], ["A", "B"]],
                                                          [{"B": 1}, {"B": 1}, {}])
