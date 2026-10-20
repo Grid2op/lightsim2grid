@@ -40,6 +40,16 @@ that breaker, with no other closed switch nor internal connection on that node (
 behind (another closed switch, a fictitious breaker for instance, in between), powsybl opens the
 breaker only and the branch stays in service, energized from its other end and feeding a bus that
 holds nothing else: it is not tripped, and `ContingencyPropagator.dead_ends` lists it.
+
+Two more of `NodeBreakerTraverser`'s rules decide which breakers open:
+
+* on a node with a terminal (the tripped equipment's, or a busbar section's) whose closed
+  switches are all breakers, powsybl opens none of them and disconnects the terminal alone:
+  what is behind them stays joined through that node. Likewise when that node holds a single
+  other switch, leading to a node whose other closed switches are all breakers: that switch is
+  not crossed, and those breakers stay closed;
+* a breaker leading to a node with no terminal whose other closed switches are all breakers is
+  walked through, and the breakers of that node open instead.
 """
 
 import numpy as np
@@ -175,9 +185,37 @@ class _PypowsyblTopology:
             self._extra.setdefault(base + a, []).append(base + b)
             self._extra.setdefault(base + b, []).append(base + a)
 
-    def walk(self, start, tripped, seen, behind_breakers):
+    def _has_terminal(self, node):
+        return node in self._equip or node in self._bbs
+
+    def _nb_passing(self, node):
+        """The closed switches on `node` that are not breakers (a fictitious breaker is one)."""
+        lo_hi = self._span.get(node)
+        return 0 if lo_hi is None else lo_hi[1] - lo_hi[0]
+
+    def _stops_at(self, node, nb_passing, dismissed):
+        """powsybl's `traverserStopsAtOtherEdges`: but for the edge looked at (`nb_passing` 1 when it
+        is a closed switch that is not a breaker, else 0), every closed switch on `node` is a
+        breaker, and its internal connections (`dismissed` left out) lead only to nodes with no
+        terminal where the same holds."""
+        if self._nb_passing(node) != nb_passing:
+            return False
+        visited, stack = {dismissed, node}, [node]
+        while stack:
+            for other in self._extra.get(stack.pop(), ()):
+                if other in visited:
+                    continue
+                visited.add(other)
+                if self._has_terminal(other) or self._nb_passing(other):
+                    return False
+                stack.append(other)
+        return True
+
+    def walk(self, start, tripped, seen, behind_breakers, kept):
         """Walk out of one terminal (see the module docstring); the equipment met goes to `tripped`,
-        the node on the far side of each breaker met to `behind_breakers`.
+        the node on the far side of each breaker opened to `behind_breakers`, and the nodes left
+        joined through a node with a terminal, where the walk stops without opening anything, to
+        `kept` (one list per such node).
         `seen` holds the nodes already met by the walks of the same contingency: everything
         reachable from them is already found, so they are not walked again (`start` is, since an
         equipment node is met but not walked out of)."""
@@ -187,13 +225,27 @@ class _PypowsyblTopology:
         stack = [start]
         while stack:
             node = stack.pop()
-            behind_breakers.extend(breakers.get(node, ()))
-            lo_hi = span.get(node)
-            others = nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else []
-            if node in extra:
-                others = others + extra[node]
-            for other in others:
+            at_terminal = self._has_terminal(node)  # `start`, or a busbar section
+            joined = []
+            for other in breakers.get(node, ()):
                 if other in seen:
+                    continue
+                if at_terminal and self._stops_at(node, 0, other):
+                    joined.append(other)  # the terminal alone is disconnected: the breaker stays closed
+                elif not self._has_terminal(other) and self._stops_at(other, 0, node):
+                    seen.add(other)  # a junction of breakers only: walked through, its own breakers open
+                    stack.append(other)
+                else:
+                    behind_breakers.append(other)
+            lo_hi = span.get(node)
+            others = [(other, 1) for other in (nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else ())]
+            others += [(other, 0) for other in extra.get(node, ())]
+            for other, nb_passing in others:
+                if other in seen:
+                    continue
+                if (at_terminal and not self._has_terminal(other) and self._stops_at(node, nb_passing, other)
+                        and self._stops_at(other, nb_passing, node)):
+                    joined.append(other)  # a junction of breakers right after the terminal: not walked
                     continue
                 seen.add(other)
                 el = equip.get(other)
@@ -201,16 +253,20 @@ class _PypowsyblTopology:
                     tripped.append(el)  # equipment is not a way through
                 else:
                     stack.append(other)  # a busbar section, or a bare node
+            if joined:
+                kept.append(joined)
 
-    def cut_off(self, start, seen, visited):
+    def cut_off(self, start, seen, visited, joined, kept=False):
         """The equipment left hanging behind an opened breaker (see the module docstring): the
         equipment `start` is joined to by the closed switches, breakers included, once the walked
         nodes (`seen`) are out, when no busbar section is joined and it is a single piece of
         equipment or only injections; else nothing. `visited` holds the nodes already looked at behind another breaker
-        of the same contingency. Each piece comes with the side of its terminal there (0 for a
-        one-sided element), the only end it is disconnected at.
-        Also says whether that is a branch left at a dead end (not right behind the breaker, see the
-        module docstring), which stays in service."""
+        of the same contingency, `joined` the nodes still joined to each other through a walked node
+        (see `walk`), and `kept` says that `start` is one of them (no breaker opened in front of it).
+        Each piece comes with the side of its terminal there (0 for a one-sided element), the only
+        end it is disconnected at.
+        Also says whether that is a branch left at a dead end (not right behind an opened breaker,
+        see the module docstring), which stays in service."""
         if start in seen or start in visited:
             return [], False
         self.read_internal_connections(start // self.stride)
@@ -227,7 +283,7 @@ class _PypowsyblTopology:
                 found.append((el, self.side_of.get(node, 0)))
             lo_hi = span.get(node)
             others = nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else []
-            others = others + breakers.get(node, []) + extra.get(node, [])
+            others = others + breakers.get(node, []) + extra.get(node, []) + joined.get(node, [])
             for other in others:
                 if other in seen or other in visited:
                     continue
@@ -241,7 +297,7 @@ class _PypowsyblTopology:
         # closed switch on its node (NodeBreakerTraverser.isEquivalentToStopAfterSwitch)
         lo_hi = span.get(start)
         nb_closed = (lo_hi[1] - lo_hi[0] if lo_hi is not None else 0) + len(breakers.get(start, ()))
-        right_behind = equip.get(start) is not None and nb_closed == 1 and start not in extra
+        right_behind = not kept and equip.get(start) is not None and nb_closed == 1 and start not in extra
         return found, len(found) == 1 and found[0][0] in self.branches and not right_behind
 
 
@@ -429,7 +485,7 @@ class ContingencyPropagator:
             tripped.extend(_terminals_of(topo, name)[0])
         # every element tripped is walked out of from all its terminals, the ones the walks trip
         # included (appended to `tripped` while it is read), until nothing new is met
-        seen, done, behind_breakers = set(), set(), []
+        seen, done, behind_breakers, kept = set(), set(), [], []
         pos = 0
         while pos < len(tripped):
             el = tripped[pos]
@@ -444,15 +500,20 @@ class ContingencyPropagator:
                     tripped.append(whole)
                     tripped.extend(_terminals_of(topo, whole)[0])
             for node in topo.terminals.get(el, ()):
-                topo.walk(node, tripped, seen, behind_breakers)
+                topo.walk(node, tripped, seen, behind_breakers, kept)
         # what the opened breakers leave hanging, once the walked part is complete (disconnected at
-        # that end only: not walked out of, but it still takes its HVDC or tie line with it)
+        # that end only: not walked out of, but it still takes its HVDC or tie line with it), and
+        # what a walk stopped in front of without opening a breaker (still joined through that node)
         whole_ids = set(tripped)
         cut_sides = {}  # element only cut off -> the sides it is cut at
         dead = {}       # branch left at a dead end -> the sides of its dead ends
         visited = set()
-        for node in behind_breakers:
-            found, dead_end = topo.cut_off(node, seen, visited)
+        joined = {}
+        for group in kept:
+            for node in group:
+                joined.setdefault(node, []).extend(group)
+        for node, was_kept in [(node, False) for node in behind_breakers] + [(node, True) for node in joined]:
+            found, dead_end = topo.cut_off(node, seen, visited, joined, was_kept)
             for el, side in found:
                 (dead if dead_end else cut_sides).setdefault(el, set()).add(side)
         # a branch at a dead end at one end only, and not reached in any other way, stays in

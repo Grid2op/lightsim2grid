@@ -513,6 +513,9 @@ disconnected too, at that end only, when it is a single piece of equipment (each
 tripped busbar section, for example) or only injections. A branch alone there but not right
 behind the breaker (another closed switch in between) stays in service, energized from its other
 end: it is not listed, :func:`~lightsim2grid.network.ContingencyPropagator.dead_ends` gives it.
+Breakers right at a terminal whose other switches are all breakers (or open) stay closed: the
+terminal alone is disconnected and what is behind them stays joined through its node. A breaker
+leading to a node with nothing but breakers is walked through, and those open instead.
 
 It has three steps, each a method:
 
