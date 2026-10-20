@@ -15,6 +15,9 @@
 #include "CustTimer.hpp"
 #include "LinearSolverStats.hpp"
 #include "linear_solvers/OrderingConstraints.hpp"
+#ifdef NICSLU_SOLVER_AVAILABLE
+#include "linear_solvers/NICSLUSolver.hpp"
+#endif
 
 namespace ls2g {
 
@@ -189,6 +192,65 @@ class LinearSolverPolicy
         LinearSolverPolicy & operator=(LinearSolverPolicy&&) = delete;
         LinearSolverPolicy & operator=(const LinearSolverPolicy&) = delete;
 };
+
+#ifdef NICSLU_SOLVER_AVAILABLE
+/**
+NICSLU's factorize() and refactorize() both call its FactorizeMatrix, which chooses on its
+own between a factorization with partial pivoting and a refactorization, and factorizes
+when a refactorization fails. Counting the calls would show no fallback at all; these count
+what NICSLU reports having run instead. A refactorize() that ended in a factorization (one
+NICSLU declined, or one that failed) is a failed refactorization and a fallback
+factorization, as with the other solvers, whether or not set_refactor_fallback is on: NICSLU
+does it regardless. Its time goes to timer_factor_.
+**/
+namespace detail {
+    // what the last call of `solver` ran, into `stats`; returns whether it factorized
+    inline bool count_nicslu_call(LinearSolverStats & stats, const NICSLULinearSolver & solver,
+                                  double duration, bool asked_refactorize) {
+        const std::size_t nb_fact = solver.last_nb_factorize();
+        if (asked_refactorize) {
+            ++stats.nb_refactorize;
+            if (nb_fact > 0) {
+                ++stats.nb_refactorize_failed;
+                stats.nb_fallback_factorize += nb_fact;
+            }
+        } else {
+            stats.nb_refactorize += solver.last_nb_refactorize();
+        }
+        stats.nb_factorize += nb_fact;
+        if (nb_fact > 0) stats.timer_factor_ += duration;
+        else stats.timer_refactor_ += duration;
+        return nb_fact > 0;
+    }
+}  // namespace detail
+
+template<>
+inline ErrorType LinearSolverPolicy<NICSLULinearSolver>::factorize(const EigenRefConstRealSpMat & J) {
+    auto timer = CustTimer();
+    ErrorType res = inner_.factorize(J);
+    detail::count_nicslu_call(stats_, inner_, timer.duration(), false);
+    return res;
+}
+
+template<>
+inline ErrorType LinearSolverPolicy<NICSLULinearSolver>::refactorize(const EigenRefConstRealSpMat & J) {
+    auto timer = CustTimer();
+    ErrorType res = inner_.refactorize(J);
+    const bool factorized = detail::count_nicslu_call(stats_, inner_, timer.duration(), true);
+    if (res != ErrorType::NoError) {
+        // NICSLU's own factorization failed too (or it never got that far)
+        if (!factorized) ++stats_.nb_refactorize_failed;
+        if (refactor_fallback_) {
+            ++stats_.nb_fallback_factorize;
+            auto timer_f = CustTimer();
+            res = inner_.factorize(J);
+            detail::count_nicslu_call(stats_, inner_, timer_f.duration(), false);
+            if (res != ErrorType::NoError) ++stats_.nb_fallback_factorize_failed;
+        }
+    }
+    return res;
+}
+#endif  // NICSLU_SOLVER_AVAILABLE
 
 } // namespace ls2g
 

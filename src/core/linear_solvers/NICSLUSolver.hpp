@@ -88,6 +88,13 @@ class LS2G_API NICSLULinearSolver final
         // a contained follow-up for anyone with the NICSLU documentation at hand.
         static constexpr bool CAN_SOLVE_TRANSPOSE = false;
 
+        // factorize() and refactorize() both call NICSLU's FactorizeMatrix, which chooses
+        // between a factorization with partial pivoting and a refactorization itself, and
+        // factorizes when a refactorization fails: what the last call ran, from the counts
+        // NICSLU reports (LinearSolverPolicy<NICSLULinearSolver> counts these, not the call)
+        std::size_t last_nb_factorize() const noexcept { return last_nb_factorize_; }
+        std::size_t last_nb_refactorize() const noexcept { return last_nb_refactorize_; }
+
         // prevent copy and assignment
         NICSLULinearSolver(const NICSLULinearSolver&) = delete;
         NICSLULinearSolver(NICSLULinearSolver&&) = delete;
@@ -102,6 +109,11 @@ class LS2G_API NICSLULinearSolver final
         // stay alive until reset() / destruction, which std::unique_ptr handles.
         std::unique_ptr<unsigned int[]> ai_;
         std::unique_ptr<unsigned int[]> ap_;
+        std::size_t last_nb_factorize_ = 0;
+        std::size_t last_nb_refactorize_ = 0;
+
+        // FactorizeMatrix, with what it ran kept in the two counts above
+        int factorize_matrix(const EigenRefConstRealSpMat & J);
 
 };
 

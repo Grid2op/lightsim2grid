@@ -223,6 +223,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [FIXED] ``LinearSolverStats`` of the ``*_NICSLU`` algorithms: the factorizations NICSLU runs in place of a
+  refactorization (declined or failed) count, as fallbacks. They were counted as refactorizations.
 - [FIXED] ``LSGrid``'s result and target getters (``get_gen_res``, ``get_load_target_p``, ...) returned views
   that did not keep the grid alive: read after the grid was collected, they read freed memory.
 - [ADDED] gradients with the outer loops (``NROuter_*``, ``NROuterDist_*``): ``keep_jacobian`` in the batch
