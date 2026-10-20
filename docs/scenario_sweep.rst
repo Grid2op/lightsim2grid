@@ -345,7 +345,8 @@ wrappers keep an ``NROuter_*`` one.
 ended (``status``: a row they leave ``UNSTABLE`` or ``FAILED`` does not converge, but a row
 whose Newton diverged reads ``STABLE`` too) and what they settled on where it differs from
 the grid: the moved targets, the hvdc regimes, the tap positions and the shunt sections.
-`keep_jacobian` is refused with such an algorithm.
+With `keep_jacobian`, each row keeps the Jacobian of its last Newton solve, every decision
+of the loops held: see :ref:`differentiable`.
 
 `compute_physical_violations` reports, with any algorithm, what each loop would still do on
 the row -- the loop's own trigger, checked on the row as it is (its machines, targets,

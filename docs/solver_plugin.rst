@@ -236,6 +236,20 @@ Returns the last Jacobian matrix.  The base implementation throws
 ``std::runtime_error``.  Override if your solver exposes a Jacobian
 (needed only when Python code calls ``get_J()`` on the grid model).
 
+``get_adjoint_solve_info`` *(virtual — override only for Newton-Raphson algorithms that serve an adjoint)*
+
+.. code-block:: cpp
+
+    virtual void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const;
+
+What the gradient of the last solve needs besides ``get_J()`` (``AdjointSolveInfo.hpp``):
+the buses whose Q row the solve pinned to the identity, the voltage-control groups whose
+voltage row lost its set-point, ``dF/d|V|`` of each bus of ``vm_buses`` by Jacobian row,
+and the corrections to the ``gen_p`` gradient. Read after ``refresh_J_at_solution()``,
+only when ``supports_jacobian()`` is true. The base implementation leaves it empty. An
+algorithm built on ``NRAlgo`` inherits a complete one; a plugin wrapping one (as
+``examples/dist_slack_algorithm`` does) forwards it with ``get_J``.
+
 ``get_theta_to_J_col_python`` / ``get_vm_to_J_col_python`` / ``get_q_to_J_col_python`` *(virtual — override only for Newton-Raphson algorithms)*
 
 .. code-block:: cpp

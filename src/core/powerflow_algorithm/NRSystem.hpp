@@ -1256,6 +1256,36 @@ class LS2G_API VoltageControl
             return Eigen::Map<const IntVect>(v_rows_.data(), static_cast<Eigen::Index>(v_rows_.size()));
         }
 
+        // The groups whose voltage row holds no set-point in the current state, so whose
+        // v_set no gradient reaches: stranded, or with every controller held (the row then
+        // pins the first one at its output, see fill_custom_rows).
+        void groups_without_v_set(std::vector<int>& out) const {
+            out.clear();
+            const int ng = data_.n_groups();
+            const bool have_stranded = !group_stranded_.empty();
+            for (int g = 0; g < ng; ++g) {
+                const bool stranded = have_stranded && group_stranded_[g];
+                const bool lost = may_hold_ ? _ref_active(g) < 0 : (stranded || data_.is_held(data_.grp_start(g)));
+                if (lost) out.push_back(g);
+            }
+        }
+
+        // The J row that pins controller j at its held output (`Q_j - held = 0`), -1 when
+        // it is not held, or its group is stranded (the row then pins it at 0).
+        int hold_row(int j) const {
+            if (j < 0 || j >= data_.n_controllers()) return -1;
+            const int g = data_.group(j);
+            if (!group_stranded_.empty() && group_stranded_[g]) return -1;
+            const int off = j - data_.grp_start(g);
+            const auto row_of = [&](int k) { return k == 0 ? v_rows_[g] : share_rows_[g][static_cast<std::size_t>(k - 1)]; };
+            if (!may_hold_) return data_.is_held(j) ? row_of(off) : -1;
+            if (!_held(j)) return -1;
+            const int ref = _ref_active(g);
+            // with someone still regulating, the reference's own sharing row pins the first one
+            if (ref >= 0 && off == 0) return row_of(ref);
+            return row_of(off);
+        }
+
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
         // caches the controller q rows and the regulated-bus vm columns (the ledger
         // is fully populated by Base / MultiSlack before this runs)
@@ -2114,6 +2144,50 @@ public:
     IntVect group_v_row() const {
         const VoltageControl* vc = _find_extension<VoltageControl>();
         return vc ? IntVect(vc->group_v_row()) : IntVect();
+    }
+
+    // ----- what the adjoint of the last solve needs besides J (see AdjointSolveInfo) --
+    // the buses set_pv_pinned_buses pinned for it
+    const std::vector<int>& pv_pinned_buses() const { return pv_pinned_buses_; }
+    // see VoltageControl::groups_without_v_set / hold_row (nothing without the extension)
+    void groups_without_v_set(std::vector<int>& out) const {
+        out.clear();
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->groups_without_v_set(out);
+    }
+    int controller_hold_row(int j) const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc != nullptr ? vc->hold_row(j) : -1;
+    }
+    // dF/d|V_b| by J row, appended to rows / vals: J's own column where |V_b| is an
+    // unknown, the dS/d|V| column of Ybus mapped onto the P and Q rows otherwise -- the
+    // one J would hold if it were. Reads the dS values of the last
+    // fill_internal_variables, so evaluate at the point of interest first
+    // (BaseAlgo::refresh_J_at_solution). A row may come more than once: sum them.
+    void vm_column(int bus, std::vector<int>& rows, std::vector<real_type>& vals) const {
+        if (bus < 0 || bus >= Ybus_ref_.cols()) return;
+        const int col = ledger_.vm_col(bus);
+        if (col >= 0) {
+            const int* outer = J_.outerIndexPtr();
+            const int* inner = J_.innerIndexPtr();
+            const real_type* val = J_.valuePtr();
+            for (int p = outer[col]; p < outer[col + 1]; ++p) {
+                rows.push_back(inner[p]);
+                vals.push_back(val[p]);
+            }
+            return;
+        }
+        if (static_cast<Eigen::Index>(dS_dVm_vals_.size()) != Ybus_ref_.nonZeros()) return;
+        const auto* outer = Ybus_ref_.outerIndexPtr();
+        const auto* inner = Ybus_ref_.innerIndexPtr();
+        for (auto k = outer[bus]; k < outer[bus + 1]; ++k) {
+            const int i = static_cast<int>(inner[k]);
+            const cplx_type ds = dS_dVm_vals_[static_cast<Eigen::Index>(k)];
+            const int pr = ledger_.p_row(i);
+            const int qr = ledger_.q_row(i);
+            if (pr >= 0) { rows.push_back(pr); vals.push_back(std::real(ds)); }
+            if (qr >= 0) { rows.push_back(qr); vals.push_back(std::imag(ds)); }
+        }
     }
 
     // ----- MultiSlack: slack_absorbed J column (-1 when the extension is absent) --

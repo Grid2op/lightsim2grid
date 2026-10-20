@@ -445,8 +445,10 @@ top), never off the containers directly.
   moved targets, hvdc regimes, taps, sections). The moved targets are the row's targets for its
   generator results and its P checks; a moved tap is the row's transformer block in its flows.
   A row its loops leave UNSTABLE or FAILED does not converge.
-- **Not yet:** `keep_jacobian` (which inner Jacobian the adjoint should read is not settled);
-  `redistribute_slack` is refused anyway (the inner Newton is single-slack).
+- **Adjoint:** `keep_jacobian` keeps each row's last inner Jacobian, refreshed at the solution,
+  with what the algorithm says of the system the loops left (`AdjointSolveInfo`: pinned rows,
+  groups that lost their set-point, the dF/d|V| columns of the gen_v buses, the gen_p terms of
+  the units frozen on a capability curve or parked by the distributed slack).
 
 Detection is the loops' first check, without the action (`outer_detect`): each loop is
 initialized on a clone and detects, on the row as its view shows it, for `LSGrid` and every

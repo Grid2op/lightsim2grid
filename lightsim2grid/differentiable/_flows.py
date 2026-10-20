@@ -22,7 +22,9 @@ against the C++ on the same voltages.
 
 from collections import namedtuple
 
-__all__ = ["BranchFlows", "compute_branch_flows"]
+import numpy as np
+
+__all__ = ["BranchFlows", "compute_branch_flows", "branch_admittances"]
 
 
 #: what :func:`compute_branch_flows` returns, all of shape ``(n_scenarios, n_branch)``
@@ -57,12 +59,36 @@ def _one_side(v_here, v_there, y_here, y_there, vn_kv_here, sn_mva, connected):
     return p_mw, q_mvar, i_a
 
 
+def branch_admittances(y_11, y_12, y_21, y_22, n_rows, n_line, rows, trafo_ids, blocks):
+    """The branch admittances row by row where an outer loop moved a transformer's tap.
+
+    ``y_*`` are the grid's, ``(n_branch,)``, powerlines first. ``rows`` / ``trafo_ids`` /
+    ``blocks`` say which transformer a row left at another tap and its pi block there
+    (``(n, 4)``: y11, y12, y21, y22), as ``get_outer_trafo_admittances`` gives them.
+    Returns the four ``(n_rows, n_branch)`` tensors, or the grid's own unchanged when no
+    tap moved -- :func:`compute_branch_flows` broadcasts either.
+    """
+    import torch
+
+    trafo_ids = np.asarray(trafo_ids, dtype=np.int64)
+    if trafo_ids.size == 0:
+        return y_11, y_12, y_21, y_22
+    ys = [y.unsqueeze(0).repeat(n_rows, 1) for y in (y_11, y_12, y_21, y_22)]
+    r = torch.as_tensor(np.asarray(rows, dtype=np.int64))
+    c = torch.as_tensor(trafo_ids + int(n_line))
+    b = torch.as_tensor(np.asarray(blocks), dtype=torch.complex128)
+    for k in range(4):
+        ys[k][r, c] = b[:, k]
+    return tuple(ys)
+
+
 def compute_branch_flows(V, y_11, y_12, y_21, y_22, bus_or, bus_ex,
                          bus_vn_kv, sn_mva, connected=None):
     """Flows at both ends of every branch, differentiable with respect to ``V``.
 
     V : complex ``(n_scenarios, n_bus)``, per unit, in GRID bus numbering
-    y_* : complex ``(n_branch,)``, the branch's Kron-reduced admittances
+    y_* : complex ``(n_branch,)``, the branch's Kron-reduced admittances, or
+          ``(n_scenarios, n_branch)`` where they differ by row (see branch_admittances)
     bus_or / bus_ex : int ``(n_branch,)``, the grid bus at each end
     bus_vn_kv : real ``(n_bus,)``, nominal voltage of each bus
     connected : bool ``(n_scenarios, n_branch)`` or None (everything connected)

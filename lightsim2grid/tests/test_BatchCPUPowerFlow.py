@@ -575,6 +575,154 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
         self.assertEqual(tensors["gen_v"].grad[1, self.REMOTE_GEN].item(), 0.)
 
 
+@unittest.skipUnless(TORCH_AVAILABLE and PP_AVAILABLE, "needs pytorch and pandapower")
+class TestBatchCPUPowerFlowOuterLoops(unittest.TestCase):
+    """The same checks with the outer loops in every row: the gradient is the one of each
+    row's last Newton solve, every decision of the loops held -- which, on steps small
+    enough not to flip any of them, is what a finite difference of the whole run measures."""
+    N_SCEN = 4
+    TOL = 1e-12
+
+    def setUp(self):
+        from lightsim2grid.differentiable import BatchCPUPowerFlow
+        from test_outer_batch import OUTER
+        self._cls = BatchCPUPowerFlow
+        self._outer = OUTER
+        warnings.filterwarnings("ignore")
+        rng = np.random.default_rng(1)
+        grid = self._grid()
+        base_lp = np.asarray(grid.get_load_target_p())
+        base_gp = np.asarray(grid.get_gen_target_p())
+        n_load, n_gen = base_lp.shape[0], base_gp.shape[0]
+        self.load_p = base_lp[None, :] * (1.1 + 0.1 * rng.standard_normal((self.N_SCEN, n_load)))
+        self.load_q = 0.3 * self.load_p
+        self.gen_p = base_gp[None, :] * (1. + 0.05 * rng.standard_normal((self.N_SCEN, n_gen)))
+        self.gen_v = np.tile(np.asarray([g.target_vm_pu for g in grid.get_generators()]), (self.N_SCEN, 1))
+
+    def _grid(self, distributed=False):
+        """test_outer_batch's case14, short of reactive power: ReactiveLimits switches buses PQ.
+        With `distributed`, the slack shared in the Newton (NROuterDist_*), its first
+        generator capped just above its target so that the share parks it there."""
+        from test_outer_batch import _grid as _outer_grid
+        from lightsim2grid.algorithm import ReactiveLimits, DistributedSlack
+        grid = _outer_grid(distributed=distributed)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits())
+        if distributed:
+            grid.add_outer_loop(DistributedSlack())
+            nb_gen = len(grid.get_generators())
+            p_max = np.full(nb_gen, 300.)
+            p_max[0] = float(grid.get_gen_target_p()[0]) + 1.
+            grid.set_gen_p_limits(np.zeros(nb_gen), p_max)
+        return grid
+
+    def _make(self, distributed=False, algorithm=None):
+        algorithm = algorithm or (self._outer.replace("NROuter_", "NROuterDist_") if distributed else self._outer)
+        return self._cls.init_from_grid(self._grid(distributed), algorithm=algorithm,
+                                        tol=self.TOL, max_iter=30)
+
+    _loss = staticmethod(TestBatchCPUPowerFlow._loss)
+
+    def _fd(self, name, idx, delta, make, **inputs):
+        out = []
+        for sign in (+1., -1.):
+            perturbed = {k: v.copy() for k, v in inputs.items()}
+            perturbed[name][idx] += sign * delta
+            pf = make()
+            out.append(float(self._loss(pf(**{k: torch.tensor(v) for k, v in perturbed.items()}))))
+        return (out[0] - out[1]) / (2. * delta)
+
+    def _check(self, make, inputs, places=6, places_v=5):
+        pf = make()
+        tensors = {k: torch.tensor(v, requires_grad=True) for k, v in inputs.items()}
+        V = pf(**tensors)
+        self.assertTrue(pf.converged().all())
+        self._loss(V).backward()
+        for name, t in tensors.items():
+            delta = 1e-6 if name == "gen_v" else 1e-4
+            for row in range(self.N_SCEN):
+                for col in range(t.shape[1]):
+                    fd = self._fd(name, (row, col), delta, make, **inputs)
+                    self.assertAlmostEqual(t.grad[row, col].item(), fd,
+                                           places=places_v if name == "gen_v" else places,
+                                           msg=f"{name}[{row}, {col}]: adjoint {t.grad[row, col].item()} vs fd {fd}")
+        return pf, tensors
+
+    def test_reactive_limits(self):
+        inputs = dict(load_p=self.load_p, load_q=self.load_q, gen_p=self.gen_p, gen_v=self.gen_v)
+        pf, _ = self._check(self._make, inputs)
+        # what this is about: some row ends with a bus switched PQ
+        self.assertTrue((np.asarray(pf.sweep.get_gen_v_share_rows()) == 0.).any())
+
+    def test_distributed_slack_in_the_newton(self):
+        # the synchronous condensers produce no active power; the share never takes a unit
+        # across 0 MW, so a step around 0 would cross that rule: give them some
+        gen_p = np.where(self.gen_p == 0., 5., self.gen_p)
+        inputs = dict(load_p=self.load_p, gen_p=gen_p)
+        pf, tensors = self._check(lambda: self._make(distributed=True), inputs)
+        # the capped unit: held at its bound whatever its set-point where that is below the
+        # cap, left where its set-point puts it where that is already above (never pulled back)
+        grid = self._grid()   # alive while its targets are read: they are a view into it
+        p_max = float(grid.get_gen_target_p()[0]) + 1.
+        below = gen_p[:, 0] < p_max
+        self.assertTrue(below.any() and (~below).any())
+        for row in range(self.N_SCEN):
+            grad = tensors["gen_p"].grad[row, 0].item()
+            if below[row]:
+                self.assertAlmostEqual(grad, 0., places=12)
+            else:
+                self.assertGreater(abs(grad), 1e-4)
+
+    def test_generator_contingency(self):
+        gen_status = np.ones((self.N_SCEN, self.gen_p.shape[1]), dtype=bool)
+        gen_status[1, 2] = False
+        make = lambda: self._make()
+        pf = make()
+        load_p = torch.tensor(self.load_p, requires_grad=True)
+        gen_v = torch.tensor(self.gen_v, requires_grad=True)
+        V = pf(load_p=load_p, gen_v=gen_v, gen_status=torch.as_tensor(gen_status))
+        self.assertTrue(pf.converged().all())
+        self._loss(V).backward()
+
+        def fd(name, idx, delta):
+            out = []
+            for sign in (+1., -1.):
+                x = {"load_p": self.load_p.copy(), "gen_v": self.gen_v.copy()}
+                x[name][idx] += sign * delta
+                V_ = make()(**{k: torch.tensor(v) for k, v in x.items()}, gen_status=torch.as_tensor(gen_status))
+                out.append(float(self._loss(V_)))
+            return (out[0] - out[1]) / (2. * delta)
+
+        for idx in ((1, 0), (0, 3)):
+            self.assertAlmostEqual(load_p.grad[idx].item(), fd("load_p", idx, 1e-4), places=6)
+        for idx in ((0, 1), (1, 1), (1, 2), (3, 0)):
+            self.assertAlmostEqual(gen_v.grad[idx].item(), fd("gen_v", idx, 1e-6), places=5)
+
+    def test_gradcheck(self):
+        pf = self._make()
+        load_p = torch.tensor(self.load_p[:2], requires_grad=True)
+        self.assertTrue(torch.autograd.gradcheck(
+            lambda lp: self._loss(pf(load_p=lp)), (load_p,), eps=1e-6, atol=1e-5))
+
+    def test_flows_at_the_taps_the_loops_settled_on(self):
+        try:
+            from test_outer_batch import _tap_grid
+            import pypowsybl  # noqa: F401
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        grid = _tap_grid()
+        pf = self._cls.init_from_grid(grid, algorithm=self._outer, tol=self.TOL, max_iter=30)
+        lp = np.tile(np.asarray(grid.get_load_target_p()), (2, 1))
+        lp[1] *= 1.05
+        V = pf(load_p=torch.tensor(lp))
+        self.assertTrue(pf.converged().all())
+        rows, trafos, _ = pf.sweep.get_outer_trafo_admittances()
+        self.assertGreater(len(trafos), 0)     # a tap did move
+        flows = pf.compute_flows(V)
+        np.testing.assert_allclose(flows.p_or_mw.detach().numpy(), pf.sweep.compute_power_flows(),
+                                   rtol=1e-9, atol=1e-9)
+
+
 class TestTorchStaysOptional(unittest.TestCase):
     """torch is an optional dependency, and the only thing that may break if it is
     missing is actually building a BatchCPUPowerFlow -- not importing lightsim2grid,

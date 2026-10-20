@@ -26,6 +26,7 @@
 #include "BaseConstants.hpp"
 #include "AlgoConfig.hpp"
 #include "linear_solvers/LinearSolverStats.hpp"
+#include "AdjointSolveInfo.hpp"
 #include "outer_loop/BaseOuterLoop.hpp"
 #include "outer_loop/OuterLoopDriver.hpp"
 #include "outer_loop/OuterControlLayout.hpp"
@@ -501,6 +502,17 @@ class LS2G_API BaseAlgo : public BaseConstants
         // speak of (every non Newton-Raphson algorithm), which is safe: those cannot
         // serve an adjoint at all (get_J already throws).
         virtual void refresh_J_at_solution() {}
+
+        // What the adjoint of the last solve needs besides its Jacobian (AdjointSolveInfo):
+        // which of its rows are identities, which voltage-control groups lost their
+        // set-point, the dF/d|V| column of each bus of `vm_buses` (solver ids) and the
+        // units whose reactive output follows their own target P. Read it where get_J() is
+        // read: after refresh_J_at_solution, the solve's own state still installed. The
+        // default leaves it empty, which is right for an algorithm without a Jacobian (it
+        // cannot serve an adjoint at all).
+        virtual void get_adjoint_solve_info(const std::vector<int> & /*vm_buses*/, AdjointSolveInfo & out) const {
+            out.clear();
+        }
 
         // Tells the algorithm whether a stranded-controller Jacobian slot (see
         // VoltageControl::declare_feature_entries in NRSystem.hpp) is worth reserving

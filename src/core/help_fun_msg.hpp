@@ -504,6 +504,17 @@ struct LS2G_API DocLSGrid
     // solver-internal state, for external solvers re-deriving the NR system
     // (distributed slack / VoltageControl / bordered-block bookkeeping)
     static const std::string get_slack_col_solver;
+    static const std::string dim_J;
+    static const std::string get_theta_col_of_bus;
+    static const std::string get_vm_col_of_bus;
+    static const std::string get_p_row_of_bus;
+    static const std::string get_q_row_of_bus;
+    static const std::string solve_JT;
+    static const std::string gen_v_indirect_grad;
+    static const std::string gen_p_indirect_grad;
+    static const std::string get_gen_v_target_bus;
+    static const std::string get_gen_v_share;
+    static const std::string get_outer_trafo_admittances;
     static const std::string get_slack_absorbed_solver;
     static const std::string get_controller_q_solver;
     static const std::string get_controller_kind_solver;

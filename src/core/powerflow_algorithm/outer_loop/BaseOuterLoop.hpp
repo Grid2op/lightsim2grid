@@ -253,6 +253,37 @@ struct LS2G_API OuterLoopStats
 };
 
 /**
+ * A generator whose reactive output, in the system the last solve of a loop left, is a
+ * function of its own target P: a unit frozen at a limit of its capability curve. Frozen
+ * through its bus' injection (`ctrl_pos` -1, `bus_solver` that bus), or as a
+ * voltage-control controller held at its output (`ctrl_pos`, the plan's position).
+ */
+struct OuterQSlope
+{
+    int gen_id;
+    int bus_solver;
+    int ctrl_pos;
+    real_type dq_dp;   ///< pu of reactive output per MW of target P
+};
+
+/**
+ * What the state a loop left after a solve changes in how an input reaches that solve's
+ * equations -- read by the adjoint of the solve (AdjointSolveInfo::gen_p_terms):
+ * - `q_slopes`: the units whose reactive output follows their target P (OuterQSlope);
+ * - `fixed_p`: the generators whose target P reaches nothing, a unit the distributed slack
+ *   holds at a bound whatever its set-point: (generator id, solver bus), and the pu per MW
+ *   of its P row (1 / sn_mva) the adjoint takes back off its gradient.
+ */
+struct OuterAdjointTerms
+{
+    std::vector<OuterQSlope> q_slopes;
+    std::vector<std::pair<int, int> > fixed_p;
+    real_type inv_sn = 0.;
+
+    void clear() { q_slopes.clear(); fixed_p.clear(); inv_sn = 0.; }
+};
+
+/**
  * One OpenLoadFlow outer loop.
  *
  * Same contract as the element containers (GenericContainer): the public entry points are
@@ -302,6 +333,10 @@ class LS2G_API BaseOuterLoop
 
         std::unique_ptr<BaseOuterLoop> clone() const { return _clone(); }
 
+        /// appends what the state of this loop changes in how the generators' target P
+        /// reaches the solve (see OuterAdjointTerms); read after a solve, for its adjoint
+        void adjoint_terms(OuterAdjointTerms & out) const { _adjoint_terms(out); }
+
         /// the loop's parameters, flattened like an AlgoConfig (what tells two loop lists
         /// apart). A loop's parameters are set at construction and never change afterwards.
         AlgoConfig get_params() const { return _get_params(); }
@@ -318,6 +353,7 @@ class LS2G_API BaseOuterLoop
         virtual bool _holds_svc_monitors() const { return false; }
         virtual std::unique_ptr<BaseOuterLoop> _clone() const = 0;
         virtual AlgoConfig _get_params() const { return AlgoConfig(); }
+        virtual void _adjoint_terms(OuterAdjointTerms & /*out*/) const {}
 };
 
 }  // namespace ls2g

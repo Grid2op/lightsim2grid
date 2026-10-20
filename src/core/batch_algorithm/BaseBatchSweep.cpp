@@ -512,17 +512,6 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         throw std::runtime_error(exc_.str());
     }
 
-    // a row solved with outer loops is several Newton solves, the last one on a system the
-    // loops edited (a bus switched PQ, a tap moved): which Jacobian the adjoint should read
-    // there is not settled, so none is kept rather than a misleading one
-    if(_keep_jacobian_ && _algo.supports_outer_loops()){
-        std::ostringstream exc_;
-        exc_ << algo_name() << "::compute: `keep_jacobian` is not available with an algorithm "
-                "running outer loops (" << _algo.get_name() << "). Use `change_algorithm` for a "
-                "plain one (NR_*), or turn `keep_jacobian` off.";
-        throw std::runtime_error(exc_.str());
-    }
-
     const size_t nb_steps = _nb_steps();
 
     // ---- what of the three levels this call may keep ------------------------------
@@ -722,6 +711,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // buffer that is never resized, from whichever thread owns them.
     _adjoint_.clear();
     _adjoint_row_ok_.clear();
+    _adjoint_info_.clear();
     if(_keep_jacobian_){
         if(!ac_solver_used || !_algo.supports_jacobian()){
             std::ostringstream exc_;
@@ -733,6 +723,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
             throw std::runtime_error(exc_.str());
         }
         _adjoint_.allocate(static_cast<Eigen::Index>(nb_steps), _algo.get_J());
+        // with outer loops, a row's Jacobian is that of its last Newton solve, on the
+        // system the loops left (a bus switched PQ, a unit held at a limit, a tap moved):
+        // what the algorithm says of that system is kept next to it
+        _adjoint_gen_v_ = _gen_v_layout();
+        _adjoint_info_.assign(nb_steps, AdjointSolveInfo());
     }
 
     // L2 is built and this batch converged on it (L1 was raised by
@@ -756,7 +751,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
 template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
 BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indirect_grad(
-    const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda)
+    const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda) const
 {
     const Eigen::Index nb_gen = static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb());
     const Eigen::Index nb_rows = _nb_result_rows();
@@ -776,106 +771,65 @@ BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_v_indi
                 "for a batch of " << nb_rows << ". Pass what solve_JT() returned for this batch.";
         throw std::runtime_error(exc_.str());
     }
-
-    const IntVect target_bus = get_gen_v_target_bus();          // grid bus, or -1
-    const RealVect share = get_gen_v_share();                  // 1/n where n share a bus
-
-    // generators of a voltage-control group: their gen_v is the group's v_set, and
-    // dF_v/dv_set = -1, so -lambda^T dF/dv is lambda at the group's voltage row --
-    // except on a row where handle_disconnected_grid stranded every controller of that
-    // group: its row is then "Q_first = 0" and no longer contains v_set
-    {
-        const IntVect vc_row = get_gen_v_vc_row();
-        const IntVect vc_group = _gen_v_vc_group();
-        const bool has_masking = _mask_mode() && !_li_masked.empty();
-        const VoltageControlSolverData & ctrl = _grid_model.get_ac_voltage_control_plan().controllers();
-        // the rule of VoltageControl::_recompute_group_stranded: only the active
-        // controllers count, a group of held ones only is never stranded
-        const auto group_stranded = [&ctrl](int grp, const std::vector<int> & masked){
-            const int first = ctrl.grp_start(grp);
-            const int cnt = ctrl.grp_count(grp);
-            bool any_active = false;
-            for(int off = 0; off < cnt; ++off){
-                if(ctrl.is_held(first + off)) continue;
-                any_active = true;
-                if(std::find(masked.begin(), masked.end(), ctrl.bus(first + off)) == masked.end()) return false;
-            }
-            return any_active;
-        };
-        for(Eigen::Index g = 0; g < nb_gen && g < vc_row.size(); ++g){
-            if(vc_row[g] < 0) continue;
-            const int grp = vc_group[g];
-            const bool grp_ok = grp >= 0 && grp < ctrl.n_groups();
-            for(Eigen::Index i = 0; i < nb_rows; ++i){
-                if(static_cast<size_t>(i) < _converged_mask_.size() && !_converged_mask_[static_cast<size_t>(i)]) continue;
-                if(has_masking && grp_ok && static_cast<size_t>(i) < _li_masked.size() &&
-                   group_stranded(grp, _li_masked[static_cast<size_t>(i)])) continue;
-                res(i, g) = lambda(i, vc_row[g]) * share[g];
-            }
-        }
+    if(lambda.cols() < dim_J()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::gen_v_indirect_grad: lambda has " << lambda.cols() << " columns, the "
+                "Jacobian " << dim_J() << ". Pass what solve_JT() returned for this batch.";
+        throw std::runtime_error(exc_.str());
     }
-    const IntVect p_row = _algo.get_p_to_J_row_python();        // solver bus -> J row
-    const IntVect q_row = _algo.get_q_to_J_row_python();
-    const auto me_to_solver = active_layout().id_me_to_solver.as_eigen();
-    const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
 
-    // the generators that carry a gradient at all, paired with their solver bus. Most
-    // grids leave the majority of this list empty (one regulating generator per bus,
-    // every other one skipped or overwritten), and a bus appears at most once.
-    std::vector<std::pair<int, Eigen::Index> > bus_and_gen;   // (solver bus, generator)
-    for(Eigen::Index g = 0; g < nb_gen && g < target_bus.size(); ++g){
-        const int bus_me = target_bus[g];
-        if(bus_me < 0 || bus_me >= me_to_solver.size()) continue;
-        const int bus_solver = me_to_solver[bus_me];
-        if(bus_solver < 0) continue;
-        bus_and_gen.push_back(std::make_pair(bus_solver, g));
-    }
-    if(bus_and_gen.empty()) return res;
-
-    // one copy for the whole call; each row's contingency edits are applied to it and
-    // taken back off, exactly as the forward row loop does to its own copy
-    Eigen::SparseMatrix<cplx_type> Ybus = ac_cache_.mat;
-    const CplxMat & voltages = get_voltages();
-    CplxVect V_solver(solver_to_me.size());
-    CplxVect I_solver(solver_to_me.size());
-
+    const IntVect vm_col = _algo.get_vm_to_J_col_python();
+    const IntVect v_row = _algo.get_group_v_row();
     for(Eigen::Index i = 0; i < nb_rows; ++i){
-        if(static_cast<size_t>(i) < _converged_mask_.size() && !_converged_mask_[static_cast<size_t>(i)]) continue;
-        _patch_ybus_values(Ybus, static_cast<size_t>(i), false);
+        // a row the forward did not keep (it did not converge) has no gradient
+        if(!_adjoint_.has_row(i) || static_cast<size_t>(i) >= _adjoint_info_.size()) continue;
+        power_flow_adjoint::gen_v_indirect(_adjoint_gen_v_, _adjoint_info_[static_cast<size_t>(i)], vm_col, v_row,
+                                           lambda.row(i).data(), res.row(i).data());
+    }
+    return res;
+}
 
-        // this row's converged voltage, on the solver's buses
-        for(Eigen::Index b = 0; b < solver_to_me.size(); ++b) V_solver[b] = voltages(i, solver_to_me[b]);
-        // the injected current, hence the injected power, at every bus: one sparse
-        // product rather than a walk of row b of a column-major matrix per target bus
-        I_solver.noalias() = Ybus * V_solver;
+template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
+BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::gen_p_indirect_grad(
+    const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda) const
+{
+    const Eigen::Index nb_gen = static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb());
+    const Eigen::Index nb_rows = _nb_result_rows();
+    BatchAdjoint::RealMatRM res = BatchAdjoint::RealMatRM::Zero(nb_rows, nb_gen);
+    if(nb_rows == 0 || nb_gen == 0) return res;
+    if(lambda.rows() != nb_rows || lambda.cols() < dim_J()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::gen_p_indirect_grad: got lambda of shape (" << lambda.rows() << ", "
+             << lambda.cols() << ") for a batch of " << nb_rows << " rows and a Jacobian of dimension "
+             << dim_J() << ". Pass what solve_JT() returned for this batch.";
+        throw std::runtime_error(exc_.str());
+    }
+    for(Eigen::Index i = 0; i < nb_rows; ++i){
+        if(!_adjoint_.has_row(i) || static_cast<size_t>(i) >= _adjoint_info_.size()) continue;
+        power_flow_adjoint::gen_p_indirect(_adjoint_info_[static_cast<size_t>(i)], lambda.row(i).data(),
+                                           res.row(i).data(), nb_gen);
+    }
+    return res;
+}
 
-        for(size_t k = 0; k < bus_and_gen.size(); ++k){
-            const int b = bus_and_gen[k].first;
-            const Eigen::Index g = bus_and_gen[k].second;
-            const real_type vm_b = std::abs(V_solver[b]);
-            if(!(vm_b > 0.)) continue;
-            const cplx_type u_conj = std::conj(V_solver[b] / vm_b);   // conj of the unit phasor
-            // S_b = V_b . conj(I_b), so the "self" term of dS_b/d|V_b| -- e^{j.theta_b}
-            // times conj(I_b) -- is just S_b / |V_b|, no second walk of the matrix
-            const cplx_type s_over_vm = V_solver[b] * std::conj(I_solver[b]) / vm_b;
-
-            real_type acc = 0.;
-            // column b of Ybus: every bus whose injection this magnitude reaches
-            for(Eigen::SparseMatrix<cplx_type>::InnerIterator it(Ybus, b); it; ++it){
-                const int row_bus = static_cast<int>(it.row());
-                // dS_i/d|V_b| = V_i . conj(Y_ib) . conj(u_b), plus S_b/|V_b| on the diagonal
-                cplx_type dS = V_solver[row_bus] * std::conj(it.value()) * u_conj;
-                if(row_bus == b) dS += s_over_vm;
-                // ... contracted with lambda over the two mismatch equations of that bus
-                if(row_bus < p_row.size() && p_row[row_bus] >= 0) acc -= lambda(i, p_row[row_bus]) * dS.real();
-                if(row_bus < q_row.size() && q_row[row_bus] >= 0) acc -= lambda(i, q_row[row_bus]) * dS.imag();
-            }
-            // each generator of a shared bus carries its share of that bus' derivative,
-            // and only their sum is a derivative at all -- see get_gen_v_share
-            res(i, g) = acc * share[g];
+template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
+BatchAdjoint::RealMatRM BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::get_gen_v_share_rows() const
+{
+    const Eigen::Index nb_gen = static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb());
+    const Eigen::Index nb_rows = _nb_result_rows();
+    BatchAdjoint::RealMatRM res = BatchAdjoint::RealMatRM::Zero(nb_rows, nb_gen);
+    if(!_adjoint_.is_allocated()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::get_gen_v_share_rows: no Jacobian was kept for this batch. Set "
+                "`keep_jacobian` to True BEFORE calling compute().";
+        throw std::runtime_error(exc_.str());
+    }
+    const IntVect vm_col = _algo.get_vm_to_J_col_python();
+    for(Eigen::Index i = 0; i < nb_rows; ++i){
+        if(!_adjoint_.has_row(i) || static_cast<size_t>(i) >= _adjoint_info_.size()) continue;
+        for(Eigen::Index g = 0; g < nb_gen; ++g){
+            res(i, g) = power_flow_adjoint::share_in_solve(_adjoint_gen_v_, _adjoint_info_[static_cast<size_t>(i)], vm_col, g);
         }
-
-        _patch_ybus_values(Ybus, static_cast<size_t>(i), true);
     }
     return res;
 }

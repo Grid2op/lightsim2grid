@@ -273,6 +273,9 @@ class LS2G_API AlgorithmSelector final
         void refresh_J_at_solution() {
             get_prt_solver("refresh_J_at_solution", false)->refresh_J_at_solution();
         }
+        void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const {
+            get_prt_solver("get_adjoint_solve_info", false)->get_adjoint_solve_info(vm_buses, out);
+        }
         void set_masked_buses(const std::vector<int>& solver_bus_ids) {
             get_prt_solver("set_masked_buses", false)->set_masked_buses(solver_bus_ids);
         }

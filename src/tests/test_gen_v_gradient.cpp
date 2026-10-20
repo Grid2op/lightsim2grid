@@ -38,6 +38,7 @@ using ls2g::InjectionSweep;
 using ls2g::IntVect;
 using ls2g::LSGrid;
 using ls2g::RealVect;
+using ls2g::ScenarioSweep;
 using ls2g::cplx_type;
 using ls2g::real_type;
 
@@ -126,7 +127,8 @@ real_type loss_of(const Eigen::Ref<const CplxMatRM> & V)
     return res;
 }
 
-void feed(InjectionSweep & sweep, const Inputs & in)
+template<class Sweep>
+void feed(Sweep & sweep, const Inputs & in)
 {
     sweep.modify_gen_p(in.gen_p);
     sweep.modify_sgen_p(in.sgen_p);
@@ -150,7 +152,8 @@ real_type run_loss(const Inputs & in, int nb_gen_on_pv_bus, int remote_reg_bus =
 // The whole gen_v gradient: the indirect half from the sweep, the direct half here --
 // which is the caller's job, and is the same arithmetic that built xbar (see
 // BaseBatchSweep::get_gen_v_target_bus).
-RealMatRM gen_v_gradient(InjectionSweep & sweep, int nb_gen)
+template<class Sweep>
+RealMatRM gen_v_gradient(Sweep & sweep, int nb_gen)
 {
     const int dim_J = sweep.dim_J();
     const IntVect theta_col = sweep.get_theta_col_of_bus();
@@ -173,7 +176,7 @@ RealMatRM gen_v_gradient(InjectionSweep & sweep, int nb_gen)
     REQUIRE(grad.cols() == nb_gen);
 
     const IntVect target = sweep.get_gen_v_target_bus();
-    const RealVect share = sweep.get_gen_v_share();
+    const RealMatRM share = sweep.get_gen_v_share_rows();
     for(int i = 0; i < NB_STEPS; ++i){
         for(int g = 0; g < nb_gen; ++g){
             const int b = target[g];
@@ -182,7 +185,7 @@ RealMatRM gen_v_gradient(InjectionSweep & sweep, int nb_gen)
             const cplx_type v = V(i, b);
             // the same share the indirect half already carries: tied set-points hold a
             // share of one derivative, not a partial each (see get_gen_v_share)
-            grad(i, g) += (std::conj(v / std::abs(v)) * gV).real() * share[g];
+            grad(i, g) += (std::conj(v / std::abs(v)) * gV).real() * share(i, g);
         }
     }
     return grad;
@@ -223,6 +226,62 @@ TEST_CASE("the gen_v gradient is the one a finite difference measures")
             REQUIRE(grad(i, g) == Approx(fd).margin(2e-5));
             // and it is not trivially zero, which would pass any margin
             REQUIRE(std::abs(fd) > 1e-3);
+        }
+    }
+}
+
+
+// The ScenarioSweep twin of run_loss: row 0 trips generator 1, so bus 1 loses its last
+// regulator there and the batch reserves it a magnitude unknown, pinned PV on every
+// other row.
+real_type run_loss_trip(const Inputs & in)
+{
+    LSGrid grid = make_grid(1);
+    ScenarioSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    ScenarioSweep::BoolMat gen_off = ScenarioSweep::BoolMat::Constant(NB_STEPS, 2, false);
+    gen_off(0, 1) = true;
+    sweep.set_contingency_gens(gen_off);
+    feed(sweep, in);
+    sweep.compute(CplxVect::Constant(NB_BUS, cplx_type(1., 0.)), 30, 1e-12);
+    REQUIRE(sweep.get_status() == 1);
+    return loss_of(sweep.get_voltages());
+}
+
+
+TEST_CASE("a bus pinned PV in a row still owes that row its gen_v gradient")
+{
+    // A pinned bus has a magnitude unknown, held by the identity  |V_1| = gen_v  in
+    // place of its reactive balance: gen_v still fixes |V_1|, through that equation
+    // rather than through the starting voltage. Its gradient is then read off the
+    // Jacobian's own column of |V_1|, which already holds the row's dS/d|V|.
+    const int NB_GEN = 2;
+    LSGrid grid = make_grid(1);
+    ScenarioSweep sweep(grid);
+    sweep.change_algorithm(AlgorithmType::NR_SparseLU);
+    sweep.set_keep_jacobian(true);
+    ScenarioSweep::BoolMat gen_off = ScenarioSweep::BoolMat::Constant(NB_STEPS, NB_GEN, false);
+    gen_off(0, 1) = true;
+    sweep.set_contingency_gens(gen_off);
+
+    const Inputs in(NB_GEN);
+    feed(sweep, in);
+    sweep.compute(CplxVect::Constant(NB_BUS, cplx_type(1., 0.)), 30, 1e-12);
+    REQUIRE(sweep.get_status() == 1);
+    REQUIRE(sweep.get_vm_col_of_bus()[GEN_BUS] >= 0);   // the reserved unknown
+
+    const RealMatRM grad = gen_v_gradient(sweep, NB_GEN);
+    const real_type delta = 1e-6;
+    for(int i = 0; i < NB_STEPS; ++i){
+        for(int g = 0; g < NB_GEN; ++g){
+            Inputs plus = in, minus = in;
+            plus.gen_v(i, g) += delta;
+            minus.gen_v(i, g) -= delta;
+            const real_type fd = (run_loss_trip(plus) - run_loss_trip(minus)) / (2. * delta);
+            REQUIRE(grad(i, g) == Approx(fd).margin(2e-5));
+            // generator 1 is off in row 0: nothing to measure there, everywhere else
+            // there is
+            if(i > 0 || g == 0) REQUIRE(std::abs(fd) > 1e-3);
         }
     }
 }

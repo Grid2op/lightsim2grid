@@ -73,6 +73,10 @@ public:
     RealVect get_controller_q()         const override { return inner_.get_controller_q(); }
     IntVect  get_controller_kind()      const override { return inner_.get_controller_kind(); }
     IntVect  get_controller_elem_id()   const override { return inner_.get_controller_elem_id(); }
+    // what an adjoint of the last inner round needs besides its J (see AdjointSolveInfo)
+    void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const override {
+        inner_.get_adjoint_solve_info(vm_buses, out);
+    }
 
     // No in-Jacobian slack column (that's the whole point) -- but there IS a
     // meaningful total: the accumulated active power redistributed by the outer

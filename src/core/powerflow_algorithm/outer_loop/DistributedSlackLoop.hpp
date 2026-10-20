@@ -110,6 +110,7 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
             return std::unique_ptr<BaseOuterLoop>(new DistributedSlackLoop(*this));
         }
         AlgoConfig _get_params() const override;
+        void _adjoint_terms(OuterAdjointTerms & out) const override;
 
     private:
         /// the mismatch of the slack bus (MW, > 0: the units must inject more), NaN without
@@ -151,6 +152,7 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         // the units the row's lost-power share (_share_lost_p) put at a bound, and on which side
         std::vector<char> lost_p_saturated_;
         bool lost_p_high_ = false;
+        real_type sn_mva_ = 0.;  // the grid's, at the last initialize
 
         const Params params_;
 };

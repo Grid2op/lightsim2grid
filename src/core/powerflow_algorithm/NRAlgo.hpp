@@ -9,6 +9,7 @@
 #ifndef NR_ALGO_H
 #define NR_ALGO_H
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>     // std::isfinite (policy parameter validation)
 #include <sstream>
@@ -232,6 +233,19 @@ public:
     void refresh_J_at_solution() override {
         _system.fill_internal_variables();
         _system.fill_J();
+    }
+
+    void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const override {
+        out.clear();
+        out.pinned_buses = _system.pv_pinned_buses();
+        std::sort(out.pinned_buses.begin(), out.pinned_buses.end());   // looked up by bisection
+        _system.groups_without_v_set(out.vset_lost_groups);             // in group order already
+        out.vm_col_start.push_back(0);
+        for (int bus : vm_buses) {
+            out.vm_col_bus.push_back(bus);
+            _system.vm_column(bus, out.vm_col_row, out.vm_col_val);
+            out.vm_col_start.push_back(static_cast<int>(out.vm_col_row.size()));
+        }
     }
 
     void set_masked_buses(const std::vector<int> & solver_bus_ids) override {

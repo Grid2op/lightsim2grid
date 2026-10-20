@@ -106,6 +106,7 @@ add_executable(lightsim2grid_unit_tests
     test_base_case_reuse.cpp
     test_slack_redistribution.cpp
     test_outer_row_view.cpp
+    test_outer_adjoint.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

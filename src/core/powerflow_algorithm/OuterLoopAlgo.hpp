@@ -229,6 +229,8 @@ public:
     bool supports_bus_masking() const override { return inner_.algo().supports_bus_masking(); }
     bool supports_jacobian() const override { return inner_.algo().supports_jacobian(); }
     void refresh_J_at_solution() override { inner_.algo().refresh_J_at_solution(); }
+    // the inner Newton's, plus how the loops' last state changes the way gen_p reaches it
+    void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const override;
     void set_masked_buses(const std::vector<int> & solver_bus_ids) override { inner_.algo().set_masked_buses(solver_bus_ids); }
     void set_may_mask_voltage_control(bool val) override { inner_.algo().set_may_mask_voltage_control(val); }
     void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override { inner_.algo().set_voltage_control_v_set(v_set); }

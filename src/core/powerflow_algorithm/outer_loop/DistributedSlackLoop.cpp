@@ -134,6 +134,7 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
     units_.clear();
     unit_solver_bus_.clear();
     collect_units(ctx.view(), units_, unit_solver_bus_);
+    sn_mva_ = ctx.grid->get_sn_mva();
     // a unit starts from its target in force: the one a solve resumed from left it at (a batch
     // row from its "n" solve, as OpenLoadFlow's contingencies start from the targetP of the
     // pre-contingency solve), the row's or the grid's otherwise
@@ -442,6 +443,20 @@ AlgoConfig DistributedSlackLoop::_get_params() const
                        static_cast<double>(params_.p_residue_eps_mw),
                        static_cast<double>(params_.moved_fraction)};
     return cfg;
+}
+
+void DistributedSlackLoop::_adjoint_terms(OuterAdjointTerms & out) const
+{
+    // a unit parked at a bound sits there whatever its set-point (the Newton gives it no
+    // share, and the sharing from the initial targets puts it back at the bound) -- unless
+    // that "bound" is its own set-point: a unit already beyond a limit is never pulled back
+    // to it (slack_redistribution::distribute), it stays where its target puts it
+    if (sn_mva_ > 0.) out.inv_sn = 1. / sn_mva_;
+    for (std::size_t k = 0; k < units_.size() && k < parked_.size() && k < unit_solver_bus_.size(); ++k) {
+        if (!parked_[k] || units_[k].kind != slack_redistribution::UnitKind::GENERATOR) continue;
+        if (k < current_mw_.size() && current_mw_[k] == units_[k].injection_mw) continue;
+        out.fixed_p.emplace_back(units_[k].el_id, unit_solver_bus_[k]);
+    }
 }
 
 }  // namespace ls2g

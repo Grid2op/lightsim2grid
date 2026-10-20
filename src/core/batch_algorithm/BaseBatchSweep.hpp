@@ -21,6 +21,7 @@
 #include "powerflow_algorithm/outer_loop/DefaultOuterLoops.hpp"
 #include "BusGraph.hpp"
 #include "BatchAdjoint.hpp"
+#include "PowerFlowAdjoint.hpp"
 #include "element_container/SlackRedistribution.hpp"
 
 #include <set>
@@ -32,6 +33,7 @@
 #include <iterator>
 #include <exception>
 #include <sstream>
+#include <tuple>
 #include <type_traits>
 #include <limits>
 // isnan / isfinite / sqrt: the C header, not <cmath>. These are used unqualified below
@@ -240,6 +242,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void clear_batch_outputs() override {
             _adjoint_.clear();
             _adjoint_row_ok_.clear();
+            _adjoint_info_.clear();
             _converged.clear();
             _converged_mask_.clear();
             _row_solve_time_.clear();
@@ -1214,30 +1217,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // The GRID bus whose magnitude each generator's gen_v set-point helps fix, -1
         // where it fixes none -- which is the case for a generator that is disconnected,
-        // not regulating or treated as off; for one regulating a bus the solve gives a
-        // magnitude unknown to (a bus a voltage-control group holds: the set-point is
-        // then that group's v_set, not a fixed |V| -- see get_gen_v_vc_row); and for one
-        // whose bus is pinned by an SVC or an hvdc converter station, whose set-point no
-        // batch can move, so the generator's is not free either.
+        // not regulating or treated as off; for one regulating a bus a voltage-control
+        // group holds (the set-point is then that group's v_set, not a fixed |V| -- see
+        // get_gen_v_vc_row); and for one whose bus is pinned by an SVC or an hvdc
+        // converter station, whose set-point no batch can move, so the generator's is not
+        // free either. A bus the solve gives a magnitude unknown (a switchable bus) is a
+        // target too: its set-point reaches a row while the bus is pinned PV there, and
+        // nothing while it is PQ -- which get_gen_v_share_rows says, row by row.
         IntVect get_gen_v_target_bus() const {
-            std::map<int, std::vector<int> > gens_of_bus;
-            _grid_model.get_generators().vm_writers_by_bus(active_layout().id_me_to_solver, gens_of_bus);
-            std::map<int, real_type> pinned;
-            _grid_model.get_svcs().vm_targets_by_bus(active_layout().id_me_to_solver, pinned);
-            _grid_model.get_dclines().vm_targets_by_bus(active_layout().id_me_to_solver, pinned);
-
-            const IntVect vm_col = _algo.get_vm_to_J_col_python();
+            const power_flow_adjoint::GenVLayout layout = _gen_v_layout();
             const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
-            IntVect res = IntVect::Constant(
-                static_cast<Eigen::Index>(_grid_model.get_generators_as_data().nb()), -1);
-            for(const auto & bus_and_gens : gens_of_bus){
-                const int b = bus_and_gens.first;
-                if(b < 0 || b >= solver_to_me.size()) continue;
-                if(b < vm_col.size() && vm_col[b] >= 0) continue;      // |V| is an unknown there
-                if(pinned.find(b) != pinned.end()) continue;           // held by something else
-                for(size_t k = 0; k < bus_and_gens.second.size(); ++k){
-                    res[static_cast<Eigen::Index>(bus_and_gens.second[k])] = solver_to_me[b];
-                }
+            IntVect res = IntVect::Constant(layout.target_bus.size(), -1);
+            for(Eigen::Index g = 0; g < res.size(); ++g){
+                const int b = layout.target_bus[g];
+                if(b >= 0 && b < solver_to_me.size()) res[g] = solver_to_me[b];
             }
             return res;
         }
@@ -1263,22 +1256,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // would be refused. And nothing here depends on the order the generators happen
         // to sit in their container, which is what "whichever set_vm writes last" would
         // have made the answer depend on.
-        RealVect get_gen_v_share() const {
-            const IntVect target = get_gen_v_target_bus();
-            const IntVect vc_group = _gen_v_vc_group();
-            std::map<int, int> count, count_vc;   // per fixed bus / per group
-            for(Eigen::Index g = 0; g < target.size(); ++g){
-                if(target[g] >= 0) count[target[g]] += 1;
-                else if(g < vc_group.size() && vc_group[g] >= 0) count_vc[vc_group[g]] += 1;
-            }
-            RealVect res = RealVect::Zero(target.size());
-            for(Eigen::Index g = 0; g < target.size(); ++g){
-                if(target[g] >= 0) res[g] = 1. / static_cast<real_type>(count[target[g]]);
-                else if(g < vc_group.size() && vc_group[g] >= 0)
-                    res[g] = 1. / static_cast<real_type>(count_vc[vc_group[g]]);
-            }
-            return res;
-        }
+        RealVect get_gen_v_share() const { return _gen_v_layout().share; }
+
+        // get_gen_v_share, row by row: 0 on a row where the generator's set-point reaches
+        // nothing -- its bus switched PQ there, its group's voltage row lost its set-point
+        // (every controller held, or stranded), the row not solved. What the DIRECT half of
+        // the gen_v gradient is weighted by; gen_v_indirect_grad already is. Needs the
+        // Jacobians kept (keep_jacobian), which is when it is asked for.
+        BatchAdjoint::RealMatRM get_gen_v_share_rows() const;
 
         // The Jacobian row whose adjoint is each generator's gen_v gradient, -1 where
         // it has none there. A generator regulating a bus a voltage-control group holds
@@ -1290,11 +1275,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // row moving the generator's is refused (_row_gen_v_conflicts) and there is no
         // derivative to give.
         IntVect get_gen_v_vc_row() const {
-            const IntVect vc_group = _gen_v_vc_group();
+            const power_flow_adjoint::GenVLayout layout = _gen_v_layout();
             const IntVect v_row = _algo.get_group_v_row();
-            IntVect res = IntVect::Constant(vc_group.size(), -1);
-            for(Eigen::Index g = 0; g < vc_group.size(); ++g){
-                const int grp = vc_group[g];
+            IntVect res = IntVect::Constant(layout.vc_group.size(), -1);
+            for(Eigen::Index g = 0; g < layout.vc_group.size(); ++g){
+                const int grp = layout.vc_group[g];
                 if(grp >= 0 && grp < v_row.size()) res[g] = v_row[grp];
             }
             return res;
@@ -1302,18 +1287,49 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // The indirect half of the gen_v gradient: `-lambda^T dF/dv` per row and per
         // generator -- for a generator of a voltage-control group, all of it: lambda at
-        // the group's voltage row (get_gen_v_vc_row), zero on a row where
-        // handle_disconnected_grid stranded the group -- otherwise
-        // keyed like get_gen_v_target_bus() (zero wherever that says -1, and
+        // the group's voltage row (get_gen_v_vc_row), zero on a row where that row lost
+        // its set-point (stranded by handle_disconnected_grid, every controller held) --
+        // otherwise keyed like get_gen_v_target_bus() (zero wherever that says -1, and
         // on a row that did not converge) and already carrying each generator's share of
-        // its bus (see get_gen_v_share -- the caller must weight the DIRECT half by the
-        // same thing). `lambda` is what solve_JT returned, so the
+        // its bus in that row (see get_gen_v_share_rows -- the caller must weight the
+        // DIRECT half by the same thing). `lambda` is what solve_JT returned, so the
         // adjoint system is solved once and both halves of the gradient read it.
         //
-        // dF/dv_k is the dS/d|V_k| column, taken on THIS row's admittance matrix -- the
-        // base one with the row's own contingency edits applied, which is why this
-        // lives here and not in the caller.
-        BatchAdjoint::RealMatRM gen_v_indirect_grad(const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda);
+        // dF/dv_k is the dS/d|V_k| column, taken on THIS row's own system -- its
+        // contingency edits, and the taps and sections its outer loops settled on -- as
+        // the algorithm handed it over with the row's Jacobian (AdjointSolveInfo).
+        BatchAdjoint::RealMatRM gen_v_indirect_grad(const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda) const;
+
+        // What the gen_p gradient owes beyond lambda at the generator's P row, per row and
+        // per generator (AdjointSolveInfo::gen_p_terms): a unit an outer loop froze at a
+        // limit of its capability curve injects a reactive power that follows its target
+        // P; a unit the distributed slack (NROuterDist_*) holds at a bound is not moved by
+        // its target at all, and this takes its P row back off. Zero everywhere without
+        // such a unit. `lambda` is solve_JT's.
+        BatchAdjoint::RealMatRM gen_p_indirect_grad(const Eigen::Ref<const BatchAdjoint::RealMatRM> & lambda) const;
+
+        // The transformers each row's outer loops left at another tap than the grid's, with
+        // the pi block (y11, y12, y21, y22, pu) they have there -- what that row's flows are
+        // computed with: three aligned columns (row, transformer id, block). Empty without
+        // outer loops, or when no loop moved a tap. For a caller recomputing flows from the
+        // voltages (a differentiable flow), which would otherwise read the grid's tap.
+        std::tuple<IntVect, IntVect, Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
+        get_outer_trafo_admittances() const {
+            std::size_t n = 0;
+            for(const auto & row : _row_trafo_blocks_) n += row.size();
+            IntVect rows(static_cast<Eigen::Index>(n)), trafos(static_cast<Eigen::Index>(n));
+            Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> blocks(static_cast<Eigen::Index>(n), 4);
+            Eigen::Index k = 0;
+            for(std::size_t i = 0; i < _row_trafo_blocks_.size(); ++i){
+                for(const auto & tb : _row_trafo_blocks_[i]){
+                    rows[k] = static_cast<int>(i);
+                    trafos[k] = tb.first;
+                    for(int c = 0; c < 4; ++c) blocks(k, c) = tb.second[static_cast<std::size_t>(c)];
+                    ++k;
+                }
+            }
+            return std::make_tuple(rows, trafos, blocks);
+        }
 
         // Per row: 1 where solve_JT() actually solved that row's adjoint system.
         const std::vector<char> & adjoint_row_ok() const { return _adjoint_row_ok_; }
@@ -1432,26 +1448,27 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // Re-key a solver-bus-keyed map onto grid bus ids (see get_p_row_of_bus).
         IntVect _bus_map_to_grid(const IntVect & solver_keyed) const {
-            const auto me_to_solver = active_layout().id_me_to_solver.as_eigen();
-            IntVect res = IntVect::Constant(me_to_solver.size(), -1);
-            for(Eigen::Index bus_me = 0; bus_me < me_to_solver.size(); ++bus_me){
-                const int bus_solver = me_to_solver[bus_me];
-                if(bus_solver < 0) continue;   // bus not in the solver (deactivated, isolated)
-                if(bus_solver >= solver_keyed.size()) continue;
-                res[bus_me] = solver_keyed[bus_solver];
-            }
-            return res;
+            return power_flow_adjoint::bus_map_to_grid(active_layout(), solver_keyed);
         }
 
-        // Keep this row's converged Jacobian for the adjoint. MUST be called while the
-        // row's own state is still installed on the algorithm -- its Ybus edits, its
-        // masked buses, its PV pinning -- because refresh_J_at_solution() re-fills J
-        // from exactly that, and a J refreshed after the loop restored its resting
-        // state would describe a system this row never solved.
+        // which part of the gen_v gradient each generator has (see PowerFlowAdjoint)
+        power_flow_adjoint::GenVLayout _gen_v_layout() const {
+            return power_flow_adjoint::gen_v_layout(_grid_model, active_layout(), _grid_model.get_ac_voltage_control_plan());
+        }
+
+        // Keep this row's converged Jacobian for the adjoint, and what the algorithm says
+        // of the system it ends on (its identity rows, the dF/d|V| columns of the gen_v
+        // buses, ...: AdjointSolveInfo). MUST be called while the row's own state is
+        // still installed on the algorithm -- its Ybus edits, its masked buses, its PV
+        // pinning, its outer loops' last decisions -- because refresh_J_at_solution()
+        // re-fills J from exactly that, and a J refreshed after the loop restored its
+        // resting state would describe a system this row never solved. Nothing happens
+        // without keep_jacobian: the row loop pays one test.
         void _maybe_store_jacobian(size_t i, AlgorithmSelector & algo) {
             if(!_adjoint_.is_allocated()) return;
             algo.refresh_J_at_solution();
             _adjoint_.store_row(static_cast<Eigen::Index>(i), algo.get_J());
+            if(i < _adjoint_info_.size()) algo.get_adjoint_solve_info(_adjoint_gen_v_.vm_buses, _adjoint_info_[i]);
         }
 
         // Which equations each row froze to the identity, as Jacobian row indices --
@@ -1459,38 +1476,28 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // and a row can have both:
         //   - a bus a contingency stranded: masked, so BOTH its P and its Q equation;
         //   - a bus still PV in this row (a reserved switchable bus whose generator
-        //     is still on): pinned, so its Q equation only.
-        // Empty when the batch does neither, which is the common case.
+        //     is still on, the batch's or an outer loop's): pinned, so its Q equation
+        //     only -- as the algorithm reported it with the row's Jacobian.
+        // Empty when no row does either, which is the common case.
         std::vector<std::vector<int> > _adjoint_identity_rows() const {
             const Eigen::Index nb_rows = _adjoint_.nb_rows();
             // _li_masked is filled whenever connectivity was analysed, but only the
             // masked mode ever hands it to the algorithm: without it a contingency
             // that strands a bus makes the row skipped entirely, not masked
             const bool has_masking = _mask_mode() && !_li_masked.empty();
-            const bool has_pinning = _has_pv_switching();
+            bool has_pinning = false;
+            for(const AdjointSolveInfo & info : _adjoint_info_) has_pinning = has_pinning || !info.pinned_buses.empty();
             if(nb_rows <= 0 || (!has_masking && !has_pinning)) return std::vector<std::vector<int> >();
 
             const IntVect p_row = _algo.get_p_to_J_row_python();
             const IntVect q_row = _algo.get_q_to_J_row_python();
-            auto push = [](const IntVect & map, int bus, std::vector<int> & out){
-                if(bus >= 0 && bus < map.size() && map[bus] >= 0) out.push_back(map[bus]);
-            };
-
+            const AdjointSolveInfo none;
             std::vector<std::vector<int> > res(static_cast<size_t>(nb_rows));
             for(Eigen::Index i = 0; i < nb_rows; ++i){
-                std::vector<int> & row = res[static_cast<size_t>(i)];
-                if(has_masking && static_cast<size_t>(i) < _li_masked.size()){
-                    for(int bus : _li_masked[static_cast<size_t>(i)]){
-                        push(p_row, bus, row);
-                        push(q_row, bus, row);
-                    }
-                }
-                if(has_pinning){
-                    // _row_pv_pinned falls back to the whole switchable set for a row
-                    // that flips nothing -- which is right: such a row leaves every
-                    // reserved bus pinned, exactly as the loop's resting state has it.
-                    for(int bus : _row_pv_pinned(static_cast<size_t>(i))) push(q_row, bus, row);
-                }
+                const size_t row = static_cast<size_t>(i);
+                const std::vector<int> * masked = has_masking && row < _li_masked.size() ? &_li_masked[row] : nullptr;
+                power_flow_adjoint::identity_rows(row < _adjoint_info_.size() ? _adjoint_info_[row] : none,
+                                                  masked, p_row, q_row, res[row]);
             }
             return res;
         }
@@ -1929,21 +1936,6 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _readd_step_coeffs(Eigen::SparseMatrix<cplx_type> &, size_t, bool, AlgorithmSelector &) {}
-
-        // ----- per-row Ybus edit, matrix only: 2-way ------------------------------
-        // The pair above goes through YbusPolicy, which also tells the ALGORITHM its
-        // matrix changed. These touch nothing but the coefficients, for a reader that
-        // wants row i's matrix without disturbing a solver (gen_v_indirect_grad).
-        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
-        void _patch_ybus_values(Eigen::SparseMatrix<cplx_type> & Ybus, size_t i, bool undo) const {
-            if(i >= ybus_policy_.li_coeffs.size()) return;
-            for(const auto & c : ybus_policy_.li_coeffs[i]){
-                if(undo) Ybus.coeffRef(c.row_id, c.col_id) += c.value;
-                else     Ybus.coeffRef(c.row_id, c.col_id) -= c.value;
-            }
-        }
-        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
-        void _patch_ybus_values(Eigen::SparseMatrix<cplx_type> &, size_t, bool) const {}
 
         // ----- per-row Ybus, for get_Ybus / get_dcYbus -------------------------------
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
@@ -4937,6 +4929,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         bool _keep_jacobian_ = false;
         BatchAdjoint _adjoint_;
         std::vector<char> _adjoint_row_ok_;
+        // per row, what its algorithm said of the system it ended on (filled with its
+        // Jacobian), and the gen_v layout the columns were asked for
+        std::vector<AdjointSolveInfo> _adjoint_info_;
+        power_flow_adjoint::GenVLayout _adjoint_gen_v_;
 };
 
 /**

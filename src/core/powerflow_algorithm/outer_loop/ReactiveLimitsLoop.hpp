@@ -116,6 +116,7 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             return std::unique_ptr<BaseOuterLoop>(new ReactiveLimitsLoop(*this));
         }
         AlgoConfig _get_params() const override;
+        void _adjoint_terms(OuterAdjointTerms & out) const override;
 
     private:
         /// A controller bus, and where the loop left it.
@@ -134,6 +135,8 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             bool realistic = false;  ///< frozen by the robust mode (at its target Q), not a limit
             real_type target_q = 0.; ///< MVar, its units' target Q (the robust mode's)
             real_type frozen_q = 0.;     ///< MVar, while frozen
+            /// while frozen at a limit: how that limit moves with each unit's target P
+            std::vector<OuterQSlope> slopes;
             int nb_pv_pq = 0;        ///< how many times it was switched PV -> PQ
             /// an idle standby SVC's bus (a voltage monitor, held by the plan): checked only
             /// once the VoltageMonitoring loop switched it on (StandbySvcControl)
@@ -151,6 +154,10 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         void _limits(const OuterContext & ctx, const ControllerBus & bus, real_type & q_min, real_type & q_max) const;
         /// one controller's limit in this solve, MVar
         real_type _controller_limit(const OuterContext & ctx, int ctrl_pos, bool max) const;
+        /// the target P a generator's limits are read at in this solve (MW, NaN: its fixed ones)
+        static real_type _gen_target_p(const OuterContext & ctx, int gen_id);
+        /// how a generator's limit moves with that target P, MVar per MW
+        static real_type _gen_limit_slope(const OuterContext & ctx, int gen_id, bool max);
         /// one switch the current solve calls for: bus `k` of buses_, and why
         struct Switch {
             int k;

@@ -617,6 +617,9 @@ class LS2G_API LSGrid final
                                        const Eigen::Ref<const RealVect> & max_q_mvar);
         /// a generator's reactive limits at `p_mw` (MVar) from its curve; false without one
         bool gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_type & max_q) const;
+        /// their derivatives with respect to `p_mw` there (MVar per MW), on the same segment;
+        /// false without a curve
+        bool gen_limit_slopes_at(int gen_id, real_type p_mw, real_type & dmin_q, real_type & dmax_q) const;
         /**
          * OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target
          * Q (MVar) before it was clamped into its limits at its target P, NaN where none was
@@ -643,6 +646,10 @@ class LS2G_API LSGrid final
         /// the same, for that one generator's target P (MW, NaN: none moved it)
         void gen_limits_at_outer_target(int gen_id, real_type outer_target_p,
                                         real_type & min_q, real_type & max_q) const;
+        /// how those limits move with that target P (MVar per MW): 0 where they are the fixed
+        /// ones (no curve, or no target P an outer loop or a batch row gave it)
+        void gen_limit_slopes_at_outer_target(int gen_id, real_type outer_target_p,
+                                              real_type & dmin_q, real_type & dmax_q) const;
 
         void set_hold_frozen_regulators(bool hold) {
             if(hold == hold_frozen_regulators_) return;
@@ -2614,6 +2621,51 @@ class LS2G_API LSGrid final
             return IntVect::Zero(ctrl.n_controllers());
         }
 
+        // ---- reverse-mode differentiation of the last AC powerflow -------------------
+        // The gradient of a loss L(V) with respect to this grid's injections and voltage
+        // set-points, through the solve ac_pf just made: one transposed solve of its last
+        // Jacobian (J^T lambda = xbar, refreshed at the converged V), then lambda read
+        // at each input's row -- what BaseBatchSweep does per row, for one solve. With
+        // outer loops, the Jacobian is that of their last Newton solve, every decision
+        // they took held fixed (see AdjointSolveInfo and docs/differentiable.rst).
+        //
+        // Nothing is kept by the forward: the algorithm still holds its last system, and
+        // these read it. So they need the grid exactly as that solve left it -- an AC
+        // Newton-Raphson that converged, and no change since (they throw otherwise).
+        using AdjointMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+        /// the dimension of the system: the length of one cotangent, and of one lambda
+        [[nodiscard]] int dim_J();
+        /// where each GRID bus sits in the Jacobian, -1 where it owns no such unknown /
+        /// equation: the columns are where a cotangent of that bus goes in xbar, the rows
+        /// where its injection gradient is read out of lambda
+        [[nodiscard]] IntVect get_theta_col_of_bus();
+        [[nodiscard]] IntVect get_vm_col_of_bus();
+        [[nodiscard]] IntVect get_p_row_of_bus();
+        [[nodiscard]] IntVect get_q_row_of_bus();
+        /// solve J^T lambda = xbar; `xbar` is (k, dim_J), k cotangents (1 for the gradient
+        /// of a scalar loss). The multipliers of the identity rows (a bus pinned PV) are 0.
+        AdjointMat solve_JT(const Eigen::Ref<const AdjointMat> & xbar);
+        /// the indirect half of the gen_v gradient, one entry per generator, already
+        /// weighted by get_gen_v_share (see BaseBatchSweep::gen_v_indirect_grad)
+        RealVect gen_v_indirect_grad(const Eigen::Ref<const RealVect> & lambda);
+        /// what the gen_p gradient owes beyond lambda at the P row (a unit an outer loop
+        /// froze at a limit of its capability curve, one the distributed slack holds at a
+        /// bound), one entry per generator (see BaseBatchSweep::gen_p_indirect_grad)
+        RealVect gen_p_indirect_grad(const Eigen::Ref<const RealVect> & lambda);
+        /// the GRID bus whose magnitude each generator's set-point fixes, -1 where it fixes
+        /// none (see BaseBatchSweep::get_gen_v_target_bus)
+        [[nodiscard]] IntVect get_gen_v_target_bus();
+        /// the share of that derivative each generator carries in this solve, 0 where its
+        /// set-point reaches nothing (see BaseBatchSweep::get_gen_v_share_rows): what the
+        /// DIRECT half of its gradient is weighted by
+        [[nodiscard]] RealVect get_gen_v_share();
+        /// the transformers the last AC powerflow's outer loops left at another tap than the
+        /// grid's, and the pi block (y11, y12, y21, y22, pu) they have there: what its flows are
+        /// computed with (empty without outer loops, or when no loop moved a tap)
+        [[nodiscard]] std::tuple<IntVect, Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
+        get_outer_trafo_admittances() const;
+
         [[nodiscard]] real_type get_computation_time() const{ return _algo.get_computation_time();}
         [[nodiscard]] real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
 
@@ -3053,6 +3105,11 @@ class LS2G_API LSGrid final
         }
     
     protected:
+        // The checks every reverse-mode entry point makes (an AC Newton-Raphson, converged,
+        // the grid unchanged since), then the Jacobian refreshed at the solution and the
+        // solve's own description read: what solve_JT and friends work from.
+        void _prepare_adjoint(const char * fun_name, AdjointSolveInfo & info, std::vector<int> & vm_buses);
+
         /**
          * THE BUILD. Everything a solver family needs, assembled out of this grid
          * into `cache`: bus labelling, matrix, injections, slack, pv-pq split.

@@ -4222,6 +4222,105 @@ const std::string DocLSGrid::get_slack_col_solver = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::dim_J = R"mydelimiter(
+    Dimension of the Newton-Raphson system of the last AC powerflow: the length of one cotangent
+    handed to :func:`LSGrid.solve_JT`, and of one row of its result.
+
+    The reverse-mode functions of a grid (``dim_J``, ``get_*_of_bus``, ``solve_JT``,
+    ``gen_v_indirect_grad``, ``gen_p_indirect_grad``, ``get_gen_v_target_bus``,
+    ``get_gen_v_share``) read the system the last :func:`LSGrid.ac_pf` left in its algorithm.
+    They raise unless that was an AC Newton-Raphson (``NR_*``, ``NROuter_*``,
+    ``NROuterDist_*``) that converged, with nothing changed on the grid since. Nothing is kept
+    by the forward: a powerflow that is never differentiated pays nothing for it.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_theta_col_of_bus = R"mydelimiter(
+    For each grid bus (the numbering of the voltages :func:`LSGrid.ac_pf` returns), the column
+    of the Jacobian holding its voltage-ANGLE unknown, -1 where it has none (the reference
+    slack, a bus outside the solve): where the angle part of that bus's cotangent goes in
+    :func:`LSGrid.solve_JT`'s input.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_vm_col_of_bus = R"mydelimiter(
+    Same as :func:`LSGrid.get_theta_col_of_bus` for the voltage-MAGNITUDE unknown: -1 at a bus
+    whose magnitude is held fixed (a PV bus the solve did not reserve an unknown for, the slack).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_p_row_of_bus = R"mydelimiter(
+    For each grid bus, the row of the Jacobian holding its ACTIVE power balance, -1 where it has
+    none: where that bus's active injection gradient is read out of :func:`LSGrid.solve_JT`'s
+    result (divided by ``sn_mva`` for a gradient per MW).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_q_row_of_bus = R"mydelimiter(
+    Same as :func:`LSGrid.get_p_row_of_bus` for the REACTIVE power balance.
+
+)mydelimiter";
+
+const std::string DocLSGrid::solve_JT = R"mydelimiter(
+    Solve the adjoint system ``J^T . lambda = xbar`` of the last AC powerflow and return
+    lambda, ``(k, dim_J)`` like ``xbar`` (k = 1 for the gradient of a scalar loss).
+
+    ``J`` is the Jacobian of the last Newton solve, evaluated at the converged voltages. With
+    outer loops, it is that of the system their last decisions left (a bus switched PQ, a unit
+    held at a limit, a tap moved), each decision held: see :ref:`differentiable`. The
+    multipliers of its identity rows (a bus pinned PV) are 0.
+
+    lambda is the gradient with respect to the per-unit bus injections: a load's active power
+    gradient is ``-lambda[get_p_row_of_bus()[bus]] / sn_mva``, a generator's
+    ``+lambda[...] / sn_mva`` plus :func:`LSGrid.gen_p_indirect_grad`.
+
+)mydelimiter";
+
+const std::string DocLSGrid::gen_v_indirect_grad = R"mydelimiter(
+    The indirect half of the ``gen_v`` gradient of the last AC powerflow, one entry per
+    generator, already weighted by :func:`LSGrid.get_gen_v_share`: ``-lambda^T dF/dv``, the
+    dS/d|V| column of the bus its set-point fixes (on the solve's own admittance matrix, the
+    taps the outer loops settled on included), or lambda at its voltage-control group's
+    voltage row. The direct half, ``Re(conj(V_b/|V_b|) . dL/dV_b) * share`` at the bus
+    :func:`LSGrid.get_gen_v_target_bus` gives, is the caller's. ``lambda_`` is what
+    :func:`LSGrid.solve_JT` returned.
+
+)mydelimiter";
+
+const std::string DocLSGrid::gen_p_indirect_grad = R"mydelimiter(
+    What the ``gen_p`` gradient of the last AC powerflow owes beyond
+    ``lambda[get_p_row_of_bus()[bus]] / sn_mva``, one entry per generator: zero but where an
+    outer loop makes a unit's target P reach the solve otherwise -- a unit frozen at a limit of
+    its capability curve (the slope of that limit), a unit the distributed slack of
+    ``NROuterDist_*`` holds at a bound (its set-point moves nothing). ``lambda_`` is what
+    :func:`LSGrid.solve_JT` returned.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_gen_v_target_bus = R"mydelimiter(
+    Per generator, the grid bus whose voltage magnitude its set-point fixes in the last AC
+    powerflow, -1 where it fixes none (disconnected, not regulating, regulating a bus a
+    voltage-control group or an SVC / hvdc station holds). See
+    ``get_gen_v_target_bus`` of the batch classes.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_gen_v_share = R"mydelimiter(
+    Per generator, the share of its bus' (or group's) derivative its set-point carries in the
+    last AC powerflow: 1/n where n generators tie, 0 where it reaches nothing (its bus switched
+    PQ by the outer loops, its group held at a limit). What the direct half of the ``gen_v``
+    gradient is weighted by.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_outer_trafo_admittances = R"mydelimiter(
+    The transformers the last AC powerflow's outer loops left at another tap than the grid's,
+    and the pi block they have there: ``(trafo_ids, blocks)``, ``blocks`` complex
+    ``(n, 4)`` holding ``(y11, y12, y21, y22)`` in pu. What that powerflow's flows are computed
+    with; empty without outer loops, or when no loop moved a tap.
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_slack_absorbed_solver = R"mydelimiter(
     Converged value (pu) of the ``MultiSlack`` ``slack_absorbed`` unknown (``0`` when distributed
     slack is inactive). This is the ground truth after convergence -- not the ``0`` initial guess

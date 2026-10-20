@@ -414,3 +414,29 @@ OuterContext OuterLoopAlgo<Inner>::_context()
     inner_.fill_context(ctx, controller_q_);
     return ctx;
 }
+
+template<class Inner>
+void OuterLoopAlgo<Inner>::get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const
+{
+    inner_.algo().get_adjoint_solve_info(vm_buses, out);
+    OuterAdjointTerms terms;
+    for(const auto & loop : loops_) loop->adjoint_terms(terms);
+    if(terms.q_slopes.empty() && terms.fixed_p.empty()) return;
+    const IntVect p_row = inner_.algo().get_p_to_J_row_python();
+    const IntVect q_row = inner_.algo().get_q_to_J_row_python();
+    const auto row_of = [](const IntVect & map, int bus) { return bus >= 0 && bus < map.size() ? map(bus) : -1; };
+    std::vector<int> fixed;
+    for(const auto & unit : terms.fixed_p){
+        fixed.push_back(unit.first);
+        const int row = row_of(p_row, unit.second);
+        if(row >= 0) out.gen_p_terms.push_back(AdjointSolveInfo::GenPTerm{unit.first, row, -terms.inv_sn});
+    }
+    for(const OuterQSlope & slope : terms.q_slopes){
+        // a unit whose P is held does not move its limit either
+        if(std::find(fixed.begin(), fixed.end(), slope.gen_id) != fixed.end()) continue;
+        // a held controller's row pins its output; a frozen bus' Q row carries it in Sbus
+        const int row = slope.ctrl_pos >= 0 ? inner_.algo().system().controller_hold_row(slope.ctrl_pos)
+                                            : row_of(q_row, slope.bus_solver);
+        if(row >= 0) out.gen_p_terms.push_back(AdjointSolveInfo::GenPTerm{slope.gen_id, row, slope.dq_dp});
+    }
+}
