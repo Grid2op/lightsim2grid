@@ -536,6 +536,40 @@ class TestOuterTripsTheControlledTransformer(_Equivalence, unittest.TestCase):
         self.assertNotIn(self.TRAFO, [t for t, _ in res[1].ratio_tap])
 
 
+class TestOuterThreadsWhoseFirstRowStrandsABus(unittest.TestCase):
+    """A worker's outer loops reserve their controls (the buses ReactiveLimits may switch,
+    ...) for the base case, as the member algorithm does with its "n" solve, not for
+    whichever row the worker happens to solve first: the results do not depend on the
+    number of threads."""
+
+    # trafo 18 alone feeds bus 7, whose generator sits at its reactive limit: its row strands
+    # them. Two threads split the four rows two and two, so the second worker starts with it.
+    BRANCHES = (0, 1, 18, 19)
+    STRANDED_GEN = 3
+
+    def _run(self, nb_thread):
+        base = _grid()
+        ca = ContingencyAnalysisCPP(base)
+        ca.handle_disconnected_grid = True
+        for branch in self.BRANCHES:
+            ca.add_n1(branch)
+        ca.nb_thread = nb_thread
+        ca.compute_gen_results = True
+        ca.compute(_v0(base), MAX_IT, TOL)
+        self.assertEqual([list(c) for c in ca.my_defaults()], [[b] for b in self.BRANCHES])
+        return ca.get_voltages(), ca.get_gen_results(), np.asarray(ca.converged_mask(), dtype=bool)
+
+    def test_same_results_with_two_threads(self):
+        V1, gens1, conv1 = self._run(1)
+        V2, gens2, conv2 = self._run(2)
+        np.testing.assert_array_equal(conv1, conv2)
+        self.assertTrue(conv1[3])
+        # the last row has bus 7 back: its generator is held at its limit again
+        self.assertLessEqual(abs(gens2[3, self.STRANDED_GEN, 1]), 15. + 1e-6)
+        np.testing.assert_allclose(V2[conv1], V1[conv1], rtol=0., atol=1e-10)
+        np.testing.assert_allclose(gens2[conv1], gens1[conv1], rtol=0., atol=1e-6)
+
+
 class TestWrappersKeepTheOuterAlgorithm(unittest.TestCase):
     """the grid2op wrappers keep a backend's NROuter_* algorithm (any other one is replaced by
     NR_KLU, as before)"""

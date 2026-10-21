@@ -423,6 +423,19 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
             algos[t]->set_pv_pinned_buses(_switchable_buses_);
         }
         ybus_copies[t] = ac_cache_.mat;
+        // An algorithm running outer loops reserves its controls (the buses ReactiveLimits
+        // may switch, the transformers a loop moves, ...) on its first solve, for the view
+        // that solve has. The member algorithm's is the "n" solve; a fresh worker's would
+        // be its first row, which leaves out what that row strands or opens -- for every
+        // later row of the worker, whose results would then depend on the thread count.
+        // So a fresh worker solves the base case first too, configured as the member
+        // algorithm was for it (above), and its range does not rebuild after that.
+        if(ac_solver_used && th_needs_init[t] && algos[t]->supports_outer_loops()){
+            if(mask_mode) algos[t]->set_masked_buses(_base_masked_);
+            algos[t]->set_outer_row_view(&_base_row_view_);
+            warmup_solver(*algos[t], controls[t], Vinit_solver, max_iter, tol_, false);
+            th_needs_init[t] = 0;
+        }
     };
 
     auto timer_thread = CustTimer();
