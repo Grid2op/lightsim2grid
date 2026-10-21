@@ -2629,6 +2629,25 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                  typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
         const std::set<int> * _row_tripped_gens_ca(size_t) const { return nullptr; }
 
+        // the generators row i has out, ascending, in `out`: exactly those _gen_off_in_row says
+        // so of, listed. A ContingencyAnalysis row's are its contingency's trip list (asking
+        // _gen_off_in_row for every generator would be a set lookup each); elsewhere the masks
+        // are scanned.
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        void _row_gens_off(size_t i, int nb_gen, std::vector<int> & out) const {
+            out.clear();
+            const std::set<int> * gens = _row_tripped_gens_ca(i);
+            if(gens == nullptr) return;
+            for(int gen_id : *gens) if(gen_id >= 0 && gen_id < nb_gen) out.push_back(gen_id);
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        void _row_gens_off(size_t i, int nb_gen, std::vector<int> & out) const {
+            out.clear();
+            for(int gen_id = 0; gen_id < nb_gen; ++gen_id) if(_gen_off_in_row(i, gen_id)) out.push_back(gen_id);
+        }
+
         // This row's own active set-point for that generator, in MW -- the number the
         // distributed slack's share is added ON TOP of (see GenPCheck.hpp). Exactly what
         // SbusPolicy::Vary::fill_row stamped into this row's injection: its own gen_p row
@@ -3776,12 +3795,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // Which participating machines each row takes out. Needed on both families
             // (DC has a distributed slack too), and the only part of this that applies
             // in DC at all -- see the early return below.
+            // the generators each row has out, listed once (see _row_gens_off): what the
+            // loops below read, rather than asking _gen_off_in_row for every (row, generator)
+            std::vector<std::vector<int> > gens_off(nb_steps);
+            for(size_t step = 0; step < nb_steps; ++step) _row_gens_off(step, nb_gen, gens_off[step]);
             _row_slack_gens_off_.assign(nb_steps, std::vector<int>());
-            for(Eigen::Index step = 0; step < nb_rows; ++step){
-                for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-                    if(!_gen_off_in_row(static_cast<size_t>(step), gen_id)) continue;
+            for(size_t step = 0; step < nb_steps; ++step){
+                for(int gen_id : gens_off[step]){
                     if(abs(generators.get_gen_slack_weight(gen_id)) < BaseConstants::_tol_equal_float) continue;
-                    _row_slack_gens_off_[static_cast<size_t>(step)].push_back(gen_id);
+                    _row_slack_gens_off_[step].push_back(gen_id);
                 }
             }
 
@@ -3809,12 +3831,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // in the VoltageControl extension, which owns Jacobian columns and rows of
             // its own that nothing here reserves or masks.
             const std::set<int> & group_buses = _grid_model.get_ac_voltage_control_plan().group_controlled_buses();
+            std::vector<char> ever_off(static_cast<std::size_t>(nb_gen), 0);
+            for(const std::vector<int> & off : gens_off) for(int gen_id : off) ever_off[static_cast<std::size_t>(gen_id)] = 1;
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
-                bool ever_off = false;
-                for(Eigen::Index step = 0; step < nb_rows; ++step){
-                    if(_gen_off_in_row(static_cast<size_t>(step), gen_id)){ ever_off = true; break; }
-                }
-                if(!ever_off) continue;
+                if(!ever_off[static_cast<std::size_t>(gen_id)]) continue;
                 const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
                 const bool remote = generators.is_remote_voltage_controller(gen_id);
                 const bool in_group = bus_id_me != BaseConstants::_deactivated_bus_id &&
@@ -3861,12 +3881,26 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
 
             // ---- 3. per row: the buses that lose EVERY one of their controllers ----
-            std::set<int> controlled_buses;
-            for(const auto & bus_gens : gens_of_bus) controlled_buses.insert(bus_gens.first);
-            for(const auto & bus_storages : storages_of_bus) controlled_buses.insert(bus_storages.first);
+            // Only a bus one of whose controllers the row takes out can: the buses of the
+            // generators it has out and of the storage units it takes off, in ascending order
             _row_pv_to_pq_.assign(nb_steps, std::vector<int>());
+            std::vector<int> candidate_buses;
             for(Eigen::Index step = 0; step < nb_rows; ++step){
-                for(int bus_solver : controlled_buses){
+                candidate_buses.clear();
+                for(int gen_id : gens_off[static_cast<size_t>(step)]){
+                    if(pinned_bus_of_gen[gen_id] >= 0) candidate_buses.push_back(pinned_bus_of_gen[gen_id]);
+                }
+                for(const auto & bus_storages : storages_of_bus){
+                    for(int storage_id : bus_storages.second){
+                        if(_storage_leaves_base_bus(static_cast<size_t>(step), storage_id)){
+                            candidate_buses.push_back(bus_storages.first);
+                            break;
+                        }
+                    }
+                }
+                std::sort(candidate_buses.begin(), candidate_buses.end());
+                candidate_buses.erase(std::unique(candidate_buses.begin(), candidate_buses.end()), candidate_buses.end());
+                for(int bus_solver : candidate_buses){
                     bool all_off = true;
                     const auto bus_gens = gens_of_bus.find(bus_solver);
                     if(bus_gens != gens_of_bus.end()){
