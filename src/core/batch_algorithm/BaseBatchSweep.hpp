@@ -399,9 +399,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * ScenarioSweep only: row i, column s True means "disconnect shunt s for step
          * i". A shunt is an admittance: the row loses its diagonal coefficient (AC; in DC
          * its active part leaves Pbus), as a branch mask edits Ybus. Refused by compute()
-         * with an algorithm running outer loops for a shunt that regulates a voltage (its
-         * sections are the ShuntVoltageControl loop's, which does not know of a row taking
-         * it out).
+         * for a shunt that regulates a voltage when the grid's outer loops hold a
+         * ShuntVoltageControl one (the shunt's sections are that loop's, which does not
+         * know of a row taking it out).
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -555,9 +555,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *
          *  - a branch is taken out of Ybus, as add_nk does;
          *  - a shunt too: it is an admittance, one diagonal coefficient (AC; in DC its
-         *    active part leaves Pbus). Refused by compute() with an algorithm running
-         *    outer loops when the shunt regulates a voltage (its sections are the
-         *    ShuntVoltageControl loop's, which does not know of a row taking it out);
+         *    active part leaves Pbus). Refused by compute() when the shunt regulates a
+         *    voltage and the grid's outer loops hold a ShuntVoltageControl one (the
+         *    shunt's sections are that loop's, which does not know of a row taking it out);
          *  - a load leaves the row's injection, its active and reactive power;
          *  - a generator leaves it too (its active power, and the reactive setpoint of
          *    one that does not regulate voltage), and the distributed slack is
@@ -4054,11 +4054,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // A shunt a row trips must not be one the ShuntVoltageControl outer loop moves:
         // its sections are that loop's (NRSystem's ShuntControl patches the diagonal by
         // the difference with what it believes is stamped there), and it does not know
-        // of a row taking the shunt out. Refused, with an algorithm running outer loops,
-        // once per batch (_prepare_ybus_varying has just listed the rows' shunts).
+        // of a row taking the shunt out. Refused, with an algorithm running outer loops
+        // whose list holds that loop (OpenLoadFlow's default list does not: the sections
+        // are then nobody's), once per batch (_prepare_ybus_varying has just listed the
+        // rows' shunts).
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _check_shunt_trips(size_t nb_steps) const {
             if(!_algo.supports_outer_loops()) return;
+            bool shunt_loop = false;
+            for(const auto & loop : _grid_model.get_outer_loops()){
+                if(loop != nullptr && loop->name() == "ShuntVoltageControl") shunt_loop = true;
+            }
+            if(!shunt_loop) return;
             const ShuntContainer & shunts = _grid_model.get_shunts();
             for(size_t row = 0; row < nb_steps; ++row){
                 for(int shunt_id : _row_tripped_shunts(row)){

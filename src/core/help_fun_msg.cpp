@@ -7999,8 +7999,8 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
     - a branch (powerline or transformer, numbered lines then transformers) is taken out of Ybus, as with
       :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_nk`;
     - a shunt too: it is an admittance, one diagonal coefficient (in DC its active part leaves the injection).
-      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` raises with an algorithm running outer
-      loops if the shunt regulates a voltage (the ShuntVoltageControl loop owns its sections);
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` raises if the shunt regulates a
+      voltage and the outer loops run hold a ShuntVoltageControl one (that loop owns its sections);
     - a load leaves the injection, its active and reactive power;
     - a generator leaves it too (its active power, and the reactive setpoint of one that does not regulate voltage)
       and the distributed slack is re-weighted without it. When it is the last one regulating its own bus, that bus
