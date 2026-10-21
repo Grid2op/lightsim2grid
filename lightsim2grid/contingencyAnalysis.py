@@ -845,6 +845,11 @@ class ContingencyAnalysis(object):
         shunt_ids = self._ids_of(shunts, getattr(type(self._ls_backend), "name_shunt", []), "shunt")
         load_ids = self._ids_of(loads, type(self._ls_backend).name_load, "load")
         gen_ids = self._ids_of(gens, type(self._ls_backend).name_gen, "generator")
+        if not branch_ids and not shunt_ids and not load_ids and not gen_ids:
+            # add_single_contingency() would register it (add_nk([])), the c++
+            # add_contingency refuses it
+            raise RuntimeError("Impossible to add the contingency: it trips nothing "
+                               "(lines, shunts, loads and gens are all empty).")
         if not shunt_ids and not load_ids and not gen_ids:
             # a branch-only contingency: the same one as add_single_contingency's
             self.add_single_contingency(*branch_ids, name=name)

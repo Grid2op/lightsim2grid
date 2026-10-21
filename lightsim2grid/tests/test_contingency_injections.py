@@ -226,6 +226,14 @@ class TestContingencyAnalysisWrapper(_Base):
         _, _, res_v = sa.get_flows()
         self.assertEqual(res_v.shape[0], 1)
 
+    def test_a_contingency_tripping_nothing_is_refused(self):
+        sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+        for kwargs in ({}, {"lines": [], "shunts": [], "loads": [], "gens": []}):
+            with self.assertRaises(RuntimeError, msg=repr(kwargs)):
+                sa.add_contingency(**kwargs)
+        self.assertEqual(sa.all_contingencies, [])
+        self.assertEqual(len(sa.computer.my_contingencies()), 0)
+
     def test_branch_only_ids_in_any_order_or_twice(self):
         # the c++ side keeps each contingency's branches as a sorted set
         sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
