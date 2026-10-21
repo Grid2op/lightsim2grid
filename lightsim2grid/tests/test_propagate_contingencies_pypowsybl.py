@@ -331,3 +331,69 @@ class TestContingencyPropagator(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _documented_n1_example():
+    """The code of the full N-1 example of docs/network.rst (the block that follows "A full
+    N-1 of the lines and transformers"), or None when the docs are not next to the package."""
+    import os
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "network.rst")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().split("\n")
+    start = next(i for i, line in enumerate(lines) if "A full N-1 of the lines and transformers" in line)
+    start = next(i for i in range(start, len(lines)) if lines[i].strip() == ".. code-block:: python") + 1
+    code = []
+    for line in lines[start:]:
+        if line.strip() and not line.startswith("    "):
+            break
+        code.append(line[4:])
+    return "\n".join(code)
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestDocumentedN1Example(unittest.TestCase):
+    def test_the_example_runs_and_opens_one_end_where_the_propagation_does(self):
+        import numpy as np
+        from lightsim2grid.network import init_from_pypowsybl
+        from lightsim2grid.contingencyAnalysis import ContingencyAnalysisCPP
+        code = _documented_n1_example()
+        if code is None:
+            self.skipTest("docs/network.rst is not available")
+        # L5 has no breaker at S5VL1: its contingency cuts T5 off at side 1 only, and T5 is
+        # given a charging admittance so that this differs from tripping it
+        net = _net_with_a_transformer_bay(line_has_breaker=False)
+        net.update_2_windings_transformers(id="T5", b=1e-4)
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies([["L5"]])
+        self.assertEqual(propagator.opened_sides(), [{"T5": 1}])
+        grid = init_from_pypowsybl(net)
+        v_init = np.ones(grid.total_bus(), dtype=complex)
+        namespace = {"net": net, "v_init": v_init, "max_iter": 10, "tol": 1e-8}
+        exec(compile(code, "docs/network.rst", "exec"), namespace)
+        V = namespace["V"]
+        conts = [[name] for name in net.get_lines().index] + \
+                [[name] for name in net.get_2_windings_transformers().index]
+        self.assertEqual(V.shape[0], len(conts))
+
+        branch_id = {name: i for i, name in enumerate(list(grid.get_line_names()) + list(grid.get_trafo_names()))}
+
+        def ref_V(**kwargs):
+            ca = ContingencyAnalysisCPP(grid)
+            ca.handle_disconnected_grid = True
+            ca.add_contingency(**kwargs)
+            ca.compute(v_init, 10, 1e-8)
+            return ca.get_voltages()[0]
+
+        row_l5 = conts.index(["L5"])
+        opened = ref_V(branch_ids=[branch_id["L5"]], branch_ids_side1=[branch_id["T5"]])
+        tripped = ref_V(branch_ids=[branch_id["L5"], branch_id["T5"]])
+        self.assertGreater(np.abs(opened - tripped).max(), 1e-6)
+        np.testing.assert_allclose(V[row_l5], opened, atol=1e-10, rtol=0.)
+        # every other row is a plain branch trip
+        for k, cont in enumerate(conts):
+            if k == row_l5:
+                continue
+            np.testing.assert_allclose(V[k], ref_V(branch_ids=[branch_id[cont[0]]]), atol=1e-10, rtol=0.,
+                                       err_msg=str(cont))
