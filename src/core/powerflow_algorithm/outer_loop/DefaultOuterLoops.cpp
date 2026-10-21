@@ -112,4 +112,15 @@ void outer_detect(const std::vector<std::shared_ptr<BaseOuterLoop> > & loops,
     }
 }
 
+std::vector<std::shared_ptr<BaseOuterLoop> > detection_loops(
+    const std::vector<std::shared_ptr<BaseOuterLoop> > & loops)
+{
+    std::vector<std::shared_ptr<BaseOuterLoop> > res(loops);
+    for (const auto & loop : loops) {
+        if (loop != nullptr && dynamic_cast<const ReactiveLimitsLoop *>(loop.get()) != nullptr) return res;
+    }
+    res.push_back(std::make_shared<ReactiveLimitsLoop>());
+    return res;
+}
+
 }  // namespace ls2g

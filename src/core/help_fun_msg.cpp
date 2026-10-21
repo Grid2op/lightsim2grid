@@ -4455,7 +4455,9 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       regulated voltage and ``limit`` the threshold, in kV; AC only);
     - a generator regulating a remote bus whose own bus leaves the realistic range of the
       ``ReactiveLimits`` loop (``min_realistic_voltage`` / ``max_realistic_voltage``, the
-      driver's unless the loop sets its own, with its margin) by more than ``tol_vm_pu``:
+      driver's unless the loop sets its own, with its margin) by more than ``tol_vm_pu``
+      (this check and the reactive capability above are that loop's test: the grid's, or one
+      with its default parameters when the grid runs none):
       OpenLoadFlow's robust remote voltage control would switch it to PQ
       (``LOW_VOLTAGE_REMOTE_CONTROL`` /
       ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the ``GENERATOR``, ``value`` its own bus voltage and

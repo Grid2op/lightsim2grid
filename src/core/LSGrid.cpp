@@ -3584,7 +3584,7 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         as_solved.layout = &layout;
         as_solved.masked = no_mask;
         ctx.row = &as_solved;
-        outer_detect(get_outer_loops(), ctx, out);
+        outer_detect(detection_loops(get_outer_loops()), ctx, out);
     }
     // the PQ -> PV release of the machines the caller froze at a reactive limit
     // (set_gen_can_be_pv): no OpenLoadFlow loop releases a unit loaded without voltage

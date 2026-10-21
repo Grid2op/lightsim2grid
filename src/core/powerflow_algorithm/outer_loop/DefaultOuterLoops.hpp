@@ -44,6 +44,16 @@ LS2G_API std::shared_ptr<BaseOuterLoop> make_outer_loop(const std::string & name
 LS2G_API void outer_detect(const std::vector<std::shared_ptr<BaseOuterLoop> > & loops,
                            OuterContext & ctx, std::vector<LimitViolation> & out);
 
+/**
+ * The loops a physical-violation check detects with (outer_detect): `loops`, and a
+ * ReactiveLimits one with its default parameters at the end when they hold none. A bus out
+ * of its reactive range and a remote controller at an unrealistic voltage are that loop's
+ * own test, and a grid that does not run it -- that does not enforce its reactive limits --
+ * is the one most likely to leave them.
+ */
+LS2G_API std::vector<std::shared_ptr<BaseOuterLoop> > detection_loops(
+    const std::vector<std::shared_ptr<BaseOuterLoop> > & loops);
+
 }  // namespace ls2g
 
 #endif  // DEFAULT_OUTER_LOOPS_H

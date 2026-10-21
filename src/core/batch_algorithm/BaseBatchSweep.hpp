@@ -3104,7 +3104,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             gen_p_check::build_gen_p_plan(_grid_model, active_layout().id_me_to_solver,
                                           _gen_p_plan_);
-            _outer_detect_loops_ = _grid_model.get_outer_loops();
+            _outer_detect_loops_ = detection_loops(_grid_model.get_outer_loops());
         }
 
         // The grid's outer loops' own triggers (detection mode, see outer_detect), on the row

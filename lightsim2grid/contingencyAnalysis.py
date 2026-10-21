@@ -456,7 +456,8 @@ class ContingencyAnalysis(object):
         * the **own bus** of every generator regulating a remote bus
           (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the
           ``GENERATOR``): does holding the remote target take it outside the realistic range
-          of the ``ReactiveLimits`` loop? OpenLoadFlow's
+          of the ``ReactiveLimits`` loop (the grid's, or one with its default parameters when
+          the grid runs none, as for the reactive capability above)? OpenLoadFlow's
           ``ReactiveLimits``, in its robust remote voltage control mode. ``value`` and
           ``limit`` in kV, compared with :attr:`physical_violation_tol_vm_pu`.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
