@@ -281,6 +281,23 @@ class TestScenarioSweep(_Base):
         with self.assertRaises(RuntimeError):
             sweep.compute()
 
+    def test_a_load_in_the_mask_set_after_a_compute_is_refused(self):
+        # the action moves load 2 (with line 6's origin, so that its new bus stays connected)
+        # or takes it out, a first compute() settles it, then the mask trips the same load in
+        # the same row: refused all the same
+        for set_bus in ({"loads_id": [(2, 2)], "lines_or_id": [(6, 2)]},
+                        {"loads_id": [(2, -1)]}):
+            with self.subTest(set_bus=set_bus):
+                act = self.env.action_space({"set_bus": set_bus})
+                sweep = ScenarioSweep(self.env)
+                sweep.set_topo_actions([act])
+                sweep.compute()
+                load_off = np.zeros((1, self.env.n_load), dtype=bool)
+                load_off[0, 2] = True
+                sweep.set_contingency_loads(load_off)
+                with self.assertRaises(RuntimeError):
+                    sweep.compute()
+
 
 if __name__ == "__main__":
     unittest.main()

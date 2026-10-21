@@ -629,7 +629,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     }
 
     // the injections, on the other hand, are exactly what a second compute() came to
-    // change: always rebuilt (a no-op where Sbus does not vary).
+    // change: always rebuilt (a no-op where Sbus does not vary). A load they trip must
+    // not be one the row's topological action places as well.
+    _check_topo_load_overlap();
     _prepare_sbus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
     // ... and with them the buses several generators regulate at once, which is what a
     // per-row gen_v has to agree on (see _row_gen_v_conflicts)

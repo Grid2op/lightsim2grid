@@ -3395,8 +3395,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
                 // ---- loads and storage units: injections only ------------------------
                 for(const TopoElPlacement & l : plan.loads){
-                    if(sbus_policy_.load_off_in(static_cast<Eigen::Index>(row), l.el_id))
-                        _throw_topo_overlap(row, "load", l.el_id, "set_contingency_loads");
+                    // (a load also in set_contingency_loads: _check_topo_load_overlap)
                     if(l.base_bus_me != BaseConstants::_deactivated_bus_id) sbus_policy_.topo_loads_off[row].push_back(l.el_id);
                     if(l.row_bus_me != BaseConstants::_deactivated_bus_id){
                         sbus_policy_.topo_loads_on[row].push_back(std::make_pair(l.el_id, solver_of(l.row_bus_me, row)));
@@ -3643,6 +3642,25 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Read from _maybe_resolve_topology on, which is what settles _topology_active_
         // (every caller runs after it: the connectivity, the masks, the row loops).
         bool _mask_mode() const { return _handle_disconnected_grid || _topology_active_; }
+
+        // A row naming a load both in set_contingency_loads and in its topological action
+        // is refused. Not with the other overlaps in _maybe_resolve_topology: the load
+        // mask is an injection, set without dropping the batch inputs, so a mask set after
+        // a compute() never goes through that resolution again. Checked at every compute().
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void _check_topo_load_overlap() const {
+            if(topo_actions_.empty()) return;
+            for(size_t row = 0; row < _row_topo_.size(); ++row){
+                for(const TopoElPlacement & l : _row_topo_[row].loads){
+                    if(sbus_policy_.load_off_in(static_cast<Eigen::Index>(row), l.el_id))
+                        _throw_topo_overlap(row, "load", l.el_id, "set_contingency_loads");
+                }
+            }
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<!(Y::supports_contingency && S::supports_vary), int>::type = 0>
+        void _check_topo_load_overlap() const {}
 
         [[noreturn]] void _throw_topo_overlap(size_t row, const char * el_kind, int el_id, const char * setter) const {
             std::ostringstream exc_;
