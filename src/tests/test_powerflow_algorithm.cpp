@@ -1266,3 +1266,77 @@ TEST_CASE("a grid exercising every NR extension at once stays consistent", "[NRS
     CHECK(pattern_of(SpMatReal(sys.J())) == pattern);
     CHECK(values_of(SpMatReal(sys.J())) == values);
 }
+
+TEST_CASE("a requested factorize replaces the refactorize, the analysis kept", "[NRSystem]")
+{
+    LSGrid grid = make_radial_grid(4);
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    const CplxVect V0 = flat_start(grid);
+
+    ls2g::NR_SparseLU algo;
+    REQUIRE(algo.compute_pf(in.Ybus, V0, in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, 30, 1e-10));
+    const ls2g::LinearSolverStats first = algo.get_linear_solver_stats();
+    REQUIRE(first.nb_analyze == 1);
+
+    // the same topology again: no analysis; the first iteration factorizes, as asked
+    ls2g::AlgoControl nothing;
+    nothing.tell_none_changed();
+    algo.tell_solver_control(nothing);
+    bool need_init = false;
+    REQUIRE(algo.setup(in.Ybus, V0, in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, need_init, []() {}));
+    CHECK_FALSE(need_init);
+    algo.request_factorize();
+    REQUIRE(algo.newton(30, 1e-10, need_init));
+    const ls2g::LinearSolverStats asked = algo.get_linear_solver_stats();
+    CHECK(asked.nb_analyze == 1);
+    CHECK(asked.nb_factorize == first.nb_factorize + 1);
+    const auto refactorized = asked.nb_refactorize - first.nb_refactorize;  // the later iterations
+
+    // once only: the next newton refactorizes on its first iteration again
+    algo.tell_solver_control(nothing);
+    REQUIRE(algo.setup(in.Ybus, V0, in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, need_init, []() {}));
+    REQUIRE(algo.newton(30, 1e-10, need_init));
+    const ls2g::LinearSolverStats after = algo.get_linear_solver_stats();
+    CHECK(after.nb_analyze == 1);
+    CHECK(after.nb_factorize == asked.nb_factorize);
+    CHECK(after.nb_refactorize - asked.nb_refactorize == refactorized + 1);
+}
+
+TEST_CASE("the controllers' reactive outputs handed back survive a new setup", "[NRSystem][vctrl]")
+{
+    // two generators remotely regulating bus 3: one group, two reactive-output unknowns
+    LSGrid grid = make_radial_skeleton(4);
+    add_generators(grid, {0, 1, 2}, {1.02, 1.04, 1.04}, {2000., 2000., 500.});
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_regulated_bus(1, 3);
+    grid.set_gen_regulated_bus(2, 3);
+    grid.tell_solver_need_reset();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+
+    ls2g::NR_SparseLU algo;
+    algo.set_lsgrid(&grid);
+    REQUIRE(algo.compute_pf(in.Ybus, flat_start(grid), in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, 30, 1e-10));
+    const RealVect q = algo.system().controller_q();
+    REQUIRE(q.size() == 2);
+    REQUIRE(q.cwiseAbs().maxCoeff() > 1e-6);
+    const CplxVect V = algo.get_V();
+
+    // a new setup at the converged voltages restarts the outputs from the plan...
+    ls2g::AlgoControl nothing;
+    nothing.tell_none_changed();
+    algo.tell_solver_control(nothing);
+    bool need_init = false;
+    REQUIRE(algo.setup(in.Ybus, V, in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, need_init, []() {}));
+    CHECK((RealVect(algo.system().controller_q()) - q).cwiseAbs().maxCoeff() > 1e-6);
+
+    // ... and the ones handed back make it the converged state again: no iteration
+    algo.system().set_controller_q(q);
+    CHECK((RealVect(algo.system().controller_q()) - q).cwiseAbs().maxCoeff() == 0.);
+    REQUIRE(algo.newton(30, 1e-8, need_init));
+    algo.finalize();
+    CHECK(algo.get_nb_iter() == 0);
+
+    // a vector of another size is ignored
+    algo.system().set_controller_q(RealVect::Zero(3));
+    CHECK((RealVect(algo.system().controller_q()) - q).cwiseAbs().maxCoeff() == 0.);
+}

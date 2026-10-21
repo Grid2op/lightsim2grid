@@ -848,7 +848,7 @@ plugin has not been built, and passes once the ``.so`` is present.
 Other example plugins
 -----------------------
 
-Two more complete, less minimal plugins live in the repository, both following the same build /
+Three more complete, less minimal plugins live in the repository, all following the same build /
 ``load_algorithm_plugin`` / ``change_algorithm`` pattern as ``external_algorithm`` above:
 
 * ``examples/dist_slack_algorithm/`` registers ``NRDistSlack_SparseLU`` / ``NRDistSlack_KLU``: a
@@ -858,6 +858,11 @@ Two more complete, less minimal plugins live in the repository, both following t
   Levenberg-Marquardt-damped Newton-Raphson variant (``LMNRAlgo``), also with ``SparseLU`` and
   ``KLU`` backends. Both names are registered atomically -- if either is already taken, neither is
   added and ``load_algorithm_plugin`` raises instead of half-registering.
+* ``examples/rebuild_outer_algorithm/`` registers ``NROuterRebuild_SparseLU`` /
+  ``NROuterRebuild_KLU``: OpenLoadFlow's outer loops, as ``NROuter_*`` runs them, on a Newton whose
+  Jacobian holds only the equations active now and is rebuilt -- analyzed again -- whenever the
+  loops change them, as OpenLoadFlow does. It is ``OuterLoopAlgo`` around its own ``Inner``
+  (``RebuildOuterInner``, a sibling of ``NROuterInner``): a plugin may wrap the outer-loop driver too.
 
 
 * :ref:`genindex`

@@ -1217,6 +1217,14 @@ class LS2G_API VoltageControl
             hold_q_ = q_pu_per_controller;
         }
 
+        // The reactive output of every controller (pu, plan order) the next Newton starts
+        // from. update_state() restarts them from the plan, so a driver setting the solve up
+        // again in the middle of a solve (a pattern rebuilt by an outer loop) hands back the
+        // ones it read before (controller_q). Ignored if the controller list changed size.
+        void set_controller_q(const Eigen::Ref<const RealVect> & q) {
+            if (q.size() == q_.size()) q_ = q;
+        }
+
         // Per-solve override of the groups' voltage set-points, indexed by group
         // (the grid's own plan order). A finite entry replaces that group's v_set for
         // every following solve; NaN (or an empty vector) keeps the grid's own. A
@@ -1877,6 +1885,13 @@ public:
         if (vc != nullptr) vc->set_held_controllers(q_pu_per_controller);
     }
 
+    // The controllers' reactive outputs the next Newton starts from, see
+    // VoltageControl::set_controller_q. No-op without the extension.
+    void set_controller_q(const Eigen::Ref<const RealVect> & q) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_controller_q(q);
+    }
+
     // The BranchControl extension, see BranchControl. No-ops (and null / empty answers) without it.
     void set_phase_controllers(const std::vector<int> & trafo_ids, const std::vector<char> & with_column) {
         BranchControl* ps = _find_extension<BranchControl>();
@@ -2149,6 +2164,8 @@ public:
     // ----- what the adjoint of the last solve needs besides J (see AdjointSolveInfo) --
     // the buses set_pv_pinned_buses pinned for it
     const std::vector<int>& pv_pinned_buses() const { return pv_pinned_buses_; }
+    // the buses set_masked_buses masked, as given
+    const std::vector<int>& masked_buses() const { return masked_buses_; }
     // see VoltageControl::groups_without_v_set / hold_row (nothing without the extension)
     void groups_without_v_set(std::vector<int>& out) const {
         out.clear();

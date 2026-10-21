@@ -207,7 +207,8 @@ public:
                BeforeInitTopology               && before_init_topology);
 
     // The Newton iterations, from whatever state the system holds. Always factorizes on
-    // its first iteration: analyze + factorize if `need_init`, refactorize otherwise.
+    // its first iteration: analyze + factorize if `need_init`, factorize if asked
+    // (request_factorize), refactorize otherwise.
     bool newton(int max_iter, real_type tol, bool need_init);
 
     // Publish the voltages (get_V, ...) and fold the system's timers.
@@ -216,6 +217,12 @@ public:
     // Rebuild the topology (ledger, sparsity of J, symbolic analysis) on the next setup,
     // eg because what a driver reserves in it changed.
     void request_rebuild() { need_factorize_ = true; }
+
+    // Factorize (numerically, the symbolic analysis kept) instead of refactorizing on the
+    // first iteration of the next newton, eg because the values of J changed in a way the
+    // pivot sequence of the last factorization should not be trusted with. A rebuild
+    // (request_rebuild) already does more, and clears it.
+    void request_factorize() { need_numeric_factorize_ = true; }
 
     // The system the Newton solves, for a driver editing it between two newton calls.
     NRSystem & system() { return _system; }
@@ -566,6 +573,7 @@ protected:
     NRSystem     _system;
 
     bool need_factorize_;
+    bool need_numeric_factorize_ = false;  // see request_factorize
     // number of non zero coefficients of the Ybus the sparsity of J was last built for. Only
     // read by a debug (no NDEBUG) check in solve. The member itself is not conditional on NDEBUG,
     // so the layout of the class is the same in every translation unit
