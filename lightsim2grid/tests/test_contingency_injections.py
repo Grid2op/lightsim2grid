@@ -212,6 +212,33 @@ class TestContingencyAnalysisWrapper(_Base):
             self.assertEqual(cont.load_ids, [2], msg=repr(lines))
             sa.close()
 
+    def test_an_element_named_twice_is_tripped_once(self):
+        sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+        sa.add_contingency(lines=[5, 5], loads=[2, 2], gens=[self.gen_alone, self.gen_alone])
+        # the same contingency, each element named once: not a second one
+        sa.add_contingency(lines=[5], loads=[2], gens=[self.gen_alone])
+        res = sa.run()
+        self.assertEqual(len(res.post_contingency_results), 1)
+        cont = res.post_contingency_results[0]
+        self.assertEqual(cont.element_ids, [5])
+        self.assertEqual(cont.load_ids, [2])
+        self.assertEqual(cont.gen_ids, [self.gen_alone])
+        _, _, res_v = sa.get_flows()
+        self.assertEqual(res_v.shape[0], 1)
+
+    def test_branch_only_ids_in_any_order_or_twice(self):
+        # the c++ side keeps each contingency's branches as a sorted set
+        sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+        sa.add_single_contingency(7, 3)
+        sa.add_single_contingency(5, 5)
+        sa.add_single_contingency(3, 7)   # the first one again
+        res = sa.run()
+        self.assertEqual([cont.element_ids for cont in res.post_contingency_results], [[3, 7], [5]])
+        _, _, res_v = sa.get_flows()
+        self.assertEqual(res_v.shape[0], 2)
+        _, _, res_v = sa.get_flows([7, 3])
+        np.testing.assert_array_equal(res_v[0], sa.get_flows([3, 7])[2][0])
+
 
 class TestScenarioSweep(_Base):
     def test_shunt_and_load_masks_match_a_one_off_powerflow(self):
