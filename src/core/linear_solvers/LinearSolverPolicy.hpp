@@ -9,6 +9,7 @@
 #ifndef LINEAR_SOLVER_POLICY_H
 #define LINEAR_SOLVER_POLICY_H
 
+#include <limits>
 #include <utility>
 
 #include "Utils.hpp"
@@ -44,6 +45,15 @@ namespace detail {
     }
     template<class T>
     void set_rgrowth_threshold_impl(T &, real_type, long) {}
+
+    // the reciprocal pivot growth of the solver's last refactorization, NaN for a solver
+    // that does not measure it
+    template<class T>
+    auto last_rgrowth_impl(const T & solver, int) -> decltype(static_cast<double>(solver.last_rgrowth())) {
+        return static_cast<double>(solver.last_rgrowth());
+    }
+    template<class T>
+    double last_rgrowth_impl(const T &, long) { return std::numeric_limits<double>::quiet_NaN(); }
 }  // namespace detail
 
 template<class LinearSolver>
@@ -86,6 +96,10 @@ class LinearSolverPolicy
             auto timer = CustTimer();
             ErrorType res = inner_.refactorize(J);
             stats_.timer_refactor_ += timer.duration();
+            if (res == ErrorType::NoError && refactor_fallback_ && rgrowth_threshold_ > 0.) {
+                // the inner solver measured it to decide (see set_refactor_fallback)
+                detail::merge_min_rgrowth(stats_.min_rgrowth_, detail::last_rgrowth_impl(inner_, 0));
+            }
             if (res != ErrorType::NoError) {
                 ++stats_.nb_refactorize_failed;
                 if (refactor_fallback_) {
@@ -123,9 +137,18 @@ class LinearSolverPolicy
         // checked, so a plain algorithm's results are unchanged.
         void set_refactor_fallback(bool val) noexcept {
             refactor_fallback_ = val;
-            detail::set_rgrowth_threshold_impl(inner_, val ? RGROWTH_THRESHOLD : 0., 0);
+            detail::set_rgrowth_threshold_impl(inner_, val ? rgrowth_threshold_ : 0., 0);
         }
         bool refactor_fallback() const noexcept { return refactor_fallback_; }
+
+        // The threshold the fallback applies (RGROWTH_THRESHOLD unless told otherwise); 0
+        // keeps only the failures the solver reports by itself (a zero pivot). Takes effect
+        // at once if the fallback is on, else when it is turned on.
+        void set_fallback_rgrowth_threshold(real_type val) noexcept {
+            rgrowth_threshold_ = val;
+            if (refactor_fallback_) detail::set_rgrowth_threshold_impl(inner_, rgrowth_threshold_, 0);
+        }
+        real_type fallback_rgrowth_threshold() const noexcept { return rgrowth_threshold_; }
 
         // the inner solver's (see detail::orders_with_constraints_by_default)
         static constexpr bool ORDERS_WITH_CONSTRAINTS_BY_DEFAULT =
@@ -169,7 +192,8 @@ class LinearSolverPolicy
         static constexpr real_type RGROWTH_THRESHOLD = 1e-10;
 
         // Called from the owning algorithm's reset_timer() (itself invoked at the start
-        // of every compute_pf/compute_pf_dc): zeroes only the timer_* fields, so
+        // of every compute_pf/compute_pf_dc): zeroes only the timer_* fields (and
+        // min_rgrowth_, which covers the same span), so
         // get_timers_jacobian() keeps reporting "last call only" like it always has.
         // Counters (nb_*) are untouched -- see detail::reset_stats_timers_impl.
         void reset_stats_timers() noexcept {
@@ -178,12 +202,14 @@ class LinearSolverPolicy
             stats_.timer_refactor_   = 0.;
             stats_.timer_solve_      = 0.;
             stats_.timer_solve_transpose_ = 0.;
+            stats_.min_rgrowth_ = std::numeric_limits<double>::quiet_NaN();
         }
 
     protected:
         LinearSolver inner_;
         LinearSolverStats stats_;
         bool refactor_fallback_ = false;
+        real_type rgrowth_threshold_ = RGROWTH_THRESHOLD;
 
     private:
         // no copy allowed (matches the concrete solver classes' own convention)

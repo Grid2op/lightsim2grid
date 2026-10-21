@@ -223,6 +223,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] batch classes: ``get_row_linear_solver_stats``, ``get_row_J_dim`` / ``get_row_J_nnz``, and
+  ``OuterRowResult.decisions_taken``: each row's linear solver work, Jacobian size and loop switches.
+- [ADDED] ``rgrowth_threshold`` of the refactor fallback (NR algorithms, part of their config) and
+  ``LinearSolverStats.min_rgrowth``, the smallest pivot growth a solve accepted (KLU, KLU static pivot).
+- [BREAKING] (C++ / plugins) ``LinearSolverStats`` has a new field: plugins must be rebuilt.
 - [ADDED] example plugin ``examples/rebuild_outer_algorithm`` (``NROuterRebuild_*``): the outer loops on a
   Jacobian rebuilt and analyzed again whenever the active equations change, as OpenLoadFlow does.
 - [FIXED] (C++) a Jacobian rebuilt while buses are masked or pinned kept their identity rows at the

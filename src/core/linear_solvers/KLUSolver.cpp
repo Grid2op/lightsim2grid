@@ -59,6 +59,7 @@ ErrorType KLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
 }
 
 ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
+    last_rgrowth_ = std::numeric_limits<real_type>::quiet_NaN();
     // J is const here, but `klu_refactor` signature expects arrays and not const arrays
     // so I const_cast
     int ok = klu_refactor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
@@ -74,6 +75,7 @@ ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
                          const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
                          const_cast<real_type*>(J.valuePtr()),
                          symbolic_.get(), numeric_.get(), &common_);
+        if(ok == 1) last_rgrowth_ = common_.rgrowth;
         if(ok != 1 || !(common_.rgrowth >= rgrowth_threshold_)) return ErrorType::SolverReFactor;
     }
     return ErrorType::NoError;

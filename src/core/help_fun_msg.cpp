@@ -503,6 +503,25 @@ const std::string DocSolver::constrained_ordering = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::rgrowth_threshold = R"mydelimiter(
+    The reciprocal pivot growth below which a refactorization is not trusted, and a factorization
+    is done instead, wherever a failed refactorization falls back to one (the batch classes, the
+    outer loops of ``NROuter_*``). ``1e-10`` by default, OpenLoadFlow's. ``0`` keeps only the
+    failures the linear solver reports by itself (a zero pivot). Only the KLU-based algorithms
+    measure the growth; the others ignore it. Part of :func:`get_config`, so a grid copy and the
+    batch classes keep it.
+
+)mydelimiter";
+
+const std::string DocSolver::min_rgrowth = R"mydelimiter(
+    The smallest reciprocal pivot growth of the refactorizations accepted during the last solve
+    (``nan`` when none was measured: only the KLU-based algorithms measure it, and only where a
+    failed refactorization falls back to a factorization, see ``rgrowth_threshold``). KLU computes
+    it on the scaled matrix, ``KLUStaticPivot`` on the matrix itself. Per row of a batch with
+    ``get_row_linear_solver_stats``.
+
+)mydelimiter";
+
 const std::string DocSolver::get_config = R"mydelimiter(
     Return a :class:`lightsim2grid.algorithm.AlgoConfig` capturing every scaling/refactor policy
     type and parameter above, as a single serializable object.

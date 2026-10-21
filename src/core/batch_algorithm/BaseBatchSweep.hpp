@@ -96,6 +96,9 @@ struct LS2G_API OuterRowResult
     std::vector<std::pair<int, int> > phase_tap;
     std::vector<std::pair<int, int> > ratio_tap;
     std::vector<std::pair<int, int> > shunt_sections;
+    /// ("loop/ACTION", count) of every decision the loops acted on (OuterDecision::taken),
+    /// sorted: how many switches the row took, by kind (eg "ReactiveLimits/PV_TO_PQ")
+    std::vector<std::pair<std::string, int> > decisions_taken;
 };
 
 /**
@@ -247,6 +250,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _converged_mask_.clear();
             _row_solve_time_.clear();
             _row_nb_iter_.clear();
+            _row_lin_stats_.clear();
+            _row_J_dim_.clear();
+            _row_J_nnz_.clear();
             _outer_results_.clear();
             _gen_results_ = RealMat();
             _violations.clear();
@@ -1408,6 +1414,19 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         IntVect get_row_nb_iter() const {
             return IntVect::Map(_row_nb_iter_.data(), static_cast<Eigen::Index>(_row_nb_iter_.size()));
         }
+        // What the linear solver ran for each row: its counters are the row's own (what they
+        // grew by during its solve), its timers and min_rgrowth_ the row's too (they cover
+        // one solve). All 0 for a row never handed to the solver.
+        const std::vector<LinearSolverStats> & get_row_linear_solver_stats() const { return _row_lin_stats_; }
+        // The size of the Jacobian each row's last Newton iteration solved (0 for a row never
+        // handed to the solver, or an algorithm without one): the same on every row for a
+        // fixed sparsity pattern, the row's own for an algorithm that rebuilds it.
+        IntVect get_row_J_dim() const {
+            return IntVect::Map(_row_J_dim_.data(), static_cast<Eigen::Index>(_row_J_dim_.size()));
+        }
+        IntVect get_row_J_nnz() const {
+            return IntVect::Map(_row_J_nnz_.data(), static_cast<Eigen::Index>(_row_J_nnz_.size()));
+        }
         // What the outer loops did on each row of the last compute() (see OuterRowResult),
         // when the algorithm runs them (NROuter_*); empty otherwise.
         const std::vector<OuterRowResult> & get_outer_results() const { return _outer_results_; }
@@ -2061,11 +2080,35 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // ----- per-row solve statistics: written by the row loops, see get_row_nb_iter.
         // One slot per row, pre-sized by compute(): each worker thread writes its own
         // rows only, so no two threads touch one element.
-        void _record_row_solve_stats(size_t i, const AlgorithmSelector & algo){
+        // `lin_before`: the algorithm's linear-solver stats right before the row's solve.
+        void _record_row_solve_stats(size_t i, const AlgorithmSelector & algo, const LinearSolverStats & lin_before){
             if(i >= _row_solve_time_.size()) return;
             _row_solve_time_[i] = algo.get_computation_time();
             _row_nb_iter_[i] = algo.get_nb_iter();
+            _record_row_lin_stats(i, algo, lin_before);
             _record_row_outer(i, algo);
+        }
+
+        void _record_row_lin_stats(size_t i, const AlgorithmSelector & algo, const LinearSolverStats & lin_before){
+            if(i >= _row_lin_stats_.size()) return;
+            // the counters cover the algorithm's lifetime: the row's is what they grew by;
+            // the timers (and min_rgrowth_) are reset at the start of each solve already
+            LinearSolverStats r = algo.get_linear_solver_stats();
+            r.nb_reset -= lin_before.nb_reset;
+            r.nb_analyze -= lin_before.nb_analyze;
+            r.nb_factorize -= lin_before.nb_factorize;
+            r.nb_refactorize -= lin_before.nb_refactorize;
+            r.nb_refactorize_failed -= lin_before.nb_refactorize_failed;
+            r.nb_fallback_factorize -= lin_before.nb_fallback_factorize;
+            r.nb_fallback_factorize_failed -= lin_before.nb_fallback_factorize_failed;
+            r.nb_solve -= lin_before.nb_solve;
+            r.nb_solve_transpose -= lin_before.nb_solve_transpose;
+            _row_lin_stats_[i] = r;
+            if(algo.supports_jacobian()){
+                const auto J = algo.get_J();
+                _row_J_dim_[i] = static_cast<int>(J.rows());
+                _row_J_nnz_[i] = static_cast<int>(J.nonZeros());
+            }
         }
 
         // the pi block of each transformer whose taps row i's loops moved, at the row's
@@ -2090,6 +2133,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             r.failed_loop = stats.failed_loop;
             r.nb_outer_iterations = stats.nb_outer_iterations;
             for(int n : stats.nr_iterations) r.nb_nr_iterations += n;
+            std::map<std::string, int> taken;
+            for(const OuterDecision & d : stats.decisions){
+                if(d.taken) ++taken[d.loop + "/" + d.action];
+            }
+            r.decisions_taken.assign(taken.begin(), taken.end());
             std::vector<real_type> gen_p, storage_p;
             algo.get_outer_target_p(gen_p, storage_p);
             auto moved = [](const std::vector<real_type> & v, std::vector<std::pair<int, real_type> > & out){
@@ -4588,10 +4636,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                             _set_outer_row_resume(cont_id, row_view);
                             algo.set_outer_row_view(&row_view);
                         }
+                        const LinearSolverStats lin_before = algo.get_linear_solver_stats_before_solve();
                         conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver, Ybus, V, sb,
                                                      active_layout().slack_bus_id_solver.as_eigen(), sw,
                                                      active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(), max_iter, tol / sn_mva);
-                        _record_row_solve_stats(cont_id, algo);
+                        _record_row_solve_stats(cont_id, algo, lin_before);
                         if(needs_solver_init){ control.tell_none_changed(); needs_solver_init = false; }
                         // before the two restores below, and before the Ybus is put
                         // back: see _maybe_store_jacobian (and _record_row_physical, which
@@ -4839,6 +4888,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // per-row solve statistics of the last compute(): see get_row_nb_iter
         std::vector<double> _row_solve_time_;
         std::vector<int> _row_nb_iter_;
+        std::vector<LinearSolverStats> _row_lin_stats_;
+        std::vector<int> _row_J_dim_;
+        std::vector<int> _row_J_nnz_;
         // what the outer loops did on each row, when the algorithm runs them (empty otherwise)
         std::vector<OuterRowResult> _outer_results_;
         std::vector<std::vector<std::pair<int, real_type> > > _row_gen_new_p_;

@@ -73,12 +73,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             // (_prepare_slack_redistribution) -- both by reference, no row allocates
             const RealVect & sw = _row_slack_weights(i, sw_scratch);
             const CplxVect & sb = _step_sbus_row(i, sbus_scratch);
+            const LinearSolverStats lin_before = algo.get_linear_solver_stats_before_solve();
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
-            _record_row_solve_stats(i, algo);
+            _record_row_solve_stats(i, algo, lin_before);
             // while this row's Ybus edits are still in place -- see _maybe_store_jacobian
             // (and _record_row_bus_q, which reads the mismatch of the system this row
             // solved)
@@ -101,12 +102,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
             if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(i));
             const RealVect & sw = _row_slack_weights(i, sw_scratch);
             const CplxVect & sb = _step_sbus_row(i, sbus_scratch);
+            const LinearSolverStats lin_before = algo.get_linear_solver_stats_before_solve();
             conv = compute_one_powerflow(algo, control, nb_solved, nb_converged, timer_solver,
                                          Ybus, V, sb,
                                          active_layout().slack_bus_id_solver.as_eigen(), sw,
                                          active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
                                          max_iter, tol_solver);
-            _record_row_solve_stats(i, algo);
+            _record_row_solve_stats(i, algo, lin_before);
             // before the pinning is restored, and before the Ybus is put back: the
             // refreshed Jacobian has to describe the system THIS row solved, and so does
             // the state the physical-limit checks read
@@ -538,6 +540,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _converged_mask_.assign(nb_steps, 0);
     _row_solve_time_.assign(nb_steps, 0.);
     _row_nb_iter_.assign(nb_steps, 0);
+    _row_lin_stats_.assign(nb_steps, LinearSolverStats());
+    _row_J_dim_.assign(nb_steps, 0);
+    _row_J_nnz_.assign(nb_steps, 0);
     if(_algo.supports_outer_loops()){
         _outer_results_.assign(nb_steps, OuterRowResult());
         _row_trafo_blocks_.assign(nb_steps, std::vector<std::pair<int, std::array<cplx_type, 4> > >());

@@ -9,7 +9,9 @@
 #ifndef LINEAR_SOLVER_STATS_H
 #define LINEAR_SOLVER_STATS_H
 
+#include <cmath>
 #include <cstddef>
+#include <limits>
 
 namespace ls2g {
 
@@ -40,9 +42,19 @@ struct LinearSolverStats {
     double timer_refactor_   = 0.;  // time spent in refactorize() itself (not the fallback factor)
     double timer_solve_      = 0.;  // time spent in solve()
     double timer_solve_transpose_ = 0.;  // time spent in solve_transpose()
+
+    // the smallest reciprocal pivot growth of the refactorizations accepted since the timers
+    // were last reset (so, like them, the last solve's); NaN when none was measured. Only
+    // measured with the refactor fallback on, by a solver that can tell (KLU, KLU static pivot)
+    double min_rgrowth_ = std::numeric_limits<double>::quiet_NaN();
 };
 
 namespace detail {
+    // min_rgrowth_ of two stats taken together: NaN (nothing measured) only if both are
+    inline void merge_min_rgrowth(double & into, double from) noexcept {
+        if (!std::isnan(from) && (std::isnan(into) || from < into)) into = from;
+    }
+
     // C++14-safe detection idiom (deliberately not `if constexpr`, which is C++17: this
     // project falls back to cxx_std_14 on older compilers, see CMakeLists.txt). Prefers
     // the real accessor when the wrapped LinearSolver provides one (LinearSolverPolicy<>

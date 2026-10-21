@@ -382,6 +382,14 @@ public:
         }
         return v;
     }
+    static real_type _checked_rgrowth_threshold(real_type v) {
+        if (!std::isfinite(v) || v < 0.) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: rgrowth_threshold must be a finite number >= 0, got " << v << ".";
+            throw std::runtime_error(exc_.str());
+        }
+        return v;
+    }
     static int _checked_non_negative(int v, const char * name) {
         if (v < 0) {
             std::ostringstream exc_;
@@ -469,6 +477,14 @@ public:
         }
     }
 
+    // The reciprocal pivot growth below which a refactorization is not trusted, once the
+    // refactor fallback is on (a batch, the outer loops): see
+    // LinearSolverPolicy::set_fallback_rgrowth_threshold. 0 keeps only a zero pivot.
+    real_type get_rgrowth_threshold() const noexcept { return _linear_solver.fallback_rgrowth_threshold(); }
+    void set_rgrowth_threshold(real_type v) {
+        _linear_solver.set_fallback_rgrowth_threshold(_checked_rgrowth_threshold(v));
+    }
+
     // ----- AlgoConfig serialization -------------------------------------------
 
     AlgoConfig get_config() const override {
@@ -483,7 +499,8 @@ public:
                             static_cast<double>(ls_c_),
                             static_cast<double>(ls_rho_),
                             static_cast<double>(iw_mu_min_),
-                            static_cast<double>(iw_mu_max_) };
+                            static_cast<double>(iw_mu_max_),
+                            static_cast<double>(get_rgrowth_threshold()) };
         return cfg;
     }
 
@@ -501,6 +518,10 @@ public:
         const bool new_constrained_ordering = cfg.int_params.size() > 4
             ? (cfg.int_params[4] != 0 && SUPPORTS_CONSTRAINED_ORDERING)
             : constrained_ordering_;
+        // the 7th real one too
+        const real_type new_rgrowth_threshold = cfg.real_params.size() > 6
+            ? _checked_rgrowth_threshold(static_cast<real_type>(cfg.real_params[6]))
+            : get_rgrowth_threshold();
         // NB an AlgoConfig is part of the serialized grid state, so these values
         // can come straight from a pickle or a binary file: validate them exactly
         // like the setters do (see the note on _checked_refactor_every_n).
@@ -515,6 +536,7 @@ public:
         refactor_policy_ = new_refactor_policy;
         set_scaling_policy(new_scaling_policy);
         set_constrained_ordering(new_constrained_ordering);
+        set_rgrowth_threshold(new_rgrowth_threshold);
     }
 
     // ----- debug ---------------------------------------------------------------

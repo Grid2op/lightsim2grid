@@ -431,6 +431,18 @@ void bind_batch_shared(py::class_<T> & cls)
         .def("get_row_nb_iter", &T::get_row_nb_iter,
              "Per row of the last compute(): the number of iterations the algorithm reported "
              "(0 for a row never handed to the solver).")
+        .def("get_row_linear_solver_stats", &T::get_row_linear_solver_stats,
+             "Per row of the last compute(), what the linear solver ran for it (a "
+             "LinearSolverStats): the counters are the row's own (what they grew by during "
+             "its solve, while get_linear_solver_stats() sums the whole compute()), and so are "
+             "the timers and min_rgrowth. All 0 for a row never handed to the solver. The "
+             "timers of get_linear_solver_stats() cover the last solve only: sum these instead.")
+        .def("get_row_J_dim", &T::get_row_J_dim,
+             "Per row of the last compute(): the dimension of the Jacobian of its last Newton "
+             "iteration (0 for a row never handed to the solver, or an algorithm without a "
+             "Jacobian). The same on every row while the sparsity pattern is fixed.")
+        .def("get_row_J_nnz", &T::get_row_J_nnz,
+             "Per row of the last compute(): the number of nonzeros of that Jacobian.")
         .def("get_outer_results", &T::get_outer_results,
              "Per row of the last compute(), what the outer loops did (an OuterRowResult): "
              "only with an algorithm that runs them (NROuter_*), empty otherwise. Such an "
@@ -649,6 +661,9 @@ void bind_batch(py::module_& m) {
                       "(transformer id, position) of the ratio taps TransformerVoltageControl moved.")
         .def_readonly("shunt_sections", &OuterRowResult::shunt_sections,
                       "(shunt id, section count) ShuntVoltageControl settled on.")
+        .def_readonly("decisions_taken", &OuterRowResult::decisions_taken,
+                      "(\"loop/ACTION\", count) of every decision the loops acted on, sorted: how "
+                      "many switches the row took, by kind (eg \"ReactiveLimits/PV_TO_PQ\").")
         .def("__repr__", [](const OuterRowResult & self){
             std::ostringstream out;
             out << "OuterRowResult(converged=" << (self.converged ? "True" : "False")

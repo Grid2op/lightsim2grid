@@ -451,7 +451,8 @@ counterparts for the DC solver) instead, which read/write a serialisable
     config = env.backend.get_ac_algo_config()
     # config.int_params  == [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n,
     #                        constrained_ordering]  (an NROuter_* appends resume_outer_state)
-    # config.real_params == [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]
+    # config.real_params == [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max,
+    #                        rgrowth_threshold]
 
     int_params = list(config.int_params)
     int_params[0] = int(ScalingPolicyType.LineSearch)

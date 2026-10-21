@@ -318,6 +318,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             into.timer_factor_ += from.timer_factor_;
             into.timer_refactor_ += from.timer_refactor_;
             into.timer_solve_ += from.timer_solve_;
+            detail::merge_min_rgrowth(into.min_rgrowth_, from.min_rgrowth_);
         }
 
         /**

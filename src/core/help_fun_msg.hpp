@@ -86,6 +86,8 @@ struct LS2G_API DocSolver
     static const std::string get_refactor_every_n;
     static const std::string set_refactor_every_n;
     static const std::string constrained_ordering;
+    static const std::string rgrowth_threshold;
+    static const std::string min_rgrowth;
     static const std::string get_config;
     static const std::string set_config;
     static const std::string get_theta_to_J_col;

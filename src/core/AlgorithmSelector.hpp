@@ -468,6 +468,11 @@ class LS2G_API AlgorithmSelector final
         LinearSolverStats get_linear_solver_stats() const {
             return get_prt_solver("get_linear_solver_stats", true)->get_linear_solver_stats();
         }
+        // the same, whichever algorithm solved last, or none yet (its counters still 0):
+        // what to read before a solve, to tell what that solve ran
+        LinearSolverStats get_linear_solver_stats_before_solve() const {
+            return get_prt_solver("get_linear_solver_stats_before_solve", false)->get_linear_solver_stats();
+        }
 
         ErrorType get_error() const {
             return get_prt_solver("get_error", true)->get_error();
