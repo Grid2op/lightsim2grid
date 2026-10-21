@@ -34,15 +34,12 @@ So that measurements compare from one change to the next:
   counts, the linear-solver counters (`LinearSolverStats`), and the per-row maximum of
   dVm / dVa against the reference algorithm.
 
-The bench scripts read the snapshot and so live outside the repository.
+The bench scripts read the snapshot and so live outside the repository, and so do the
+timings they record: run them before and after a change rather than compare with a number
+written here.
 
-Where things stand on it (wall time of `compute()`, one core):
-
-| | `NROuter_KLU` | `NROuter_KLUStaticPivot` (constrained order) |
-|---|---|---|
-| ContingencyAnalysis, 100 N-1 | 2.99 s | 1.60 s |
-| InjectionSweep, 100 rows | 8.03 s | 3.96 s |
-| full N-1 | 301 s | 162 s |
+Where things stand on it: `NROuter_KLUStaticPivot` with the constrained order runs each of the
+three markedly faster than `NROuter_KLU`, close to twice as fast.
 
 ## Open items
 
