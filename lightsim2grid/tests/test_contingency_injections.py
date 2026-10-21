@@ -200,6 +200,18 @@ class TestContingencyAnalysisWrapper(_Base):
         V_mixed = self._reference_V(branches=(5,), loads=(2,))
         self.assertGreater(np.abs(V_line - V_mixed).max(), 1e-5)
 
+    def test_a_single_line_by_name_or_numpy_id(self):
+        # one line, given alone rather than in a list: by name, by python int, by numpy int
+        for lines in (self.env.name_line[5], 5, np.int64(5), np.int32(5)):
+            sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+            sa.add_contingency(lines=lines, loads=[2])
+            res = sa.run()
+            self.assertEqual(len(res.post_contingency_results), 1, msg=repr(lines))
+            cont = res.post_contingency_results[0]
+            self.assertEqual(cont.element_ids, [5], msg=repr(lines))
+            self.assertEqual(cont.load_ids, [2], msg=repr(lines))
+            sa.close()
+
 
 class TestScenarioSweep(_Base):
     def test_shunt_and_load_masks_match_a_one_off_powerflow(self):

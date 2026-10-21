@@ -836,7 +836,9 @@ class ContingencyAnalysis(object):
         """
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
-        branch_ids = self._single_cont_to_li_int(list(lines) if not isinstance(lines, (int, np.integer) + type(self).STR_TYPES) else lines)
+        if isinstance(lines, (int, np.integer) + type(self).STR_TYPES):
+            lines = [lines]  # one line, by id or by name
+        branch_ids = self._single_cont_to_li_int(list(lines))
         shunt_ids = self._ids_of(shunts, getattr(type(self._ls_backend), "name_shunt", []), "shunt")
         load_ids = self._ids_of(loads, type(self._ls_backend).name_load, "load")
         gen_ids = self._ids_of(gens, type(self._ls_backend).name_gen, "generator")
