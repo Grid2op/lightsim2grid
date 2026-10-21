@@ -124,6 +124,8 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
 {
     const int nnz_Y = static_cast<int>(Ybus_ref_.nonZeros());
     const int dim_J = ledger_.size();
+    // the masked / pinned rows are positions in this pattern: found again in the new one
+    masked_dirty_ = true;
 
     // generic dS pass: ONE loop over the Ybus nonzeros generates every
     // dS-derived entry, for all components at once. k is the running nnz index.

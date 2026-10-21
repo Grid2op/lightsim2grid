@@ -223,6 +223,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [FIXED] (C++) a Jacobian rebuilt while buses are masked or pinned kept their identity rows at the
+  positions of the previous pattern.
 - [FIXED] ``LinearSolverStats`` of the ``*_NICSLU`` algorithms: the factorizations NICSLU runs in place of a
   refactorization (declined or failed) count, as fallbacks. They were counted as refactorizations.
 - [FIXED] ``LSGrid``'s result and target getters (``get_gen_res``, ``get_load_target_p``, ...) returned views

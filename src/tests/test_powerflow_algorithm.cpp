@@ -571,6 +571,58 @@ TEST_CASE("bus masking replaces the masked rows by the identity", "[NRSystem][ma
 }
 
 
+TEST_CASE("the masked rows stay the identity in a J rebuilt with another pattern", "[NRSystem][mask]")
+{
+    // a driver that rebuilds J in the middle of a solve (a PV bus turned PQ) while the mask
+    // set before it still holds: the identity goes to the rows of the new pattern
+    LSGrid grid = make_radial_skeleton(5);
+    add_generators(grid, {0, 2}, {1.02, 1.01}, {2000., 2000.});
+    grid.add_gen_slackbus(0, 1.);
+    grid.tell_solver_need_reset();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    REQUIRE(in.pv.size() == 1);
+    const int masked_bus = in.pq(in.pq.size() - 1);
+
+    MultiSlackNRSystem sys;
+    sys.set_masked_buses(std::vector<int>{masked_bus});
+    build_system(sys, in, &grid);
+    const Eigen::Index dim_before = sys.J().rows();
+
+    // the PV bus becomes PQ: one more row and column, the masked bus' rows move
+    IntVect pv_after(0);
+    IntVect pq_after(in.pq.size() + 1);
+    pq_after << in.pv(0), in.pq;
+    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+    sys.init_topology(in.slack_ids, in.slack_weights, pv_after, pq_after);
+    sys.build_J_sparsity();
+    sys.fill_internal_variables();
+    sys.fill_J();
+    const SpMatReal J = sys.J();
+    REQUIRE(J.rows() == dim_before + 1);
+
+    const int p_row = sys.p_to_J_row()[masked_bus];
+    const int q_row = sys.q_to_J_row()[masked_bus];
+    const int theta_col = sys.theta_to_J_col()[masked_bus];
+    const int vm_col = sys.vm_to_J_col()[masked_bus];
+    REQUIRE(p_row >= 0);
+    REQUIRE(q_row >= 0);
+    int nb_ones = 0;
+    for (int col = 0; col < static_cast<int>(J.cols()); ++col) {
+        for (int p = J.outerIndexPtr()[col]; p < J.outerIndexPtr()[col + 1]; ++p) {
+            const int row = J.innerIndexPtr()[p];
+            const bool is_one = ((row == p_row) && (col == theta_col)) || ((row == q_row) && (col == vm_col));
+            INFO("entry (" << row << ", " << col << ")");
+            if (is_one) {
+                CHECK(J.valuePtr()[p] == 1.);
+                ++nb_ones;
+            } else if (row == p_row || row == q_row) {
+                CHECK(J.valuePtr()[p] == 0.);
+            }
+        }
+    }
+    CHECK(nb_ones == 2);
+}
+
 // ===========================================================================
 // MultiSlack
 // ===========================================================================
