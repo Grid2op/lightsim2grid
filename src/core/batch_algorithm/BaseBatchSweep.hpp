@@ -4467,12 +4467,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 // (a)): their consumption leaves the balance, stranded or not ((b) leaves
                 // them out)
                 lost_mw += _row_trip_lost_mw(i);
-                if(std::abs(lost_mw) <= eps_mw) continue;
                 if(outer){
-                    // the DistributedSlack loop shares it (see OuterRowView::lost_p_mw)
+                    // the DistributedSlack loop shares it (see OuterRowView::lost_p_mw). Even
+                    // when it is nothing at the grid's targets: the loop counts the units the
+                    // row loses at the targets in force, which a row resumed from the "n"
+                    // solve takes from that solve (a unit at 0 MW in the grid that the "n"
+                    // solve's DistributedSlack moved up loses that much); it then decides
+                    // itself whether anything is left to share
                     _row_lost_p_mw_[i] = lost_mw;
                     continue;
                 }
+                if(std::abs(lost_mw) <= eps_mw) continue;
 
                 units.clear();
                 const auto keep_bus = [&in_island](int bus_me){ return !in_island(bus_me); };

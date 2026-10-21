@@ -131,5 +131,41 @@ class TestOuterRedistributeSlack(unittest.TestCase):
         self.assertTrue(np.all(p[p < 10.] == 0.))
 
 
+class TestOuterRedistributeSlackFromN(unittest.TestCase):
+    """With init_from_n_powerflow, a row counts what it loses at the targets in force after the
+    "n" solve, as OpenLoadFlow does: a generator whose grid target is 0 MW, but that the "n"
+    solve's DistributedSlack moved up, takes that much generation with it when tripped -- even
+    though the loss at the grid's targets is nothing."""
+
+    TRIPPED = 3  # a synchronous condenser, 0 MW in the grid
+
+    def test_a_unit_at_zero_in_the_grid_moved_by_the_n_solve(self):
+        grid = _grid()
+        self.assertEqual(grid.get_generators()[self.TRIPPED].target_p_mw, 0.)
+        grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        # the non-slack units produce their target exactly: the "n" solve's moved targets
+        p_n = grid.get_gen_res()[0].copy()
+        is_slack = np.array([el.is_slack for el in grid.get_generators()])
+        self.assertGreater(p_n[self.TRIPPED], 1.)
+
+        ca = ContingencyAnalysisCPP(grid)
+        ca.init_from_n_powerflow = True
+        ca.redistribute_slack = True
+        ca.add_contingency_gen(self.TRIPPED)
+        ca.change_algorithm(OUTER)
+        ca.compute(_v0(grid), MAX_IT, TOL)
+        res = ca.get_outer_results()[0]
+        self.assertTrue(res.converged)
+        moved = dict(res.gen_target_p)
+        # every remaining unit has the same weight and stays within its range: each takes a
+        # quarter of what the tripped one produced, before the first solve; what the losses
+        # change afterwards is below the loop's 1 MW threshold, so nothing moves after it
+        for gen_id in range(len(p_n)):
+            if gen_id == self.TRIPPED or is_slack[gen_id]:
+                continue
+            self.assertAlmostEqual(moved[gen_id], p_n[gen_id] + 0.25 * p_n[self.TRIPPED], places=6,
+                                   msg=f"generator {gen_id}")
+
+
 if __name__ == "__main__":
     unittest.main()
