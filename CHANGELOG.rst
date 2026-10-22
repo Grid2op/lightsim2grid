@@ -7,6 +7,10 @@ Change Log
   that did not run in that solve too, so a row needing one resumes it from what an earlier solve left in
   it. Not reproduced: no built-in loop is idle in the base case yet needed in a row. Follow-up: carry a
   fresh loop for those (``OuterLoopAlgo::get_outer_resume_point``).
+- ``compute_physical_violations`` in the batches: each converged row builds its own row view, clones
+  every outer loop and builds the bus reactive plan once per loop reading it. Reusing the view the row
+  was solved with and sharing one plan did not change the timing measurably on the default loop list.
+  Follow-up: profile the per-row checks before optimising them.
 - ``LSGrid``'s result getters (``get_gen_res``...) return views that do not keep the grid alive:
   read after the grid is gone, they show freed memory. ``reference_internal`` would fix it; to
   benchmark and weigh first (``docs/dev_notes/result_view_lifetime.md``).
