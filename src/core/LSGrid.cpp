@@ -2440,9 +2440,7 @@ void LSGrid::generator_results(bool ac,
             const int gen_id = gen_bus.first;
             if(is_off(gen_id)) continue;
             if(generators_.would_be_local_voltage_controller(gen_id)){
-                shares.push_back({gen_bus.second,
-                                  generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
-                                  VoltageControlSolverData::GEN, gen_id});
+                shares.push_back(_gen_q_share(gen_id, gen_bus.second));
             } else if(!generators_.get_voltage_regulator_on(gen_id)){
                 q_mvar(gen_id) = generators_.get_target_q_mvar(gen_id);
             }
@@ -2573,6 +2571,18 @@ void LSGrid::_mark_q_solved_by_algo(const IntVect & ctrl_kind,
     }
 }
 
+LSGrid::QShare LSGrid::_gen_q_share(int gen_id, int bus_id) const
+{
+    QShare sh{bus_id, generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
+              VoltageControlSolverData::GEN, gen_id};
+    gen_limits_at_outer_target(gen_id, results_gen_target_p_, sh.min_q, sh.max_q);
+    const real_type key = generators_.get_reactive_key(gen_id);
+    if(std::isfinite(key) && key > 0.) sh.key = key;
+    sh.range_max = (gen_reactive_range_max_.size() > gen_id && std::isfinite(gen_reactive_range_max_(gen_id)))
+                   ? gen_reactive_range_max_(gen_id) : sh.span;
+    return sh;
+}
+
 std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector<bool> & gen_solved,
                                                                const std::vector<bool> & hvdc1_solved,
                                                                const std::vector<bool> & hvdc2_solved,
@@ -2593,15 +2603,7 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(gen_off != nullptr && static_cast<std::size_t>(gen_id) < gen_off->size() && (*gen_off)[gen_id]) continue;
         if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
-        QShare sh{gen_buses(gen_id).cast_int(),
-                  generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
-                  VoltageControlSolverData::GEN, gen_id};
-        gen_limits_at_outer_target(gen_id, results_gen_target_p_, sh.min_q, sh.max_q);
-        const real_type key = generators_.get_reactive_key(gen_id);
-        if(std::isfinite(key) && key > 0.) sh.key = key;
-        sh.range_max = (gen_reactive_range_max_.size() > gen_id && std::isfinite(gen_reactive_range_max_(gen_id)))
-                       ? gen_reactive_range_max_(gen_id) : sh.span;
-        shares.push_back(sh);
+        shares.push_back(_gen_q_share(gen_id, gen_buses(gen_id).cast_int()));
     }
     const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){

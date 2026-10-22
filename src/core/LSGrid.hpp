@@ -3250,6 +3250,9 @@ class LS2G_API LSGrid final
             real_type key = std::numeric_limits<real_type>::quiet_NaN();        ///< its reactive key, NaN if none
             real_type range_max = std::numeric_limits<real_type>::quiet_NaN();  ///< its widest range, MVar
         };
+        /// generator `gen_id`'s share, on grid bus `bus_id` (its own, or the one a batch row
+        /// places it on): every field filled, what either dispatch reads
+        QShare _gen_q_share(int gen_id, int bus_id) const;
         /// OpenLoadFlow's split of one bus' reactive power between its units (see
         /// set_reactive_dispatch_olf): `q_mvar` shared out, written into `q_out` (aligned
         /// with `units`)
