@@ -185,6 +185,10 @@ struct OuterContext
     std::vector<OuterDecision> * trace = nullptr;
     /// what the loops of this solve share (null: each builds its own, eg in detection)
     OuterSolveCache * solve_cache = nullptr;
+    /// detection only: the buses (solver ids) the transformer voltage controls of the loops
+    /// listed before regulate, what OuterControls::ratio_group_buses gives a solve (see
+    /// outer_detect; null: none)
+    const std::set<int> * detect_ratio_group_buses = nullptr;
 
     bool is_detection() const { return injections == nullptr; }
     /// the grid as this solve sees it (see OuterGridView)
