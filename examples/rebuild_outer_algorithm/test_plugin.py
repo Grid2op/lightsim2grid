@@ -282,6 +282,37 @@ def _ieee14_pst(target_mw=30.):
     return net
 
 
+def _ieee14_two_stars(target_kv=12.6):
+    """pypowsybl's IEEE 14 with two three-winding transformers from B4, each modelled as a star:
+    a fictitious bus STARk and three two-winding legs, HVk from B4, LVLk to a load bus of its
+    own and MVk to B9. Both MV legs have a ratio tap changer regulating B9."""
+    net = pp.network.create_ieee14()
+    sub = net.get_voltage_levels().loc["VL4", "substation_id"]
+    vls, buses, loads, legs = [], [], [], []
+    for k in (1, 2):
+        vls += [(f"STAR{k}", sub, "BUS_BREAKER", 132.), (f"LV{k}", sub, "BUS_BREAKER", 20.)]
+        buses += [(f"STAR{k}_0", f"STAR{k}"), (f"LV{k}_0", f"LV{k}")]
+        loads += [(f"LD{k}", f"LV{k}", f"LV{k}_0", 10., 2.5)]
+        legs += [(f"HV{k}", "VL4", "B4", f"STAR{k}", f"STAR{k}_0", 132., 132., 0.9, 17.),
+                 (f"LVL{k}", f"STAR{k}", f"STAR{k}_0", f"LV{k}", f"LV{k}_0", 132., 20., 0.02, 0.4),
+                 (f"MV{k}", f"STAR{k}", f"STAR{k}_0", "VL9", "B9", 132., 12., 0.008, 0.15)]
+    net.create_voltage_levels(pd.DataFrame.from_records(
+        vls, index="id", columns=["id", "substation_id", "topology_kind", "nominal_v"]))
+    net.create_buses(pd.DataFrame.from_records(buses, index="id", columns=["id", "voltage_level_id"]))
+    net.create_loads(pd.DataFrame.from_records(loads, index="id", columns=["id", "voltage_level_id", "bus_id", "p0", "q0"]))
+    net.create_2_windings_transformers(pd.DataFrame.from_records(
+        legs, index="id", columns=["id", "voltage_level1_id", "bus1_id", "voltage_level2_id", "bus2_id",
+                                   "rated_u1", "rated_u2", "r", "x"]).assign(g=0., b=0.))
+    rtc = pd.DataFrame.from_records(
+        index="id", columns=["id", "target_deadband", "target_v", "oltc", "low_tap", "tap", "regulating", "regulated_side"],
+        data=[("MV1", 0., target_kv, True, 0, 8, False, "TWO"), ("MV2", 0., target_kv, True, 0, 7, False, "TWO")])
+    steps = pd.DataFrame.from_records(index="id", columns=["id", "b", "g", "r", "x", "rho"],
+                                      data=[(f"MV{k}", 0., 0., 0., 0., 0.88 + 0.01 * s) for k in (1, 2) for s in range(25)])
+    net.create_ratio_tap_changers(rtc, steps)
+    net.update_ratio_tap_changers(id=["MV1", "MV2"], regulating=[True, True])
+    return net
+
+
 def _pypowsybl(net, algo, reactive_limits=False):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
@@ -317,6 +348,38 @@ class TestPhaseControl(_SameAsFixedPattern, unittest.TestCase):
 
     def test_same_solution(self):
         self._check(1.0)
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestRowAfterATrippedRatioControl(unittest.TestCase):
+    """a batch row reaches what the fixed-pattern batch does whatever the rows before it: here a
+    row islanding a load bus, then one tripping a regulating MV leg, then one where both MV legs
+    regulate B9 again"""
+
+    ROWS = ("LVL1", "MV1", "HV2")
+
+    def _batch(self, algo):
+        grid = _loops(_pypowsybl(_ieee14_two_stars(), algo),
+                      TransformerVoltageControl(use_initial_tap_position=True, max_controlled_nominal_voltage=120.))
+        branches = [el.name for el in grid.get_lines()] + [el.name for el in grid.get_trafos()]
+        rows = [branches.index(name) for name in self.ROWS]
+        batch = ContingencyAnalysisCPP(grid)
+        batch.handle_disconnected_grid = True  # the LVL1 row islands LV1
+        batch.add_multiple_n1(rows)
+        self.assertEqual([int(c[0]) for c in batch.my_defaults()], rows)
+        batch.compute(np.full(grid.total_bus(), 1. + 0j), MAX_IT, TOL)
+        return batch
+
+    def test_rows_equal_the_fixed_pattern_ones(self):
+        fixed, rebuilt = self._batch(FIXED), self._batch(REBUILD)
+        V_fixed, V_rebuilt = fixed.get_voltages(), rebuilt.get_voltages()
+        res_f, res_r = fixed.get_outer_results(), rebuilt.get_outer_results()
+        for i, name in enumerate(self.ROWS):
+            with self.subTest(row=name):
+                self.assertTrue(res_f[i].converged)
+                self.assertTrue(res_r[i].converged)
+                self.assertEqual(sorted(res_r[i].ratio_tap), sorted(res_f[i].ratio_tap))
+                np.testing.assert_allclose(V_rebuilt[i], V_fixed[i], rtol=0., atol=ATOL_V)
 
 
 if __name__ == "__main__":

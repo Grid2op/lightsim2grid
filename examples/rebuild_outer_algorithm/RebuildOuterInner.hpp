@@ -109,11 +109,21 @@ public:
 
         Structure s = built_;
         s.masked = _masked();
-        if (!has_built_ || !(s == built_)) algo_.request_rebuild();
+        if (!has_built_) algo_.request_rebuild();
         IntVect pv_s, pq_s;
         _split(s, pv_s, pq_s);
-        const bool ok = algo_.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv_s, pq_s, need_init,
-                                    [&](){ controls_.clear_reservations(); declare(); _reserve(s); });
+        // what NROuterInner rebuilds on (the first solve, the driver's request, a change the
+        // caller told): the loops reserve their controls again, as they do there
+        bool ok = algo_.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv_s, pq_s, need_init,
+                              [&](){ controls_.clear_reservations(); declare(); _reserve(s); });
+        // other masked buses alone (a batch row's islands): J is rebuilt for them on the
+        // reservations kept, as _restructure does. The loops declare for the row's view, so
+        // declaring again here would take out what this row opens for every row after it.
+        if (ok && !need_init && has_built_ && !(s == built_)) {
+            algo_.request_rebuild();
+            ok = algo_.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv_s, pq_s, need_init,
+                             [&](){ _reserve(s); });
+        }
         if (!ok) return false;
         built_ = s;
         has_built_ = true;
