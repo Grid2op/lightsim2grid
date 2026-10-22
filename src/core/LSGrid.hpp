@@ -2912,9 +2912,10 @@ class LS2G_API LSGrid final
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
-        /// assign_slack_to_most_connected, the buses compared on the highest nominal voltage first
-        /// when `highest_voltage_first` (consider_only_main_component's fallback)
-        std::tuple<int, int> _assign_slack_most_connected(bool highest_voltage_first);
+        /// assign_slack_to_most_connected. With `island_fallback` (consider_only_main_component's
+        /// fallback) the buses are compared on the highest nominal voltage first, and the units
+        /// taken out of the slack keep their "can participate" flag, as every other unit does
+        std::tuple<int, int> _assign_slack_most_connected(bool island_fallback);
         // the generators / storage units whose status went from off (in the `*_before`
         // snapshots) to on try to rejoin the slack (see SlackParticipation::rejoin_if_able)
         void _rejoin_slack_if_reconnected(const std::vector<bool> & gen_status_before,

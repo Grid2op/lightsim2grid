@@ -3397,7 +3397,7 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     return _assign_slack_most_connected(false);
 }
 
-std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool highest_voltage_first){
+std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool island_fallback){
     auto res = std::tuple<int, int>(-1, -1);
     int res_bus_id = -1;
     int res_gen_id = -1;
@@ -3424,7 +3424,7 @@ std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool highest_voltage_f
     {
         if(!(gen_p_per_bus[bus_id] > 0.)) continue;
         const auto & nb_lines_this = nb_line_end_per_bus[bus_id];
-        const real_type vn = highest_voltage_first ? vn_kv(bus_id) : 0.;
+        const real_type vn = island_fallback ? vn_kv(bus_id) : 0.;
         if((vn > max_vn) || ((vn == max_vn) && (nb_lines_this > max_line))){
             res_bus_id = bus_id;
             max_line = nb_lines_this;
@@ -3435,9 +3435,17 @@ std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool highest_voltage_f
     if(res_bus_id == -1) throw std::runtime_error("LSGrid::assign_slack_to_most_connected: impossible to find anything connected to a node.");
     std::get<0>(res) = res_bus_id;
 
-    // and reset the slack bus
-    generators_.remove_all_slackbus();
-    storages_.remove_all_slackbus();
+    // and reset the slack bus. Losing the slack to an island moves the slack, not the units
+    // able to share it: they keep their "can participate" flag, so the redistribution below
+    // and a DistributedSlack loop still count them, and a stranded slack unit goes back into
+    // the slack once reconnected (see SlackParticipation::leave_all / rejoin_if_able)
+    if(island_fallback){
+        generators_.leave_all_slackbus();
+        storages_.leave_all_slackbus();
+    }else{
+        generators_.remove_all_slackbus();
+        storages_.remove_all_slackbus();
+    }
     res_gen_id = generators_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
     const int res_storage_id = storages_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
     if(res_gen_id == -1 && res_storage_id == -1){
@@ -3844,7 +3852,8 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     // participant takes no share (as OLF, which only distributes on the main component).
     // They stay in the slack, so that reconnecting one puts it back where it was; their
     // buses, out of the grid, are no slack buses meanwhile (see _slack_bus_id_me). The
-    // main component, the largest one, may then have no slack left (given one at the end).
+    // main component, the largest one, may then have no slack left: it is given one at the
+    // end, and the stranded units leave the slack, still able to rejoin it.
     bool slack_in_main = false;
     for(const auto & el : slack_buses_id) slack_in_main = slack_in_main || bus_in_main_cc[el.cast_int()];
     if((_forced_ref_slack_bus_id >= 0) && !bus_in_main_cc[_forced_ref_slack_bus_id]){
@@ -3865,8 +3874,8 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     // voltage ones, when the slack it was named is not in the main component)
     if(!slack_in_main) _assign_slack_most_connected(true);
 
-    // the lost power is shared on the slack units that remain (the stranded ones are
-    // out of the slack and off by now), with their bounds
+    // the lost power is shared on the units of the main component that take part in the
+    // slack or can (the stranded ones are off by now), with their bounds
     slack_redistribution::Report report;
     if(redistribute_slack && std::abs(lost_mw) > slack_redistribution::default_eps_mw){
         report = redistribute_active_power(lost_mw);

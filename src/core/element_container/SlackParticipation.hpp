@@ -264,6 +264,13 @@ class SlackParticipation
             const int nb_el = static_cast<int>(slackbus_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id) remove(el_id, unused_solver_control);
         }
+        /// take every element out of the slack, each keeping what it can participate with
+        /// (see `leave`): the slack moves elsewhere, the units able to share it stay so
+        void leave_all(){
+            DualAlgoControl unused_solver_control;
+            const int nb_el = static_cast<int>(slackbus_.size());
+            for(int el_id = 0; el_id < nb_el; ++el_id) leave(el_id, unused_solver_control);
+        }
 
         /// does `el_id` take a share of the slack right now (`status` is the container's)?
         [[nodiscard]] bool participates(int el_id, const std::vector<bool> & status) const {
