@@ -295,8 +295,14 @@ template<class LinearSolver>
 void RebuildOuterInner<LinearSolver>::_reserve(const Structure & s)
 {
     NRSys & system = algo_.system();
-    // a PQ bus is a pq bus: nothing switches by value
-    algo_.set_switchable_vm_buses(std::vector<int>());
+    // a PQ bus is a pq bus: nothing switches by value. The reference bus is in neither pv nor
+    // pq: switched PQ (its generators frozen), it keeps its angle and gets a magnitude unknown
+    // and its Q equation, the free magnitude of a switchable bus left unpinned.
+    std::vector<int> free_vm;
+    for (Eigen::Index i = 0; i < slack_ids_.size(); ++i) {
+        if (_contains(s.pq_switched, slack_ids_(i))) free_vm.push_back(slack_ids_(i));
+    }
+    algo_.set_switchable_vm_buses(free_vm);
     system.set_may_hold_voltage_controllers(!s.held.empty());
     {
         std::vector<int> trafos;

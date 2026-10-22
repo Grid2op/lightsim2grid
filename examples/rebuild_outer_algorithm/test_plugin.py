@@ -351,6 +351,37 @@ class TestPhaseControl(_SameAsFixedPattern, unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestSlackGeneratorFrozen(unittest.TestCase):
+    """a limit above every nominal voltage: the transformer voltage control freezes the slack
+    generator with the others while its transformers are on, and the reference bus then solves
+    for its magnitude, as the fixed-pattern Newton does"""
+
+    def _make(self, algo, max_outer_iterations=None):
+        grid = _loops(_pypowsybl(_ieee14_tap(), algo),
+                      TransformerVoltageControl(use_initial_tap_position=True, max_controlled_nominal_voltage=1000.))
+        if max_outer_iterations is not None:
+            params = grid.get_outer_loop_driver_params()
+            params.max_outer_iterations = max_outer_iterations
+            grid.set_outer_loop_driver_params(params)
+        return grid
+
+    def test_solve_after_the_switch(self):
+        # stopped right after it: the state the generators are frozen in, not yet released
+        fixed, rebuilt = self._make(FIXED, 1), self._make(REBUILD, 1)
+        _solve(fixed, 1.0)
+        _solve(rebuilt, 1.0)
+        np.testing.assert_allclose(np.asarray(rebuilt.get_algo().get_V()), np.asarray(fixed.get_algo().get_V()),
+                                   rtol=0., atol=ATOL_V)
+
+    def test_same_iterations(self):
+        fixed, rebuilt = self._make(FIXED), self._make(REBUILD)
+        V_fixed, V_rebuilt = _solve(fixed, 1.0), _solve(rebuilt, 1.0)
+        self.assertGreater(V_rebuilt.shape[0], 0, f"the rebuilt solve failed: {rebuilt.get_algo().get_error()}")
+        np.testing.assert_allclose(V_rebuilt, V_fixed, rtol=0., atol=ATOL_V)
+        self.assertEqual(list(_stats(rebuilt)[0].nr_iterations), list(_stats(fixed)[0].nr_iterations))
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
 class TestRowAfterATrippedRatioControl(unittest.TestCase):
     """a batch row reaches what the fixed-pattern batch does whatever the rows before it: here a
     row islanding a load bus, then one tripping a regulating MV leg, then one where both MV legs
