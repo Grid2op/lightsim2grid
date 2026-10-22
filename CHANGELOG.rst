@@ -3,6 +3,10 @@ Change Log
 
 [TODO]
 --------
+- Batches with ``init_from_n_powerflow``: the "n" solve's resume point clones every outer loop, the ones
+  that did not run in that solve too, so a row needing one resumes it from what an earlier solve left in
+  it. Not reproduced: no built-in loop is idle in the base case yet needed in a row. Follow-up: carry a
+  fresh loop for those (``OuterLoopAlgo::get_outer_resume_point``).
 - ``LSGrid``'s result getters (``get_gen_res``...) return views that do not keep the grid alive:
   read after the grid is gone, they show freed memory. ``reference_internal`` would fix it; to
   benchmark and weigh first (``docs/dev_notes/result_view_lifetime.md``).
