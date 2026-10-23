@@ -39,7 +39,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     Sbus_ = Sbus;
 
     // ... and Ybus, whose values the phase shifters patch (see BranchControl)
-    Ybus_ = Ybus;
+    _copy_ybus(Ybus);
 
     // a row resuming from another solve (a batch's "n" one) starts from that solve's loops
     const OuterResumePoint * from = (row_ != nullptr && row_->resume) ? row_->resume_from : nullptr;
@@ -258,6 +258,22 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
         converged = false;
     }
     return converged;
+}
+
+template<class Inner>
+void OuterLoopAlgo<Inner>::_copy_ybus(const EigenRefConstCplxSpMat & Ybus)
+{
+    // the pattern of the previous solve's (every row of a batch, every solve of a grid whose
+    // topology did not move): its values only, in place. A sparse assignment rebuilds the
+    // whole matrix, coefficient by coefficient.
+    const Eigen::Index nnz = Ybus.nonZeros();
+    const bool same_pattern =
+        Ybus.isCompressed() && Ybus_.isCompressed() &&
+        Ybus_.rows() == Ybus.rows() && Ybus_.cols() == Ybus.cols() && Ybus_.nonZeros() == nnz &&
+        std::equal(Ybus.outerIndexPtr(), Ybus.outerIndexPtr() + Ybus.outerSize() + 1, Ybus_.outerIndexPtr()) &&
+        std::equal(Ybus.innerIndexPtr(), Ybus.innerIndexPtr() + nnz, Ybus_.innerIndexPtr());
+    if (same_pattern) std::copy(Ybus.valuePtr(), Ybus.valuePtr() + nnz, Ybus_.valuePtr());
+    else Ybus_ = Ybus;
 }
 
 template<class Inner>

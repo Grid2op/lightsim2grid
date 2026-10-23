@@ -254,6 +254,8 @@ private:
     bool _solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic);
     // the loops' reservations, on a rebuild of the topology (see Inner::setup)
     void _declare();
+    // Ybus_ = Ybus (see compute_pf)
+    void _copy_ybus(const EigenRefConstCplxSpMat & Ybus);
     // OuterContext on the algorithm's current state
     OuterContext _context();
     // resuming: the taps and sections the last solve settled on, asked of the controls
