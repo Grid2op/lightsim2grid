@@ -577,7 +577,13 @@ Windows (MSVC, from a Developer Command Prompt):
 
 The resulting file is ``Release\my_solver.dll`` on Windows (no ``lib`` prefix)
 and ``libmy_solver.so`` on Linux / macOS.
-Pass that path to :func:`~lightsim2grid.load_algorithm_plugin`.
+Pass that path to :func:`~lightsim2grid.load_algorithm_plugin`, or only its name
+(``"my_solver"``): see :func:`~lightsim2grid.find_algorithm_plugin` for where a
+name is looked up.
+
+The plugins of the ``examples/`` folder are all built at once by
+``python examples/build_plugins.py`` (``--help`` for its options: a subset of
+the plugins, ``-j``, ``--test``, extra ``-D`` ...), on Linux, macOS and Windows.
 
 
 Loading and using the plugin from Python
@@ -635,10 +641,35 @@ Python API reference
     loading the same plugin twice — is rejected the same way, and the registry
     is left unchanged (registration is atomic).
 
-    :param path: Absolute or relative path to the ``.so`` / ``.dll`` file.
+    :param path: Absolute or relative path to the ``.so`` / ``.dll`` file, or
+        the bare name of the plugin, looked up by :func:`find_algorithm_plugin`.
     :raises RuntimeError: If the library cannot be loaded (missing file,
         unresolved symbols), does not export the ``ls2g_register_plugin`` entry
-        point, or its registration is refused (ABI mismatch, duplicate name).
+        point, or its registration is refused (ABI mismatch, duplicate name),
+        or if a bare name is not found.
+
+.. py:function:: lightsim2grid.find_algorithm_plugin(name: str) -> str
+
+    Return the path of a built plugin given its name: the library name
+    (``"my_solver"`` for ``libmy_solver.so`` / ``my_solver.dll``) or, for the
+    plugins of ``examples/``, their folder name, with or without its
+    ``_algorithm`` suffix (``"rebuild_outer"``). The first match wins, looking in:
+
+    1. the directories of the ``LS2G_PLUGIN_PATH`` environment variable
+       (separated by ``os.pathsep``, like ``PATH``), and their ``Release`` sub-folder;
+    2. ``examples/<plugin>/build`` of the source checkout, when lightsim2grid is
+       an editable install (``pip install -e .``) of it.
+
+    .. code-block:: bash
+
+        export LS2G_PLUGIN_PATH=/path/to/my_plugin/build   # not needed for examples/ in an editable install
+
+    .. code-block:: python
+
+        lightsim2grid.load_algorithm_plugin("my_solver")
+
+    :raises RuntimeError: If no plugin of that name is found; the message lists
+        the folders searched.
 
 .. py:method:: LSGrid.change_algorithm(name: str) -> None
 

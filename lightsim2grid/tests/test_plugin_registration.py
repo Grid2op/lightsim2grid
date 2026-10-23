@@ -26,6 +26,7 @@ import sys
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 
 def _candidates_in(build_dir):
@@ -132,6 +133,76 @@ class TestPluginRegistration(unittest.TestCase):
         with self.assertRaises(Exception):
             lightsim2grid.load_algorithm_plugin(
                 os.path.join(tempfile.gettempdir(), "ls2g_no_such_plugin_xyz.so"))
+
+    def test_6_found_by_name_through_env(self):
+        import lightsim2grid
+        with mock.patch.dict(os.environ, {"LS2G_PLUGIN_PATH": os.path.dirname(self.plugin)}):
+            self.assertEqual(os.path.normcase(lightsim2grid.find_algorithm_plugin("dummy_solver")),
+                             os.path.normcase(self.plugin))
+
+
+class TestFindAlgorithmPlugin(unittest.TestCase):
+    """find_algorithm_plugin's lookup, on empty files: nothing is loaded."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="ls2g_find_plugin_")
+        # no examples/ of a checkout unless a test sets one
+        patcher = mock.patch("lightsim2grid._checkout_examples_dir", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def _lib(self, folder, name):
+        os.makedirs(folder, exist_ok=True)
+        file_name = f"{name}.dll" if sys.platform == "win32" else f"lib{name}.so"
+        path = os.path.join(folder, file_name)
+        open(path, "wb").close()
+        return path
+
+    def _find(self, name, env_dirs=()):
+        import lightsim2grid
+        with mock.patch.dict(os.environ, {"LS2G_PLUGIN_PATH": os.pathsep.join(env_dirs)}):
+            return lightsim2grid.find_algorithm_plugin(name)
+
+    def test_env_dirs_in_order(self):
+        first = self._lib(os.path.join(self.tmp, "a"), "my_algorithm")
+        self._lib(os.path.join(self.tmp, "b"), "my_algorithm")
+        dirs = [os.path.join(self.tmp, "missing"), os.path.join(self.tmp, "a"), os.path.join(self.tmp, "b")]
+        self.assertEqual(self._find("my_algorithm", dirs), first)
+
+    def test_algorithm_suffix_optional(self):
+        lib = self._lib(self.tmp, "my_algorithm")
+        self.assertEqual(self._find("my", [self.tmp]), lib)
+
+    def test_release_subfolder(self):
+        lib = self._lib(os.path.join(self.tmp, "Release"), "my_algorithm")
+        self.assertEqual(self._find("my_algorithm", [self.tmp]), lib)
+
+    def test_checkout_examples(self):
+        examples = os.path.join(self.tmp, "examples")
+        for d in ("foo_algorithm", "two_libs_algorithm"):
+            os.makedirs(os.path.join(examples, d))
+            open(os.path.join(examples, d, "CMakeLists.txt"), "w").close()
+        foo = self._lib(os.path.join(examples, "foo_algorithm", "build"), "bar")
+        two = self._lib(os.path.join(examples, "two_libs_algorithm", "build"), "two_libs_algorithm")
+        self._lib(os.path.join(examples, "two_libs_algorithm", "build"), "other")
+        with mock.patch("lightsim2grid._checkout_examples_dir", return_value=examples):
+            self.assertEqual(self._find("foo"), foo)  # by folder name, whatever the library is called
+            self.assertEqual(self._find("bar"), foo)  # by library name
+            self.assertEqual(self._find("two_libs"), two)  # two libraries: the one named after the folder
+            # the environment comes first
+            env_lib = self._lib(os.path.join(self.tmp, "env"), "bar")
+            self.assertEqual(self._find("bar", [os.path.join(self.tmp, "env")]), env_lib)
+
+    def test_not_found_raises(self):
+        import lightsim2grid
+        with self.assertRaises(RuntimeError) as ctx:
+            self._find("ls2g_no_such_plugin_xyz", [self.tmp])
+        self.assertIn("ls2g_no_such_plugin_xyz", str(ctx.exception))
+        # load_algorithm_plugin raises the same error for a name it cannot find
+        with mock.patch.dict(os.environ, {"LS2G_PLUGIN_PATH": self.tmp}):
+            with self.assertRaises(RuntimeError):
+                lightsim2grid.load_algorithm_plugin("ls2g_no_such_plugin_xyz")
 
 
 if __name__ == "__main__":

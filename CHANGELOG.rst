@@ -223,6 +223,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] ``load_algorithm_plugin`` takes a plugin's name, found by ``find_algorithm_plugin`` in
+  ``LS2G_PLUGIN_PATH`` or in ``examples/*/build`` of an editable install.
+- [ADDED] ``examples/build_plugins.py``: builds all the example plugins at once, on any OS.
 - [ADDED] batch classes: ``get_row_linear_solver_stats``, ``get_row_J_dim`` / ``get_row_J_nnz``, and
   ``OuterRowResult.decisions_taken``: each row's linear solver work, Jacobian size and loop switches.
 - [ADDED] ``rgrowth_threshold`` of the refactor fallback (NR algorithms, part of their config) and
