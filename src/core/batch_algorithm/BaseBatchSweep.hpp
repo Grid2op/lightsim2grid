@@ -2992,6 +2992,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // branches and stranded buses (see OuterRowView)
             OuterRowView row;
             _fill_outer_row_view(i, masked, row);
+            _take_moved_targets(algo, row);
             _record_outer_detect(algo, V_solver, row, _physical_violations_[i]);
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
                 // the row's converged voltage, against the target this row gives the machine
@@ -3126,6 +3127,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _outer_detect_loops_ = detection_loops(_grid_model.get_outer_loops());
         }
 
+        // the targets the solve's own loops moved (DistributedSlack), laid over the row's: a
+        // unit's reactive limits follow its target P, and the solve held it within the ones
+        // at that P (see LSGrid::get_physical_violations)
+        static void _take_moved_targets(const AlgorithmSelector & algo, OuterRowView & row){
+            if(!algo.supports_outer_loops()) return;
+            std::vector<real_type> gen_target_p, storage_target_p;
+            algo.get_outer_target_p(gen_target_p, storage_target_p);
+            row.take_moved_targets(gen_target_p, storage_target_p);
+        }
+
         // The grid's outer loops' own triggers (detection mode, see outer_detect), on the row
         // `row` describes, as LSGrid::get_physical_violations reads them on a grid (a bus out
         // of its reactive range, a remote controller at an unrealistic voltage, the hvdc droop
@@ -3167,7 +3178,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(!_compute_physical_violations_) return;
             _physical_violations_n_.clear();
             // the base case is the grid's own: its targets, no contingency
-            _record_outer_detect(_algo, _algo.get_V(), _base_row_view_, _physical_violations_n_);
+            OuterRowView n_view = _base_row_view_;
+            _take_moved_targets(_algo, n_view);
+            _record_outer_detect(_algo, _algo.get_V(), n_view, _physical_violations_n_);
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
                 gen_pv_release_check::check_gen_pv_release_violations(
                     _gen_pv_release_plan_, _algo.get_V(), _physical_tol_vm_pu_, nullptr,

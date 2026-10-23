@@ -127,6 +127,11 @@ struct OuterRowView
         lines.clear();
         trafos.clear();
     }
+    /// lay the active targets a solve's outer loops moved (OuterInjections' convention: NaN
+    /// where a loop kept the unit's) over this row's: the state that solve ended in, which a
+    /// detection after it reads (a unit's reactive limits follow its target P)
+    void take_moved_targets(const std::vector<real_type> & gen_target_p,
+                            const std::vector<real_type> & storage_target_p);
 };
 
 /**

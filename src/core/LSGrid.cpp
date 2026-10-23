@@ -3600,6 +3600,13 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         OuterRowView as_solved;
         as_solved.layout = &layout;
         as_solved.masked = no_mask;
+        // at the targets the solve's own loops moved (DistributedSlack): a unit's reactive
+        // limits follow its target P, and the solve held it within the ones at that P
+        if(ac){
+            std::vector<real_type> gen_target_p, storage_target_p;
+            algo.get_outer_target_p(gen_target_p, storage_target_p);
+            as_solved.take_moved_targets(gen_target_p, storage_target_p);
+        }
         ctx.row = &as_solved;
         outer_detect(detection_loops(get_outer_loops()), ctx, out);
     }

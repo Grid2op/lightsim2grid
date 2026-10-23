@@ -20,6 +20,26 @@ namespace ls2g {
 // out-of-class definition: the C++14 build odr-uses it (vector::assign takes a const reference)
 constexpr int OuterRowView::Units::GRID_BUS;
 
+namespace {
+
+void overlay_targets(std::vector<real_type> & row, const std::vector<real_type> & moved)
+{
+    for (std::size_t k = 0; k < moved.size(); ++k) {
+        if (std::isnan(moved[k])) continue;
+        if (row.size() < moved.size()) row.resize(moved.size(), std::numeric_limits<real_type>::quiet_NaN());
+        row[k] = moved[k];
+    }
+}
+
+}  // namespace
+
+void OuterRowView::take_moved_targets(const std::vector<real_type> & gen_target_p,
+                                      const std::vector<real_type> & storage_target_p)
+{
+    overlay_targets(gens.target_p, gen_target_p);
+    overlay_targets(storages.target_p, storage_target_p);
+}
+
 const SolverBusLayout & OuterGridView::layout() const
 {
     return (row_ != nullptr && row_->layout != nullptr) ? *row_->layout : grid_.get_ac_layout();
