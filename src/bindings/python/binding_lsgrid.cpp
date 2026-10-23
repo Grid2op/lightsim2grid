@@ -363,18 +363,22 @@ void bind_gridmodel(py::module_& m) {
              "The widest reactive range of each generator, MVar (over its whole capability curve), "
              "what `set_reactive_dispatch_olf` shares by; NaN for its range at its target P. Copied "
              "with the grid and serialized.")
-        .def("get_gen_reactive_range_max", &LSGrid::get_gen_reactive_range_max)
+        // a copy, as the two getters below: read rarely, and a view would keep neither the grid
+        // nor the buffer a later set_* reallocates alive
+        .def("get_gen_reactive_range_max", [](const LSGrid & self) { return RealVect(self.get_gen_reactive_range_max()); })
         .def("set_station_reactive_range_max", &LSGrid::set_station_reactive_range_max,
              py::arg("range1_mvar"), py::arg("range2_mvar"),
              "The same as `set_gen_reactive_range_max` for the converter stations, one value per hvdc "
              "line on each side (NaN for the range at its active power). Copied with the grid and serialized.")
-        .def("get_station_reactive_range_max", &LSGrid::get_station_reactive_range_max, py::arg("side"))
+        .def("get_station_reactive_range_max",
+             [](const LSGrid & self, int side) { return RealVect(self.get_station_reactive_range_max(side)); },
+             py::arg("side"))
         .def("set_gen_raw_target_q", &LSGrid::set_gen_raw_target_q, py::arg("q_mvar"),
              "OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target Q "
              "(MVar) before it was clamped into its limits at its target P (NaN: none). A non-regulating "
              "generator whose target P an outer loop moved injects it clamped into its limits at the new "
              "P. Copied with the grid and serialized.")
-        .def("get_gen_raw_target_q", &LSGrid::get_gen_raw_target_q)
+        .def("get_gen_raw_target_q", [](const LSGrid & self) { return RealVect(self.get_gen_raw_target_q()); })
         .def("set_gen_capability_curves", &LSGrid::set_gen_capability_curves,
              py::arg("gen_id"), py::arg("p_mw"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
              "The reactive capability curve of some generators, one point per entry (generator id, "
