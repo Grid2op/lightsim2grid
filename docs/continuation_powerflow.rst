@@ -110,7 +110,9 @@ You can check this on any run::
 
 Only the Newton-Raphson algorithms are supported (the predictor needs a Jacobian);
 ``AlgorithmType.GaussSeidel``, the fast-decoupled family and the DC algorithms are
-refused with an explicit message.
+refused with an explicit message. So are the ``NROuter_*`` ones when the grid has outer
+loops: between two correctors they would change the system being continued.
+``ContinuationPowerFlow`` built on such a grid uses the plain Newton-Raphson instead.
 
 Options
 --------------------------

@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "KLUSolver.hpp"
+#include "KLUStaticPivotSolver.hpp"  // constrained_amd_order
 
 #include <iostream>
 
@@ -18,6 +19,7 @@ ErrorType KLULinearSolver::reset(){
     symbolic_.reset();
     common_ = klu_common();
     klu_defaults(&common_);
+    ordering_constraints_.clear();
     return ErrorType::NoError;
 }
 
@@ -30,10 +32,17 @@ ErrorType KLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     symbolic_.reset();
     common_ = klu_common();
     klu_defaults(&common_);
-    symbolic_.reset(klu_analyze(n,
-                                const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
-                                const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
-                                &common_));
+    auto * Ap = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr());
+    auto * Ai = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr());
+    if(ordering_constraints_.empty()){
+        symbolic_.reset(klu_analyze(n, Ap, Ai, &common_));
+    } else {
+        // the order is the one given: BTF's strongly connected components would reorder it
+        common_.btf = 0;
+        std::vector<int> perm;
+        if(!constrained_amd_order(static_cast<int>(n), Ap, Ai, ordering_constraints_, perm)) return ErrorType::SolverAnalyze;
+        symbolic_.reset(klu_analyze_given(n, Ap, Ai, perm.data(), perm.data(), &common_));
+    }
     if(common_.status != KLU_OK) return ErrorType::SolverAnalyze;
     return ErrorType::NoError;
 }
@@ -64,6 +73,13 @@ ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
     if(ok != 1){
         // std::cout << "\t KLU: refactor error" << std::endl;
         return ErrorType::SolverReFactor;
+    }
+    if(rgrowth_threshold_ > 0.){
+        ok = klu_rgrowth(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
+                         const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
+                         const_cast<real_type*>(J.valuePtr()),
+                         symbolic_.get(), numeric_.get(), &common_);
+        if(ok != 1 || !(common_.rgrowth >= rgrowth_threshold_)) return ErrorType::SolverReFactor;
     }
     if(guard_pivot_growth_ && rcond_ref_ > 0.){
         // klu_rcond is min|diag(U)| / max|diag(U)|, O(n). Healthy refactorizations stay

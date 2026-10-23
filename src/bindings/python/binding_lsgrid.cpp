@@ -102,6 +102,28 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dc_algo_type", &LSGrid::get_dc_algo_type, DocLSGrid::get_dc_algo_type.c_str())
         .def("get_algo", &LSGrid::get_algo, py::return_value_policy::reference_internal, DocLSGrid::get_algo.c_str())
         .def("get_dc_algo", &LSGrid::get_dc_algo, py::return_value_policy::reference_internal, DocLSGrid::get_dc_algo.c_str())
+        .def("set_dc_distribute_slack_on_can_participate", &LSGrid::set_dc_distribute_slack_on_can_participate,
+             py::arg("value"),
+             "Opt-in (off by default): dc_pf distributes the active power imbalance on the units flagged "
+             "'can participate in the slack' (set_gen_can_participate_slack / set_storage_can_participate_slack), "
+             "with those weights, instead of on the grid's own slack participants. The reference bus stays the "
+             "grid's slack bus, and each unit's share is published in its active power. Without any flagged "
+             "unit the DC keeps the grid's own slack. OpenLoadFlow's DC_VALUES start with its distributed "
+             "slack on, for a single-slack Newton (NROuter_*).")
+        .def("get_dc_distribute_slack_on_can_participate", &LSGrid::get_dc_distribute_slack_on_can_participate,
+             "See set_dc_distribute_slack_on_can_participate.")
+        .def("clear_outer_loops", &LSGrid::clear_outer_loops,
+             "Empty the list of outer loops an NROuter_* algorithm runs (then add_outer_loop the ones wanted, in order)")
+        .def("add_outer_loop", &LSGrid::add_outer_loop, py::arg("loop"),
+             "Append an outer loop to the list an NROuter_* algorithm runs (starting from OpenLoadFlow's default list if it was never edited)")
+        .def("reset_outer_loops", &LSGrid::reset_outer_loops,
+             "Back to OpenLoadFlow's default list of outer loops")
+        .def("get_outer_loops", &LSGrid::get_outer_loops,
+             "The outer loops an NROuter_* algorithm runs, in order")
+        .def("set_outer_loop_driver_params", &LSGrid::set_outer_loop_driver_params, py::arg("params"),
+             DocLSGrid::set_outer_loop_driver_params.c_str())
+        .def("get_outer_loop_driver_params", &LSGrid::get_outer_loop_driver_params,
+             "The parameters of the outer-loop driver, see set_outer_loop_driver_params")
         // deprecated method
         .def("change_solver", py::overload_cast<const AlgorithmType&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
         .def("change_solver", py::overload_cast<const std::string&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
@@ -130,12 +152,15 @@ void bind_gridmodel(py::module_& m) {
              py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
         .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
              DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
-        .def("set_remote_voltage_control_vm_range", &LSGrid::set_remote_voltage_control_vm_range,
-             py::arg("min_vm_pu"), py::arg("max_vm_pu"), DocLSGrid::set_remote_voltage_control_vm_range.c_str())
-        .def("get_remote_voltage_control_min_vm_pu", &LSGrid::get_remote_voltage_control_min_vm_pu,
-             DocLSGrid::get_remote_voltage_control_vm_range.c_str())
-        .def("get_remote_voltage_control_max_vm_pu", &LSGrid::get_remote_voltage_control_max_vm_pu,
-             DocLSGrid::get_remote_voltage_control_vm_range.c_str())
+        .def("get_group_controlled_buses",
+             [](const LSGrid & self){
+                 const std::set<int> buses = self.get_group_controlled_buses();
+                 return std::vector<int>(buses.begin(), buses.end());
+             },
+             "The buses (gridmodel ids, sorted) whose voltage a control group holds: a generator "
+             "regulating a remote bus, a voltage-mode SVC or an HVDC converter station regulates "
+             "them. A generator standing on one cannot be tripped by a batch contingency yet "
+             "(ContingencyAnalysisCPP.add_contingency_gen, ScenarioSweepCPP.set_contingency_gens).")
         .def("set_hold_frozen_regulators", &LSGrid::set_hold_frozen_regulators,
              py::arg("hold"), DocLSGrid::set_hold_frozen_regulators.c_str())
         .def("get_hold_frozen_regulators", &LSGrid::get_hold_frozen_regulators,
@@ -302,21 +327,76 @@ void bind_gridmodel(py::module_& m) {
              "a limit). What it is for: the physical checks report a flagged fixed-Q SVC whose "
              "regulated voltage would make an outer loop switch it back to voltage control "
              "(LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q on the SVC).")
-        .def("set_svc_standby", &LSGrid::set_svc_standby,
+        .def("set_svc_standby",
+             [](LSGrid & self, const std::vector<bool> & standby, const RealVect & low_vm_pu,
+                const RealVect & high_vm_pu, py::object low_target_vm_pu, py::object high_target_vm_pu){
+                 const RealVect none = RealVect::Constant(low_vm_pu.size(), std::numeric_limits<real_type>::quiet_NaN());
+                 const RealVect low_t = low_target_vm_pu.is_none() ? none : low_target_vm_pu.cast<RealVect>();
+                 const RealVect high_t = high_target_vm_pu.is_none() ? none : high_target_vm_pu.cast<RealVect>();
+                 self.set_svc_standby(standby, low_vm_pu, high_vm_pu, low_t, high_t);
+             },
              py::arg("standby"), py::arg("low_vm_pu"), py::arg("high_vm_pu"),
-             "Flag the SVCs an outer loop left idle under their standby automaton: one bool per "
-             "SVC (`SvcInfo.standby`, False by default), with that automaton's low / high voltage "
-             "thresholds in pu of the nominal voltage of the bus each SVC regulates (ignored "
-             "where not flagged; a flagged SVC needs finite thresholds with low < high). Never "
-             "enforced and never read by a powerflow.\n\n"
-             "lightsim2grid does not model the automaton, and cannot tell such an SVC -- a fixed-Q "
-             "one after `bake_outer_loops` -- from one that never regulates: the caller says so "
-             "(`init_from_pypowsybl(can_be_pv=...)` passes the SVCs `bake_outer_loops` left idle). "
-             "What it is for: the physical checks (`get_physical_violations`, the batch "
-             "algorithms' `compute_physical_violations`) report a flagged non-regulating SVC whose "
-             "regulated voltage is outside those thresholds, which OpenLoadFlow's "
-             "MonitoringVoltageOuterLoop would switch to voltage control "
-             "(LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY).")
+             py::arg("low_target_vm_pu") = py::none(), py::arg("high_target_vm_pu") = py::none(),
+             "Flag the SVCs that sit idle under their standby automaton: one bool per SVC "
+             "(`SvcInfo.standby`, False by default), with that automaton's low / high voltage "
+             "thresholds in pu of the nominal voltage of the SVC's own bus (ignored where not "
+             "flagged; a flagged SVC needs finite thresholds with low < high), and optionally the "
+             "set-points it switches on at below / above them (NaN, or None for all, where unknown).\n\n"
+             "lightsim2grid cannot tell such an SVC -- a fixed-Q one after `bake_outer_loops`, or "
+             "an idle voltage monitor of `init_from_pypowsybl(olf_rules=...)` -- from one that "
+             "never regulates: the caller says so. What it is for: the physical checks "
+             "(`get_physical_violations`, the batch algorithms' `compute_physical_violations`) "
+             "report a flagged non-regulating SVC whose regulated voltage is outside those "
+             "thresholds (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), and an idle one "
+             "with both set-points is switched on by the `VoltageMonitoring` outer loop of the "
+             "NROuter_* algorithms.")
+        .def("set_reactive_dispatch_olf", &LSGrid::set_reactive_dispatch_olf, py::arg("val"),
+             "Split the reactive power of a bus held by several units as OpenLoadFlow does "
+             "(Q_EQUAL_PROPORTION): by their reactive keys when every one has one, else by their "
+             "widest reactive range (`set_gen_reactive_range_max`) when every one is plausible, "
+             "else equally; a unit pushed past a limit stays there and the excess is shared again, "
+             "and nothing is shared below 1e-5 pu. Results only, off by default "
+             "(`init_from_pypowsybl(olf_rules=...)` turns it on); copied with the grid and "
+             "serialized.")
+        .def("get_reactive_dispatch_olf", &LSGrid::get_reactive_dispatch_olf)
+        .def("set_gen_reactive_range_max", &LSGrid::set_gen_reactive_range_max, py::arg("range_mvar"),
+             "The widest reactive range of each generator, MVar (over its whole capability curve), "
+             "what `set_reactive_dispatch_olf` shares by; NaN for its range at its target P. Copied "
+             "with the grid and serialized.")
+        // a copy, as the two getters below: read rarely, and a view would keep neither the grid
+        // nor the buffer a later set_* reallocates alive
+        .def("get_gen_reactive_range_max", [](const LSGrid & self) { return RealVect(self.get_gen_reactive_range_max()); })
+        .def("set_station_reactive_range_max", &LSGrid::set_station_reactive_range_max,
+             py::arg("range1_mvar"), py::arg("range2_mvar"),
+             "The same as `set_gen_reactive_range_max` for the converter stations, one value per hvdc "
+             "line on each side (NaN for the range at its active power). Copied with the grid and serialized.")
+        .def("get_station_reactive_range_max",
+             [](const LSGrid & self, int side) { return RealVect(self.get_station_reactive_range_max(side)); },
+             py::arg("side"))
+        .def("set_gen_raw_target_q", &LSGrid::set_gen_raw_target_q, py::arg("q_mvar"),
+             "OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target Q "
+             "(MVar) before it was clamped into its limits at its target P (NaN: none). A non-regulating "
+             "generator whose target P an outer loop moved injects it clamped into its limits at the new "
+             "P. Copied with the grid and serialized.")
+        .def("get_gen_raw_target_q", [](const LSGrid & self) { return RealVect(self.get_gen_raw_target_q()); })
+        .def("set_gen_capability_curves", &LSGrid::set_gen_capability_curves,
+             py::arg("gen_id"), py::arg("p_mw"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
+             "The reactive capability curve of some generators, one point per entry (generator id, "
+             "P in MW, min and max Q in MVar), read where a generator's limits must follow a target "
+             "P an outer loop moved (the ReactiveLimits loop, the results), as OpenLoadFlow reads "
+             "them: interpolated, extrapolated past the ends, crossed limits being their mean. "
+             "Copied with the grid and serialized.")
+        .def("gen_limits_at", [](const LSGrid & self, int gen_id, real_type p_mw) -> py::tuple {
+                 real_type lo, hi;
+                 if(!self.gen_limits_at(gen_id, p_mw, lo, hi)) return py::make_tuple(py::none(), py::none());
+                 return py::make_tuple(lo, hi);
+             }, py::arg("gen_id"), py::arg("p_mw"),
+             "A generator's reactive limits (MVar) at `p_mw` from its capability curve, "
+             "(None, None) without one.")
+        .def("set_svc_b0", &LSGrid::set_svc_b0, py::arg("b0_pu"),
+             "The standby automaton's fixed susceptance of each SVC, pu (sn_mva base, at the "
+             "nominal voltage of the SVC's own bus; 0 for none): a shunt at the SVC's bus, in "
+             "standby or not, whose reactive output is part of the SVC's (as OpenLoadFlow).")
         .def("set_storage_p_limits", &LSGrid::set_storage_p_limits,
              py::arg("p_min_mw"), py::arg("p_max_mw"),
              "Active power limits (MW) of the storage units, OPTIONAL and never enforced -- "
@@ -370,6 +450,42 @@ void bind_gridmodel(py::module_& m) {
         .def("set_trafo_shift_dependent_rx", &LSGrid::set_trafo_shift_dependent_rx,
             py::arg("enable"), py::arg("alpha_rad"), py::arg("rx_corr_pct"),
             DocLSGrid::set_trafo_shift_dependent_rx.c_str())
+        .def("set_trafo_ratio_tap_changer", &LSGrid::set_trafo_ratio_tap_changer,
+             py::arg("trafo_id"), py::arg("low_tap"), py::arg("position"), py::arg("rho"),
+             py::arg("r_pct"), py::arg("x_pct"), py::arg("g_pct"), py::arg("b_pct"),
+             "The ratio tap changer of a transformer: one step per position from `low_tap` (its rho and "
+             "the corrections, in %, of the transformer's r, x, g, b) and its current position. The pi "
+             "model is then taken at the taps, as OpenLoadFlow takes it: the neutral r, x, g, b times "
+             "(1 + step % / 100) of each changer, the neutral ratio times their rho, the shift the phase "
+             "changer's alpha. The neutral values are the r, x, h given to init_trafo and the ratio the "
+             "transformer has when this is called divided by its changers' rho: that ratio is taken to "
+             "be at the taps already, this changer's included when it is its first of that kind (as "
+             "pypowsybl's rho).")
+        .def("set_trafo_phase_tap_changer", &LSGrid::set_trafo_phase_tap_changer,
+             py::arg("trafo_id"), py::arg("low_tap"), py::arg("position"), py::arg("rho"), py::arg("alpha_deg"),
+             py::arg("r_pct"), py::arg("x_pct"), py::arg("g_pct"), py::arg("b_pct"),
+             "The same for its phase tap changer, `alpha_deg` the shift of each step in degree.")
+        .def("set_trafo_ratio_tap_regulation", &LSGrid::set_trafo_ratio_tap_regulation,
+             py::arg("trafo_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
+             py::arg("regulated_bus"),
+             "What the ratio tap changer regulates: the voltage of `regulated_bus` (grid bus id, -1 for "
+             "none), target and deadband in pu of its nominal voltage. Read by the TransformerVoltageControl "
+             "outer loop.")
+        .def("set_trafo_phase_tap_regulation", &LSGrid::set_trafo_phase_tap_regulation,
+             py::arg("trafo_id"), py::arg("mode"), py::arg("regulating"), py::arg("target"), py::arg("deadband"),
+             py::arg("regulated_side"),
+             "What the phase tap changer regulates: RegulationMode FIXED, ACTIVE_POWER (MW) or "
+             "CURRENT_LIMITER (A), through `regulated_side` (1 or 2) of the transformer. Read by the "
+             "PhaseControl outer loop.")
+        .def("change_trafo_ratio_tap", &LSGrid::change_trafo_ratio_tap, py::arg("trafo_id"), py::arg("position"),
+             "Move the ratio tap changer of a transformer: its pi model, ratio included, follows.")
+        .def("change_trafo_phase_tap", &LSGrid::change_trafo_phase_tap, py::arg("trafo_id"), py::arg("position"),
+             "Move its phase tap changer: its pi model, shift included, follows.")
+        .def("closest_trafo_ratio_tap", &LSGrid::closest_trafo_ratio_tap, py::arg("trafo_id"), py::arg("ratio"),
+             "The position of its ratio tap changer whose ratio is the closest to `ratio` (OpenLoadFlow's "
+             "rounding: the current position unless another is strictly closer).")
+        .def("closest_trafo_phase_tap", &LSGrid::closest_trafo_phase_tap, py::arg("trafo_id"), py::arg("shift_rad"),
+             "The same for its phase tap changer and a shift in rad.")
         .def("deactivate_load", &LSGrid::deactivate_load, DocLSGrid::deactivate_load.c_str())
         .def("reactivate_load", &LSGrid::reactivate_load, DocLSGrid::reactivate_load.c_str())
         .def("change_bus_load", &LSGrid::change_bus_load_python, DocLSGrid::change_bus_load.c_str())
@@ -397,6 +513,19 @@ void bind_gridmodel(py::module_& m) {
         .def("get_bus_shunt", &LSGrid::get_bus_shunt, DocLSGrid::get_bus_shunt.c_str(), py::return_value_policy::reference)
         .def("change_p_shunt", &LSGrid::change_p_shunt, DocLSGrid::change_p_shunt.c_str())
         .def("change_q_shunt", &LSGrid::change_q_shunt, DocLSGrid::change_q_shunt.c_str())
+        .def("set_shunt_sections", &LSGrid::set_shunt_sections,
+             py::arg("shunt_id"), py::arg("section_count"), py::arg("p_mw"), py::arg("q_mvar"),
+             "The sections of a shunt: for k = 1 .. max, the p (MW) and q (MVar) at 1 pu with k sections on "
+             "(cumulative, as IIDM's non-linear model; the same convention as init_shunt), and the number on "
+             "now. Its p and q become those of that count.")
+        .def("set_shunt_section_regulation", &LSGrid::set_shunt_section_regulation,
+             py::arg("shunt_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
+             py::arg("regulated_bus"),
+             "The voltage its sections regulate: `regulated_bus` (grid bus id, -1 for none), target and "
+             "deadband in pu of its nominal voltage. Read by the ShuntVoltageControl outer loop.")
+        .def("change_shunt_section_count", &LSGrid::change_shunt_section_count,
+             py::arg("shunt_id"), py::arg("section_count"),
+             "Switch that many sections of a shunt on: its p and q follow.")
 
         .def("deactivate_sgen", &LSGrid::deactivate_sgen, DocLSGrid::deactivate_sgen.c_str())
         .def("reactivate_sgen", &LSGrid::reactivate_sgen, DocLSGrid::reactivate_sgen.c_str())

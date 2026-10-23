@@ -1,228 +1,563 @@
-# OpenLoadFlow-style outer loops on a fixed Jacobian pattern
+# OpenLoadFlow outer loops on a fixed Jacobian pattern
 
-**Assessment note, not documentation. Nothing here is implemented.** It records what it
-would take to run OpenLoadFlow's outer loops inside lightsim2grid — for a single solve and
-for the batch algorithms — and inside gpusim2grid, under one constraint: **one `analyze` and
-one `factorize` per solve (per batch), whatever the outer loops do.** It is not part of the
-built documentation (`docs/*.rst`).
+**Design note, not documentation.** It describes how lightsim2grid runs OpenLoadFlow's
+AC outer loops itself, around a Newton-Raphson that keeps **one symbolic analysis and one
+numeric factorization per solve**. It is the reference for the `dev_outerloops` work and is
+updated as each phase lands. It is not part of the built documentation (`docs/*.rst`).
 
-Companion to two notes in this folder:
+Companion notes in this folder:
 
-- `outer_loop_checks_missing_data.md` — the *detection* question: what a post-solve "would
-  this outer loop have fired?" check needs, and which control data the converters drop;
-- `nr_control_limits.md` — the *in-Newton* alternative: enforcing limits as complementarity
-  (projection) rows solved by a semismooth Newton.
+- `outer_loop_checks_missing_data.md` -- what a post-solve "would this loop have fired?" check
+  needs, written when the physical-violation checks were added. Part of it is superseded here
+  (the tap / shunt / phase control data is now in scope).
+- `nr_control_limits.md` -- the *in-Newton* alternative (limits as complementarity rows). It
+  shares the main prerequisite with this note: reserve the union of the layouts up front and
+  change values only.
 
-This note is the third option, the one OpenLoadFlow itself uses: keep the Newton-Raphson as
-it is and iterate **around** it. It shares its main prerequisite with `nr_control_limits.md`
-(reserve the union of the layouts up front, change values only), so the work is not wasted
-if the in-Newton route is taken later.
+## What is wanted
 
-Reference for the outer loops: PowSyBl OpenLoadFlow,
-`lf/outerloop/config/DefaultAcOuterLoopConfig.java` (registration order = nesting order,
-innermost first), `ac/AcloadFlowEngine.java` (`runOuterLoop` and the pass loop around it),
-and the loop classes in `ac/outerloop/`.
+Two modes, one set of rules.
 
-## The short version
+1. **Outer-loop mode.** A new, non-default algorithm family (`NROuter_KLU`,
+   `NROuter_SparseLU`, ...) that behaves like OpenLoadFlow: the same loops, in the same default
+   order, with the same triggers and the same actions, around a **single-slack** inner
+   Newton-Raphson. The default `NR_*` / `NRSing_*` algorithms are untouched and stay
+   bit-identical.
+2. **Detection mode.** With any other algorithm, report -- with exactly the rules the loops use
+   -- which outer loops would have run. This is what `LSGrid.get_physical_violations` and the
+   batch `compute_physical_violations` return. Where today's checks differ from OpenLoadFlow
+   they are aligned, which is a breaking change of their output.
 
-It is feasible, and most of the hard part already exists. Three value-level edits that keep
-the Jacobian pattern fixed are already in the NR system, and gpusim2grid mirrors all three:
+Constraints:
 
-- **PV ↔ PQ at constant sparsity** — `Base::set_switchable_vm_buses` reserves a Vm unknown and
-  a Q equation, `NRSystem::set_pv_pinned_buses` pins the Q row to the identity while the bus
-  stays PV;
-- **bus masking** — `NRSystem::set_masked_buses`, both P and Q rows to identity;
-- **row repurposing** — the stranded lone controller of `VoltageControl`, whose voltage row
-  becomes `Q_c = 0` by value alone.
+- **One `analyze`, one `factorize` per solve**, whatever the loops do. The only accepted extra
+  cost is the refactorization fallback: when a `refactorize` fails (a pin or a release can move
+  a pivot that KLU's fixed sequence then finds at zero), the linear solver policy runs a fresh
+  `factorize`. It is counted in `LinearSolverStats`, never hidden, and tests report it.
+- **The loops reserve what they act on up front**, when the solver cache is built and the
+  grid data is known: every control any of their states may need, and so every row, column and
+  switchable bus of the solve. A generator that may switch between PV and PQ gets both forms
+  reserved; a regulating transformer gets its ratio column and every row its control may use.
+  This union pattern is what guarantees the single analysis; afterwards a loop only rewrites
+  values. What no registered loop reserved is not in the solve at all.
+- **The loops can be registered from Python, in any order** (`algo.clear_outer()`,
+  `algo.add_outer(ReactiveLimits())`, ...). Without any call, the list is OpenLoadFlow's
+  default list, in its order.
+- **Detection is never re-coded.** The trigger of each loop is computed in one place, reused by
+  both modes, and built on the existing check headers (see "Reuse" below).
 
-What is missing is a driver, a *resume* path for the Newton, a handful of setters, and a
-correction to how results are published.
+Out of scope for this pass: secondary voltage control, area interchange control, automation
+systems, three-winding transformers, loops written in Python (the interface keeps a pybind11
+trampoline easy to add later), gpusim2grid. The batch classes run the loops since (see "In
+the batches" below).
 
-It is also worth knowing that OpenLoadFlow does **not** keep its structure: any equation or
-variable activation change marks its `JacobianMatrix` `STRUCTURE_INVALID`, which drops the LU
-and runs a full `decomposeLU` again. Every PV → PQ switch pays a symbolic analysis there. A
-fixed-pattern design is an improvement on that point, not only parity.
+## Reference
 
-## Loop by loop
+The reference is the OpenLoadFlow bundled in the pypowsybl used for the comparisons: OLF
+**2.3.0** (tag `v2.3.0` of `powsybl-open-loadflow`). Read the source at that tag, not at `main`.
+Its **default parameters are those of that pypowsybl build**, which differ from OLF's own
+source defaults; print them with `pypowsybl.loadflow.Parameters()`. The values below are the
+ones this work targets:
 
-| OLF loop | what it changes | fixed-pattern mechanism | state |
-|---|---|---|---|
-| `ReactiveLimits`, local PV | PV → PQ with Q at its limit, PQ → PV back when the voltage recrosses the set-point | switchable Vm/Q slots + pinning, Q-limit injection | **ready**; needs a Vm setter for the PQ → PV direction |
-| `ReactiveLimits`, remote / SVC groups | a controller at its limit leaves its group | lone controller: the existing `(v_row, q_col)` slot, generalising `Q_c = 0` to `Q_c = Q_lim`; group of N: reserve the group's full border block (1 voltage row + N-1 sharing rows × N Q columns + the regulated Vm column) | lone: easy; group: the hard case |
-| `DistributedSlack` with `min_p` / `max_p` | a saturated machine leaves the distribution | its weight to zero, its clamped P into Sbus; every participant is already a slack bus of `MultiSlack`, so this is values only | **ready**; `GenPCheck` is the oracle |
-| `HvdcAcEmulationLimits` / freezing | a droop line saturates or is frozen | `Hvdc` declares its entries whatever `status_droop` is | **ready**; needs a per-line status setter on the extension |
-| `MonitoringVoltage` | a PQ bus becomes PV | pin the Q row the PQ bus already owns | easy |
-| tap / phase / shunt voltage control | `Ybus` values (ρ, α, b) | pattern unchanged; value patch as `YbusPolicy::Contingency` does | **blocked**: the control data is not in the model |
-| secondary voltage control, area interchange | set-points, P | values only | **blocked**: no pilot points, no `Area` |
-| `AutomationSystem` | switches branches | closing a branch absent from the base pattern changes it | hard, out of scope |
+| group | parameters |
+|---|---|
+| loops on | `distributedSlack` (`PROPORTIONAL_TO_GENERATION_P_MAX`, `useActiveLimits`, `slackBusPMaxMismatch` = 1 MW, `slackDistributionFailureBehavior` = FAIL), `hvdcAcEmulation`, `svcVoltageMonitoring`, `useReactiveLimits` (`reactiveLimitsMaxPqPvSwitch` = 3, `voltageRemoteControlRobustMode`) |
+| loops off by default, in scope | `transformerVoltageControlOn` (mode `AFTER_GENERATOR_VOLTAGE_CONTROL`, `transformerVoltageControlUseInitialTapPosition`, `generatorVoltageControlMinNominalVoltage` = 120 kV), `shuntCompensatorVoltageControlOn` (mode `WITH_GENERATOR_VOLTAGE_CONTROL`), `phaseShifterRegulationOn` (mode `CONTINUOUS_WITH_DISCRETISATION`) |
+| engine | `maxOuterLoopIterations` = 30, `maxNewtonRaphsonIterations` = 30, `newtonRaphsonConvEpsPerEq` = 1e-4 (UNIFORM), `MAX_VOLTAGE_CHANGE` scaling (0.4 pu, 1 rad), `voltageInitMode` = DC_VALUES, realistic voltage [0.8, 1.2] pu checked on buses of nominal voltage >= 180 kV |
+| network loading | `extrapolateReactiveLimits`, `forceTargetQInReactiveLimits`, `disableInconsistentVoltageControls`, `generatorsWithZeroMwTargetAreNotStarted`, plausible target voltage [0.8, 1.2] pu above 20 kV, `reactiveRangeCheckMode` = MAX, `plausibleActivePowerLimit` = 10000 MW |
+| slack | `slackBusSelectionMode` = MOST_MESHED, `maxSlackBusCount` = 1, `referenceBusSelectionMode` = FIRST_SLACK |
 
-The blocked rows are blocked on the converters, not on the solver
-(`outer_loop_checks_missing_data.md`); `bake_outer_loops` remains the way to get their effect
-until then.
+lightsim2grid hard-codes none of these. Its C++ defaults (the loops' `Params`,
+`OuterLoopDriverParams`) are OpenLoadFlow's own source defaults at v2.3.0. A grid loaded with
+`init_from_pypowsybl` runs instead what the installed OpenLoadFlow would run: `olf_outer_loops`
+reads the list, its order and every parameter off a `pypowsybl.loadflow.Parameters` (the
+installed defaults when none is given), with OpenLoadFlow's rules of `AbstractAcOuterLoopConfig`.
+The order of `DefaultAcOuterLoopConfig` has not changed since OpenLoadFlow 1.4 (versions only
+insert their new loops), and `outerLoopNames` gives its own. A test comparing with OpenLoadFlow
+passes the same parameters to both sides (`olf_parameters=` of `init_from_pypowsybl`), built
+with `tests/_olf_reference.py`, so that it compares like with like whatever build runs it.
 
-## What lightsim2grid needs
+Grid snapshots are loaded with `pypowsybl.network.load(path, {"iidm.die.with-extensions": "all"})`.
 
-### A new, non-default algorithm
+Classes to read (paths under `src/main/java/com/powsybl/openloadflow/`):
+`lf/outerloop/config/DefaultAcOuterLoopConfig.java` (order), `ac/AcloadFlowEngine.java`
+(driver), `ac/outerloop/*` (loops), `network/util/ActivePowerDistribution.java` and
+`GenerationActivePowerDistributionStep.java` (slack), `ac/outerloop/tap/*` (transformer
+loop helpers), `network/PiModelArray.java` (taps), `network/impl/LfShuntImpl.java` (sections),
+`ac/equations/AcEquationSystemCreator.java` (which equations exist), `network/impl/
+LfNetworkLoaderImpl.java`, `AbstractLfGenerator.java`, `LfGeneratorImpl.java` (loading rules).
 
-`NRAlgo` is `final`. Split its `compute_pf` into *setup* (phases 1 and 2), *Newton loop* and
-*finalise*, and build `NROuterAlgo<LinearSolver, NRSystem>` on the pieces. Register it as
-`NROuter_KLU`, `NROuter_SparseLU`, `NROuter_NICSLU`, `NROuter_CKTSO`. The default `NR_*`
-algorithms are untouched and stay bit-identical.
+### Accepted differences
 
-The Python API, through `BaseAlgo` virtuals that throw by default (the `supports_cpf`
-pattern) forwarded by `AlgorithmSelector`:
+- **The reference slack is a generator.** lightsim2grid's single slack stays on a generator;
+  OLF picks a bus (MOST_MESHED). Comparisons either pin OLF on the bus of lightsim2grid's slack
+  generator (`slackBusSelectionMode = NAME`, the tight comparison) or keep MOST_MESHED and
+  rotate the angles so both agree on one common bus. In the second case the residual the
+  distributed slack leaves (below `slackBusPMaxMismatch`) sits on a different bus, and the
+  tolerance has to allow for it.
+- **The inner stopping criterion.** OLF stops on the RMS of the mismatch over all equations,
+  lightsim2grid on its infinity norm. Comparisons use tight solves on both sides, so both land
+  on the same root; a loop threshold tied to OLF's epsilon (the reactive-limits loop uses
+  `newtonRaphsonConvEpsPerEq` as its Q tolerance) is passed explicitly with the same value.
 
-```python
-algo = grid.get_algo()
-algo.clear_outer()
-algo.add_outer(DistributedSlackLimits(...))
-algo.add_outer(ReactiveLimits(max_pq_pv_switch=3))
+### Decisions close to their threshold
+
+OLF compares strictly: a loop acts as soon as a value crosses its threshold, with no tolerance
+beyond the ones it has (`slackBusPMaxMismatch`, `P_RESIDUE_EPS`, `maxReactivePowerMismatch`, a
+deadband). The loops here do the same. A decision taken at a margin smaller than the noise on the
+value is then arbitrary, on both sides, and may differ from one machine, build or Newton path to
+the next. Two kinds of noise matter:
+
+- **ties by construction**: two numbers equal by design, compared strictly, decided by rounding.
+  The one found is `ReactiveLimits`' release test on a bus its voltage-control group still holds:
+  the regulated magnitude *is* the set-point, up to an ulp. It is settled at the source -- the
+  loop reads the Newton's own magnitudes (`OuterContext::vm`) and takes such a bus as at its
+  set-point (the `KEPT_PQ_GROUP_HOLDS` decisions). On real grid snapshots no other test lands
+  within rounding of its threshold;
+- **the solve's own accuracy**: a converged voltage is only known to the precision the Newton's
+  tolerance gives it. Some of `ReactiveLimits`' voltage tests (the PQ -> PV release, and the
+  same test when it does not trigger) are decided at margins of that order on real grid
+  snapshots, and so is, more rarely, `TransformerVoltageControl`'s deadband test. These are the
+  decisions a different trajectory can flip. The other loops (`DistributedSlack`, the hvdc and
+  voltage-monitoring loops, `PhaseControl`, `ShuntVoltageControl`) stay far from their
+  thresholds.
+
+How close a run's decisions came to their thresholds is read off its decision trace:
+`OuterDecision` records the `value` and the `limit` of every test, taken or not.
+
+**A per-loop decision tolerance (not OLF's, so 0 by default) is not added for now.** One
+tolerance per loop does not fit -- a loop compares several quantities, in different units (MW,
+MVar, pu, a ratio) -- and five of the seven loops never come near their thresholds. A
+tolerance also moves a threshold rather than removing it: it only helps for values sitting on
+the threshold, and away from 0 it is a deliberate difference from OLF that could hide the next
+real bug during the comparison campaign. If one is added, it is a `voltage_tolerance_pu`
+parameter of `ReactiveLimits` (and maybe of `TransformerVoltageControl`'s deadband test), 0 by
+default; the Q tests already have OLF's `maxReactivePowerMismatch`. It would also damp a bus
+switching back and forth between PV and PQ. The decision belongs to the N-1 cases that only
+reproduce on another machine: if their decision traces show the decision that differs from OLF
+taken at a margin of the solve's accuracy, the tolerance is warranted there; if not, it would
+not have changed them.
+
+## The loops, in OpenLoadFlow's default order
+
+`isNeeded` drops a loop that has nothing to do (no hvdc line in AC emulation, no stand-by SVC,
+no regulating transformer, ...). Loops marked *off* are off with the default parameters but in
+scope.
+
+| # | loop | trigger (detection) | action | Jacobian |
+|---|---|---|---|---|
+| 1 | `DistributedSlack` | slack-bus active mismatch above `slackBusPMaxMismatch` | re-share the **cumulative** mismatch from the units' initial target P, factor `maxP / droop`, clamped to `[minTargetP, maxTargetP]`, never across 0 MW, saturated units leave; FAILED if a residual remains | Sbus values only |
+| 2 | `FreezingHvdcACEmulation` | off (`startWithFrozenACEmulation` = false) | -- | -- |
+| 3 | `HvdcAcEmulationLimits` | droop flow beyond the per-direction max (to saturation), back inside or reversed (release) | per-line regime: linear / saturated each way | values only; the droop entries are declared in every regime |
+| 6 | `VoltageMonitoring` | the voltage a stand-by SVC monitors outside its thresholds | the SVC regulates at the high / low set-point, for good | values only: the SVC is a held controller of its own group from the start |
+| 7 | `ReactiveLimits` | PV->PQ: generation Q (load Q included) beyond the bus' summed limits plus epsilon; PQ->PV: voltage back across the target on the right side; robust mode: remote controller outside the realistic band; limit moved since the freeze | freeze at the limit, release, V = 1 in robust mode, keep the strongest PV bus, at most `maxPqPvSwitch` PV->PQ per bus | switchable Vm / Q slots + pinning; remote / group controllers through the held-Q of `VoltageControl` |
+| 8 | `PhaseControl` (*off*) | iteration 0: any controller; afterwards a current limiter above its value | continuous alpha in the first solve, rounded to the closest tap; a limiter moves one tap | an alpha column per regulating PST, row `alpha = alpha0` or `P = target` |
+| 9 | `TransformerVoltageControl` (*off*) | controlled voltage outside half the deadband | INITIAL / CONTROL / COMPLETE step machine: continuous ratio, generators below 120 kV frozen PQ, bound clamping, initial-tap sharing, rounding | a ratio column per controller, row `rho = rho0`, the controlled bus' `V = target`, or an equal-sharing row |
+| 11 | `ShuntVoltageControl` (*off*) | iteration 0: any controller | continuous B in the first solve, then dispatched and rounded to sections | a B column per controller shunt, row `B = B0`, `V = target` or equal sharing |
+
+(4 area interchange, 5 secondary voltage control, 10 transformer reactive power control and 12
+automation systems are out of scope.) The unrealistic-voltage check is part of the driver
+below; it runs after the last loop able to fix it (`ReactiveLimits`, `TransformerVoltageControl`).
+
+## Architecture
+
+### The algorithm
+
+`NRAlgo::compute_pf` is split into public steps -- `begin_solve`, `setup` (rebuild decision,
+`update_state`, `init_topology`, `build_J_sparsity`), `newton`, and `finalize` -- and
+`compute_pf` keeps calling them in sequence, so `NR_*` and `NRSing_*` do not move.
+
+The outer loops **wrap** a Newton rather than derive from one. `OuterLoopAlgo<Inner>` is the
+driver; it derives from `BaseAlgo` only, forwards what `BaseAlgo` declares to the wrapped
+algorithm, and copies each solve's results back into itself. `Inner` is the wrapped algorithm
+as the driver sees it: `NROuterInner<LinearSolver, NRSystem>` holds the `NRAlgo`, runs its
+steps, and is the only place that touches the system (the controls the loops reserve, the
+values they edit between two solves, what they read back). Another system, or another
+algorithm, is another `Inner`; the driver does not change. The `NROuter_*` family is
+`OuterLoopAlgo<NROuterInner<LinearSolver>>`, with the system
+
+```
+NRSystem<Base, VoltageControl, Hvdc, BranchControl, ShuntControl>
 ```
 
-### An `OuterLoop` interface in the core
+that is `SingleSlackNRSystem` plus two extensions for the continuous tap / phase and shunt
+unknowns. The refactorization fallback is always on. The family is registered by name only, as
+`NRRefactorRetry_*` is (no new `AlgorithmType` member: that enum is serialized).
 
-Plain C++ in `src/core` (the core stays Python-free), with a pybind11 trampoline in the
-bindings so that a loop can be written in Python:
-
-- `name()`;
-- `reserve(ReservationSink &)` — called **before** `build_J_sparsity`: switchable buses,
-  extra structural entries, custom rows / columns. This is where "one analyze" is decided.
-  An `add_outer` after the first solve forces exactly one rebuild, and says so;
-- `initialize(ctx)`, `check(ctx) -> STABLE | UNSTABLE | FAILED`, `cleanup(ctx)`;
-- `clone()` — one instance per batch thread.
+The algorithm **owns copies** of the Sbus and Ybus values at stable addresses; the system
+reads them through pointers, so a loop edits values in place and nothing goes through
+`AlgoControl` (whose flags would force a rebuild, and which `LSGrid::ac_pf` resets after the
+solve anyway). The grid is only ever seen `const`.
 
 ### The driver
 
-Copy OpenLoadFlow's semantics exactly, so that results stay comparable with pypowsybl
-through the existing `_olf_compare` tooling: each loop, in registration order, runs until it
-is stable, re-solving after each change; the whole list is passed again until a full pass
-needed no Newton iteration; a pass stops at the last loop that was unstable; the total number
-of outer iterations is capped. A "flat" variant (check all, apply all, re-solve once) is
-cheaper but is a different algorithm.
+OpenLoadFlow's `AcloadFlowEngine.run`, as of 2.3.0:
+
+1. keep the loops whose `is_needed` holds, then `initialize()` each, in order -- before the
+   first solve;
+2. first solve; the loops run only if it converged;
+3. passes: each loop, in order, repeats `check()`, re-solving after each UNSTABLE result, until
+   it is stable, a solve diverges, or the global cap is reached. A pass stops at the loop that
+   was the last one to be unstable (a full cycle has then been checked stable). Passes repeat
+   while the pass added Newton iterations;
+4. FAILED stops everything;
+5. the unrealistic-voltage check runs after the last loop able to fix it, and on every later
+   solve of that pass;
+6. `cleanup()` in reverse order;
+7. the outer status is STABLE only if the total iteration count stayed below the cap.
+
+A loop sees its own iteration counter, which counts its UNSTABLE results only ("iteration 0"
+means it has not changed anything yet).
+
+Three details of that engine that are easy to get wrong (all checked against the 2.3.0
+source and covered by `src/tests/test_outer_loop_driver.cpp`):
+
+- "the last loop that was unstable" is **not** reset between passes: a pass breaks before
+  running it, even as the first loop of the pass;
+- the unrealistic-voltage check is never off. With robust mode and no loop able to fix an
+  unrealistic state -- no loop at all included -- every solve is checked; otherwise the
+  check waits for the end of the last such loop. It looks only at buses whose voltage
+  magnitude is an unknown of the Newton (OLF's `BUS_V` variables: not a bus held at a
+  set-point);
+- OLF's Newton tests convergence after a step, so a re-solve is at least one iteration and
+  "a pass added Newton iterations" means "a pass re-solved". lightsim2grid's Newton can stop
+  at zero iterations, so the driver counts every re-solve as at least one.
+
+On the comparison side: OLF's explicit `outerLoopNames` list cannot name
+`AcHvdcAcEmulationLimits` (it is only built from the parameters, by `hvdc_ac_emulation`), so
+that loop is isolated through the parameter-driven list, every other loop being off by its
+flag (`utils/olf_outer_compare.py`).
 
 ### Resuming the Newton
 
-The core missing piece. `NRSystem::update_state` restarts from `V_init`, re-seeds
-`slack_absorbed` and resets the controllers' reactive output to zero. An outer iteration must
-instead keep the whole state, re-evaluate the residual at the current point after the
-loop's edits, and **refactorize** on its first iteration.
+Between two inner solves the state is kept: the voltages, the controllers' reactive
+unknowns, the Jacobian pattern and the factorization. The next solve starts from the voltages
+of the last one, except where a loop overrode them (the target of a released bus, V = 1 in
+robust mode); from the current private Sbus (the slack loop moved targets, a frozen bus
+injects its limit); and from the current private Ybus (a tap or a section changed). It
+re-evaluates the mismatch there and refactorizes on its first iteration. It never goes through
+`update_state`, which would restart from `V_init` and reset the controllers.
 
-What makes that cheap:
+### `BaseOuterLoop`
 
-- the system reads Sbus through a raw pointer (`Sbus_data_ptr_`), so an algorithm-owned copy
-  can be edited in place between passes;
-- nothing goes through `AlgoControl`: its flags feed `need_rebuild` in `NRAlgo.tpp`, which
-  would trigger a full rebuild.
+The same non-virtual-interface contract as the element containers
+(`element_container/GenericContainer.hpp`): public non-virtual entry points, each forwarding
+to one protected `_xxx` hook.
 
-What needs a setter: the slack weights (`MultiSlack` keeps a copy), the Vm of a PV bus (the
-PQ → PV direction, and secondary voltage control later), the per-line `status_droop` of the
-`Hvdc` extension, a per-controller "Q pinned at this value" on `VoltageControl`.
+| entry point | role | default |
+|---|---|---|
+| `name()` | the OLF name | -- |
+| `declare(ctx)` | reserve, in `ctx.controls`, the controls of every reachable state | nothing |
+| `is_needed(ctx)` | OLF's `isNeeded` | true |
+| `initialize(ctx)` | before the first solve | no-op |
+| `detect(ctx, out)` | the trigger, as `LimitViolation`s; pure function of the grid, the solve and the loop state | -- |
+| `check(ctx)` | `detect` then act; STABLE / UNSTABLE / FAILED | -- |
+| `cleanup(ctx)` | after the last solve, reverse order | no-op |
+| `can_fix_unrealistic_state()` | for the driver | false |
+| `clone()`, `get_params()` | copies, threads, persistence (the parameters are set at construction, `const` afterwards) | -- |
 
-### The edit surface, for Python loops too
+`declare` is called from `init_topology`, before `build_J_sparsity`: the grid data and the
+number of units that may switch, participate or regulate are known there. That is the only
+place a loop shapes the pattern.
 
-The context a loop sees: an Sbus copy, the slack weights, the pinned and masked sets, the Hvdc
-statuses, the Vm set-points, the controller pins, and the row / column maps read-only.
+The context a loop works on holds the grid (const), the solve's voltages and mismatch, the
+solver bus maps, the injections the loops edit (`OuterInjections`: the private Sbus, the targets
+`DistributedSlack` moved) and the controls (`OuterControls`).
 
-Worth adding: generic **J / F value overrides at reserved positions**, the counterpart of
-gpusim2grid's `jov` stream. With it, a first version of a loop can pose a custom equation from
-Python without any C++ change. A loop never writes `J` directly: `fill_J` zeroes it first.
+### Controls
 
-The GIL: the algorithm's `solve` binding releases it, so the driver re-acquires it around a
-Python callback. Python loops are refused in the batch classes.
+A loop acts on the solve only through the controls it reserved in `declare`
+(`outer_loop/OuterControls.hpp`), one kind per thing a loop switches:
 
-### One analyze, one factorize
+| control | reserved by | what it switches |
+|---|---|---|
+| `BusVoltageControl` | `ReactiveLimits`, `TransformerVoltageControl` | a bus PV or PQ (its Q row pinned or not) |
+| `VoltageControllerHold` | `ReactiveLimits`, `TransformerVoltageControl` | a group controller held at a reactive output |
+| `StandbySvcControl` | `VoltageMonitoring` | an idle standby SVC switched on |
+| `HvdcRegimeControl` | `AcHvdcAcEmulationLimits` | the regime of a line with its droop on -- held at a limit by the caller too, since `set_status_droop` puts it back in AC emulation without a rebuild |
+| `PhaseShifterControl` | `PhaseControl` | a phase shifter's control and tap; reads its shift and current |
+| `RatioTapControl` (by `reserve_ratio_group`) | `TransformerVoltageControl` | a transformer's voltage control and tap; reads its ratio |
+| `ShuntSectionControl` (by `reserve_shunt_group`) | `ShuntVoltageControl` | a shunt controller's control and sections; reads its susceptance |
 
-- **One analyze** is guaranteed if `reserve()` asks for the union pattern. For reactive
-  limits that is a Vm column and a Q row, with their full dS pattern, for every PV bus with a
-  finite reactive range — paid on every solve, pinned or not, because the symbolic analysis
-  counts structure, not values. To be measured. The alternative is to reserve a list and
-  count any later re-analysis in `LinearSolverStats`.
-- **One factorize** has a caveat. A refactorization keeps the pivot sequence, and pinning or
-  releasing a row can shrink a pivot; `RefactorRetryLinearSolver` then falls back to a fresh
-  numeric factorization. Not an analysis, but a second factorization. It should be rare —
-  both states have a strong diagonal, the identity when pinned and `dQ/dVm` when live — but
-  it cannot be promised. Either expose the count and assert on it in the tests, or offer a
-  strict mode that fails rather than falls back.
+Two loops asking for the same element get the same control: that is how `ReactiveLimits` and
+`TransformerVoltageControl` share a bus, and the registry also answers what one loop needs to
+know of another (a bus a loop suspended, the buses a ratio group regulates). A batch's
+switchable and pinned buses (`set_switchable_vm_buses`, `set_pv_pinned_buses`) go to the same
+registry. The inner algorithm applies the controls before each solve, in a fixed order, the
+persistent switches every time and the one-shot moves (a ratio tap, shunt sections, a
+magnitude reset) once; every control is back to "as the grid has it" at the start of a solve.
+The driver itself knows none of this.
+
+The equations behind the controls stay in the Newton's extensions (`Base`'s switchable rows,
+`VoltageControl`, `BranchControl`, `ShuntControl`), not in the loops:
+
+- an equation belongs to an element, and several loops act on the same one: `PhaseControl`
+  (the shift) and `TransformerVoltageControl` (the ratio) patch the same transformer block of
+  Ybus, the PV / PQ Q row is shared by two loops and the batches. One owner per element, the
+  loops as policies on top, and the shared control is the arbitration;
+- the extensions take part in the Newton through its compile-time component protocol
+  (`NRSystem<Base, Extensions...>`); a list supplied by the loops at run time would make that
+  protocol dynamic;
+- the controls mean something for any inner algorithm ("this bus is PV or PQ"): another inner
+  algorithm implements those it can (its `OuterControls`) and hands out no other, so the loops
+  are not tied to the Newton;
+- some of these equations are not only the loops' (`VoltageControl` is the plain Newton's remote
+  voltage control, `Base`'s switchable rows serve `ScenarioSweep`);
+- OpenLoadFlow splits it the same way: its equation system holds the control equations, its
+  outer loops enable and disable them and move taps.
+
+An extension nobody reserved anything in claims no row, no column and no entry.
+
+**Detection mode** calls the same `detect` on a loop with an empty state, right after a plain
+solve. `LSGrid::get_physical_violations` iterates the default loop list; the batch classes do
+the same per row.
+
+### The DistributedSlack loop
+
+`outer_loop/DistributedSlackLoop.{hpp,cpp}`. The units it shares on are the ones flagged
+"can participate in the slack" (`set_gen_can_participate_slack` /
+`set_storage_can_participate_slack`), with that weight as their key, and bounded by their
+P limits: `init_from_pypowsybl(olf_rules=True)` fills both with OpenLoadFlow's participation
+rule and `activePowerControl` target range, independently of the slack the Newton uses. The
+arithmetic is `slack_redistribution::distribute`, called on the units' INITIAL targets with
+the cumulative mismatch at every pass, as `ActivePowerDistribution.run` does; the residue is
+OpenLoadFlow's `P_RESIDUE_EPS`. The slack bus' mismatch is the quantity
+`LSGrid::compute_results` books on the slack generator (its residual, less what an in-Newton
+slack carried), so the trigger reads the same after an `NRSing_*` or an `NR_*` solve.
+
+The loop runs (`is_needed`), and `SLACK_MISMATCH` is reported in detection mode, only on a
+grid with some unit flagged to share the slack. A grid where no unit is flagged has no
+distributed slack set up at all: OpenLoadFlow with `distributedSlack` off, where the loop
+does not exist, and its single slack is kept on purpose.
+
+Checked against OpenLoadFlow run with that loop only, on real grid snapshots with a load
+increase so that there is something to share: same voltages, same per-unit P, one symbolic
+analysis per solve.
+
+**The starting point matters.** OpenLoadFlow's `DC_VALUES` start takes the angles of a DC
+load flow, and with the distributed slack on, that DC load flow already shares the
+imbalance on the participating units. A single-slack DC instead (the slack generator taking
+the whole imbalance) gives initial angles far enough from OpenLoadFlow's for the first
+Newton to reach another root of a weak, radial part of a grid: both converge, to visibly
+different voltages there, and the loop then keeps sharing from that other root (or a later
+re-solve diverges from it). `LSGrid.set_dc_distribute_slack_on_can_participate(True)`
+makes `dc_pf` share the imbalance on the units flagged "can participate" with their
+weights. Only its angles are kept: `DC_VALUES` starts every magnitude at 1 pu
+(`DcValueVoltageInitializer`), and the slack bus keeps its own angle, so a start must be
+expressed relative to it -- a start rotated away from the slack is a different start, not
+the same one.
+
+With those angles the start is OpenLoadFlow's to a fraction of a degree: lightsim2grid's
+DC (`1/x`, the transformer ratio, the same injections and the same sharing) is the DC that
+`DcValueVoltageInitializer` solves. The comparison harness can also start from
+OpenLoadFlow's own DC angles (`--start olf`), to tell a difference of start from a
+difference of solve.
+
+**The linear solver matters too.** A KLU refactorization reuses the pivots chosen at the
+last factorization, here the Jacobian at the DC start. After a long first solve and a
+large redistribution, one of those pivots can become tiny without being zero:
+`klu_refactor` accepts it, the factors are too inaccurate, and the next Newton diverges
+(SparseLU, which pivots again every time, does not). powsybl-math-native, hence
+OpenLoadFlow, checks the reciprocal pivot growth (`klu_rgrowth`) after every
+refactorization and factorizes again below powsybl's `DEFAULT_RGROWTH_THRESHOLD`. The same
+check is part of lightsim2grid's refactor fallback (`LinearSolverPolicy::
+set_refactor_fallback`, on for `NROuter_*`, `NRRefactorRetry_*` and the batch algorithms
+that edit values), and the factorization it costs is counted as a fallback one.
+
+### The VoltageMonitoring loop
+
+With `svcVoltageMonitoring` (`OlfLoadingParameters.svc_voltage_monitoring`, on by default as
+in OpenLoadFlow), an SVC whose standby automaton is in standby is a voltage monitor, loaded
+idle: off, flagged standby with its thresholds and set-points (`LSGrid.set_svc_standby`).
+Every algorithm sees it as off, Q = 0. With the loop in the grid's list and an algorithm
+running outer loops, the voltage-control plan also enrols it as a held controller, alone in
+a group regulating its bus (`hold_monitors`): the group's row reads "Q = 0", and switching
+the SVC on rewrites it into the voltage row at the new set-point, by value. A monitor the
+plan cannot enrol (its regulated bus already regulated by a group, or without a Vm unknown)
+stays idle.
+
+The automaton's `b0` is a susceptance the SVC carries (`LSGrid.set_svc_b0`), in standby or
+not, stamped into Ybus at its bus and part of its reactive output, as OpenLoadFlow's
+`LfStandbyAutomatonShunt`. OpenLoadFlow's loading rules around monitors (two on a bus both
+regulate, one next to a regulating unit is switched off) are `_olf_rules.voltage_controllers`.
+
+As OpenLoadFlow, the loop only runs when a monitor regulates its own bus, and the
+thresholds are in pu of the SVC's own voltage level.
 
 ### Publishing the results
 
-Easy to miss. `LSGrid::compute_results` splits a generator's active power with the grid's
-own slack weights (`ac_cache_.slack_weights`) and the raw per-generator weights, not the
-algorithm's. A machine the slack loop saturated would be published with the wrong P, so the
-algorithm has to export per-generator overrides through a new hook.
+`LSGrid::compute_results` splits a generator's P with the grid's own slack weights and its Q
+by reactive range. The outer algorithm exports per-element overrides through a new `BaseAlgo`
+hook applied there: generator / storage P (the slack loop's targets), generator Q (frozen
+limits), and the final PV / PQ state. Taps and sections are published as results
+(`res_tap_position`, `res_section_count`), never written back into the inputs -- as pypowsybl's
+`solved_tap_position` / `solved_section_count`.
 
-The reactive side works if the injections the loops add are kept **out** of the algorithm's
-per-bus mismatch: the mismatch at a bus switched to PQ is then its limit, and
-`_split_q_residual_per_bus` publishes it as it does today.
+The split of a bus' reactive power between its voltage-controlling units also has to follow
+OpenLoadFlow (`AbstractLfBus.updateGeneratorsState` / `dispatchQ`, mode
+`Q_EQUAL_PROPORTION`): by reactive keys when every unit has one; otherwise by reactive range,
+but only when **every** unit has plausible limits (absolute limits below 1000 MVar, a range
+between 1 and 10000 MVar); otherwise equally. With reactive limits on, a unit whose share
+crosses a limit is clamped there and the rest is dispatched again over the others. Nothing
+is dispatched at all while what is left is at most `Q_DISPATCH_EPSILON` (1e-5 pu, so 1e-3
+MVar): a bus whose total is below it publishes 0 on its units.
+`LSGrid::_split_q_residual_per_bus` always splits by range today, so a bus mixing a unit with
+placeholder limits and a unit with real ones publishes a different per-unit Q (same bus total)
+even when no loop runs.
 
-### The batch algorithms
+### Registration and persistence
 
-They get it almost for free, since every row calls `compute_pf`. What remains:
+`algo.clear_outer()`, `algo.add_outer(loop)` and `algo.get_outer()` act on the `NROuter_*`
+algorithm through a non-const accessor (the existing `get_algo()` binding is const by
+convention). Each loop's parameters carry OLF's parameter names and the defaults of the table
+above. A grid copy, a pickle or a batch thread only carries the algorithm name and its
+`AlgoConfig`, so the loop list is kept as descriptors (type + parameters) next to it and
+rebuilt with `clone()`.
 
-- `BaseBatchSweep` already drives `set_switchable_vm_buses` / `set_pv_pinned_buses` for
-  generator contingencies (`_push_switchable_to_algo`), and the last caller wins: the
-  switchable sets must be **merged**, and a bus is pinned only if both sides keep it PV;
-- masked buses are skipped by the checks;
-- the outer state is reset per row for the sweeps; whether a `TimeSeries` carries it from one
-  row to the next (and inherits the hysteresis) is a decision to take;
-- one loop instance per thread (`clone()`);
-- `BusQCheck` / `GenPCheck` would then report only what enforcement left over.
+## In the batches
 
-## What gpusim2grid needs
+A batch whose algorithm is an `NROuter_*` one solves each row with the grid's loops: the
+batch hands its row to `OuterLoopAlgo::compute_pf` as `LSGrid::ac_pf` does, and nothing else
+runs the loops. What a row changes compared with the grid reaches the loops through an
+`OuterRowView` (`outer_loop/OuterRowView.hpp`), set with `BaseAlgo::set_outer_row_view`:
+the batch's labelling and stranded buses, and, per element kind, the units it disconnects or
+places elsewhere, its targets, the branches it opens or moves. Plain data, refilled per row
+by the worker from what the row's Sbus and Ybus are built from. The loops, and the check
+headers they build on, read element state through `OuterGridView` (the grid with the row on
+top), never off the containers directly.
 
-The value-level primitives already exist there: the `add_switchable_vm_buses` ledger
-extension, the identity-row stream for pinned buses, per-slot slack weights
-(`slack_w_stride`), and the stranded-controller J overrides. The gaps:
+- **One analysis.** The loop list goes to the algorithm before the base solve and to every
+  worker (`_install_outer_loops`): what the loops reserve is declared on the base solve's
+  rebuild, against the batch's labelling. A batch's switchable buses are bus controls like the
+  loops' own (`OuterControls::set_caller_switchable`), resting PV or PQ as the batch pins them
+  for the row. A row that turns an element off leaves its slot unused by value.
+- **A row restarts from the grid, but a TimeSeries row.** The controls and the loops restart
+  from the grid's state on every row, as OpenLoadFlow's security analysis restarts each
+  contingency. A TimeSeries row (chained on the previous one) starts from the previous row's
+  equations instead (`OuterRowView::resume`, `OuterLoopDriverParams::resume_outer_state` for a
+  sequence of single solves): `ReactiveLimits` re-freezes the buses it had frozen, at their
+  limit for the new row's target P; `VoltageMonitoring` keeps its SVCs switched on;
+  `HvdcAcEmulationLimits` keeps its regimes; the driver asks the controls for the taps and
+  sections the previous row settled on. `DistributedSlack` restarts from the row's own targets
+  (an injection, not an equation). A loop undoes its own switch when the row calls for it. With
+  the frozen buses still PQ, the voltages of the previous row are a valid start as they are.
+- **Results.** Per row, `OuterRowResult` (status, iterations, and what differs from the grid:
+  moved targets, hvdc regimes, taps, sections). The moved targets are the row's targets for its
+  generator results and its P checks; a moved tap is the row's transformer block in its flows.
+  A row its loops leave UNSTABLE or FAILED does not converge.
+- **Not yet:** `keep_jacobian` (which inner Jacobian the adjoint should read is not settled);
+  `redistribute_slack` is refused anyway (the inner Newton is single-slack).
 
-1. **Masks are fixed per run.** They are host-built sparse streams uploaded once
-   (`mask_streams.cuh`). Outer loops need device-resident, per-slot state: pinned flags per
-   (slot, reserved bus), a per-slot Sbus (the contingency analysis shares one today), per-slot
-   weights — and one kernel writing the identity rows at J positions precomputed once, since
-   every slot shares the same pattern.
-2. **No convergence test.** `run_nr_loop` runs a fixed number of iterations. The outer driver,
-   per chunk: Newton loop, residual (the post-loop kernel exists), per-slot check kernels,
-   one device-side "any unstable" reduction copied back per outer iteration. The Q / P checks
-   are trivially parallel; per-slot switch counters live on the device.
-3. **Resume.** Between passes, skip `init_slack_absorbed_kernel` and the controller-Q reset.
-4. **Strategies.** The ones that reuse old factors (`iter0_only`, `direct_base_case_factors`)
-   conflict with pin changes: refuse them or force a refactorization. The cuDSS uniform batch
-   has the same pivot risk as KLU, with no cheap per-slot fallback; the existing pinned-bus
-   paths are the place to measure it.
-5. **Coupling.** The `AcPfGPU` and `InjectionSweepGPU` ledgers are never extended today. Any
-   row or column `NROuter` adds must be exported explicitly by lightsim2grid: the bridge
-   assumes the `VoltageControl` rows come last.
+Detection is the loops' first check, without the action (`outer_detect`): each loop is
+initialized on a clone and detects, on the row as its view shows it, for `LSGrid` and every
+batch alike. `ReactiveLimits` reports there what `BusQCheck` and `RemoteVoltageControlCheck`
+used to (its own tolerance, limits at the target P, the robust mode and realistic band by
+the driver's parameters, unless the loop was given its own).
+Two checks stay outside the loops, because no OpenLoadFlow loop has their trigger: the release
+of a unit the caller froze (`GenPvReleaseCheck`, a unit loaded without voltage control is never
+released by OpenLoadFlow) and a unit past its P limit under an in-Newton slack (`GenPCheck`).
 
-A first Python version is possible there too, at batch granularity: run, check in cupy over
-DLPack, update the per-slot state, run again. It needs a warm start from the current V and the
-cuDSS analysis kept across `run()` calls — today it is redone at each driver setup.
+## Reuse
 
-## A possible phasing
+Most of the detection, and some of the actions, already exist.
 
-Rough orders of magnitude, for one developer who knows the code, working with Claude Code.
-They are estimates, not measurements.
-
-| phase | content | estimate |
+| piece | where | used by |
 |---|---|---|
-| A. single solve, Python loops | split `NRAlgo`, `NROuterAlgo`, `OuterLoop` + trampoline, resume, setters, J / F overrides, results hook; `ReactiveLimits` (local), `DistributedSlack` with limits, `HvdcAcEmulationLimits` in Python; tests against pypowsybl and on the analyze / factorize counts | 1–2 weeks |
-| B. C++ loops + batch | ports, merged pinning, `clone()`, per-row reset, `TimeSeries` policy, tests on the four batch classes | 1–2 weeks |
-| B+ (optional) | reactive limits on multi-controller `VoltageControl` groups | +1 week |
-| C. gpusim2grid | device state, per-slot pin kernel, outer driver, check kernels, ledger extension everywhere, export | 2–3 weeks |
+| bus reactive capability (PV->PQ) | `batch_algorithm/BusQCheck.hpp` | `ReactiveLimits.detect` |
+| release of a frozen unit (PQ->PV), `can_be_pv` | `GenPvReleaseCheck.hpp`, `GeneratorContainer` | `ReactiveLimits.detect` |
+| remote controller outside the realistic band | `RemoteVoltageControlCheck.hpp` | `ReactiveLimits.detect` (robust mode) |
+| stand-by SVC thresholds | `SvcStandbyCheck.hpp` | `VoltageMonitoring.detect` |
+| hvdc droop saturation / release | `HvdcPCheck.hpp`, `HvdcLineContainer::ac_emulation_frozen` | `HvdcAcEmulationLimits.detect` |
+| unit past its p limits (in-Newton slack) | `GenPCheck.hpp` | the `NR_*` algorithms' detection only |
+| OLF clamp-and-reshare, no sign change | `element_container/SlackRedistribution.hpp` | `DistributedSlack` action |
+| "can take part in the slack" vs "is a slack" | `SlackParticipation::can_participate*` | `DistributedSlack` |
+| PV <-> PQ at constant sparsity | `Base::set_switchable_vm_buses`, `NRSystem::set_pv_pinned_buses` | `ReactiveLimits` |
+| a controller of a group held at a fixed Q | `LSGrid::set_hold_frozen_regulators`, `VoltageControl` held rows | `ReactiveLimits` (remote / groups), `VoltageMonitoring` (`NRSystem::release_held_svcs`) |
+| refactorize -> factorize fallback, counters | `LinearSolverPolicy`, `LinearSolverStats` | the one-factorize accounting |
 
-What moves the estimates: parity with OpenLoadFlow on `ReactiveLimits`' edge cases (the
-PQ → PV direction, the switch cap, robust mode, unrealistic voltages); refactorization
-failures, if frequent enough to require another pivoting or ordering strategy; the cost of
-the reservation on a plain solve, if it forces the reserve-a-list variant; the GPU test loop,
-since CI has no GPU.
+The check headers depend on no batch state; they take the grid, the solver bus map, the
+mismatch and the voltages. Their rules move to OpenLoadFlow's where they differ: epsilon,
+load Q in the bus balance, limits at the **current** target P, bus-level limits, no tolerance
+on the PQ -> PV test.
 
-The smallest useful milestone is phase A restricted to `DistributedSlack` with limits and
-local `ReactiveLimits`: it tells, on real grid snapshots, whether the one-analyze /
-one-factorize premise holds and what the reservation costs, before committing to B and C.
+New trigger kinds: `SLACK_MISMATCH`, `UNREALISTIC_VOLTAGE`, `REACTIVE_LIMIT_MOVED`,
+`TRANSFORMER_VOLTAGE_DEADBAND`, `SHUNT_VOLTAGE_CONTROL`, `PHASE_CONTROL_P`,
+`PHASE_LIMITER_CURRENT`.
 
-## Open decisions
+## What the model lacks
 
-1. OpenLoadFlow's nested ordering, or the flat variant?
-2. Reserve every reactive-limited PV bus (analysis guaranteed, J always larger), or reserve a
-   list and allow a counted re-analysis?
-3. Strict one-factorize, or the counted fallback?
-4. Outer loops as the end state, or as the first step towards the projection rows of
-   `nr_control_limits.md`, which reuse the same reservation and value-edit surface?
+- **Tap changers** -- done in phase 6 (`TapChangers.hpp`; the alpha -> r / x table of
+  `set_shift_dependent_rx` still applies between two taps, relative to the current one).
+  `TrafoContainer` holds a ratio and a shift, plus an alpha -> r / x
+  correction table (`set_shift_dependent_rx`). It needs, per transformer, an optional ratio and
+  phase tap changer: step table (rho, alpha, r %, x %, g %, b %), position and range, side,
+  regulating flag, target voltage, deadband and regulated bus (ratio), regulation mode and value
+  (phase). The pi-model follows OLF's `PiModelArray`: the current tap gives every parameter; a
+  continuous ratio or shift overrides rho or alpha only, without interpolating r / x / g / b;
+  rounding goes to the closest tap, a strictly better one only.
+- **Shunt sections** -- done in phase 6. `ShuntContainer` holds a fixed admittance. It needs linear and
+  non-linear sections, the current and maximum count, and the regulation (on, target, deadband,
+  regulated bus).
+- **Capability curves** -- done in phase 5 (`LSGrid::set_gen_capability_curves`). A generator's reactive limits are read once at its initial target P.
+  The slack loop moves that target, and OLF re-evaluates the limits at the current one
+  (extrapolating past the curve ends with `extrapolateReactiveLimits`), so the curve points
+  have to be in `GeneratorContainer`.
+- **`can_be_pv`** currently flags a PQ unit an outer loop froze. It becomes "this unit may be PV
+  in some outer iteration": every PV generator, plus the frozen ones.
+- **The converter** -- done in phase 6 for the tap changers and the sections. It read transformers at the neutral tap and dropped tap changers, shunt
+  sections and regulation; it has to read them (`get_ratio_tap_changers` and steps,
+  `get_phase_tap_changers` and steps, `get_shunt_compensators` and the section frames,
+  `get_reactive_capability_curve_points`), with r / x / g / b at the current tap.
+- **The loading rules.** OpenLoadFlow's network-loading rules are pure predicates in
+  `from_pypowsybl/_olf_rules.py`, read by `init_from_pypowsybl(olf_rules=True)` and by
+  `bake_outer_loops`. Done for the generators' voltage control (not started, reactive range,
+  unresolved regulated bus, implausible target, inconsistent controls on one bus) and their
+  target Q (clamped into the limits at target P, curves extrapolated), and for the
+  participation in the distributed slack (`participation_weight`, generators and batteries
+  alike: the extension's flag and droop, a zero or implausible target, the target range).
+  Still to move there: the same voltage-control rules for batteries, VSC stations and SVCs --
+  OpenLoadFlow's inconsistency check sees every voltage-controlling unit of a bus, not only
+  generators.
+  OpenLoadFlow's `POWER_EPSILON_SI` is compared with per-unit values in the not-started rule
+  (so 0.01 MW) and with MW in the participation rule (1e-4 MW).
+
+## The continuous controls in the Jacobian
+
+With the default modes above, OLF solves the tap ratio, the phase shift and the shunt
+susceptance **inside** the first Newton of their loop, then rounds them. In lightsim2grid terms:
+
+- a new **`BranchControl`** extension adds one column per controlling transformer (rho or
+  alpha). The column's entries are the derivatives of the four flow terms of that branch, so
+  they sit in the P and Q rows of its two buses (plus the current term of a phase limiter). Its
+  row is, by value: `x = x0` while the control is off; the controlled bus' `V = target` for the
+  first enabled controller of a group; an equal-sharing row for the others. The union of a
+  group's rows and columns is declared up front. Moving the unknown patches that branch's Ybus
+  values at known positions, every iteration;
+- a new **`ShuntControl`** extension does the same for B (`Q = -B V^2` in the Q row of the
+  shunt's bus);
+- a generator frozen to PQ by the transformer loop reuses the PV pinning slots.
+
+Rounding to a tap or a section is a value patch on the private Ybus, which only refactorizes.
+
+## Phasing
+
+One loop at a time, in OpenLoadFlow's order. Each phase brings the loop, its detection wired
+into `get_physical_violations`, unit tests on small grids, and a comparison against OLF run
+with **that loop only** (`outerLoopNames = [name]` plus the flag that creates it) under tight
+solves, on real grid snapshots.
+
+| phase | content |
+|---|---|
+| 0 | this note; the comparison harness (`utils/olf_outer_compare.py`), baseline with no loop on either side |
+| 1 | `NRAlgo` split, `NROuterAlgo`, `BaseOuterLoop`, declaration, resume, driver, statistics, result hook, Python registration and persistence. With no loop it must match `NRSing_*`, with one analysis -- **done**, but for the persistence of a custom loop list in a pickle or a binary file (with the format bump of phase 6) |
+| 2 | `DistributedSlack`, participation rules unified -- **done** |
+| 3 | `HvdcAcEmulationLimits` -- **done**; the snapshots rarely reach their limits, the harness's `--hvdc-limit-factor` lowers them on both engines |
+| 4 | `VoltageMonitoring` -- **done**, with OpenLoadFlow's voltage-control loading rules for SVCs, VSC stations and batteries; the harness's `--svc-thresholds-pu` moves the automata's thresholds on both engines |
+| 5 | `ReactiveLimits` -- **done**: local buses through switchable Vm / Q slots, group controllers held by value (`VoltageControl` holding, the sharing taken against any active controller), the robust mode; OpenLoadFlow's per-unit reactive split (`set_reactive_dispatch_olf`); capability curves on the grid (`set_gen_capability_curves`), read at the target P `DistributedSlack` gave; a monitor `VoltageMonitoring` switched on is checked like any SVC; a non-regulating unit's target Q clamped into its limits at the target P `DistributedSlack` moved (`set_gen_raw_target_q`, kept apart from the bus residual through `OuterInjections::Sbus_target`); VSC stations sharing a bus by their widest range, as generators. A plain solve's LOW_Q / HIGH_Q buses are the ones OpenLoadFlow switches PV -> PQ in its first round |
+| 6 | tap and section data model, converter, binary format -- **done**: the pi model at the taps (OpenLoadFlow's, step corrections of r, x, g, b included), moving a tap or a section count keeps the Jacobian's pattern, closest-tap rounding; checked against OpenLoadFlow with taps and sections moved on both sides. A check that a control would act is `ViolationCategory::CONTROL` |
+| 7 | `PhaseControl` -- **done** (CONTINUOUS_WITH_DISCRETISATION): a `BranchControl` NR extension, a shift column and a row (target alpha or target P, chosen by value) per active power phase shifter, the transformer's Ybus block patched by value in the algorithm's private Ybus; rounding to the closest tap, current limiters moved tap by tap, OpenLoadFlow's connectivity rule; the solved taps published in the results (`res_phase_tap_position`), the inputs untouched. Matches OpenLoadFlow tap for tap, except where its one-tap move undoes itself on the rounding of its Newton (see `PhaseControlLoop.hpp`). **TODO (follow-up)**: decide whether to mirror that rounding or keep it documented |
+| 8 | `TransformerVoltageControl` -- **done** (AFTER_GENERATOR_VOLTAGE_CONTROL): `BranchControl` (the former `PhaseShift`) gives each transformer of a visible group a ratio column and the group n rows, each holding by value OpenLoadFlow's BRANCH_TARGET_RHO1, BUS_TARGET_V or DISTR_RHO; groups hidden by a generator's control only round their taps. INITIAL / CONTROL / COMPLETE as OpenLoadFlow, the shared ratio mapping (`useInitialTapPosition`), the generators of buses up to 120 kV frozen at their bus' injection -- OpenLoadFlow passes the injection, load included, as the generation; reproduced, and checked to decide the solved tap -- and released after; `fixTransformerVoltageControls`. Other loops leave a frozen bus alone (`OuterControls::set_suspended`). Matches OpenLoadFlow tap for tap on IEEE 14 and on real grid snapshots as loaded |
+| 9 | `ShuntVoltageControl` -- **done** (WITH_GENERATOR_VOLTAGE_CONTROL): a `ShuntControl` NR extension, the regulating shunts of a bus ONE controller with a susceptance column, groups by regulated bus with the same three row forms as the ratios, the Ybus diagonal patched by value; on from the first solve, then `dispatchB` (largest shunt first, each rounded to its closest section) and one more solve. A control hidden by a higher-priority one (generator, SVC, VSC, transformer) never acts -- OpenLoadFlow's `getControllerElements` keeps the visible ones, which also applies to the transformer groups. Matches OpenLoadFlow on IEEE 14; the real grid snapshots have no regulating shunt |
+| 10 | all loops together -- **done**: the seven loops in OpenLoadFlow's order match it on every real grid snapshot it converges on, as loaded and with random lines opened (N-1), and with stressed settings that make every loop act; the same taps, one symbolic analysis per solve. Detection cross-check (`utils/olf_outer_compare.py --detection`): a plain solve never misses a loop OpenLoadFlow runs in its first round; a loop that acts only once another changed the state (DistributedSlack after ReactiveLimits moved the losses, TransformerVoltageControl after the voltages moved) is not -- and cannot be -- seen by a plain solve. OpenLoadFlow's report lists only the loops that log something, so the harness reads the silent ones off the positions they leave |
+
+Every outer test asserts a single analysis and reports the fallback factorizations.

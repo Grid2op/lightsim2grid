@@ -455,8 +455,15 @@ TEST_CASE("every violation type says what kind of statement it is", "[batch][phy
     CHECK(violation_category(LimitViolationType::HIGH_Q) == ViolationCategory::PHYSICAL);
     CHECK(violation_category(LimitViolationType::LOW_P) == ViolationCategory::PHYSICAL);
     CHECK(violation_category(LimitViolationType::HIGH_P) == ViolationCategory::PHYSICAL);
-    CHECK(violation_category(LimitViolationType::LOW_VOLTAGE_AT_MIN_Q) == ViolationCategory::PHYSICAL);
-    CHECK(violation_category(LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q) == ViolationCategory::PHYSICAL);
+    CHECK(violation_category(LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL) == ViolationCategory::PHYSICAL);
+    CHECK(violation_category(LimitViolationType::HIGH_VOLTAGE_REMOTE_CONTROL) == ViolationCategory::PHYSICAL);
+    // a control the solution does not apply, not something the equipment cannot do
+    CHECK(violation_category(LimitViolationType::LOW_VOLTAGE_AT_MIN_Q) == ViolationCategory::CONTROL);
+    CHECK(violation_category(LimitViolationType::HIGH_VOLTAGE_AT_MAX_Q) == ViolationCategory::CONTROL);
+    CHECK(violation_category(LimitViolationType::LOW_VOLTAGE_SVC_STANDBY) == ViolationCategory::CONTROL);
+    CHECK(violation_category(LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY) == ViolationCategory::CONTROL);
+    CHECK(violation_category(LimitViolationType::HVDC_AC_EMULATION_RELEASE) == ViolationCategory::CONTROL);
+    CHECK(violation_category(LimitViolationType::SLACK_MISMATCH) == ViolationCategory::CONTROL);
     CHECK(violation_category(LimitViolationType::NOT_SIMULATED) == ViolationCategory::SOLVER);
     CHECK(violation_category(LimitViolationType::DIVERGENCE) == ViolationCategory::SOLVER);
     // and a violation carries its own, derived from its type
@@ -1759,7 +1766,7 @@ TEST_CASE("a flagged machine pinned at min_q below its target is released", "[ba
     const LimitViolation * viol = find_release(row, 1);
     REQUIRE(viol != nullptr);
     CHECK(viol->violation_type == LimitViolationType::LOW_VOLTAGE_AT_MIN_Q);
-    CHECK(viol->category() == ViolationCategory::PHYSICAL);
+    CHECK(viol->category() == ViolationCategory::CONTROL);
     CHECK(viol->side == 0);
     CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
     CHECK(viol->limit == Approx(1.10 * VN_KV));
@@ -2073,7 +2080,7 @@ TEST_CASE("an idle standby SVC whose regulated bus leaves its thresholds is repo
         const LimitViolation * viol = find_standby(ts.get_physical_violations()[0], 0);
         REQUIRE(viol != nullptr);
         CHECK(viol->violation_type == LimitViolationType::HIGH_VOLTAGE_SVC_STANDBY);
-        CHECK(viol->category() == ViolationCategory::PHYSICAL);
+        CHECK(viol->category() == ViolationCategory::CONTROL);
         CHECK(viol->side == 0);
         CHECK(viol->value == Approx(vm * VN_KV).margin(1e-6));
         CHECK(viol->limit == Approx((vm - 0.01) * VN_KV));

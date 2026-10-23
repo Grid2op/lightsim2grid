@@ -174,7 +174,7 @@ class TestPickle(unittest.TestCase):
         grid = self.env.backend._grid
 
         ac_cfg = grid.get_ac_algo_config()
-        ac_cfg.int_params = [1, 2, 3, 4]
+        ac_cfg.int_params = [1, 2, 3, 4, 0]  # the last, constrained_ordering
         ac_cfg.real_params = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
         grid.set_ac_algo_config(ac_cfg)
         # DC solver (DC_SparseLU) does not populate AlgoConfig at all (only the

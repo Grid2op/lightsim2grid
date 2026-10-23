@@ -227,6 +227,53 @@ TEST_CASE("every grid modification survives cache reuse", "[LSGrid][cache_reuse]
     }
 }
 
+TEST_CASE("an SVC's b0 leaves and follows Ybus with the SVC itself", "[LSGrid][cache_reuse]")
+{
+    // b0 is stamped into Ybus, so disconnecting, reconnecting or moving an SVC that has
+    // one changes Ybus: the sweep above cannot see it, its SVC has none
+    const auto with_b0 = [](){
+        LSGrid g = make_grid();
+        RealVect b0(1);
+        b0 << 0.05;
+        g.set_svc_b0(b0);
+        return g;
+    };
+    const std::vector<NamedMutation> mutations = {
+        {"deactivate_svc", [](LSGrid & g){ g.deactivate_svc(0); }},
+        {"change_bus_svc", [](LSGrid & g){ g.change_bus_svc_python(0, 4); }},
+    };
+    for(const auto & mutation : mutations){
+        SECTION(mutation.name){
+            LSGrid cached = with_b0();
+            REQUIRE(solve_ac(cached).size() == 14);
+            mutation.apply(cached);
+            const CplxVect v_cached = solve_ac(cached);
+
+            LSGrid rebuilt = with_b0();
+            rebuilt.allow_cache_reuse(false);
+            mutation.apply(rebuilt);
+            const CplxVect v_rebuilt = solve_ac(rebuilt);
+
+            REQUIRE(v_cached.size() == v_rebuilt.size());
+            CHECK((v_cached - v_rebuilt).norm() < 1e-9);
+        }
+    }
+    SECTION("reactivate_svc"){
+        LSGrid cached = with_b0();
+        cached.deactivate_svc(0);
+        REQUIRE(solve_ac(cached).size() == 14);
+        cached.reactivate_svc(0);
+        const CplxVect v_cached = solve_ac(cached);
+
+        LSGrid rebuilt = with_b0();
+        rebuilt.allow_cache_reuse(false);
+        const CplxVect v_rebuilt = solve_ac(rebuilt);
+
+        REQUIRE(v_cached.size() == v_rebuilt.size());
+        CHECK((v_cached - v_rebuilt).norm() < 1e-9);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // physical parameters: the values of Ybus are refreshed, the analysis is not redone
 // ---------------------------------------------------------------------------

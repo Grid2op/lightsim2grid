@@ -90,7 +90,11 @@ reach at all: the converged solution assumes a set-point that could not be held,
 a statement about the model's assumptions rather than about how the grid is operated. The
 third category, `SOLVER` (`NOT_SIMULATED`, `DIVERGENCE`), is not a limit at all — a
 divergence does not distinguish "no solution exists" from "this algorithm did not find
-one".
+one". The fourth, `CONTROL`, is not a limit either: a control or an automaton the
+solution does not apply — a standby SVC its automaton would switch on, a unit frozen at a
+reactive limit that could hold its set-point again, a saturated droop that would release,
+a slack mismatch, and the tap changers and switched shunts to come. The state is
+reachable; it is not the one the controls would settle in.
 
 What is still missing around it:
 
@@ -138,6 +142,15 @@ limit.
 
 Not answered here: whether an already-saturated line should be *released* — the other half
 of OLF's loop. That is a question about a flow this row never computed.
+
+> **Update (phases 6 and after of `outer_loops_fixed_sparsity.md`).** Sections 3, 4 and 5
+> below describe the model before it had tap changers and shunt sections. It has them now:
+> `TrafoContainer` carries a ratio and a phase tap changer per transformer (step tables,
+> positions, regulation: `LSGrid::set_trafo_ratio_tap_changer`, `..._regulation`), its pi
+> model taken at the taps as OpenLoadFlow takes it, and `ShuntContainer` its sections and
+> their voltage regulation (`LSGrid::set_shunt_sections`). The pypowsybl converter reads all
+> of it; the pandapower one still collapses a tap into a ratio. The checks themselves come
+> with the loops.
 
 ## 3. `TransformerVoltageControl` (RTC) — the control data does not exist
 
@@ -197,9 +210,9 @@ pypowsybl (`_aux_add_shunts.py`) reads `g` / `b` and scales them by the nominal 
 
 `ReactiveLimits`, `HvdcAcEmulationLimits` and `DistributedSlack` are the three OLF loops
 whose trigger is a limit of the equipment rather than a choice of the operator, and all
-three are now detected (`ViolationCategory::PHYSICAL`). Everything below is
-**operational**: a tap that should have moved and did not is a control that was not
-modelled, not an impossible state.
+three are now detected (`ViolationCategory::PHYSICAL`). Everything below is a
+**control** (`ViolationCategory::CONTROL`): a tap that should have moved and did not is a
+set-point not followed, not an impossible state.
 
 `DistributedSlack` is the odd one of the three, because its "control side" was not
 missing — the participation factors are input data (`add_gen_slackbus`) and the solver

@@ -264,10 +264,27 @@ class SlackParticipation
             const int nb_el = static_cast<int>(slackbus_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id) remove(el_id, unused_solver_control);
         }
+        /// take every element out of the slack, each keeping what it can participate with
+        /// (see `leave`): the slack moves elsewhere, the units able to share it stay so
+        void leave_all(){
+            DualAlgoControl unused_solver_control;
+            const int nb_el = static_cast<int>(slackbus_.size());
+            for(int el_id = 0; el_id < nb_el; ++el_id) leave(el_id, unused_solver_control);
+        }
 
         /// does `el_id` take a share of the slack right now (`status` is the container's)?
         [[nodiscard]] bool participates(int el_id, const std::vector<bool> & status) const {
             return status[el_id] && slackbus_[el_id] && has_weight(el_id);
+        }
+
+        /// with `can_participate`, the "can participate in the slack" units and weights
+        /// (set_can_participate) stand for the slack's own ones: see accumulate_raw / split
+        [[nodiscard]] bool participates(int el_id, const std::vector<bool> & status, bool can_participate) const {
+            if(!can_participate) return participates(el_id, status);
+            return status[el_id] && can_participate_weight_[el_id] > 0.;
+        }
+        [[nodiscard]] real_type weight(int el_id, bool can_participate) const {
+            return can_participate ? can_participate_weight_[el_id] : weight_[el_id];
         }
 
         /**
@@ -281,16 +298,20 @@ class SlackParticipation
                             const GlobalBusIdVect & bus_id,
                             const SolverBusIdVect & id_grid_to_solver,
                             const std::vector<bool> * off,
-                            const char * element_name) const
+                            const char * element_name,
+                            bool can_participate = false) const
         {
             const int nb_el = static_cast<int>(slackbus_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id){
-                if(!participates(el_id, status)) continue;
+                if(!participates(el_id, status, can_participate)) continue;
                 if(off != nullptr && (*off)[el_id]) continue;
                 const int bus_me = bus_id(el_id).cast_int();
                 const int bus_solver = bus_me == BaseConstants::_deactivated_bus_id ?
                                        BaseConstants::_deactivated_bus_id :
                                        id_grid_to_solver[bus_me].cast_int();
+                // a unit only flagged "can participate" may sit outside the solved grid: it
+                // simply takes no share there
+                if(can_participate && bus_solver == BaseConstants::_deactivated_bus_id) continue;
                 if(bus_solver == BaseConstants::_deactivated_bus_id){
                     // TODO DEBUG MODE: only check in debug mode
                     std::ostringstream exc_;
@@ -298,7 +319,7 @@ class SlackParticipation
                          << " is connected to a disconnected bus while being connected to the grid.";
                     throw std::runtime_error(exc_.str());
                 }
-                res.coeffRef(bus_solver) += weight_[el_id];
+                res.coeffRef(bus_solver) += weight(el_id, can_participate);
             }
         }
 
@@ -332,7 +353,8 @@ class SlackParticipation
                    const std::vector<bool> & status,
                    const GlobalBusIdVect & bus_id,
                    const SolverBusIdVect & id_grid_to_solver,
-                   const char * fun_name) const
+                   const char * fun_name,
+                   bool can_participate = false) const
         {
             if(bus_raw_total.size() != node_mismatch.size()){
                 // TODO DEBUG MODE: perform this check only in debug mode
@@ -343,10 +365,13 @@ class SlackParticipation
             }
             const int nb_el = static_cast<int>(slackbus_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id){
-                if(!participates(el_id, status)) continue;
-                const int bus_solver = id_grid_to_solver[bus_id(el_id).cast_int()].cast_int();
+                if(!participates(el_id, status, can_participate)) continue;
+                const int bus_me = bus_id(el_id).cast_int();
+                if(can_participate && bus_me == BaseConstants::_deactivated_bus_id) continue;
+                const int bus_solver = id_grid_to_solver[bus_me].cast_int();
+                if(can_participate && bus_solver == BaseConstants::_deactivated_bus_id) continue;
                 // TODO DEBUG MODE: check bus_solver >= 0 and bus_raw_total[bus_solver] > 0
-                res_p(el_id) += sign * node_mismatch(bus_solver) * weight_[el_id] / bus_raw_total(bus_solver);
+                res_p(el_id) += sign * node_mismatch(bus_solver) * weight(el_id, can_participate) / bus_raw_total(bus_solver);
             }
         }
 

@@ -23,6 +23,7 @@ exception instead:
     ``std::runtime_error``).
 """
 
+import gc
 import unittest
 import warnings
 import numpy as np
@@ -255,6 +256,48 @@ class TestOutOfBoundsBindings(unittest.TestCase):
                                  np.zeros((nb_steps, self.n_load), dtype=np.float64),
                                  Vinit, 10, 1e-8)
             self.assertIsNotNone(res)
+
+
+class TestConfigGettersOwnTheirData(unittest.TestCase):
+    """The reactive ranges and raw target Q a converter sets on a grid, read back: arrays that
+    stay valid once the grid is gone, or once a setter gave it another size. Run under ASan
+    (sanitizers.yml), a view into the grid's buffer is a heap-use-after-free here."""
+
+    @staticmethod
+    def _grid():
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            return init_from_pandapower(pn.case14())
+
+    def test_arrays_outlive_the_grid(self):
+        grid = self._grid()
+        n_gen = len(grid.get_generators())
+        n_hvdc = len(grid.get_dclines())
+        grid.set_gen_reactive_range_max(np.arange(n_gen, dtype=float))
+        grid.set_gen_raw_target_q(np.full(n_gen, 3.))
+        grid.set_station_reactive_range_max(np.ones(n_hvdc), np.ones(n_hvdc))
+        arrays = [grid.get_gen_reactive_range_max(), grid.get_gen_raw_target_q(),
+                  grid.get_station_reactive_range_max(1), grid.get_station_reactive_range_max(2)]
+        for arr in arrays:
+            # its own buffer, or a reference to whatever holds it
+            self.assertTrue(arr.flags.owndata or arr.base is not None)
+        del grid
+        gc.collect()
+        np.testing.assert_array_equal(arrays[0], np.arange(n_gen, dtype=float))
+        np.testing.assert_array_equal(arrays[1], np.full(n_gen, 3.))
+
+    def test_arrays_outlive_a_resize(self):
+        grid = self._grid()
+        n_gen = len(grid.get_generators())
+        grid.set_gen_reactive_range_max(np.arange(n_gen, dtype=float))
+        grid.set_gen_raw_target_q(np.full(n_gen, 3.))
+        ranges = grid.get_gen_reactive_range_max()
+        raw_q = grid.get_gen_raw_target_q()
+        # "none": the grid's buffers are freed
+        grid.set_gen_reactive_range_max(np.zeros(0))
+        grid.set_gen_raw_target_q(np.zeros(0))
+        np.testing.assert_array_equal(ranges, np.arange(n_gen, dtype=float))
+        np.testing.assert_array_equal(raw_q, np.full(n_gen, 3.))
 
 
 if __name__ == "__main__":

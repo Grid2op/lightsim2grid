@@ -177,6 +177,13 @@ Detailed usage
     :members:
     :autosummary:
 
+OpenLoadFlow's outer loops
+--------------------------
+
+With an ``NROuter_*`` algorithm, each row is solved with the grid's outer loops, still with one
+symbolic analysis for the whole batch: see :ref:`batch_outer_loops`.
+
+
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
