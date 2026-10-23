@@ -109,6 +109,7 @@ if(NOT KLU_SOLVER_FOUND)
     if(EXISTS "${_KLU_PREBUILT_LIB}" AND EXISTS "${_KLU_PREBUILT_INC}/klu.h")
         message(STATUS "KLU: found pre-built static library in SuiteSparse submodule")
         set(KLU_SOLVER_FOUND TRUE)
+        set(_LS2G_BUNDLED_SUITESPARSE "${_SS}")
         add_library(KLU_submodule STATIC IMPORTED)
         set_target_properties(KLU_submodule PROPERTIES
             IMPORTED_LOCATION "${_KLU_PREBUILT_LIB}"
@@ -189,6 +190,7 @@ if(NOT KLU_SOLVER_FOUND)
             add_library(SuiteSparse::CXSparse_static ALIAS CXSparse_static)
             add_subdirectory(${_SS}/KLU    ${CMAKE_CURRENT_BINARY_DIR}/KLU    EXCLUDE_FROM_ALL)
             set(KLU_SOLVER_FOUND     TRUE)
+            set(_LS2G_BUNDLED_SUITESPARSE "${_SS}")
             set(KLU_LINK_TARGET      KLU_static)
             set(CXSPARSE_LINK_TARGET CXSparse_static)
 
@@ -374,6 +376,12 @@ if(KLU_SOLVER_FOUND)
     if(DEFINED CXSPARSE_LINK_TARGET)
         target_link_libraries(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${CXSPARSE_LINK_TARGET}>)
     endif()
+    # KLU_SOLVER_AVAILABLE makes KLUSolver.hpp include klu.h / cs.h, so the
+    # exported target must also say where those are: see the install rules below.
+    if(DEFINED _LS2G_BUNDLED_SUITESPARSE)
+        target_include_directories(lightsim2grid_core PUBLIC
+            $<INSTALL_INTERFACE:${LS2G_INSTALL_INCLUDEDIR}/suitesparse>)
+    endif()
 endif()
 
 if(ENABLE_NICSLU)
@@ -501,6 +509,54 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen/Eigen")
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen/Eigen"
         DESTINATION "${LS2G_INSTALL_INCLUDEDIR}"
     )
+    # Eigen is mostly MPL-2.0, with a few files under the other licenses
+    # COPYING.README lists: redistributing its source means shipping them all.
+    set(_eigen "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen")
+    install(FILES
+        "${_eigen}/COPYING.README"
+        "${_eigen}/COPYING.MPL2"
+        "${_eigen}/COPYING.BSD"
+        "${_eigen}/COPYING.APACHE"
+        "${_eigen}/COPYING.MINPACK"
+        DESTINATION "${LS2G_INSTALL_INCLUDEDIR}/licenses/Eigen"
+    )
+    unset(_eigen)
+endif()
+
+# KLU from the submodule is embedded in lightsim2grid_core, and its headers are
+# part of the public interface as soon as KLU_SOLVER_AVAILABLE is defined
+# (KLUSolver.hpp includes klu.h and cs.h, which include the other four). They
+# are installed in their own directory, as cs.h is too generic a name to sit
+# next to the ls2g headers. These are the configured headers KLU was built
+# with: SuiteSparse's configure step writes them into the source tree.
+# A system KLU (strategies 1 and 2) ships its own headers and licenses.
+if(DEFINED _LS2G_BUNDLED_SUITESPARSE)
+    set(_SS "${_LS2G_BUNDLED_SUITESPARSE}")
+    install(FILES
+        "${_SS}/KLU/Include/klu.h"
+        "${_SS}/AMD/Include/amd.h"
+        "${_SS}/COLAMD/Include/colamd.h"
+        "${_SS}/BTF/Include/btf.h"
+        "${_SS}/CXSparse/Include/cs.h"
+        "${_SS}/SuiteSparse_config/SuiteSparse_config.h"
+        DESTINATION "${LS2G_INSTALL_INCLUDEDIR}/suitesparse"
+    )
+    # Their licenses, which cover the embedded binaries too: KLU, BTF and
+    # CXSparse are LGPL-2.1+, AMD and COLAMD BSD-3. SuiteSparse_config (BSD-3)
+    # has no license file of its own: its notice is in its README.
+    set(_ss_licenses "${LS2G_INSTALL_INCLUDEDIR}/licenses/SuiteSparse")
+    foreach(_pkg KLU BTF CXSparse)
+        install(FILES "${_SS}/${_pkg}/Doc/License.txt" "${_SS}/${_pkg}/Doc/lesser.txt"
+            DESTINATION "${_ss_licenses}/${_pkg}")
+    endforeach()
+    foreach(_pkg AMD COLAMD)
+        install(FILES "${_SS}/${_pkg}/Doc/License.txt"
+            DESTINATION "${_ss_licenses}/${_pkg}")
+    endforeach()
+    install(FILES "${_SS}/SuiteSparse_config/README.txt"
+        DESTINATION "${_ss_licenses}/SuiteSparse_config")
+    unset(_ss_licenses)
+    unset(_SS)
 endif()
 
 # Generate and install Config + ConfigVersion files

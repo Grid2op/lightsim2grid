@@ -255,10 +255,16 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``compute_pf`` / ``solve`` of the algorithms (*eg* ``NR_KLU().solve(...)``) take
   named arguments, and their tolerance is ``tol_pu``: in per unit, unlike the ``tol`` (in MVA)
   of ``LSGrid.ac_pf`` and the batch algorithms.
-- [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
-  algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
+- [FIXED] ``ContingencyAnalysis`` with a remote voltage regulator: connected rows failed after one
+  iteration. A KLU refactorization with a zero or collapsed pivot now re-pivots (no new ``analyze``).
 - [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
   case: they accepted points ``sn_mva`` times less converged than asked.
+- [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
+  algorithms is in MVA (divided by ``sn_mva`` internally), and a solver plugin receives it in
+  per unit; neither was stated.
+- [FIXED] the wheel and the sdist ship the licenses of the bundled SuiteSparse and Eigen code.
+- [ADDED] (C++ / plugins) the wheel ships the KLU headers (``include/suitesparse/``, on
+  ``lightsim2grid::core``'s include path): plugins no longer need a SuiteSparse checkout.
 - [ADDED] ``get_algo().get_outer_control_layout()``: the J rows / columns of the phase shifters, ratio
   groups and shunt controllers, for solvers that pose the same system (gpusim2grid).
 - [ADDED] ``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot``, ``NROuter_KLUStaticPivot``: KLU with a

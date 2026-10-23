@@ -4159,6 +4159,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // masked generators happen never to leave a bus without a controller.
         bool _has_pv_switching() const { return _pv_pinning_active_; }
 
+        // whether the grid has voltage-control groups (a remote regulator, an SVC): their
+        // bordered rows put zeros on the diagonal, so the pivots KLU fixed at the "n"
+        // factorization can be zero in a row's edited Jacobian (a contingency changes
+        // Ybus), whatever the batch masks. Only meaningful once the plan is built.
+        bool _has_voltage_control_groups() const {
+            return _grid_model.get_ac_voltage_control_plan().controllers().n_groups() > 0;
+        }
+
         // whether some row solves with slack weights of its own (_row_slack_weights): a
         // participant it disconnects, or one its slack pre-pass saturates
         bool _row_slack_weights_vary() const {

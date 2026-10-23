@@ -62,24 +62,25 @@ ls2g_match_core_build_flags(lm_algorithm)
 # thin counting/timing wrapper: its methods just forward into
 # KLULinearSolver's own analyze/factorize/refactorize/solve, which remain
 # ordinary, already-compiled-into-core symbols. So we still only need KLU's
-# *headers* here, never its implementation. Neither an installed
-# lightsim2grid_core CMake package nor a plain source-tree checkout exposes
-# those on its public include path (a private implementation detail of the
-# core .so), so point at the SuiteSparse submodule directly, header-only, as
-# a repo-relative fallback.
+# *headers* here, never its implementation. An installed lightsim2grid_core
+# puts them on its public include path, which lightsim2grid::core carries; a
+# plain source-tree checkout does not, so point at the SuiteSparse submodule
+# directly there.
 # -----------------------------------------------------------------------
-if(NOT DEFINED SUITESPARSE_SRC)
-    set(SUITESPARSE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../SuiteSparse")
-endif()
-if(EXISTS "${SUITESPARSE_SRC}/KLU/Include/klu.h")
-    target_include_directories(lm_algorithm PRIVATE
-        "${SUITESPARSE_SRC}/KLU/Include"
-        "${SUITESPARSE_SRC}/AMD/Include"
-        "${SUITESPARSE_SRC}/COLAMD/Include"
-        "${SUITESPARSE_SRC}/BTF/Include"
-        "${SUITESPARSE_SRC}/SuiteSparse_config"
-        "${SUITESPARSE_SRC}/CXSparse/Include"
-    )
+if(NOT lightsim2grid_core_FOUND)
+    if(NOT DEFINED SUITESPARSE_SRC)
+        set(SUITESPARSE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../SuiteSparse")
+    endif()
+    if(EXISTS "${SUITESPARSE_SRC}/KLU/Include/klu.h")
+        target_include_directories(lm_algorithm PRIVATE
+            "${SUITESPARSE_SRC}/KLU/Include"
+            "${SUITESPARSE_SRC}/AMD/Include"
+            "${SUITESPARSE_SRC}/COLAMD/Include"
+            "${SUITESPARSE_SRC}/BTF/Include"
+            "${SUITESPARSE_SRC}/SuiteSparse_config"
+            "${SUITESPARSE_SRC}/CXSparse/Include"
+        )
+    endif()
 endif()
 
 if(WIN32)

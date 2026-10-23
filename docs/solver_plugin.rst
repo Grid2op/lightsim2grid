@@ -435,6 +435,13 @@ The recommended approach uses ``find_package(lightsim2grid_core)`` to locate the
 installed headers and library.  A source-tree fallback is provided for in-repo
 development without a full ``pip install``.
 
+A plugin that includes ``Solvers.hpp`` (or ``KLUSolver.hpp``) also needs KLU's
+headers. The installed package ships them under ``include/suitesparse/`` and
+``lightsim2grid::core`` carries that directory, so nothing is needed there; a
+source-tree build adds the ``SuiteSparse`` submodule's include directories itself,
+as ``examples/lm_algorithm/CMakeLists.txt`` does. Without CMake, the directory is
+``os.path.join(lightsim2grid.get_include(), "suitesparse")``.
+
 .. code-block:: cmake
 
     cmake_minimum_required(VERSION 3.15)

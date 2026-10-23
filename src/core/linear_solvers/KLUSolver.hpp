@@ -58,6 +58,21 @@ class LS2G_API KLULinearSolver final
         ErrorType solve(Eigen::Ref<RealVect> b);
         ErrorType solve_transpose(Eigen::Ref<RealVect> b);  // J^T x = b, out of the factorization of J
 
+        // A refactorization keeps the pivot order chosen at the last factorization, and
+        // KLU only reports it failed on an exactly-zero pivot: a Jacobian that has
+        // drifted from the one the pivots were chosen for (another row of a batch, a few
+        // Newton steps later) is factorized with a growth that can collapse by many
+        // orders of magnitude (its diagonal of U, see klu_rcond), and the step it gives is
+        // garbage. With this guard on, refactorize() reports such a factorization as failed (SolverReFactor) so that a
+        // caller with a fallback (LinearSolverPolicy::set_refactor_fallback) re-pivots with
+        // a numeric factorize, symbolic analysis kept. Off by default: it costs one
+        // klu_rcond (O(n)) per factorization, and a caller with no fallback would
+        // only turn a poor-but-working solve into an error.
+        void set_pivot_growth_guard(bool val) noexcept {
+            if(val != guard_pivot_growth_) rcond_ref_ = 0.;   // no reference until the next factorize
+            guard_pivot_growth_ = val;
+        }
+
         // can this linear solver solve problem where RHS is a matrix
         static constexpr bool CAN_SOLVE_MAT = false;
 
@@ -85,6 +100,8 @@ class LS2G_API KLULinearSolver final
         const OrderingConstraints & ordering_constraints() const noexcept { return ordering_constraints_; }
 
     private:
+        bool   guard_pivot_growth_ = false;
+        double rcond_ref_          = 0.;   // klu_rcond of the last full factorization
         // KLU frees its symbolic / numeric handles through a pair of functions that
         // also need the `klu_common` control struct, so the deleters are stateful and
         // hold a pointer to `common_`. `common_` is therefore declared *before* the two
