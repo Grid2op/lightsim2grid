@@ -9,10 +9,15 @@
 #ifndef REACTIVE_LIMITS_LOOP_H
 #define REACTIVE_LIMITS_LOOP_H
 
+#include <limits>
 #include <vector>
 
 #include "BaseOuterLoop.hpp"
 #include "batch_algorithm/BusQCheck.hpp"
+
+// ReactiveLimitsLoop::frozen_buses, VoltageMonitoringLoop::switched_on and
+// HvdcAcEmulationLimitsLoop::regimes: the loops' state, read off a resume point
+#define LS2G_HAS_OUTER_LOOP_STATE_ACCESSORS 1
 
 namespace ls2g {
 
@@ -44,7 +49,8 @@ class LSGrid;
  * frozen ones it would release.
  *
  * An SVC's limits are its susceptance range at the bus' voltage, so they move with the
- * solve. With `robust_mode`, a remote controller bus whose own voltage is unrealistic is
+ * solve. In robust mode (`robust_mode` and the realistic band: the driver's unless the loop
+ * sets its own), a remote controller bus whose own voltage is unrealistic is
  * frozen at its units' target Q (MIN_REALISTIC_V / MAX_REALISTIC_V in OpenLoadFlow) and
  * restarted from `robust_restart_vm_pu`, as is one frozen at a limit with such a voltage. A
  * generator's limits follow the target P an outer loop gave it (LSGrid::gen_limits_at_outer_target, its
@@ -64,12 +70,14 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
             real_type mismatch_base_mva = 100.;
             /// OpenLoadFlow's voltageRemoteControlRobustMode: a remote controller whose own bus'
             /// voltage is unrealistic stops regulating, at its units' target Q, its bus restarted
-            /// at `robust_restart_vm_pu`
-            bool robust_mode = true;
+            /// at `robust_restart_vm_pu`. 1 on, 0 off, -1 (default): the driver's
+            /// (OuterLoopDriverParams::voltage_remote_control_robust_mode) -- one parameter in
+            /// OpenLoadFlow, for the loop and the unrealistic-voltage check alike
+            int robust_mode = -1;
             /// OpenLoadFlow's minRealisticVoltage / maxRealisticVoltage, pu (the robust mode
-            /// compares with them, with a margin)
-            real_type min_realistic_voltage = 0.8;
-            real_type max_realistic_voltage = 1.2;
+            /// compares with them, with a margin). NaN (default): the driver's, as robust_mode
+            real_type min_realistic_voltage = std::numeric_limits<real_type>::quiet_NaN();
+            real_type max_realistic_voltage = std::numeric_limits<real_type>::quiet_NaN();
             /// OpenLoadFlow's REALISTIC_VOLTAGE_MARGIN
             real_type realistic_voltage_margin = 1.02;
             /// the magnitude the robust mode restarts a bus from, pu
@@ -79,6 +87,22 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         ReactiveLimitsLoop();
         explicit ReactiveLimitsLoop(const Params & params);
         const Params & params() const { return params_; }
+
+        /// One controller bus the last solve left frozen: what a solve resuming from this
+        /// loop's state freezes again (see _initialize).
+        struct FrozenBus {
+            int bus_solver;
+            int state;          ///< -1 at its min, +1 at its max
+            bool realistic;     ///< frozen by the robust mode, at its target Q
+        };
+        /// read by an external batch solver resuming rows from this loop's state
+        /// (gpusim2grid's outer loops)
+        std::vector<FrozenBus> frozen_buses() const {
+            std::vector<FrozenBus> res;
+            for (const ControllerBus & bus : buses_)
+                if (bus.state != 0) res.push_back(FrozenBus{bus.bus_solver, bus.state, bus.realistic});
+            return res;
+        }
 
     protected:
         std::string _name() const override { return "ReactiveLimits"; }
@@ -119,7 +143,6 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         };
 
         /// the plan of every controller bus of `ctx` (bus_q_check)
-        static bus_q_check::BusQPlan _plan(const OuterContext & ctx);
         /// whether `ctx` has a voltage monitor (a held SVC controller of the plan)
         static bool _has_monitor(const OuterContext & ctx);
         /// the generation of a PV controller bus in this solve, MVar
@@ -148,6 +171,11 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         /// freeze / release a local bus in the algorithm's state
         void _freeze(OuterContext & ctx, ControllerBus & bus, real_type q_mvar, int state) const;
         void _release(OuterContext & ctx, ControllerBus & bus) const;
+        /// the robust mode of this solve, and the band out of which a remote controller's own
+        /// voltage is unrealistic (the margin applied): the loop's own where set, the driver's
+        /// otherwise (OuterContext::driver_params)
+        bool _robust(const OuterContext & ctx) const;
+        void _realistic_band(const OuterContext & ctx, real_type & v_low, real_type & v_high) const;
 
         // per solve (see _initialize)
         bus_q_check::BusQPlan plan_;

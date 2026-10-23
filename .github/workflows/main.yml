@@ -109,8 +109,8 @@ jobs:
 
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: true
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - name: Setup path
         run: echo "/opt/python/${{ matrix.python.name }}-${{ matrix.python.abi }}/bin/" >> $GITHUB_PATH
@@ -266,8 +266,8 @@ jobs:
 
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: true
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - name: Setup Python ${{ matrix.python.version }} ${{ matrix.win_arch.msvc}}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -420,8 +420,8 @@ jobs:
 
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: true
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
@@ -598,8 +598,8 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: true
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - name: Set up QEMU
         if: runner.os == 'Linux'
@@ -691,8 +691,8 @@ jobs:
         os: [ubuntu-latest, windows-2022, macos-14]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: true
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - name: Setup MSVC (windows)
         if: runner.os == 'Windows'
@@ -752,8 +752,8 @@ jobs:
         os: [ubuntu-latest, windows-2022, macos-14]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: true
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -810,8 +810,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: true
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -899,8 +899,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          submodules: true
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:

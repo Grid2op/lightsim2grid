@@ -58,16 +58,16 @@ compared with pandapower and pypowsybl when using grid2op.
 
 All of them has been run on a computer with a the following characteristics:
 
-- date: 2026-08-28 16:51  CEST
+- date: 2026-10-12 19:48  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
 - python version: 3.12.8.final.0 (64 bit)
-- numpy version: 2.3.5
+- numpy version: 2.4.6
 - pandas version: 2.3.3
-- pandapower version: 3.4.0
+- pandapower version: 3.5.4
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0
+- lightsim2grid version: 1.2.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -103,16 +103,16 @@ For an environment based on the IEEE case 14:
 ===========================  ======================  ========================================  ==========================
 case14_sandbox                 grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
 ===========================  ======================  ========================================  ==========================
-PP DC                                           105                               8.19                        0.876
-pypowsybl                                       444                               1.93                        1.58
-DC (SparseLU)                                  2820                               0.0525                      0.00199
-DC (KLU)                                       2780                               0.0519                      0.00154
-DC (NICSLU\*)                                  2840                               0.0517                      0.00157
-DC (CKTSO\*)                                   2840                               0.0519                      0.00162
-time serie \*\*                                                                   0.00057823                  0.000300405
-PTDF \*\*                                                                         1.52969e-05                 1.44983e-05
-contingency analysis \*\*\*                                                       0.0043565                   0.0010985
-LODF \*\*\*                                                                       0.00054865                  0.00046915
+PP DC                                           104                               8.26                        0.888
+pypowsybl                                       458                               1.85                        1.5
+DC (SparseLU)                                  2800                               0.0523                      0.00195
+DC (KLU)                                       2810                               0.0518                      0.00149
+DC (NICSLU\*)                                  2810                               0.0516                      0.00155
+DC (CKTSO\*)                                   2820                               0.0517                      0.00157
+time serie \*\*                                                                   0.000665334                 0.000304012
+PTDF \*\*                                                                         1.55011e-05                 1.46782e-05
+contingency analysis \*\*\*                                                       0.005818                    0.0010384
+LODF \*\*\*                                                                       0.00040655                  0.00034605
 ===========================  ======================  ========================================  ==========================
 
 And for an environment based on the IEEE case 118:
@@ -120,16 +120,16 @@ And for an environment based on the IEEE case 118:
 ===========================  ======================  ========================================  ==========================
 neurips_2020_track2            grid2op speed (it/s)    grid2op 'backend.runpf' time (ms / pf)    time in 'algo' (ms / pf)
 ===========================  ======================  ========================================  ==========================
-PP DC                                            98                               8.77                        1.05
-pypowsybl                                       333                               2.64                        2.2
-DC (SparseLU)                                  2490                               0.0614                      0.00524
-DC (KLU)                                       2500                               0.0595                      0.00371
-DC (NICSLU\*)                                  2510                               0.0592                      0.00365
-DC (CKTSO\*)                                   2510                               0.0593                      0.00374
-time serie \*\*                                                                   0.00272882                  0.00105585
-PTDF \*\*                                                                         0.000605272                 0.000586309
-contingency analysis \*\*\*                                                       0.00412654                  0.00251818
-LODF \*\*\*                                                                       0.000488484                 0.000331645
+PP DC                                          96.1                               8.94                        1.07
+pypowsybl                                     320                                 2.74                        2.29
+DC (SparseLU)                                2430                                 0.062                       0.00549
+DC (KLU)                                     2430                                 0.0604                      0.00366
+DC (NICSLU\*)                                2450                                 0.0603                      0.00371
+DC (CKTSO\*)                                 2450                                 0.0603                      0.00386
+time serie \*\*                                                                   0.00278846                  0.00101067
+PTDF \*\*                                                                         0.00043546                  0.000416135
+contingency analysis \*\*\*                                                       0.00429992                  0.00254945
+LODF \*\*\*                                                                       0.000514376                 0.000335102
 ===========================  ======================  ========================================  ==========================
 
 (see the section "Comments" below for details and especially the meaning of \*, \*\* and \*\*\*)
@@ -201,44 +201,43 @@ This is the text printed by ``benchmark_dc_solvers.py`` (see the note above) for
 For the IEEE case 14:
 +++++++++++++++++++++++++
 
-From a grid2op perspective, lightsim2grid allows to compute up to ~2843 DC steps each second (column `grid2op speed`, row `DC (NICSLU\*)`) on the case14_sandbox and "only" ~105 for the default PandaPower Backend (column `grid2op speed`, row `PP DC`), leading to a speed up of **~27** (2843 / 105) in this case.
+From a grid2op perspective, lightsim2grid allows to compute up to ~2818 DC steps each second (column `grid2op speed`, row `DC (CKTSO\*)`) on the case14_sandbox and "only" ~104 for the default PandaPower Backend (column `grid2op speed`, row `PP DC`), leading to a speed up of **~27** (2818 / 104) in this case.
 
-When compared to powsybl (with the pypowsybl backend), lightsim2grid is around **~6.4** times faster (444 vs 2843).
+When compared to powsybl (with the pypowsybl backend), lightsim2grid is around **~6.2** times faster (458 vs 2818).
 
-For this environment there is no sensible difference in using `KLU` linear solver (row `DC (KLU)`) compared to using the SparseLU solver of Eigen (row `DC`) (2824 vs 2785 iterations on the reported runs, might slightly vary across runs).
+For this environment there is no sensible difference in using `KLU` linear solver (row `DC (KLU)`) compared to using the SparseLU solver of Eigen (row `DC`) (2804 vs 2810 iterations on the reported runs, might slightly vary across runs).
 
 Linear solvers `KLU`, `NICSLU` and `CKTSO` achieve almost identical performances, at least we think the observed differences are within error margins.
 
-For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.352ms (`1. / 2843. * 1000.`) on average and on this 352 µs (or 0.352ms), only 2 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~350 µs are spent in the grid2op extra layer or in the backend implementation in this case (`100%` of the computation time - `=350 / 352`- is external to the powerflow algorithm)
+For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.355ms (`1. / 2818. * 1000.`) on average and on this 355 µs (or 0.355ms), only 2 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~353 µs are spent in the grid2op extra layer or in the backend implementation in this case (`100%` of the computation time - `=353 / 355`- is external to the powerflow algorithm)
 
-The `TimeSerie` module performs one DC powerflow in 0.000578 ms on average (row `time serie`, column `grid2op 'backend.runpf' time`), compared to 0.0517 ms for the fastest grid2op DC backend (`DC (NICSLU\*)`), a **~89x** speed up.
+The `TimeSerie` module performs one DC powerflow in 0.000665 ms on average (row `time serie`, column `grid2op 'backend.runpf' time`), compared to 0.0517 ms for the fastest grid2op DC backend (`DC (CKTSO\*)`), a **~78x** speed up.
 
-Similarly, the `ContingencyAnalysis` module performs one DC contingency in 0.00436 ms on average (row `contingency analysis`), a **~12x** speed up compared to the fastest grid2op DC backend.
+Similarly, the `ContingencyAnalysis` module performs one DC contingency in 0.00582 ms on average (row `contingency analysis`), a **~9x** speed up compared to the fastest grid2op DC backend.
 
-Using the PTDF matrix directly (row `PTDF`) is even faster: 1.53e-05 ms per powerflow, a **~3383x** speed up compared to the fastest grid2op DC backend.
+Using the PTDF matrix directly (row `PTDF`) is even faster: 1.55e-05 ms per powerflow, a **~3334x** speed up compared to the fastest grid2op DC backend.
 
-Using the LODF matrix (row `LODF`) to perform the contingency analysis is faster: 0.000549 ms per contingency, a **~94x** speed up compared to the fastest grid2op DC backend.
-
+Using the LODF matrix (row `LODF`) to perform the contingency analysis is faster: 0.000407 ms per contingency, a **~127x** speed up compared to the fastest grid2op DC backend.
 
 For the IEEE case 118:
 +++++++++++++++++++++++++
 
-From a grid2op perspective, lightsim2grid allows to compute up to ~2508 DC steps each second (column `grid2op speed`, row `DC (NICSLU\*)`) on the neurips_2020_track2 and "only" ~98 for the default PandaPower Backend (column `grid2op speed`, row `PP DC`), leading to a speed up of **~26** (2508 / 98) in this case.
+From a grid2op perspective, lightsim2grid allows to compute up to ~2449 DC steps each second (column `grid2op speed`, row `DC (NICSLU\*)`) on the neurips_2020_track2 and "only" ~96 for the default PandaPower Backend (column `grid2op speed`, row `PP DC`), leading to a speed up of **~25** (2449 / 96) in this case.
 
-When compared to powsybl (with the pypowsybl backend), lightsim2grid is around **~7.5** times faster (333 vs 2508).
+When compared to powsybl (with the pypowsybl backend), lightsim2grid is around **~7.7** times faster (320 vs 2449).
 
-For this environment there is no sensible difference in using `KLU` linear solver (row `DC (KLU)`) compared to using the SparseLU solver of Eigen (row `DC`) (2487 vs 2495 iterations on the reported runs, might slightly vary across runs).
+For this environment there is no sensible difference in using `KLU` linear solver (row `DC (KLU)`) compared to using the SparseLU solver of Eigen (row `DC`) (2433 vs 2431 iterations on the reported runs, might slightly vary across runs).
 
 Linear solvers `KLU`, `NICSLU` and `CKTSO` achieve almost identical performances, at least we think the observed differences are within error margins.
 
-For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.399ms (`1. / 2508. * 1000.`) on average and on this 399 µs (or 0.399ms), only 4 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~395 µs are spent in the grid2op extra layer or in the backend implementation in this case (`99%` of the computation time - `=395 / 399`- is external to the powerflow algorithm)
+For this environment, for lightsim2grid backend (and if we don't take into account the "agent time"), the computation time is vastly dominated by factor external to the powerflow solver. Indeed, doing a 'env.step' (column `grid2op speed (it/s)`) takes 0.408ms (`1. / 2449. * 1000.`) on average and on this 408 µs (or 0.408ms), only 4 µs are spent in the backend (column `time in 'algo' (ms / pf)`). Meaning that ~405 µs are spent in the grid2op extra layer or in the backend implementation in this case (`99%` of the computation time - `=405 / 408`- is external to the powerflow algorithm)
 
-The `TimeSerie` module performs one DC powerflow in 0.00273 ms on average (row `time serie`, column `grid2op 'backend.runpf' time`), compared to 0.0592 ms for the fastest grid2op DC backend (`DC (NICSLU\*)`), a **~22x** speed up.
+The `TimeSerie` module performs one DC powerflow in 0.00279 ms on average (row `time serie`, column `grid2op 'backend.runpf' time`), compared to 0.0603 ms for the fastest grid2op DC backend (`DC (NICSLU\*)`), a **~22x** speed up.
 
-Similarly, the `ContingencyAnalysis` module performs one DC contingency in 0.00413 ms on average (row `contingency analysis`), a **~14x** speed up compared to the fastest grid2op DC backend.
+Similarly, the `ContingencyAnalysis` module performs one DC contingency in 0.0043 ms on average (row `contingency analysis`), a **~14x** speed up compared to the fastest grid2op DC backend.
 
-Using the PTDF matrix directly (row `PTDF`) is even faster: 0.000605 ms per powerflow, a **~98x** speed up compared to the fastest grid2op DC backend.
+Using the PTDF matrix directly (row `PTDF`) is even faster: 0.000435 ms per powerflow, a **~138x** speed up compared to the fastest grid2op DC backend.
 
-Using the LODF matrix (row `LODF`) to perform the contingency analysis is faster: 0.000488 ms per contingency, a **~121x** speed up compared to the fastest grid2op DC backend.
+Using the LODF matrix (row `LODF`) to perform the contingency analysis is faster: 0.000514 ms per contingency, a **~117x** speed up compared to the fastest grid2op DC backend.
 
 See TL;DR section at the top of the file.

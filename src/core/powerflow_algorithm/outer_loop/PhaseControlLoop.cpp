@@ -18,23 +18,6 @@ namespace ls2g {
 
 namespace {
 
-const SolverBusIdVect & solver_map(const OuterContext & ctx)
-{
-    return ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver : ctx.grid->id_me_to_ac_solver();
-}
-
-// the solver buses of a branch connected at both ends, false otherwise
-template<class Container>
-bool closed_buses(const Container & branches, int el, const SolverBusIdVect & to_solver, int & b1, int & b2)
-{
-    if (!branches.get_status_global()[el] || !branches.get_status_side_1()[el] || !branches.get_status_side_2()[el]) {
-        return false;
-    }
-    b1 = to_solver[branches.get_bus_side_1(el).cast_int()].cast_int();
-    b2 = to_solver[branches.get_bus_side_2(el).cast_int()].cast_int();
-    return b1 >= 0 && b2 >= 0;
-}
-
 int find_root(std::vector<int> & parent, int x)
 {
     while (parent[static_cast<std::size_t>(x)] != x) {
@@ -45,24 +28,26 @@ int find_root(std::vector<int> & parent, int x)
 }
 
 // whether buses b1 and b2 stay connected through the lines and transformers once
-// transformer `skip` is removed (OpenLoadFlow's connectivity: its AC branches)
-bool connected_without(const LSGrid & grid, const SolverBusIdVect & to_solver, int skip, int b1, int b2)
+// transformer `skip` is removed (OpenLoadFlow's connectivity: its AC branches), in the row
+// `view` shows
+bool connected_without(const OuterGridView & view, int skip, int b1, int b2)
 {
-    std::vector<int> parent(to_solver.size());
+    std::vector<int> parent(view.id_solver_to_me().size());
     std::iota(parent.begin(), parent.end(), 0);
     auto join = [&](int a, int b) {
         if (a < 0 || b < 0 || static_cast<std::size_t>(a) >= parent.size() || static_cast<std::size_t>(b) >= parent.size()) return;
         parent[static_cast<std::size_t>(find_root(parent, a))] = find_root(parent, b);
     };
     int x1, x2;
-    const LineContainer & lines = grid.get_lines();
-    for (int el = 0; el < lines.nb(); ++el) {
-        if (closed_buses(lines, el, to_solver, x1, x2)) join(x1, x2);
+    const int nb_lines = view.grid().get_lines().nb();
+    for (int el = 0; el < nb_lines; ++el) {
+        if (view.line_closed(el, x1, x2)) join(x1, x2);
     }
-    const TrafoContainer & trafos = grid.get_trafos();
-    for (int el = 0; el < trafos.nb(); ++el) {
-        if (el != skip && closed_buses(trafos, el, to_solver, x1, x2)) join(x1, x2);
+    const int nb_trafos = view.grid().get_trafos().nb();
+    for (int el = 0; el < nb_trafos; ++el) {
+        if (el != skip && view.trafo_closed(el, x1, x2)) join(x1, x2);
     }
+    if (b1 < 0 || b2 < 0 || static_cast<std::size_t>(b1) >= parent.size() || static_cast<std::size_t>(b2) >= parent.size()) return false;
     return find_root(parent, b1) == find_root(parent, b2);
 }
 
@@ -74,13 +59,12 @@ real_type to_amps(real_type i_pu, real_type sn_mva, real_type vn_kv)
 
 }  // namespace
 
-std::vector<PhaseControlLoop::Shifter> PhaseControlLoop::shifters(const LSGrid & grid)
+std::vector<PhaseControlLoop::Shifter> PhaseControlLoop::shifters(const OuterGridView & view)
 {
     std::vector<Shifter> res;
-    const TrafoContainer & trafos = grid.get_trafos();
+    const TrafoContainer & trafos = view.grid().get_trafos();
     const TapChangers & ptc = trafos.get_tap_changers(true);
-    const SolverBusIdVect & to_solver = grid.id_me_to_ac_solver();
-    if (ptc.nb() != trafos.nb() || to_solver.size() == 0) return res;
+    if (ptc.nb() != trafos.nb() || view.id_me_to_solver().size() == 0) return res;
     for (int t = 0; t < trafos.nb(); ++t) {
         if (!ptc.has(t) || !ptc.regulating(t)) continue;
         const RegulationMode mode = ptc.mode(t);
@@ -88,8 +72,8 @@ std::vector<PhaseControlLoop::Shifter> PhaseControlLoop::shifters(const LSGrid &
         const int side = ptc.regulated(t);
         if (side != 1 && side != 2) continue;
         int b1, b2;
-        if (!closed_buses(trafos, t, to_solver, b1, b2) || b1 == b2) continue;
-        const bool regulates = mode != RegulationMode::ACTIVE_POWER || connected_without(grid, to_solver, t, b1, b2);
+        if (!view.trafo_closed(t, b1, b2) || b1 == b2) continue;
+        const bool regulates = mode != RegulationMode::ACTIVE_POWER || connected_without(view, t, b1, b2);
         res.push_back(Shifter{t, mode, side, regulates});
     }
     return res;
@@ -97,7 +81,7 @@ std::vector<PhaseControlLoop::Shifter> PhaseControlLoop::shifters(const LSGrid &
 
 void PhaseControlLoop::_declare(const OuterContext & ctx) const
 {
-    for (const Shifter & s : shifters(*ctx.grid)) {
+    for (const Shifter & s : shifters(ctx.view())) {
         ctx.controls->reserve_phase_shifter(s.trafo, s.mode == RegulationMode::ACTIVE_POWER && s.regulates);
     }
 }
@@ -109,8 +93,10 @@ bool PhaseControlLoop::_is_needed(const OuterContext & /*ctx*/) const
 
 void PhaseControlLoop::_initialize(OuterContext & ctx)
 {
-    shifters_ = shifters(*ctx.grid);
-    // the active power controllers regulate from the first solve on
+    shifters_ = shifters(ctx.view());
+    // the active power controllers regulate from the first solve on (no control to act
+    // through in detection mode)
+    if (ctx.controls == nullptr) return;
     for (const Shifter & s : shifters_) {
         if (s.mode != RegulationMode::ACTIVE_POWER || !s.regulates) continue;
         PhaseShifterControl * control = ctx.controls->phase_shifter(s.trafo);
@@ -203,13 +189,13 @@ void PhaseControlLoop::_detect(const OuterContext & ctx, std::vector<LimitViolat
     const LSGrid & grid = *ctx.grid;
     const TrafoContainer & trafos = grid.get_trafos();
     const TapChangers & ptc = trafos.get_tap_changers(true);
-    const SolverBusIdVect & to_solver = solver_map(ctx);
+    const OuterGridView view = ctx.view();
     const Eigen::Ref<const RealVect> vn_kv = grid.get_bus_vn_kv();
     const real_type sn = grid.get_sn_mva();
-    for (const Shifter & s : shifters(grid)) {
+    for (const Shifter & s : shifters(view)) {
         if (!s.regulates) continue;
         int b1, b2;
-        if (!closed_buses(trafos, s.trafo, to_solver, b1, b2) || b1 >= ctx.V->size() || b2 >= ctx.V->size()) continue;
+        if (!view.trafo_closed(s.trafo, b1, b2) || b1 >= ctx.V->size() || b2 >= ctx.V->size()) continue;
         const TrafoInfo info = trafos[s.trafo];
         const cplx_type V1 = (*ctx.V)(b1);
         const cplx_type V2 = (*ctx.V)(b2);

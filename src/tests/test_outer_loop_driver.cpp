@@ -247,7 +247,13 @@ TEST_CASE("the outer iterations are capped", "[outer_loop]")
     CHECK(solve(grid).size() == 0);
     const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
     CHECK(stats.status == OuterLoopStatus::UNSTABLE);
-    CHECK(stats.nb_outer_iterations == 30);
+    CHECK(stats.nb_outer_iterations == 20);  // OpenLoadFlow's maxOuterLoopIterations
+    // the cap is the grid's
+    ls2g::OuterLoopDriverParams driver = grid.get_outer_loop_driver_params();
+    driver.max_outer_iterations = 7;
+    grid.set_outer_loop_driver_params(driver);
+    CHECK(solve(grid).size() == 0);
+    CHECK(grid.get_algo().get_outer_loop_stats().nb_outer_iterations == 7);
     CHECK(grid.get_algo().get_error() == ErrorType::TooManyIterations);
 }
 
@@ -290,12 +296,11 @@ TEST_CASE("the unrealistic-voltage check", "[outer_loop]")
         grid.clear_outer_loops();
         // every bus is "unrealistic" in a band that excludes 1 pu, and is checked whatever
         // its nominal voltage
-        ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
-        REQUIRE(cfg.real_params.size() >= 9);
-        cfg.real_params[6] = 1.05;
-        cfg.real_params[7] = 1.2;
-        cfg.real_params[8] = 0.;
-        grid.set_ac_algo_config(cfg);
+        ls2g::OuterLoopDriverParams driver;
+        driver.min_realistic_voltage = 1.05;
+        driver.max_realistic_voltage = 1.2;
+        driver.min_nominal_voltage_realistic_check = 0.;
+        grid.set_outer_loop_driver_params(driver);
         CHECK(solve(grid).size() == 0);
         CHECK(grid.get_algo().get_error() == ErrorType::UnrealisticState);
         CHECK(grid.get_algo().get_outer_loop_stats().unrealistic_state);
@@ -304,9 +309,10 @@ TEST_CASE("the unrealistic-voltage check", "[outer_loop]")
         LSGrid grid = make_grid();
         grid.change_algorithm("NROuter_SparseLU");
         grid.clear_outer_loops();
-        ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
-        cfg.real_params[6] = 1.05;  // the grid is 138 kV, below the default 180 kV threshold
-        grid.set_ac_algo_config(cfg);
+        ls2g::OuterLoopDriverParams driver;
+        driver.min_realistic_voltage = 1.05;
+        driver.min_nominal_voltage_realistic_check = 180.;  // the grid is 138 kV, below it
+        grid.set_outer_loop_driver_params(driver);
         CHECK(solve(grid).size() == 3);
     }
     SECTION("in robust mode, a loop able to fix it postpones the check") {
@@ -315,10 +321,10 @@ TEST_CASE("the unrealistic-voltage check", "[outer_loop]")
         grid.change_algorithm("NROuter_SparseLU");
         grid.clear_outer_loops();
         grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{U, S}, log, true, true));
-        ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
-        cfg.real_params[6] = 1.05;
-        cfg.real_params[8] = 0.;
-        grid.set_ac_algo_config(cfg);
+        ls2g::OuterLoopDriverParams driver;
+        driver.min_realistic_voltage = 1.05;
+        driver.min_nominal_voltage_realistic_check = 0.;
+        grid.set_outer_loop_driver_params(driver);
         // the loop still ran (the first solve was not rejected), then the check failed
         CHECK(solve(grid).size() == 0);
         CHECK(grid.get_algo().get_error() == ErrorType::UnrealisticState);
@@ -384,7 +390,7 @@ TEST_CASE("a rejected configuration changes nothing", "[outer_loop]")
     grid.change_algorithm("NROuter_SparseLU");
     const ls2g::AlgoConfig before = grid.get_ac_algo_config();
     ls2g::AlgoConfig cfg = before;
-    cfg.int_params[4] = 12;   // a valid driver part ...
+    cfg.int_params[5] = 12;   // a valid driver part ...
     cfg.int_params[3] = 0;    // ... with an invalid Newton part (refactor_every_n)
     CHECK_THROWS(grid.set_ac_algo_config(cfg));
     CHECK(grid.get_ac_algo_config().int_params == before.int_params);
@@ -424,4 +430,34 @@ TEST_CASE("NROuter declares the capabilities of the Newton it wraps", "[outer_lo
     CHECK(hvdc);
     CHECK(remote);
     CHECK(mismatch);
+}
+
+namespace {
+
+// a config whose first values are valid and changed, and whose refactor_every_n (int_params[3])
+// is refused: the call throws, and must leave every parameter as it was
+template<class Algo>
+void check_rejected_config_changes_nothing()
+{
+    Algo algo;
+    const ls2g::AlgoConfig before = algo.get_config();
+    ls2g::AlgoConfig cfg = before;
+    REQUIRE(cfg.int_params.size() >= 4);
+    REQUIRE(cfg.real_params.size() >= 6);
+    cfg.real_params[0] = 0.5 * before.real_params[0];  // max_dVa
+    cfg.real_params[1] = 0.5 * before.real_params[1];  // max_dVm
+    cfg.int_params[2] = before.int_params[2] + 1;      // ls_max_iter
+    cfg.int_params[3] = 0;                             // refactor_every_n: refused
+    CHECK_THROWS(algo.set_config(cfg));
+    const ls2g::AlgoConfig after = algo.get_config();
+    CHECK(after.int_params == before.int_params);
+    CHECK(after.real_params == before.real_params);
+}
+
+}  // namespace
+
+TEST_CASE("a rejected AlgoConfig leaves the algorithm as it was", "[outer_loop][algo_config]")
+{
+    SECTION("the Newton") { check_rejected_config_changes_nothing<ls2g::NR_SparseLU>(); }
+    SECTION("the outer-loop driver around it") { check_rejected_config_changes_nothing<ls2g::NROuter_SparseLU>(); }
 }

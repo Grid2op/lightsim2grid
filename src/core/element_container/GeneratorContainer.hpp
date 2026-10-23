@@ -174,6 +174,8 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
                                          solver_control, "GeneratorContainer::rejoin_slackbus_if_able");
         }
         void remove_all_slackbus(){ slack_.remove_all(); }
+        /// every generator out of the slack, still flagged "can participate" (see SlackParticipation::leave_all)
+        void leave_all_slackbus(){ slack_.leave_all(); }
 
         /// add, per bus, the active power (MW, generator convention) the connected generators
         /// produce: what LSGrid::assign_slack_to_most_connected shares the slack by

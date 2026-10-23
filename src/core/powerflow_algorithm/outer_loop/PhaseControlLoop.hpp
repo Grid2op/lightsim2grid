@@ -69,8 +69,8 @@ class LS2G_API PhaseControlLoop final : public BaseOuterLoop
             int side;             // the regulated side
             bool regulates;       // false: an active power one needed for the connectivity
         };
-        /// the phase shifters of `grid`, see the class comment
-        static std::vector<Shifter> shifters(const LSGrid & grid);
+        /// the phase shifters of the grid `view` shows, see the class comment
+        static std::vector<Shifter> shifters(const OuterGridView & view);
 
     private:
         std::vector<Shifter> shifters_;  // per solve, see _initialize

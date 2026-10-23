@@ -52,6 +52,9 @@ template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMe
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMethod::BX>;
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
 template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>>>;
+template class LS2G_API NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, MultiSlackNRSystem>;
+template class LS2G_API NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, SingleSlackNRSystem>;
+template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>>>;
 #endif
 
 // ---- NICSLU (optional, or a doc-only stand-in under _READ_THE_DOCS -- see

@@ -55,6 +55,12 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<NRRefactorRetry_KLU>(); });
     add_builtin("NROuter_KLU",
         []{ return std::make_unique<NROuter_KLU>(); });
+    add_builtin("NR_KLUStaticPivot",
+        []{ return std::make_unique<NR_KLUStaticPivot>(); });
+    add_builtin("NRSing_KLUStaticPivot",
+        []{ return std::make_unique<NRSing_KLUStaticPivot>(); });
+    add_builtin("NROuter_KLUStaticPivot",
+        []{ return std::make_unique<NROuter_KLUStaticPivot>(); });
 #endif // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE

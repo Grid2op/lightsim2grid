@@ -108,7 +108,7 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         ``slack_weights``, an out-of-range id in ``slack_ids`` / ``pv`` / ``pq``, a bus listed in more
         than one of them, an empty ``slack_ids``, a negative ``max_iter`` (0 is accepted: it returns
         the pre-iteration state, before any Newton-Raphson / Gauss-Seidel step), or a non-finite or
-        non-positive ``tol`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
+        non-positive ``tol_pu`` all raise a clean ``RuntimeError`` (or ``IndexError`` for out-of-range
         ids) instead of touching the underlying solver. This validation is skipped on the internal
         C++ code path used by :class:`lightsim2grid.network.LSGrid` and the batch solvers
         (:class:`~lightsim2grid.contingencyAnalysis.ContingencyAnalysis`,
@@ -134,8 +134,14 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
         Index of the pq buses
     max_iter: ``int``
         Maximum number of iterations performed by the solver. [might be ignore by some solvers]
-    tol: ``float``
-        Solver tolerance (*eg* 1e-8) [might be ignore by some solvers]
+    tol_pu: ``float``
+        Solver tolerance (*eg* 1e-8) [might be ignore by some solvers], **in per unit** (not in MVA):
+        the solver has converged when the infinity norm of the mismatch vector (the largest active
+        or reactive mismatch of any bus) is below ``tol_pu``. It only sees per-unit inputs and has
+        no notion of ``sn_mva``, so it compares the per-unit mismatch with ``tol_pu`` as is. This differs from the ``tol`` of
+        :func:`lightsim2grid.network.LSGrid.ac_pf`, of the batch algorithms and of
+        :class:`lightsim2grid.lightSimBackend.LightSimBackend`, which is in MVA: to reproduce
+        their criterion here, pass ``tol / sn_mva``.
 
     Examples
     ---------
@@ -485,6 +491,18 @@ const std::string DocSolver::set_refactor_every_n = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::constrained_ordering = R"mydelimiter(
+    Whether the linear solver orders the rows the outer loops switch by value (remote voltage
+    control, transformer and shunt voltage control) after the voltage-magnitude columns that keep
+    their pivot valid in both forms, so that a switch does not cost a new factorization. Only the
+    KLU-based algorithms can: on by default for ``*_KLUStaticPivot``, off for ``*_KLU``, and
+    setting it on another algorithm raises. Part of :func:`get_config`, so a grid copy and the
+    batch classes keep it. Takes effect on the next solve, which analyzes the Jacobian again.
+
+    .. seealso:: :ref:`constrained-ordering`
+
+)mydelimiter";
+
 const std::string DocSolver::get_config = R"mydelimiter(
     Return a :class:`lightsim2grid.algorithm.AlgoConfig` capturing every scaling/refactor policy
     type and parameter above, as a single serializable object.
@@ -671,12 +689,41 @@ const std::string DocSolver::NRRefactorRetry_KLU = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::NR_KLUStaticPivot = R"mydelimiter(
+    Newton-Raphson with KLU, refactorizing the Jacobian on a static pivot order: the
+    ``*_KLUStaticPivot`` family (``NR_KLUStaticPivot``, multi-slack; ``NRSing_KLUStaticPivot``,
+    single-slack; ``NROuter_KLUStaticPivot``, with OpenLoadFlow's outer loops).
+
+    The first factorization is KLU's own, which chooses the pivots. Every refactorization
+    after it keeps those pivots and the nonzero pattern of the factors, and recomputes the
+    values with the left-looking column algorithm of Gilbert and Peierls: the same numerical
+    work as KLU's refactorization, without the row scaling and the storage it goes through
+    each time. The results agree with the ``*_KLU`` algorithms up to round-off, not bit for
+    bit.
+
+    A refactorization whose pivot is zero (or, with the refactorization fallback on, whose
+    reciprocal pivot growth is too small) is rejected, and the fallback factorizes again
+    with new pivots, as with KLU.
+
+    The pivot order comes from AMD with ordering constraints (``constrained_ordering``, on by
+    default here): the rows the outer loops switch by value are eliminated after the voltage
+    magnitude columns of their buses, so that a switch does not land a zero pivot.
+
+    See :ref:`static-pivot-refactorization` for the method and its references, and
+    :ref:`constrained-ordering` for the ordering.
+
+)mydelimiter";
+
 const std::string DocSolver::NROuter = R"mydelimiter(
     Single-slack Newton-Raphson with OpenLoadFlow's outer loops run around it (the
     ``NROuter_*`` family: ``NROuter_SparseLU``, ``NROuter_KLU``, ...).
 
     The loops are the grid's (:func:`lightsim2grid.network.LSGrid.add_outer_loop`); without
-    any edit it is OpenLoadFlow's default list, in its order. The driver follows
+    any edit it is OpenLoadFlow's default list, in its order. So are the driver's parameters
+    (:func:`lightsim2grid.network.LSGrid.set_outer_loop_driver_params`): the grid hands both
+    over before each solve. A grid loaded from pypowsybl runs the loops, and the driver
+    parameters, of the OpenLoadFlow it ships (see
+    :func:`lightsim2grid.network.olf_outer_loops`). The driver follows
     OpenLoadFlow's: passes over the loops, a re-solve after every loop that changed
     something, a cap on the total number of outer iterations, and the check that no
     voltage ended up outside the realistic band.
@@ -687,6 +734,20 @@ const std::string DocSolver::NROuter = R"mydelimiter(
     `get_linear_solver_stats()`).
 
     `get_outer_loop_stats()` tells what the last solve's loops did.
+
+)mydelimiter";
+
+const std::string DocSolver::OuterLoopDriverParams = R"mydelimiter(
+    The parameters of the outer-loop driver of the ``NROuter_*`` algorithms, with OpenLoadFlow's
+    names: ``maxOuterLoopIterations``, ``voltageRemoteControlRobustMode``,
+    ``minRealisticVoltage`` / ``maxRealisticVoltage`` and
+    ``minNominalVoltageRealisticVoltageCheck``. They belong to the grid
+    (:func:`LSGrid.set_outer_loop_driver_params`), which hands them to its algorithm with its
+    outer loops before each solve.
+
+    The defaults are OpenLoadFlow's own. A grid loaded with
+    :func:`lightsim2grid.network.init_from_pypowsybl` takes those of the OpenLoadFlow pypowsybl
+    ships instead (see :func:`lightsim2grid.network.olf_outer_loops`).
 
 )mydelimiter";
 
@@ -791,7 +852,10 @@ const std::string DocSolver::ReactiveLimitsLoop = R"mydelimiter(
     ``realistic_voltage_margin``) is frozen and restarted from ``robust_restart_vm_pu``.
 
     Every parameter is a keyword argument of the constructor, OpenLoadFlow's value by default,
-    and read-only afterwards.
+    and read-only afterwards. ``robust_mode`` (``None``) and the realistic band (``NaN``) are
+    by default the outer-loop driver's (``LSGrid.set_outer_loop_driver_params``): OpenLoadFlow
+    has one parameter for each, read by this loop and by the unrealistic-voltage check alike.
+    A value given here holds for this loop only.
 
 )mydelimiter";
 
@@ -3933,6 +3997,7 @@ const std::string DocLSGrid::set_reference_slack_bus = R"mydelimiter(
     it as the reference of the whole batch: with ``handle_disconnected_grid``, the
     contingencies that strand it are skipped. Set it before building the batch object (it
     works on a copy of the grid); ``ContingencyAnalysis.pick_reference_slack`` suggests one.
+    Kept by a pickle and by :func:`save_binary` as well.
 
 )mydelimiter";
 
@@ -4335,7 +4400,8 @@ const std::string DocLSGrid::cap_slack_at_active_limits = R"mydelimiter(
     distributed slack (generator or storage unit) that the last :func:`ac_pf` pushed past its
     ``[min_p, max_p]`` by more than ``tol_mw`` -- a ``LOW_P`` / ``HIGH_P`` record of
     :func:`get_physical_violations` -- leaves the slack at that limit, and the grid is solved again
-    (``max_iter``, ``tol``, starting from its current voltages), until no unit is pushed out
+    (``max_iter``, ``tol`` -- in MVA, as for :func:`ac_pf` -- starting from its current voltages),
+    until no unit is pushed out
     (``max_rounds``).
 
     The Newton solve's distributed slack has no bounds: it shares its whole mismatch between the
@@ -4387,9 +4453,13 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       ``MonitoringVoltageOuterLoop`` would switch it to voltage control
       (``LOW_VOLTAGE_SVC_STANDBY`` / ``HIGH_VOLTAGE_SVC_STANDBY`` on the ``SVC``, ``value`` the
       regulated voltage and ``limit`` the threshold, in kV; AC only);
-    - a generator regulating a remote bus whose own bus leaves the realistic range set with
-      :func:`set_remote_voltage_control_vm_range` by more than ``tol_vm_pu``: OpenLoadFlow's
-      robust remote voltage control would switch it to PQ (``LOW_VOLTAGE_REMOTE_CONTROL`` /
+    - a generator regulating a remote bus whose own bus leaves the realistic range of the
+      ``ReactiveLimits`` loop (``min_realistic_voltage`` / ``max_realistic_voltage``, the
+      driver's unless the loop sets its own, with its margin) by more than ``tol_vm_pu``
+      (this check and the reactive capability above are that loop's test: the grid's, or one
+      with its default parameters when the grid runs none):
+      OpenLoadFlow's robust remote voltage control would switch it to PQ
+      (``LOW_VOLTAGE_REMOTE_CONTROL`` /
       ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the ``GENERATOR``, ``value`` its own bus voltage and
       ``limit`` the bound, in kV; AC only);
     - an hvdc line in angle-droop mode pushed past its maximum power (``HIGH_P``);
@@ -5425,9 +5495,21 @@ const std::string DocLSGrid::get_dc_slack_weights_solver = R"mydelimiter(
 const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
     This function returns the (complex) `Ybus` matrix used to compute the AC powerflow.
 
-    The resulting matrix is a CSC scipy sparse matrix of complex number.
+    The resulting matrix is a CSC scipy sparse matrix of complex number, in per unit.
 
-    It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
+    It is a square matrix in the solver bus labelling: one row (and one column) per **connected**
+    bus of the grid, the row of the grid bus ``k`` being ``id_me_to_ac_solver()[k]``.
+
+    .. versionchanged:: 1.2.0
+        This is now a read only view of the matrix the grid holds, and no longer a copy of it.
+
+    .. warning::
+        The arrays of the returned matrix are the ones the grid uses, not a copy: it is only
+        valid until a powerflow of this grid rebuilds that matrix (after a change of topology
+        or of an admittance, or a reset of the solver). Reading it after that is undefined:
+        it can show the new values, the old ones, or crash. Call `.copy()` on it to keep it,
+        and to pass it to a function of lightsim2grid taking a sparse matrix (for example
+        the `compute_pf` of an algorithm), which needs writeable arrays.
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
@@ -5459,12 +5541,23 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::get_dcYbus_solver = R"mydelimiter(
-    This function returns the (complex) `Ybus` matrix used to compute the DC powerflow
-    (its imaginary part should be 0.).
+    This function returns the (real) `Ybus` matrix used to compute the DC powerflow.
 
-    The resulting matrix is a CSC scipy sparse matrix of complex number.
+    The resulting matrix is a CSC scipy sparse matrix of real number, in per unit.
 
-    It is a square matrix, as many rows (columns) as there are **connected** buses on the grid.
+    It is a square matrix in the solver bus labelling: one row (and one column) per **connected**
+    bus of the grid, the row of the grid bus ``k`` being ``id_me_to_dc_solver()[k]``.
+
+    .. versionchanged:: 1.2.0
+        This is now a read only view of the matrix the grid holds, and no longer a copy of it.
+
+    .. warning::
+        The arrays of the returned matrix are the ones the grid uses, not a copy: it is only
+        valid until a powerflow of this grid rebuilds that matrix (after a change of topology
+        or of an admittance, or a reset of the solver). Reading it after that is undefined:
+        it can show the new values, the old ones, or crash. Call `.copy()` on it to keep it,
+        and to pass it to a function of lightsim2grid taking a sparse matrix (for example
+        the `compute_pf` of an algorithm), which needs writeable arrays.
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
@@ -5606,10 +5699,10 @@ const std::string DocLSGrid::get_Ybus = R"mydelimiter(
 
 
 const std::string DocLSGrid::get_dcYbus = R"mydelimiter(
-    This function returns the (complex) `Ybus` matrix (for the DC powerflow)
-    (its imaginary part should be 0.) with the gridmodel convention.
+    This function returns the (real) `Ybus` matrix (for the DC powerflow) with the gridmodel
+    convention.
 
-    The resulting matrix is a CSC scipy sparse matrix of complex number.
+    The resulting matrix is a CSC scipy sparse matrix of real number, in per unit.
 
     It is a square matrix, as many rows (columns) as there are **total** buses on the grid.
 
@@ -5782,7 +5875,11 @@ const std::string DocLSGrid::ac_pf = R"mydelimiter(
         last iterate of a diverged powerflow does.
     
     tol: ``float``
-        Tolerance criteria to stop the computation. This should be > 0 real number.
+        Tolerance criteria to stop the computation, **in MVA** (not in per unit): the powerflow
+        has converged when the infinity norm of the mismatch vector is below ``tol``, that is
+        when no bus has an active or reactive mismatch larger than ``tol`` MW / MVAr.
+        It is divided by :func:`get_sn_mva` before reaching the solver, which works in per unit.
+        This should be a > 0 real number.
 
     Returns
     -------
@@ -5807,7 +5904,7 @@ const std::string DocLSGrid::ac_pf = R"mydelimiter(
         # maximum number of iteration
         nb_iter = 10  # a good default
 
-        # tolerance
+        # tolerance, in MVA
         tol = 1e-8
 
         V = grid_model.ac_pf(Vinit, nb_iter, tol)
@@ -6134,8 +6231,8 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
     set before :func:`dc_pf` is called, not only before :func:`ac_pf`.
 
     Buses whose magnitude is fixed (ordinary PV buses) are always set to their set-point.
-    The option is copied with the grid, so the batch algorithms built from it inherit it. It
-    is not saved by :func:`get_state` or the binary format.
+    The option is copied with the grid, so the batch algorithms built from it inherit it, and
+    kept by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------
@@ -6144,35 +6241,22 @@ const std::string DocLSGrid::set_keep_vinit_at_group_controlled_buses = R"mydeli
 
 )mydelimiter";
 
-const std::string DocLSGrid::set_remote_voltage_control_vm_range = R"mydelimiter(
-    Set the range of voltage (pu of its own bus' nominal voltage) a generator regulating a
-    REMOTE bus may sit at, for the physical checks: a remote controller whose own bus ends up
-    below ``min_vm_pu`` or above ``max_vm_pu`` is reported as ``LOW_VOLTAGE_REMOTE_CONTROL`` /
-    ``HIGH_VOLTAGE_REMOTE_CONTROL`` (on the ``GENERATOR``, ``value`` its own bus voltage and
-    ``limit`` the bound, both in kV) by :func:`get_physical_violations` and every batch's
-    ``compute_physical_violations``.
+const std::string DocLSGrid::set_outer_loop_driver_params = R"mydelimiter(
+    Set the parameters of the outer-loop driver an ``NROuter_*`` algorithm runs this grid's
+    outer loops with (see :class:`lightsim2grid.algorithm.OuterLoopDriverParams`). They are
+    handed to the algorithm with the loops before each solve, by a single solve and by the
+    batch algorithms alike. The ``ReactiveLimits`` loop's robust mode and realistic band are
+    these too, unless the loop was given its own (one parameter each in OpenLoadFlow), and so
+    is what :func:`get_physical_violations` reports against them.
 
-    This mirrors PowSyBl OpenLoadFlow's "robust" remote voltage control
-    (``voltageRemoteControlRobustMode``), which switches such a controller to PQ at its target
-    reactive power: there the range is ``[minRealisticVoltage * 1.02, maxRealisticVoltage / 1.02]``.
-    :func:`lightsim2grid.network.init_from_pypowsybl` sets it to OpenLoadFlow's defaults.
-
-    Never read by a powerflow. ``NaN`` (the default) on both sides: no check; ``NaN`` on one
-    side only checks the other. Copied with the grid, so a batch algorithm built from it
-    inherits it, and kept by a pickle and by :func:`save_binary`.
+    OpenLoadFlow's own defaults until set. :func:`lightsim2grid.network.init_from_pypowsybl`
+    sets those of the OpenLoadFlow pypowsybl ships. Copied with the grid, and kept by a pickle
+    and by :func:`save_binary`, as the list of outer loops is.
 
     Parameters
     ----------
-    min_vm_pu: ``float``
-        Lowest realistic voltage of a remote controller's own bus, pu (``NaN``: not checked)
-    max_vm_pu: ``float``
-        Highest realistic voltage of a remote controller's own bus, pu (``NaN``: not checked)
-
-)mydelimiter";
-
-const std::string DocLSGrid::get_remote_voltage_control_vm_range = R"mydelimiter(
-    One bound of the range set by :func:`set_remote_voltage_control_vm_range` (``NaN`` by
-    default: not checked).
+    params: :class:`lightsim2grid.algorithm.OuterLoopDriverParams`
+        The driver's parameters
 
 )mydelimiter";
 
@@ -6203,7 +6287,7 @@ const std::string DocLSGrid::set_hold_frozen_regulators = R"mydelimiter(
     check of :func:`get_physical_violations` (they hold no bus); their release is still reported.
 
     Off by default. The option is copied with the grid, so the batch algorithms built from it
-    inherit it. It is not saved by :func:`get_state` or the binary format.
+    inherit it, and kept by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------
@@ -7524,7 +7608,8 @@ const std::string DocTimeSeries::compute_Vs = R"mydelimiter(
         Total number of iteration (>0 integer)
 
     tol: ``float``
-        Solver tolerance (> 0. float)
+        Solver tolerance, **in MVA** (not in per unit), on the infinity norm of the mismatch
+        vector, as for :func:`lightsim2grid.network.LSGrid.ac_pf` (> 0. float)
 
     Returns
     ----------
@@ -7668,6 +7753,9 @@ const std::string DocTimeSeries::init_from_n_powerflow = R"mydelimiter(
     to :func:`lightsim2grid.timeSerie.TimeSeriesCPP.compute_Vs`. Every other step is
     initialized with the result of the step before it either way.
 
+    With an ``NROuter_*`` algorithm, the first step's outer loops also start from where the
+    "n" powerflow's ended, as every other step's start from the step before it.
+
 )mydelimiter";
 
 const std::string DocInjectionSweep::InjectionSweep = R"mydelimiter(
@@ -7700,6 +7788,10 @@ const std::string DocInjectionSweep::init_from_n_powerflow = R"mydelimiter(
 
     Default: ``False``, meaning every step is initialized with the input vector given to
     :func:`lightsim2grid.injectionSweep.InjectionSweepCPP.compute_Vs`.
+
+    With an ``NROuter_*`` algorithm, each step's outer loops also start from where the "n"
+    powerflow's ended (frozen buses, taps, sections, and the targets ``DistributedSlack``
+    moved where the step does not set its own), not from the grid.
 
 )mydelimiter";
 
@@ -7902,6 +7994,91 @@ const std::string DocContingencyAnalysis::add_multiple_n1 = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
+    Adds one contingency tripping, together, branches, shunts, loads and generators (any of the four lists may be
+    empty, not all of them). A contingency registers once: adding one already registered changes nothing.
+
+    - a branch (powerline or transformer, numbered lines then transformers) is taken out of Ybus, as with
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_nk`;
+    - a shunt too: it is an admittance, one diagonal coefficient (in DC its active part leaves the injection).
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` raises if the shunt regulates a
+      voltage and the outer loops run hold a ShuntVoltageControl one (that loop owns its sections);
+    - a load leaves the injection, its active and reactive power;
+    - a generator leaves it too (its active power, and the reactive setpoint of one that does not regulate voltage)
+      and the distributed slack is re-weighted without it. When it is the last one regulating its own bus, that bus
+      turns PQ for the contingency, as :func:`lightsim2grid.scenarioSweep.ScenarioSweepCPP.set_contingency_gens`
+      does it. A generator regulating a remote bus, or standing on a bus a control group holds, is refused by
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute`;
+    - a branch of ``branch_ids_side1`` (``branch_ids_side2``) is opened at side 1 (side 2) only: its other end stays
+      connected and still carries the branch's charging, as a branch open at one end in the grid does. This is how
+      OpenLoadFlow models a branch whose breaker opens at one end only (see
+      :func:`lightsim2grid.network.ContingencyPropagator.opened_sides`). Its flows read 0, it is not checked against
+      its current limits and the outer loops see it as open, as for a branch opened at both ends. A branch named at
+      both sides, or also in ``branch_ids``, is opened at both.
+
+    What the contingency loses is made up by the distributed slack (``redistribute_slack`` shares it OLF-like before
+    the solve), and a bus it strands is handled as a branch contingency strands one (``handle_disconnected_grid``).
+
+    Parameters
+    ----------
+    branch_ids: ``list`` (of ``int``)
+        The powerlines / transformers to disconnect (lines first, then transformers).
+    shunt_ids: ``list`` (of ``int``)
+        The shunts to disconnect.
+    load_ids: ``list`` (of ``int``)
+        The loads to disconnect.
+    gen_ids: ``list`` (of ``int``)
+        The generators to disconnect.
+    branch_ids_side1: ``list`` (of ``int``)
+        The powerlines / transformers to open at side 1 only (same numbering as ``branch_ids``).
+    branch_ids_side2: ``list`` (of ``int``)
+        The powerlines / transformers to open at side 2 only.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::add_contingency_shunt = R"mydelimiter(
+    Adds one contingency tripping shunts only: a single shunt id, or a list of them all tripped together. See
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::add_contingency_load = R"mydelimiter(
+    Adds one contingency tripping loads only: a single load id, or a list of them all tripped together. See
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::add_contingency_gen = R"mydelimiter(
+    Adds one contingency tripping generators only: a single generator id, or a list of them all tripped together.
+    See :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::remove_contingency = R"mydelimiter(
+    Removes the contingency tripping exactly these branches, shunts, loads and generators, and opening these branches
+    at one end (see
+    :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`).
+
+    Returns
+    -------
+    success: ``bool``
+        Whether such a contingency was registered.
+
+)mydelimiter";
+
+const std::string DocContingencyAnalysis::my_contingencies = R"mydelimiter(
+    Everything each contingency trips, in the row order of the results.
+
+    Returns
+    -------
+    my_contingencies: ``list``
+        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2)`` per contingency,
+        each a sorted list (the last two: the branches opened at that side only).
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults` lists the branches opened at both
+        ends only.
+
+)mydelimiter";
+
 const std::string DocContingencyAnalysis::clear = R"mydelimiter(
     Clear the list of all contingencies. After a call to this method, you will need to re add some contingencies with
 
@@ -7984,7 +8161,8 @@ const std::string DocContingencyAnalysis::compute = R"mydelimiter(
         Total number of iteration (>0 integer)
 
     tol: ``float``
-        Solver tolerance (> 0. float)
+        Solver tolerance, **in MVA** (not in per unit), on the infinity norm of the mismatch
+        vector, as for :func:`lightsim2grid.network.LSGrid.ac_pf` (> 0. float)
 
 )mydelimiter";
 

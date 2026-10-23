@@ -55,6 +55,33 @@ to / from other data sources.
     ("n") case instead of a flat start -- this is usually faster. See
     :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.init_from_n_powerflow`.
 
+Tripping shunts, loads and generators
+-------------------------------------------
+
+A contingency is not limited to branches. `add_contingency` registers one contingency
+tripping, together, powerlines / transformers, shunts, loads and generators (by name or id),
+and `add_contingency_shunt` / `add_contingency_load` / `add_contingency_gen` one tripping
+elements of a single kind:
+
+.. code-block:: python
+
+    security_analysis.add_contingency(lines=[env.name_line[2]], loads=[env.name_load[1]])
+    security_analysis.add_contingency_shunt(0)
+    security_analysis.add_contingency_gen(env.name_gen[3])
+
+A shunt leaves the admittance matrix (it is an admittance), a load and a generator the
+injection; a generator that was the last one regulating its bus turns that bus PQ for the
+contingency, and the distributed slack makes up what is lost (`redistribute_slack` shares it
+OpenLoadFlow-style before the solve). `run()` reports, for each contingency, the branches in
+`element_ids` and the rest in `shunt_ids` / `load_ids` / `gen_ids`. The C++ class
+:class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP` takes ids
+(`add_contingency(branch_ids, shunt_ids, load_ids, gen_ids)`), and `my_contingencies()` lists
+what each row trips.
+
+Two limits for now: a generator regulating a remote bus, or standing on a bus a control group
+holds, is refused, and so is a shunt that regulates a voltage when the algorithm runs a
+ShuntVoltageControl outer loop (its sections belong to that loop).
+
 Handling contingencies that split the grid
 -------------------------------------------
 
@@ -166,7 +193,7 @@ root of the lightsim2grid repository:
 
 Results, made with:
 
-- date: 2026-09-21 11:22  CEST
+- date: 2026-10-12 19:55  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
@@ -175,7 +202,7 @@ Results, made with:
 - pandas version: 2.3.3
 - pandapower version: 3.5.4
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.1.0
+- lightsim2grid version: 1.2.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -187,14 +214,14 @@ Results, made with:
 ===========  ===========  ===========  ========  ======================
   nb_thread    nb solved    time (ms)    pf / s  speed-up vs 1 thread
 ===========  ===========  ===========  ========  ======================
-          1          703      3585.64       196  1.00x
-          2          703      2071.7        339  1.73x
-          3          703      1639.31       429  2.19x
-          4          703      1345.77       522  2.66x
-          5          703      1199.29       586  2.99x
-          6          703      1071.66       656  3.35x
-          7          703      1107.51       635  3.24x
-          8          703      1082.07       650  3.31x
+          1          703      3801.92       185  1.00x
+          2          703      2182.48       322  1.74x
+          3          703      1694.79       415  2.24x
+          4          703      1406.65       500  2.70x
+          5          703      1244.16       565  3.06x
+          6          703      1117.01       629  3.40x
+          7          703      1056.33       666  3.60x
+          8          703      1090.5        645  3.49x
 ===========  ===========  ===========  ========  ======================
 
 As documented above, speed-up is sub-linear (the per-thread set-up cost, plus the
@@ -448,16 +475,16 @@ Benchmarks (Contingency Analysis)
 
 Here are some benchmarks made with:
 
-- date: 2026-08-28 16:57  CEST
+- date: 2026-10-12 19:55  CEST
 - system: Linux 6.8.0-60-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
 - python version: 3.12.8.final.0 (64 bit)
-- numpy version: 2.3.5
+- numpy version: 2.4.6
 - pandas version: 2.3.3
-- pandapower version: 3.4.0
+- pandapower version: 3.5.4
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.0.0
+- lightsim2grid version: 1.2.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -479,19 +506,19 @@ For this setting the outputs are:
 .. code-block:: bash
 
     For environment: l2rpn_neurips_2020_track2_small (177 n-1 simulated)
-    Total time spent in "computer" to solve everything: 8.4ms (21151 pf / s), 0.05 ms / pf)
-        - time to compute the coefficients to simulate line disconnection: 0.31ms
+    Total time spent in "computer" to solve everything: 8.4ms (21063 pf / s), 0.05 ms / pf)
+        - time to compute the coefficients to simulate line disconnection: 0.33ms
         - time to pre process Ybus: 0.03ms
-        - time to perform powerflows: 7.99ms (22144 pf / s, 0.05 ms / pf)
-    In addition, it took 0.44 ms to retrieve the current from the complex voltages (in total 20101.6 pf /s, 0.05 ms / pf)
+        - time to perform powerflows: 8.00ms (22132 pf / s, 0.05 ms / pf)
+    In addition, it took 0.44 ms to retrieve the current from the complex voltages (in total 20011.6 pf /s, 0.05 ms / pf)
 
     Comparison with raw grid2op timings
-    It took grid2op (with lightsim2grid, using obs.simulate): 0.27s to perform the same computation
-        This is a 30.5 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
-    It took grid2op (with pandapower, using obs.simulate): 11.32s to perform the same computation
-        This is a 1286.1 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
+    It took grid2op (with lightsim2grid, using obs.simulate): 0.26s to perform the same computation
+        This is a 29.5 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and lightsim2grid)
+    It took grid2op (with pandapower, using obs.simulate): 11.44s to perform the same computation
+        This is a 1293.9 speed up from ContingencyAnalysis over raw grid2op (using obs.simulate and pandapower)
 
-    In this case then, the `ContingencyAnalysis` module is 31 times faster than raw grid2op (with obs.simulate and lightsim2grid) and 1286 times faster than raw grid2op (with obs.simulate and pandapower)
+    In this case then, the `ContingencyAnalysis` module is 29 times faster than raw grid2op (with obs.simulate and lightsim2grid) and 1294 times faster than raw grid2op (with obs.simulate and pandapower)
     All results match !
 
 
@@ -501,6 +528,13 @@ Detailed usage
 .. automodule:: lightsim2grid.contingencyAnalysis
     :members:
     :autosummary:
+
+OpenLoadFlow's outer loops
+--------------------------
+
+With an ``NROuter_*`` algorithm, each row is solved with the grid's outer loops, still with one
+symbolic analysis for the whole batch: see :ref:`batch_outer_loops`.
+
 
 * :ref:`genindex`
 * :ref:`modindex`

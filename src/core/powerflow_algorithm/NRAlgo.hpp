@@ -429,6 +429,25 @@ public:
     int  get_refactor_every_n() const { return refactor_every_n_; }
     void set_refactor_every_n(int v)  { refactor_every_n_ = _checked_refactor_every_n(v); }
 
+    // ----- constrained ordering ------------------------------------------------
+    // Whether the linear solver orders the rows the outer loops switch by value after the
+    // Vm columns that keep their pivot valid (see OrderingConstraints), so that a switch
+    // does not cost a fallback factorization. Only for a linear solver that takes ordering
+    // constraints (KLU); its own default: on for KLUStaticPivot, off for KLU. A change
+    // takes effect on the next solve, which analyzes again.
+    static constexpr bool SUPPORTS_CONSTRAINED_ORDERING = detail::takes_ordering_constraints<LinearSolver>::value;
+    bool get_constrained_ordering() const noexcept { return constrained_ordering_; }
+    void set_constrained_ordering(bool v) {
+        if (v && !SUPPORTS_CONSTRAINED_ORDERING) {
+            throw std::runtime_error("NRAlgo: this linear solver does not order with constraints "
+                                     "(only the KLU-based ones do)");
+        }
+        if (v != constrained_ordering_) {
+            constrained_ordering_ = v;
+            need_factorize_ = true;
+        }
+    }
+
     // ----- AlgoConfig serialization -------------------------------------------
 
     AlgoConfig get_config() const override {
@@ -436,7 +455,8 @@ public:
         cfg.int_params  = { static_cast<int>(scaling_policy_->type()),
                             static_cast<int>(refactor_policy_),
                             ls_max_iter_,
-                            refactor_every_n_ };
+                            refactor_every_n_,
+                            constrained_ordering_ ? 1 : 0 };
         cfg.real_params = { static_cast<double>(max_dVa_),
                             static_cast<double>(max_dVm_),
                             static_cast<double>(ls_c_),
@@ -449,24 +469,39 @@ public:
     void set_config(const AlgoConfig& cfg) override {
         if (cfg.int_params.size()  < 4) throw std::runtime_error("NRAlgo::set_config: int_params must have at least 4 elements");
         if (cfg.real_params.size() < 6) throw std::runtime_error("NRAlgo::set_config: real_params must have at least 6 elements");
-        // Validate the two policy enums BEFORE touching any member: applying a
-        // config must be all-or-nothing, otherwise a config rejected halfway
-        // through leaves the algorithm with a mix of new and old parameters.
+        // Validate every value BEFORE touching any member: applying a config must
+        // be all-or-nothing, otherwise a config rejected halfway through leaves the
+        // algorithm with a mix of new and old parameters.
         const RefactorPolicyType new_refactor_policy = _checked_refactor_policy(cfg.int_params[1]);
         const ScalingPolicyType  new_scaling_policy  = _checked_scaling_policy(cfg.int_params[0]);
+        // the 5th is optional (a config saved before it existed keeps the current choice);
+        // ignored by a linear solver that cannot order with constraints, as a config may
+        // come from another algorithm
+        const bool new_constrained_ordering = cfg.int_params.size() > 4
+            ? (cfg.int_params[4] != 0 && SUPPORTS_CONSTRAINED_ORDERING)
+            : constrained_ordering_;
         // NB an AlgoConfig is part of the serialized grid state, so these values
         // can come straight from a pickle or a binary file: validate them exactly
         // like the setters do (see the note on _checked_refactor_every_n).
-        max_dVa_         = _checked_positive(static_cast<real_type>(cfg.real_params[0]), "max_dVa");
-        max_dVm_         = _checked_positive(static_cast<real_type>(cfg.real_params[1]), "max_dVm");
-        ls_c_            = _checked_in_0_1(static_cast<real_type>(cfg.real_params[2]), "ls_c");
-        ls_rho_          = _checked_in_0_1(static_cast<real_type>(cfg.real_params[3]), "ls_rho");
-        iw_mu_min_       = _checked_finite(static_cast<real_type>(cfg.real_params[4]), "iw_mu_min");
-        iw_mu_max_       = _checked_finite(static_cast<real_type>(cfg.real_params[5]), "iw_mu_max");
-        ls_max_iter_     = _checked_non_negative(cfg.int_params[2], "ls_max_iter");
-        refactor_every_n_= _checked_refactor_every_n(cfg.int_params[3]);
+        const real_type new_max_dVa   = _checked_positive(static_cast<real_type>(cfg.real_params[0]), "max_dVa");
+        const real_type new_max_dVm   = _checked_positive(static_cast<real_type>(cfg.real_params[1]), "max_dVm");
+        const real_type new_ls_c      = _checked_in_0_1(static_cast<real_type>(cfg.real_params[2]), "ls_c");
+        const real_type new_ls_rho    = _checked_in_0_1(static_cast<real_type>(cfg.real_params[3]), "ls_rho");
+        const real_type new_iw_mu_min = _checked_finite(static_cast<real_type>(cfg.real_params[4]), "iw_mu_min");
+        const real_type new_iw_mu_max = _checked_finite(static_cast<real_type>(cfg.real_params[5]), "iw_mu_max");
+        const int new_ls_max_iter     = _checked_non_negative(cfg.int_params[2], "ls_max_iter");
+        const int new_refactor_every_n= _checked_refactor_every_n(cfg.int_params[3]);
+        max_dVa_         = new_max_dVa;
+        max_dVm_         = new_max_dVm;
+        ls_c_            = new_ls_c;
+        ls_rho_          = new_ls_rho;
+        iw_mu_min_       = new_iw_mu_min;
+        iw_mu_max_       = new_iw_mu_max;
+        ls_max_iter_     = new_ls_max_iter;
+        refactor_every_n_= new_refactor_every_n;
         refactor_policy_ = new_refactor_policy;
         set_scaling_policy(new_scaling_policy);
+        set_constrained_ordering(new_constrained_ordering);
     }
 
     // ----- debug ---------------------------------------------------------------
@@ -549,6 +584,10 @@ protected:
 
     // EveryN param
     int refactor_every_n_;
+
+    // whether the linear solver orders with the system's constraints (see
+    // set_constrained_ordering); its own default
+    bool constrained_ordering_ = detail::orders_with_constraints_by_default<LinearSolver>::value;
 
     // Timers
     double timer_dSbus_;

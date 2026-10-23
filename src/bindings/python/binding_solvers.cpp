@@ -43,9 +43,16 @@ void bind_algo_methods(py::class_<Solver>& cls) {
         // by LSGrid / BaseBatchSolverSynch (ContingencyAnalysis, TimeSeries,
         // SecurityAnalysis) in tight loops, which never goes through pybind11
         // and so is unaffected by this binding.
-        .def("compute_pf",  &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())
+        // The tolerance is named `tol_pu` on purpose: a solver only sees per-unit
+        // matrices and has no sn_mva, unlike the `tol` (in MVA) of LSGrid.ac_pf and
+        // of the batch algorithms, which divide it by sn_mva before calling a solver.
+        .def("compute_pf",  &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str(),
+             py::arg("Ybus"), py::arg("V"), py::arg("Sbus"), py::arg("slack_ids"), py::arg("slack_weights"),
+             py::arg("pv"), py::arg("pq"), py::arg("max_iter"), py::arg("tol_pu"))
         .def("get_timers",  &Solver::get_timers,  DocSolver::get_timers.c_str())
-        .def("solve",       &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str())
+        .def("solve",       &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str(),
+             py::arg("Ybus"), py::arg("V"), py::arg("Sbus"), py::arg("slack_ids"), py::arg("slack_weights"),
+             py::arg("pv"), py::arg("pq"), py::arg("max_iter"), py::arg("tol_pu"))
         ;
 }
 
@@ -89,6 +96,11 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
         // EveryN param
         .def("get_refactor_every_n", [](const Solver & s){ return nr_of(s).get_refactor_every_n(); }, DocSolver::get_refactor_every_n.c_str())
         .def("set_refactor_every_n", [](Solver & s, int v){ nr_of(s).set_refactor_every_n(v); }, DocSolver::set_refactor_every_n.c_str(), py::arg("value"))
+        // ordering constraints (KLU-based linear solvers)
+        .def_property("constrained_ordering",
+            [](const Solver & s){ return nr_of(s).get_constrained_ordering(); },
+            [](Solver & s, bool v){ nr_of(s).set_constrained_ordering(v); },
+            DocSolver::constrained_ordering.c_str())
         // AlgoConfig serialization (the solver's own: an NROuter_* appends the driver's)
         .def("get_config", &Solver::get_config, DocSolver::get_config.c_str())
         .def("set_config", &Solver::set_config, py::arg("config"), DocSolver::set_config.c_str())
@@ -117,37 +129,74 @@ void bind_fdpf_linear_solver_stats(py::class_<Solver>& cls) {
         ;
 }
 
-// Bind what the NROuter_* algorithms add to an NRAlgo: the outer-loop statistics and the
-// driver's parameters (OpenLoadFlow's names, see OuterLoopDriverParams).
+// Bind what the NROuter_* algorithms add to an NRAlgo: the outer-loop statistics and
+// whether to resume. The driver's OpenLoadFlow parameters are the grid's
+// (LSGrid.set_outer_loop_driver_params), handed over before each solve.
 template<typename Solver>
 void bind_outer_algo(py::class_<Solver>& cls) {
     cls
         .def("get_outer_loop_stats", &Solver::get_outer_loop_stats, DocSolver::OuterLoopStats.c_str())
-        .def_property("max_outer_iterations",
-            [](const Solver & self){ return self.get_driver_params().max_outer_iterations; },
-            [](Solver & self, int v){ auto p = self.get_driver_params(); p.max_outer_iterations = v; self.set_driver_params(p); },
-            "OpenLoadFlow's maxOuterLoopIterations: cap on the outer iterations of one solve, over every loop")
-        .def_property("voltage_remote_control_robust_mode",
-            [](const Solver & self){ return self.get_driver_params().voltage_remote_control_robust_mode; },
-            [](Solver & self, bool v){ auto p = self.get_driver_params(); p.voltage_remote_control_robust_mode = v; self.set_driver_params(p); },
-            "OpenLoadFlow's voltageRemoteControlRobustMode: defer the unrealistic-voltage check until after the last loop able to fix it")
-        .def_property("min_realistic_voltage",
-            [](const Solver & self){ return self.get_driver_params().min_realistic_voltage; },
-            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.min_realistic_voltage = v; self.set_driver_params(p); },
-            "OpenLoadFlow's minRealisticVoltage, pu")
-        .def_property("max_realistic_voltage",
-            [](const Solver & self){ return self.get_driver_params().max_realistic_voltage; },
-            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.max_realistic_voltage = v; self.set_driver_params(p); },
-            "OpenLoadFlow's maxRealisticVoltage, pu")
-        .def_property("min_nominal_voltage_realistic_check",
-            [](const Solver & self){ return self.get_driver_params().min_nominal_voltage_realistic_check; },
-            [](Solver & self, real_type v){ auto p = self.get_driver_params(); p.min_nominal_voltage_realistic_check = v; self.set_driver_params(p); },
-            "OpenLoadFlow's minNominalVoltageRealisticVoltageCheck, kV: buses below it are not checked")
+        .def("get_outer_loop_driver_params", [](const Solver & self){ return self.get_driver_params(); },
+            "The driver's parameters of the last solve: those the grid handed over "
+            "(see LSGrid.set_outer_loop_driver_params)")
+        .def_property("resume_outer_state",
+            [](const Solver & self){ return self.get_driver_params().resume_outer_state; },
+            [](Solver & self, bool v){ auto p = self.get_driver_params(); p.resume_outer_state = v; self.set_driver_params(p); },
+            "Whether a solve starts its loops from where the last converged solve left them (buses "
+            "frozen PQ, controllers held, standby SVCs switched on, hvdc regimes, taps, sections) "
+            "rather than from the grid: a sequence of solves of a time series. Not OpenLoadFlow's. "
+            "Off by default. A TimeSeries batch does it on its own rows.")
         ;
 }
 
 void bind_solvers(py::module_& m) {
     // ---- outer loops (NROuter_*) ----
+    py::class_<OuterLoopDriverParams>(m, "OuterLoopDriverParams", DocSolver::OuterLoopDriverParams.c_str())
+        .def(py::init([](int max_outer_iterations, bool voltage_remote_control_robust_mode,
+                         real_type min_realistic_voltage, real_type max_realistic_voltage,
+                         real_type min_nominal_voltage_realistic_check){
+                 OuterLoopDriverParams res;
+                 res.max_outer_iterations = max_outer_iterations;
+                 res.voltage_remote_control_robust_mode = voltage_remote_control_robust_mode;
+                 res.min_realistic_voltage = min_realistic_voltage;
+                 res.max_realistic_voltage = max_realistic_voltage;
+                 res.min_nominal_voltage_realistic_check = min_nominal_voltage_realistic_check;
+                 check_driver_params(res);
+                 return res;
+             }),
+             py::arg("max_outer_iterations") = OuterLoopDriverParams().max_outer_iterations,
+             py::arg("voltage_remote_control_robust_mode") = OuterLoopDriverParams().voltage_remote_control_robust_mode,
+             py::arg("min_realistic_voltage") = OuterLoopDriverParams().min_realistic_voltage,
+             py::arg("max_realistic_voltage") = OuterLoopDriverParams().max_realistic_voltage,
+             py::arg("min_nominal_voltage_realistic_check") = OuterLoopDriverParams().min_nominal_voltage_realistic_check)
+        .def_readwrite("max_outer_iterations", &OuterLoopDriverParams::max_outer_iterations,
+                       "OpenLoadFlow's maxOuterLoopIterations: cap on the outer iterations of one solve, over every loop")
+        .def_readwrite("voltage_remote_control_robust_mode", &OuterLoopDriverParams::voltage_remote_control_robust_mode,
+                       "OpenLoadFlow's voltageRemoteControlRobustMode: defer the unrealistic-voltage check until "
+                       "after the last loop able to fix it")
+        .def_readwrite("min_realistic_voltage", &OuterLoopDriverParams::min_realistic_voltage,
+                       "OpenLoadFlow's minRealisticVoltage, pu")
+        .def_readwrite("max_realistic_voltage", &OuterLoopDriverParams::max_realistic_voltage,
+                       "OpenLoadFlow's maxRealisticVoltage, pu")
+        .def_readwrite("min_nominal_voltage_realistic_check", &OuterLoopDriverParams::min_nominal_voltage_realistic_check,
+                       "OpenLoadFlow's minNominalVoltageRealisticVoltageCheck, kV: buses below it are not checked")
+        .def("__eq__", [](const OuterLoopDriverParams & a, const OuterLoopDriverParams & b){
+            return a.max_outer_iterations == b.max_outer_iterations &&
+                   a.voltage_remote_control_robust_mode == b.voltage_remote_control_robust_mode &&
+                   a.min_realistic_voltage == b.min_realistic_voltage &&
+                   a.max_realistic_voltage == b.max_realistic_voltage &&
+                   a.min_nominal_voltage_realistic_check == b.min_nominal_voltage_realistic_check;
+        })
+        .def("__repr__", [](const OuterLoopDriverParams & self){
+            std::ostringstream out;
+            out << "OuterLoopDriverParams(max_outer_iterations=" << self.max_outer_iterations
+                << ", voltage_remote_control_robust_mode=" << (self.voltage_remote_control_robust_mode ? "True" : "False")
+                << ", min_realistic_voltage=" << self.min_realistic_voltage
+                << ", max_realistic_voltage=" << self.max_realistic_voltage
+                << ", min_nominal_voltage_realistic_check=" << self.min_nominal_voltage_realistic_check << ")";
+            return out.str();
+        });
+
     py::enum_<OuterLoopStatus>(m, "OuterLoopStatus", DocSolver::OuterLoopStatus.c_str())
         .value("STABLE", OuterLoopStatus::STABLE)
         .value("UNSTABLE", OuterLoopStatus::UNSTABLE)
@@ -171,6 +220,53 @@ void bind_solvers(py::module_& m) {
                 << ", value=" << self.value << ", limit=" << self.limit << ")";
             return out.str();
         });
+
+    // where the outer loops' continuous controls sit in J (OuterControlLayout), read-only
+    py::class_<OuterControlLayout::Branch>(m, "OuterControlLayoutBranch",
+        "A transformer the outer loops' BranchControl handles: its grid id, solver buses and the J "
+        "rows / columns it owns (-1 where none)")
+        .def_readonly("trafo", &OuterControlLayout::Branch::trafo)
+        .def_readonly("phase", &OuterControlLayout::Branch::phase)
+        .def_readonly("shift_column", &OuterControlLayout::Branch::shift_column)
+        .def_readonly("ratio", &OuterControlLayout::Branch::ratio)
+        .def_readonly("ratio_column", &OuterControlLayout::Branch::ratio_column)
+        .def_readonly("bus1_solver", &OuterControlLayout::Branch::bus1_solver)
+        .def_readonly("bus2_solver", &OuterControlLayout::Branch::bus2_solver)
+        .def_readonly("shift_col", &OuterControlLayout::Branch::shift_col)
+        .def_readonly("shift_row", &OuterControlLayout::Branch::shift_row)
+        .def_readonly("ratio_col", &OuterControlLayout::Branch::ratio_col);
+    py::class_<OuterControlLayout::RatioGroup>(m, "OuterControlLayoutRatioGroup",
+        "The transformers of a solved ratio group: indices into `branches`, the regulated bus' Vm "
+        "column and one J row per member")
+        .def_readonly("bus_solver", &OuterControlLayout::RatioGroup::bus_solver)
+        .def_readonly("target_vm", &OuterControlLayout::RatioGroup::target_vm)
+        .def_readonly("members", &OuterControlLayout::RatioGroup::members)
+        .def_readonly("vm_col", &OuterControlLayout::RatioGroup::vm_col)
+        .def_readonly("rows", &OuterControlLayout::RatioGroup::rows);
+    py::class_<OuterControlLayout::Shunt>(m, "OuterControlLayoutShunt",
+        "A shunt controller of the outer loops' ShuntControl (the regulating shunts of one bus): "
+        "its susceptance column and its bus' Q row (-1 where none)")
+        .def_readonly("bus_solver", &OuterControlLayout::Shunt::bus_solver)
+        .def_readonly("shunts", &OuterControlLayout::Shunt::shunts)
+        .def_readonly("column", &OuterControlLayout::Shunt::column)
+        .def_readonly("col", &OuterControlLayout::Shunt::col)
+        .def_readonly("q_row", &OuterControlLayout::Shunt::q_row);
+    py::class_<OuterControlLayout::ShuntGroup>(m, "OuterControlLayoutShuntGroup",
+        "The shunt controllers of a solved group: indices into `shunts`, the regulated bus' Vm "
+        "column and one J row per member")
+        .def_readonly("bus_solver", &OuterControlLayout::ShuntGroup::bus_solver)
+        .def_readonly("target_vm", &OuterControlLayout::ShuntGroup::target_vm)
+        .def_readonly("members", &OuterControlLayout::ShuntGroup::members)
+        .def_readonly("vm_col", &OuterControlLayout::ShuntGroup::vm_col)
+        .def_readonly("rows", &OuterControlLayout::ShuntGroup::rows);
+    py::class_<OuterControlLayout>(m, "OuterControlLayout",
+        "Where the outer loops' continuous controls (phase shifters, ratio groups, shunt "
+        "controllers) sit in the Newton's system the last rebuild built: J rows and columns, solver "
+        "bus ids. For whoever reproduces that system elsewhere.")
+        .def_readonly("branches", &OuterControlLayout::branches)
+        .def_readonly("ratio_groups", &OuterControlLayout::ratio_groups)
+        .def_readonly("shunts", &OuterControlLayout::shunts)
+        .def_readonly("shunt_groups", &OuterControlLayout::shunt_groups);
 
     py::class_<OuterLoopStats>(m, "OuterLoopStats", DocSolver::OuterLoopStats.c_str())
         .def_readonly("status", &OuterLoopStats::status)
@@ -234,14 +330,15 @@ void bind_solvers(py::module_& m) {
 
     py::class_<ReactiveLimitsLoop, BaseOuterLoop, std::shared_ptr<ReactiveLimitsLoop> >(
             m, "ReactiveLimits", DocSolver::ReactiveLimitsLoop.c_str())
-        .def(py::init([](int max_pq_pv_switch, real_type max_reactive_power_mismatch, bool robust_mode,
+        .def(py::init([](int max_pq_pv_switch, real_type max_reactive_power_mismatch, py::object robust_mode,
                          real_type min_realistic_voltage, real_type max_realistic_voltage,
                          real_type mismatch_base_mva, real_type realistic_voltage_margin,
                          real_type robust_restart_vm_pu) {
                  ReactiveLimitsLoop::Params params;
                  params.max_pq_pv_switch = max_pq_pv_switch;
                  params.max_reactive_power_mismatch = max_reactive_power_mismatch;
-                 params.robust_mode = robust_mode;
+                 // None: the driver's (LSGrid.set_outer_loop_driver_params)
+                 params.robust_mode = robust_mode.is_none() ? -1 : (robust_mode.cast<bool>() ? 1 : 0);
                  params.min_realistic_voltage = min_realistic_voltage;
                  params.max_realistic_voltage = max_realistic_voltage;
                  params.mismatch_base_mva = mismatch_base_mva;
@@ -251,18 +348,25 @@ void bind_solvers(py::module_& m) {
              }),
              py::arg("max_pq_pv_switch") = ReactiveLimitsLoop::Params().max_pq_pv_switch,
              py::arg("max_reactive_power_mismatch") = ReactiveLimitsLoop::Params().max_reactive_power_mismatch,
-             py::arg("robust_mode") = ReactiveLimitsLoop::Params().robust_mode,
+             py::arg("robust_mode") = py::none(),
              py::arg("min_realistic_voltage") = ReactiveLimitsLoop::Params().min_realistic_voltage,
              py::arg("max_realistic_voltage") = ReactiveLimitsLoop::Params().max_realistic_voltage,
              py::arg("mismatch_base_mva") = ReactiveLimitsLoop::Params().mismatch_base_mva,
              py::arg("realistic_voltage_margin") = ReactiveLimitsLoop::Params().realistic_voltage_margin,
              py::arg("robust_restart_vm_pu") = ReactiveLimitsLoop::Params().robust_restart_vm_pu)
-        .def_property_readonly("robust_mode", [](const ReactiveLimitsLoop & self){ return self.params().robust_mode; },
-                               "OpenLoadFlow's voltageRemoteControlRobustMode")
+        .def_property_readonly("robust_mode", [](const ReactiveLimitsLoop & self) -> py::object {
+                                   const int mode = self.params().robust_mode;
+                                   if (mode < 0) return py::none();
+                                   return py::bool_(mode != 0);
+                               },
+                               "OpenLoadFlow's voltageRemoteControlRobustMode; None: the driver's "
+                               "(OuterLoopDriverParams.voltage_remote_control_robust_mode)")
         .def_property_readonly("min_realistic_voltage", [](const ReactiveLimitsLoop & self){ return self.params().min_realistic_voltage; },
-                               "OpenLoadFlow's minRealisticVoltage, pu")
+                               "OpenLoadFlow's minRealisticVoltage, pu; NaN: the driver's "
+                               "(OuterLoopDriverParams.min_realistic_voltage)")
         .def_property_readonly("max_realistic_voltage", [](const ReactiveLimitsLoop & self){ return self.params().max_realistic_voltage; },
-                               "OpenLoadFlow's maxRealisticVoltage, pu")
+                               "OpenLoadFlow's maxRealisticVoltage, pu; NaN: the driver's "
+                               "(OuterLoopDriverParams.max_realistic_voltage)")
         .def_property_readonly("max_pq_pv_switch", [](const ReactiveLimitsLoop & self){ return self.params().max_pq_pv_switch; },
                                "OpenLoadFlow's reactiveLimitsMaxPqPvSwitch: how many times a bus may go back PV")
         .def_property_readonly("max_reactive_power_mismatch", [](const ReactiveLimitsLoop & self){ return self.params().max_reactive_power_mismatch; },
@@ -492,6 +596,28 @@ void bind_solvers(py::module_& m) {
         bind_linear_solver_stats(cls);
         bind_outer_algo(cls);
     }
+    {
+        auto cls = py::class_<NR_KLUStaticPivot>(m, "NR_KLUStaticPivot", DocSolver::NR_KLUStaticPivot.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+    }
+    {
+        auto cls = py::class_<NRSing_KLUStaticPivot>(m, "NRSing_KLUStaticPivot", DocSolver::NR_KLUStaticPivot.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+    }
+    {
+        auto cls = py::class_<NROuter_KLUStaticPivot>(m, "NROuter_KLUStaticPivot", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
 #endif  // KLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(NICSLU_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -631,6 +757,9 @@ void bind_solvers(py::module_& m) {
         .def("supports_outer_loops", &AlgorithmSelector::supports_outer_loops,
             "Whether the active algorithm runs outer loops (the NROuter_* family)")
         .def("get_outer_loop_stats", &AlgorithmSelector::get_outer_loop_stats, DocSolver::OuterLoopStats.c_str())
+        .def("get_outer_control_layout", &AlgorithmSelector::get_outer_control_layout,
+            "Where the outer loops' continuous controls sit in J (OuterControlLayout), as the last "
+            "rebuild of the system left them; empty without outer loops or without such controls")
         .def("get_fdpf_xb_lu",       &AlgorithmSelector::get_fdpf_xb_lu,  py::return_value_policy::reference_internal, DocLSGrid::_internal_do_not_use.c_str())
         .def("get_fdpf_bx_lu",       &AlgorithmSelector::get_fdpf_bx_lu,  py::return_value_policy::reference_internal, DocLSGrid::_internal_do_not_use.c_str());
 }

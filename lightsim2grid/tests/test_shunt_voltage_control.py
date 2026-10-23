@@ -22,7 +22,7 @@ try:
     from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
     from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
     from lightsim2grid.network.from_pypowsybl._result_network import LightsimResultNetwork
-    from lightsim2grid.algorithm import ShuntVoltageControl, TransformerVoltageControl
+    from lightsim2grid.algorithm import ShuntVoltageControl
     from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationCategory, ViolationElementType
     HAS_PYPOWSYBL = True
 except ImportError:
@@ -67,14 +67,16 @@ def _olf(net, with_trafo_control):
         shunt_compensator_voltage_control_on=True, transformer_voltage_control_on=with_trafo_control)
     res = lf.run_ac(net, params)[0]
     assert res.status.name == "CONVERGED", res.status_text
-    return [int(c) for c in net.get_shunt_compensators(all_attributes=True).loc[SHUNTS, "solved_section_count"]]
+    counts = [int(c) for c in net.get_shunt_compensators(all_attributes=True).loc[SHUNTS, "solved_section_count"]]
+    return counts, params
 
 
-def _grid(net):
+def _grid(net, olf_parameters=None):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         return init_from_pypowsybl(net, gen_slack_id=SLACK_GEN, sort_index=False, buses_for_sub=False,
-                                   olf_rules=OlfLoadingParameters(reactive_limits=False))
+                                   olf_rules=OlfLoadingParameters(reactive_limits=False),
+                                   olf_parameters=olf_parameters)
 
 
 class TestShuntVoltageControl(unittest.TestCase):
@@ -84,14 +86,13 @@ class TestShuntVoltageControl(unittest.TestCase):
 
     def _compare(self, bus, target_kv, sections=(3, 1), with_trafo_control=False):
         net = _net(bus, target_kv, sections, with_trafo_control)
-        olf_counts = _olf(net, with_trafo_control)
+        olf_counts, params = _olf(net, with_trafo_control)
 
-        grid = _grid(_net(bus, target_kv, sections, with_trafo_control))
+        # the loops OpenLoadFlow ran, read off the same parameters
+        grid = _grid(_net(bus, target_kv, sections, with_trafo_control), olf_parameters=params)
+        self.assertEqual([l.name() for l in grid.get_outer_loops()],
+                         (["TransformerVoltageControl"] if with_trafo_control else []) + ["ShuntVoltageControl"])
         grid.change_algorithm("NROuter_KLU")
-        grid.clear_outer_loops()
-        if with_trafo_control:
-            grid.add_outer_loop(TransformerVoltageControl())
-        grid.add_outer_loop(ShuntVoltageControl())
         V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10)
         self.assertGreater(V.shape[0], 0)
         self.assertEqual(grid.get_algo().get_outer_loop_stats().status.name, "STABLE")
@@ -138,6 +139,34 @@ class TestShuntVoltageControl(unittest.TestCase):
     def test_not_in_the_default_list(self):
         grid = _grid(_net("B9", 13.2))
         self.assertNotIn("ShuntVoltageControl", [l.name() for l in grid.get_outer_loops()])
+
+    def test_a_contingency_trips_a_regulating_shunt(self):
+        from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
+        import copy
+        grid = _grid(_net("B9", 13.2))
+        grid.change_algorithm("NROuter_KLU")
+        shunt_id = [s.name for s in grid.get_shunts()].index("SH-A")
+        v0 = np.full(grid.total_bus(), 1.0 + 0j)
+
+        # no ShuntVoltageControl loop (OpenLoadFlow's default): nothing owns the shunt's
+        # sections, a contingency may take it out
+        self.assertNotIn("ShuntVoltageControl", [l.name() for l in grid.get_outer_loops()])
+        ca = ContingencyAnalysisCPP(grid)
+        self.assertIn("NROuter", ca.get_algo_name())
+        ca.add_contingency_shunt(shunt_id)
+        ca.compute(v0, 30, 1e-10)
+        ref = copy.deepcopy(grid)
+        ref.deactivate_shunt(shunt_id)
+        V_ref = ref.ac_pf(v0.copy(), 30, 1e-10)
+        self.assertGreater(V_ref.shape[0], 0)
+        np.testing.assert_allclose(ca.get_voltages()[0], V_ref, atol=1e-8, rtol=0.)
+
+        # the loop in the list: refused, it owns the shunt's sections
+        grid.add_outer_loop(ShuntVoltageControl())
+        ca = ContingencyAnalysisCPP(grid)
+        ca.add_contingency_shunt(shunt_id)
+        with self.assertRaises(RuntimeError):
+            ca.compute(v0, 30, 1e-10)
 
 
 if __name__ == "__main__":

@@ -6,12 +6,15 @@
 // SPDX-License-Identifier: MPL-2.0
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+#include <sstream>
+
 #include "binding_declarations.hpp"
 #include "batch_algorithm/BaseBatchSweep.hpp"
 #include "batch_algorithm/ContinuationSweep.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
 #include "light_env/topo_action.hpp"
 #include "help_fun_msg.hpp"
+#include "sparse_helpers.hpp"
 
 using namespace ls2g;
 
@@ -87,10 +90,10 @@ void bind_batch_shared(py::class_<T> & cls)
                       "automaton's voltage thresholds? OpenLoadFlow's "
                       "``MonitoringVoltageOuterLoop``. `value` and `limit` in kV, compared "
                       "with physical_violation_tol_vm_pu.\n"
-                      "* the OWN BUS of every generator regulating a remote bus, when a realistic "
-                      "range is set (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on "
-                      "the GENERATOR, see LSGrid.set_remote_voltage_control_vm_range): does "
-                      "holding the remote target take it outside that range? OpenLoadFlow's "
+                      "* the OWN BUS of every generator regulating a remote bus "
+                      "(LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the "
+                      "GENERATOR): does holding the remote target take it outside the realistic "
+                      "range of the ReactiveLimits loop? OpenLoadFlow's "
                       "``ReactiveLimits``, in its robust remote voltage control mode. `value` and "
                       "`limit` in kV, compared with physical_violation_tol_vm_pu.\n"
                       "* the ACTIVE POWER of every angle-droop (\"AC emulation\") hvdc line "
@@ -398,7 +401,14 @@ void bind_batch_shared(py::class_<T> & cls)
              "before that compute().")
         .def("get_row_nb_iter", &T::get_row_nb_iter,
              "Per row of the last compute(): the number of iterations the algorithm reported "
-             "(0 for a row never handed to the solver).");
+             "(0 for a row never handed to the solver).")
+        .def("get_outer_results", &T::get_outer_results,
+             "Per row of the last compute(), what the outer loops did (an OuterRowResult): "
+             "only with an algorithm that runs them (NROuter_*), empty otherwise. Such an "
+             "algorithm solves each row with the grid's outer loops (LSGrid.get_outer_loops), "
+             "restarting them from the grid's own state; a row they leave UNSTABLE or FAILED "
+             "does not converge. Its `converged` is the row's outcome: `status` is the loops' "
+             "own, STABLE too on a row whose Newton diverged.");
 }
 
 /**
@@ -409,14 +419,21 @@ template<class T>
 void bind_row_ybus(py::class_<T> & cls)
 {
     cls
-        .def("get_Ybus", &T::template get_Ybus<>, py::arg("row"), py::arg("solver_numbering") = false,
+        // built by the call, so handed over to python rather than copied
+        .def("get_Ybus", [](const T & self, Eigen::Index row, bool solver_numbering){
+                 return sparse_to_scipy(self.template get_Ybus<>(row, solver_numbering));
+             },
+             py::arg("row"), py::arg("solver_numbering") = false,
              "The admittance matrix row `row` of the last compute() was solved with (AC "
              "algorithm only): the base one without the branches that row disconnects. An entry "
              "only those branches contributed to is removed, not kept as an explicit zero, so "
              "the pattern is the one a one-at-a-time solve of that topology builds. Grid bus "
              "numbering, shape (total_bus, total_bus) like LSGrid.get_Ybus, or the solver one "
              "with `solver_numbering=True`.")
-        .def("get_dcYbus", &T::template get_dcYbus<>, py::arg("row"), py::arg("solver_numbering") = false,
+        .def("get_dcYbus", [](const T & self, Eigen::Index row, bool solver_numbering){
+                 return sparse_to_scipy(self.template get_dcYbus<>(row, solver_numbering));
+             },
+             py::arg("row"), py::arg("solver_numbering") = false,
              "The DC counterpart of get_Ybus (DC algorithm only): the real Bbus of row `row`.");
 }
 
@@ -534,7 +551,9 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
              "Run the batch: one powerflow per simulation, using whatever was set by "
              "modify_* (and, on ScenarioSweep, set_contingency_lines / "
-             "set_contingency_trafos). Raises if nothing was ever set.")
+             "set_contingency_trafos). Raises if nothing was ever set. ``tol`` is in MVA "
+             "(not in per unit), as for LSGrid.ac_pf: it is divided by the grid's sn_mva "
+             "before reaching the solver.")
 
         // results
         .def("compute_flows", &T::compute_flows, DocTimeSeries::compute_flows.c_str())
@@ -574,6 +593,41 @@ void bind_legacy_compute_vs(py::class_<T> & cls)
 }  // namespace
 
 void bind_batch(py::module_& m) {
+    py::class_<OuterRowResult>(m, "OuterRowResult",
+        "What the outer loops did on one row of a batch (see get_outer_results): how it ended, "
+        "and, by element id, what it settled on that the grid does not say -- only what differs "
+        "from the grid is listed.")
+        .def_readonly("converged", &OuterRowResult::converged,
+                      "Whether the row converged (as converged_mask()): False for a row whose Newton "
+                      "diverged or that was never solved.")
+        .def_readonly("status", &OuterRowResult::status,
+                      "How the loops ended. Theirs only: STABLE too on a row whose Newton diverged, "
+                      "or that was never solved (see `converged`).")
+        .def_readonly("unrealistic_state", &OuterRowResult::unrealistic_state)
+        .def_readonly("failed_loop", &OuterRowResult::failed_loop)
+        .def_readonly("nb_outer_iterations", &OuterRowResult::nb_outer_iterations)
+        .def_readonly("nb_nr_iterations", &OuterRowResult::nb_nr_iterations,
+                      "Newton iterations over every inner solve of the row.")
+        .def_readonly("gen_target_p", &OuterRowResult::gen_target_p,
+                      "(generator id, MW): the target a loop (DistributedSlack) moved it to.")
+        .def_readonly("storage_target_p", &OuterRowResult::storage_target_p,
+                      "(storage id, MW, load convention): the same for the storage units.")
+        .def_readonly("hvdc_regime", &OuterRowResult::hvdc_regime,
+                      "(hvdc line id, regime) where AcHvdcAcEmulationLimits changed it.")
+        .def_readonly("phase_tap", &OuterRowResult::phase_tap,
+                      "(transformer id, position) of the phase taps PhaseControl moved.")
+        .def_readonly("ratio_tap", &OuterRowResult::ratio_tap,
+                      "(transformer id, position) of the ratio taps TransformerVoltageControl moved.")
+        .def_readonly("shunt_sections", &OuterRowResult::shunt_sections,
+                      "(shunt id, section count) ShuntVoltageControl settled on.")
+        .def("__repr__", [](const OuterRowResult & self){
+            std::ostringstream out;
+            out << "OuterRowResult(converged=" << (self.converged ? "True" : "False")
+                << ", status=" << static_cast<int>(self.status)
+                << ", nb_outer_iterations=" << self.nb_outer_iterations
+                << ", nb_nr_iterations=" << self.nb_nr_iterations << ")";
+            return out.str();
+        });
     py::enum_<ViolationElementType>(m, "ViolationElementType", DocContingencyAnalysis::ViolationElementType.c_str())
         .value("BUS", ViolationElementType::BUS)
         .value("LINE", ViolationElementType::LINE)
@@ -689,7 +743,7 @@ void bind_batch(py::module_& m) {
                "compute_physical_violations, never enforced.")
         .value("LOW_VOLTAGE_REMOTE_CONTROL", LimitViolationType::LOW_VOLTAGE_REMOTE_CONTROL,
                "A generator regulating a REMOTE bus whose own bus sits BELOW the realistic range "
-               "set with LSGrid.set_remote_voltage_control_vm_range (element_type is "
+               "of the ReactiveLimits loop (element_type is "
                "ViolationElementType.GENERATOR): OpenLoadFlow's ReactiveLimits loop, in its "
                "robust remote voltage control mode, would switch it to PQ at its target "
                "reactive power. Category PHYSICAL: a controller's own bus at that voltage is a "
@@ -870,7 +924,8 @@ void bind_batch(py::module_& m) {
         .def("compute", &ContinuationSweep::compute, py::call_guard<py::gil_scoped_release>(),
              py::arg("Vinit"), py::arg("max_iter"), py::arg("tol"),
              "Trace the curve. Raises if the target is identical to the base state, or if "
-             "the selected algorithm is not Newton-Raphson based.")
+             "the selected algorithm is not Newton-Raphson based. ``tol`` is in MVA (not in "
+             "per unit), as for LSGrid.ac_pf, for the base case and every corrector alike.")
 
         // results
         .def("get_status", &ContinuationSweep::get_status,
@@ -1003,6 +1058,20 @@ void bind_batch(py::module_& m) {
              "if the mask names a generator that regulates a remote bus, or one whose "
              "bus a control group holds (a remote generator, an SVC or an HVDC "
              "converter station): remote voltage control is not supported yet.")
+        .def("set_contingency_shunts", &ScenarioSweep::set_contingency_shunts<>, py::arg("mask"),
+             "Per-step shunt contingency mask, shape (n_simul, n_shunt), dtype bool. "
+             "True means 'disconnect this shunt for this simulation'. A shunt is an "
+             "admittance: the step loses its diagonal Ybus coefficient (in DC, its active "
+             "part leaves the injection), as the branch masks edit Ybus. compute() raises "
+             "with an algorithm running outer loops if the mask names a shunt that "
+             "regulates a voltage (the ShuntVoltageControl loop owns its sections).")
+        .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
+             "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "
+             "True means 'disconnect this load for this simulation': the step's own load "
+             "(modify_load_p / modify_load_q, or the grid's) leaves its injection, and "
+             "the distributed slack makes up the balance (redistribute_slack shares it "
+             "OLF-like before the solve). A step naming a load in both this mask and its "
+             "topological action is refused.")
 
         // limit violations + "handle disconnected grid": same names/semantics as
         // ContingencyAnalysisCPP (see below), now also available here. Deliberately
@@ -1044,7 +1113,9 @@ void bind_batch(py::module_& m) {
                       "clamped unit leaving the pool and the slack), the solve then only sharing "
                       "what is left (the change in the losses) on the units that can still move. "
                       "Off by default; compute() refuses it with a single-slack algorithm "
-                      "(NRSing_*, Gauss-Seidel). Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
+                      "(NRSing_*, Gauss-Seidel). With outer loops (NROuter_*), the DistributedSlack "
+                      "loop shares the loss itself before the row's first solve, from the targets in "
+                      "force. Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
                       "clamp anything: without limits the converged state is unchanged. Same as "
                       "LSGrid.redistribute_active_power, row by row.")
         .def_property("handle_disconnected_grid",
@@ -1076,7 +1147,10 @@ void bind_batch(py::module_& m) {
                       "Whether to initialize the complex voltages of each simulation with the "
                       "results of a n-powerflow (ie a powerflow with no injection change and no "
                       "contingency) or not. Default: false, meaning each simulation is "
-                      "initialized with the given input vector.");
+                      "initialized with the given input vector. With an NROuter_* algorithm, "
+                      "each simulation's outer loops also start from where the n-powerflow's "
+                      "ended (frozen buses, taps, sections, and the targets DistributedSlack "
+                      "moved where the simulation does not set its own), not from the grid.");
 
     py::class_<ContingencyAnalysis> contingency_analysis(m, "ContingencyAnalysisCPP", DocContingencyAnalysis::ContingencyAnalysis.c_str());
     bind_batch_shared(contingency_analysis);
@@ -1118,9 +1192,9 @@ void bind_batch(py::module_& m) {
                       "carrying a standby automaton whose regulated bus sits outside its "
                       "thresholds (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY on the "
                       "SVC, see LSGrid.set_svc_standby), the own bus of every generator "
-                      "regulating a remote bus, when a realistic range is set "
-                      "(LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the GENERATOR, "
-                      "see LSGrid.set_remote_voltage_control_vm_range), the "
+                      "regulating a remote bus, against the realistic range of the ReactiveLimits "
+                      "loop (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL on the "
+                      "GENERATOR), the "
                       "active power of every angle-droop hvdc line in the linear regime "
                       "(HIGH_P on the HVDC, against pmax_1to2_mw / pmax_2to1_mw), the release "
                       "of every angle-droop hvdc line flagged as frozen at its active power "
@@ -1178,7 +1252,10 @@ void bind_batch(py::module_& m) {
                       "each contingencies with the results of a n-powerflow "
                       "(*ie* a powerflow without any line disconnection) or not. "
                       "Default: false, meaning each simulation is initialized "
-                      "with the given input vector")
+                      "with the given input vector. With an NROuter_* algorithm, each "
+                      "contingency's outer loops also start from where the n-powerflow's "
+                      "ended (frozen buses, taps, sections, the targets DistributedSlack "
+                      "moved), not from the grid.")
         .def_property("redistribute_slack",
                       [](const ContingencyAnalysis & self){ return self.get_redistribute_slack(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_redistribute_slack(val); },
@@ -1189,7 +1266,10 @@ void bind_batch(py::module_& m) {
                       "clamped to its [min_p, max_p], a clamped unit leaving the pool and the "
                       "slack), the solve then only sharing what is left (the change in the losses) "
                       "on the units that can still move. Off by default; compute() refuses it with "
-                      "a single-slack algorithm (NRSing_*, Gauss-Seidel). Needs "
+                      "a single-slack algorithm (NRSing_*, Gauss-Seidel). With outer loops "
+                      "(NROuter_*), the DistributedSlack loop shares the loss itself before the "
+                      "contingency's first solve, from the targets in force (the \"n\" solve's with "
+                      "init_from_n_powerflow), as OpenLoadFlow's security analysis does. Needs "
                       "LSGrid.set_gen_p_limits / set_storage_p_limits to clamp anything: without "
                       "limits the converged state is unchanged. Same as "
                       "LSGrid.consider_only_main_component(redistribute_slack=True), contingency "
@@ -1249,6 +1329,25 @@ void bind_batch(py::module_& m) {
         .def("add_n1", &ContingencyAnalysis::add_n1<>, DocContingencyAnalysis::add_n1.c_str())
         .def("add_nk", &ContingencyAnalysis::add_nk<>, DocContingencyAnalysis::add_nk.c_str())
         .def("add_multiple_n1", &ContingencyAnalysis::add_multiple_n1<>, DocContingencyAnalysis::add_multiple_n1.c_str())
+        .def("add_contingency", &ContingencyAnalysis::add_contingency<>,
+             py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
+             py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
+             py::arg("branch_ids_side1") = std::vector<int>(), py::arg("branch_ids_side2") = std::vector<int>(),
+             DocContingencyAnalysis::add_contingency.c_str())
+        // the shortcuts take one id (an n-1 of that element) or a list (one contingency
+        // tripping them all)
+        .def("add_contingency_shunt", &ContingencyAnalysis::add_contingency_shunt<>, py::arg("shunt_ids"),
+             DocContingencyAnalysis::add_contingency_shunt.c_str())
+        .def("add_contingency_shunt", [](ContingencyAnalysis & self, int shunt_id){ self.add_contingency_shunt(std::vector<int>(1, shunt_id)); },
+             py::arg("shunt_id"), DocContingencyAnalysis::add_contingency_shunt.c_str())
+        .def("add_contingency_load", &ContingencyAnalysis::add_contingency_load<>, py::arg("load_ids"),
+             DocContingencyAnalysis::add_contingency_load.c_str())
+        .def("add_contingency_load", [](ContingencyAnalysis & self, int load_id){ self.add_contingency_load(std::vector<int>(1, load_id)); },
+             py::arg("load_id"), DocContingencyAnalysis::add_contingency_load.c_str())
+        .def("add_contingency_gen", &ContingencyAnalysis::add_contingency_gen<>, py::arg("gen_ids"),
+             DocContingencyAnalysis::add_contingency_gen.c_str())
+        .def("add_contingency_gen", [](ContingencyAnalysis & self, int gen_id){ self.add_contingency_gen(std::vector<int>(1, gen_id)); },
+             py::arg("gen_id"), DocContingencyAnalysis::add_contingency_gen.c_str())
 
         // remove contingencies
         .def("reset", &ContingencyAnalysis::clear, DocContingencyAnalysis::clear.c_str())
@@ -1258,9 +1357,15 @@ void bind_batch(py::module_& m) {
         .def("remove_n1", &ContingencyAnalysis::remove_n1<>, DocContingencyAnalysis::remove_n1.c_str())
         .def("remove_nk", &ContingencyAnalysis::remove_nk<>, DocContingencyAnalysis::remove_nk.c_str())
         .def("remove_multiple_n1", &ContingencyAnalysis::remove_multiple_n1<>, DocContingencyAnalysis::remove_multiple_n1.c_str())
+        .def("remove_contingency", &ContingencyAnalysis::remove_contingency<>,
+             py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
+             py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
+             py::arg("branch_ids_side1") = std::vector<int>(), py::arg("branch_ids_side2") = std::vector<int>(),
+             DocContingencyAnalysis::remove_contingency.c_str())
 
         // inspect
         .def("my_defaults", &ContingencyAnalysis::my_defaults_vect<>, DocContingencyAnalysis::my_defaults_vect.c_str())
+        .def("my_contingencies", &ContingencyAnalysis::my_contingencies<>, DocContingencyAnalysis::my_contingencies.c_str())
         .def("is_grid_connected_after_contingency", &ContingencyAnalysis::is_grid_connected_after_contingency<>, DocLSGrid::_internal_do_not_use.c_str())
         .def("pick_reference_slack", &ContingencyAnalysis::pick_reference_slack<>,
              "Over the registered contingencies, return the slack bus (gridmodel id) "

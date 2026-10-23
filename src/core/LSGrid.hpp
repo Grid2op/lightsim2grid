@@ -112,10 +112,32 @@ class LS2G_API LSGrid final
                 // fused-bus representative lookup (appended; old pickles/binary
                 // formats are version-gated). See get_bus_fusion_rep().
                 std::vector<int>,  // bus_fusion_rep
-                // the remote voltage control range of the physical checks (appended; NaN
-                // when unset). See set_remote_voltage_control_vm_range().
-                real_type,  // remote_vc_min_vm_pu
-                real_type   // remote_vc_max_vm_pu
+                // the outer loops (appended): whether the list is OpenLoadFlow's default one,
+                // else each loop's name and its parameters (BaseOuterLoop::get_params); then
+                // the driver's parameters. See get_outer_loops(), set_outer_loop_driver_params().
+                bool,  // outer_loops_default
+                std::vector<std::string>,  // outer loop names
+                std::vector<std::vector<int> >,  // outer loop int params
+                std::vector<std::vector<double> >,  // outer loop real params
+                std::vector<int>,  // driver: max_outer_iterations, robust mode
+                std::vector<double>,  // driver: min / max realistic voltage, min nominal voltage checked
+                // the grid-level settings copy() keeps (appended), without which a grid read
+                // back solves differently: keep_vinit_at_group_controlled_buses,
+                // hold_frozen_regulators, dc_distribute_slack_on_can_participate,
+                // reactive_dispatch_olf (0 / 1), then the reference slack bus (-1: none)
+                std::vector<int>,
+                // OpenLoadFlow's reactive data (empty: none): set_gen_reactive_range_max,
+                // set_station_reactive_range_max (side 1, side 2), set_gen_raw_target_q
+                std::vector<double>,
+                std::vector<double>,
+                std::vector<double>,
+                std::vector<double>,
+                // the capability curves, one entry per point (set_gen_capability_curves):
+                // generator id, p (MW), min q, max q (MVar)
+                std::vector<int>,
+                std::vector<double>,
+                std::vector<double>,
+                std::vector<double>
                 >;
 
         // named indices into the StateRes tuple above (get_state()/set_state()
@@ -144,8 +166,21 @@ class LS2G_API LSGrid final
         static const std::size_t INIT_KWARGS_KEYS_ID = 20;
         static const std::size_t INIT_KWARGS_VALUES_ID = 21;
         static const std::size_t BUS_FUSION_REP_ID = 22;
-        static const std::size_t REMOTE_VC_MIN_VM_PU_ID = 23;
-        static const std::size_t REMOTE_VC_MAX_VM_PU_ID = 24;
+        static const std::size_t OUTER_LOOPS_DEFAULT_ID = 23;
+        static const std::size_t OUTER_LOOP_NAMES_ID = 24;
+        static const std::size_t OUTER_LOOP_INT_PARAMS_ID = 25;
+        static const std::size_t OUTER_LOOP_REAL_PARAMS_ID = 26;
+        static const std::size_t OUTER_DRIVER_INT_PARAMS_ID = 27;
+        static const std::size_t OUTER_DRIVER_REAL_PARAMS_ID = 28;
+        static const std::size_t GRID_SETTINGS_ID = 29;
+        static const std::size_t GEN_REACTIVE_RANGE_MAX_ID = 30;
+        static const std::size_t STATION_REACTIVE_RANGE_MAX1_ID = 31;
+        static const std::size_t STATION_REACTIVE_RANGE_MAX2_ID = 32;
+        static const std::size_t GEN_RAW_TARGET_Q_ID = 33;
+        static const std::size_t GEN_CURVE_GEN_ID_ID = 34;
+        static const std::size_t GEN_CURVE_P_ID = 35;
+        static const std::size_t GEN_CURVE_MIN_Q_ID = 36;
+        static const std::size_t GEN_CURVE_MAX_Q_ID = 37;
 
         LSGrid():
           timer_last_ac_pf_(0.),
@@ -155,8 +190,6 @@ class LS2G_API LSGrid final
           init_vm_pu_(1.04),
           keep_vinit_group_controlled_(false),
           hold_frozen_regulators_(false),
-          remote_vc_min_vm_pu_(std::numeric_limits<real_type>::quiet_NaN()),
-          remote_vc_max_vm_pu_(std::numeric_limits<real_type>::quiet_NaN()),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
             _algo.change_algorithm(AlgorithmType::NR_SparseLU);
@@ -192,6 +225,8 @@ class LS2G_API LSGrid final
 
         const SolverBusIdVect & id_me_to_ac_solver() const {return ac_cache_.id_me_to_solver;}
         const GlobalBusIdVect & id_ac_solver_to_me() const {return ac_cache_.id_solver_to_me;}
+        /// the labelling, slack, pv / pq split and voltage-control plan of the last AC solve
+        const SolverBusLayout & get_ac_layout() const {return ac_cache_;}
         const SolverBusIdVect & id_me_to_dc_solver() const {return dc_cache_.id_me_to_solver;}
         const GlobalBusIdVect & id_dc_solver_to_me() const {return dc_cache_.id_solver_to_me;}
 
@@ -367,7 +402,8 @@ class LS2G_API LSGrid final
          * from it. Other algorithms ignore the list.
          *
          * The grid keeps the loops it is given (a later change of their parameters is
-         * seen by the next solve); the algorithm runs clones of them.
+         * seen by the next solve); the algorithm runs clones of them. Copied with the grid,
+         * and part of `get_state` / the binary format.
          */
         void clear_outer_loops() {
             outer_loops_.clear();
@@ -382,6 +418,23 @@ class LS2G_API LSGrid final
             _tell_outer_loops_changed();
         }
         [[nodiscard]] std::vector<std::shared_ptr<BaseOuterLoop> > get_outer_loops() const;
+
+        /**
+         * The parameters of the outer-loop driver an NROuter_* algorithm runs this grid's
+         * loops with (OpenLoadFlow's maxOuterLoopIterations, voltageRemoteControlRobustMode,
+         * minRealisticVoltage / maxRealisticVoltage, minNominalVoltageRealisticVoltageCheck),
+         * handed over with the loops before each solve. OpenLoadFlow's own defaults until
+         * set. Their `resume_outer_state` is the algorithm's, not the grid's: ignored here.
+         * Copied with the grid, and part of `get_state` / the binary format.
+         */
+        void set_outer_loop_driver_params(const OuterLoopDriverParams & params) {
+            check_driver_params(params);
+            outer_driver_params_ = params;
+            outer_driver_params_.resume_outer_state = false;
+        }
+        [[nodiscard]] const OuterLoopDriverParams & get_outer_loop_driver_params() const noexcept {
+            return outer_driver_params_;
+        }
 
         /**
          * The limits the LAST converged powerflow (ac_pf when `ac`, dc_pf otherwise)
@@ -476,28 +529,11 @@ class LS2G_API LSGrid final
          * would ever move them.
          *
          * Copied with the grid, so a batch algorithm built from this grid inherits it;
-         * not part of `get_state` / the binary format.
+         * part of `get_state` / the binary format.
          */
         void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
         [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
 
-        /**
-         * The range of voltage (pu of its own bus' nominal voltage) a generator regulating a
-         * REMOTE bus may sit at, for the physical checks (see RemoteVoltageControlCheck.hpp):
-         * a remote controller whose own bus ends up below `min_vm_pu` or above `max_vm_pu` is
-         * reported as LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL by
-         * get_physical_violations and every batch's compute_physical_violations. This mirrors
-         * OpenLoadFlow's "robust" remote voltage control, which switches such a controller to
-         * PQ: there the range is [minRealisticVoltage * 1.02, maxRealisticVoltage / 1.02].
-         *
-         * Never read by a powerflow. NaN (the default) on both sides: no check. A NaN on one
-         * side only checks the other. Copied with the grid, so a batch algorithm built from
-         * this grid inherits it, and part of `get_state` / the binary format: a grid pickled
-         * or saved keeps checking its remote controllers.
-         */
-        void set_remote_voltage_control_vm_range(real_type min_vm_pu, real_type max_vm_pu);
-        [[nodiscard]] real_type get_remote_voltage_control_min_vm_pu() const noexcept {return remote_vc_min_vm_pu_;}
-        [[nodiscard]] real_type get_remote_voltage_control_max_vm_pu() const noexcept {return remote_vc_max_vm_pu_;}
 
         /**
          * Keep, in the voltage-control group it would join, every generator an outer
@@ -520,7 +556,7 @@ class LS2G_API LSGrid final
          * group's, a group holding an SVC -- is left out (PQ as before), never an error.
          * Its regulated bus, though, becomes a group-controlled bus like the target of an
          * active remote regulator would. Off by default; copied with the grid, so a
-         * batch algorithm built from this grid inherits it; not part of `get_state` / the
+         * batch algorithm built from this grid inherits it; part of `get_state` / the
          * binary format.
          */
         /**
@@ -531,7 +567,7 @@ class LS2G_API LSGrid final
          * one is plausible, else equally; a unit pushed past a limit stays there and the
          * excess is shared again among the others, and nothing is shared below
          * OpenLoadFlow's Q_DISPATCH_EPSILON. Results only (nothing a powerflow solves
-         * changes), off by default; copied with the grid, not part of `get_state` / the
+         * changes), off by default; copied with the grid, part of `get_state` / the
          * binary format.
          */
         void set_reactive_dispatch_olf(bool val) { reactive_dispatch_olf_ = val; }
@@ -540,7 +576,7 @@ class LS2G_API LSGrid final
          * The widest reactive range of each generator (MVar, over its whole capability
          * curve, OpenLoadFlow's reactiveRangeCheckMode MAX), what set_reactive_dispatch_olf
          * shares by; NaN (or an empty vector) for its range at its target P. Copied with the
-         * grid, not part of `get_state` / the binary format.
+         * grid, part of `get_state` / the binary format.
          */
         void set_gen_reactive_range_max(const Eigen::Ref<const RealVect> & range_mvar) {
             if(range_mvar.size() != 0 && range_mvar.size() != static_cast<Eigen::Index>(generators_.nb())){
@@ -572,7 +608,7 @@ class LS2G_API LSGrid final
          * target P an outer loop moved (the ReactiveLimits loop, the results), as
          * OpenLoadFlow reads them: interpolated inside the curve, extrapolated past its
          * ends, crossed extrapolated limits being their mean. A generator without one keeps
-         * its fixed limits. Empty vectors: none. Copied with the grid, not part of
+         * its fixed limits. Empty vectors: none. Copied with the grid, part of
          * `get_state` / the binary format.
          */
         void set_gen_capability_curves(const Eigen::Ref<const Eigen::VectorXi> & gen_id,
@@ -586,7 +622,7 @@ class LS2G_API LSGrid final
          * Q (MVar) before it was clamped into its limits at its target P, NaN where none was
          * (an empty vector: none). A generator that does not regulate and whose target P an
          * outer loop moved (DistributedSlack) injects it clamped into its limits at the new P,
-         * as LfGeneratorImpl.getTargetQ does. Copied with the grid, not serialized.
+         * as LfGeneratorImpl.getTargetQ does. Copied with the grid, serialized.
          */
         void set_gen_raw_target_q(const Eigen::Ref<const RealVect> & q_mvar) {
             if(q_mvar.size() != 0 && q_mvar.size() != static_cast<Eigen::Index>(generators_.nb())){
@@ -598,9 +634,14 @@ class LS2G_API LSGrid final
         /// a non-regulating generator's target Q (MVar) at the target P the outer loops gave it
         /// (set_gen_raw_target_q), its own target Q otherwise
         [[nodiscard]] real_type gen_target_q_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p) const;
+        /// the same, for that one generator's target P (MW, NaN: none moved it)
+        [[nodiscard]] real_type gen_target_q_at_outer_target(int gen_id, real_type outer_target_p) const;
         /// a generator's reactive limits at the target P the last solve's outer loops gave it
         /// (its curve), its fixed ones otherwise
         void gen_limits_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p,
+                                        real_type & min_q, real_type & max_q) const;
+        /// the same, for that one generator's target P (MW, NaN: none moved it)
+        void gen_limits_at_outer_target(int gen_id, real_type outer_target_p,
                                         real_type & min_q, real_type & max_q) const;
 
         void set_hold_frozen_regulators(bool hold) {
@@ -2123,10 +2164,13 @@ class LS2G_API LSGrid final
          * 
          * (new in lightsim2grid 0.9.0, used to be called `get_Ybus` before that)
          * 
-         * @return Eigen::SparseMatrix<cplx_type> 
+         * It is the matrix the grid holds, not a copy: the reference stays valid until a
+         * powerflow rebuilds it (after a change of topology or of an admittance, or a reset).
+         * 
+         * @return const Eigen::SparseMatrix<cplx_type> &
          */
-        Eigen::SparseMatrix<cplx_type> get_Ybus_solver() const {
-            return ac_cache_.mat;  // This is copied to python
+        [[nodiscard]] const Eigen::SparseMatrix<cplx_type> & get_Ybus_solver() const {
+            return ac_cache_.mat;
         }
 
         /**
@@ -2141,10 +2185,13 @@ class LS2G_API LSGrid final
          * 
          * (new in lightsim2grid 0.9.0, used to be called `get_dcYbus` before that)
          * 
-         * @return Eigen::SparseMatrix<cplx_type> 
+         * It is the matrix the grid holds, not a copy: the reference stays valid until a
+         * powerflow rebuilds it (after a change of topology or of an admittance, or a reset).
+         * 
+         * @return const Eigen::SparseMatrix<real_type> & (the DC admittance matrix is real)
          */
-        Eigen::SparseMatrix<real_type> get_dcYbus_solver() const {
-            return dc_cache_.mat;  // This is copied to python (DC admittance matrix is real)
+        [[nodiscard]] const Eigen::SparseMatrix<real_type> & get_dcYbus_solver() const {
+            return dc_cache_.mat;
         }
 
         /**
@@ -2865,9 +2912,10 @@ class LS2G_API LSGrid final
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
-        /// assign_slack_to_most_connected, the buses compared on the highest nominal voltage first
-        /// when `highest_voltage_first` (consider_only_main_component's fallback)
-        std::tuple<int, int> _assign_slack_most_connected(bool highest_voltage_first);
+        /// assign_slack_to_most_connected. With `island_fallback` (consider_only_main_component's
+        /// fallback) the buses are compared on the highest nominal voltage first, and the units
+        /// taken out of the slack keep their "can participate" flag, as every other unit does
+        std::tuple<int, int> _assign_slack_most_connected(bool island_fallback);
         // the generators / storage units whose status went from off (in the `*_before`
         // snapshots) to on try to rejoin the slack (see SlackParticipation::rejoin_if_able)
         void _rejoin_slack_if_reconnected(const std::vector<bool> & gen_status_before,
@@ -2894,32 +2942,36 @@ class LS2G_API LSGrid final
         Eigen::SparseMatrix<T> _relabel_matrix(const Eigen::SparseMatrix<T> & Ybus,
                                                const GlobalBusIdVect & id_solver_to_me,
                                                bool relabel_row=true) const {
-            // TODO optim : if relabel_row is false, then we can just copy
-            // paste the columns easily in the target matrix, which should be
-            // way faster than this function.
             using index_type = typename Eigen::SparseMatrix<T>::StorageIndex ;
             const int nb_conn_bus = nb_connected_bus();
             if(id_solver_to_me.size() == 0) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel` bus label as it appears no powerflow has run.");
             if(Ybus.cols() != nb_conn_bus) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columns, (.., nb connected bus) expected");
             if(relabel_row & (Ybus.rows() != nb_conn_bus)) throw std::runtime_error("LSGrid::_relabel_matrix: impossible to retrieve the `gridmodel`: the input matrix has not the right number of columnd (nb connected bus, ...) expected");
-            Eigen::SparseMatrix<T> res(relabel_row ? total_bus() : Ybus.rows(), total_bus());
-            res.reserve(Ybus.nonZeros());
-            std::vector<Eigen::Triplet<T> > tripletList;
-            tripletList.reserve(Ybus.nonZeros());
-            const auto n_col = Ybus.cols();
-            for (Eigen::Index col_=0; col_ < n_col; ++col_){
-                for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_); it; ++it)
-                {
-                    if(relabel_row) tripletList.push_back({static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())]),
-                                                           static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.col())]),
-                                                           it.value()});
-                    else tripletList.push_back({static_cast<index_type>(it.row()), 
-                                                static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.col())]),
-                                                it.value()});
+            // id_solver_to_me is strictly increasing (init_converter_bus_id numbers the
+            // connected buses in grid order). So relabelling keeps the entries of a column
+            // in order, and a solver column lands whole in its grid column: the compressed
+            // storage is written directly, in one pass and without sorting, with an empty
+            // column for each bus the solver does not see.
+            const Eigen::Index n_total = static_cast<Eigen::Index>(total_bus());
+            Eigen::SparseMatrix<T> res(relabel_row ? n_total : Ybus.rows(), n_total);
+            res.resizeNonZeros(Ybus.nonZeros());
+            index_type * outer = res.outerIndexPtr();
+            index_type * inner = res.innerIndexPtr();
+            T * values = res.valuePtr();
+            index_type nnz = 0;
+            Eigen::Index next_col = 0;  // first grid column whose start is not written yet
+            for (Eigen::Index col_solver = 0; col_solver < Ybus.outerSize(); ++col_solver){
+                const Eigen::Index col_me = id_solver_to_me[static_cast<size_t>(col_solver)].cast_int();
+                if(col_me < next_col) throw std::runtime_error("LSGrid::_relabel_matrix: the solver to gridmodel bus mapping is not increasing.");
+                for(; next_col <= col_me; ++next_col) outer[next_col] = nnz;
+                for (typename Eigen::SparseMatrix<T>::InnerIterator it(Ybus, col_solver); it; ++it){
+                    inner[nnz] = relabel_row ? static_cast<index_type>(id_solver_to_me[static_cast<size_t>(it.row())].cast_int())
+                                             : static_cast<index_type>(it.row());
+                    values[nnz] = it.value();
+                    ++nnz;
                 }
             }
-            res.setFromTriplets(tripletList.begin(), tripletList.end());
-            res.makeCompressed();
+            for(; next_col <= n_total; ++next_col) outer[next_col] = nnz;
             return res;
         }
 
@@ -3198,6 +3250,9 @@ class LS2G_API LSGrid final
             real_type key = std::numeric_limits<real_type>::quiet_NaN();        ///< its reactive key, NaN if none
             real_type range_max = std::numeric_limits<real_type>::quiet_NaN();  ///< its widest range, MVar
         };
+        /// generator `gen_id`'s share, on grid bus `bus_id` (its own, or the one a batch row
+        /// places it on): every field filled, what either dispatch reads
+        QShare _gen_q_share(int gen_id, int bus_id) const;
         /// OpenLoadFlow's split of one bus' reactive power between its units (see
         /// set_reactive_dispatch_olf): `q_mvar` shared out, written into `q_out` (aligned
         /// with `units`)
@@ -3394,8 +3449,6 @@ class LS2G_API LSGrid final
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
         bool hold_frozen_regulators_;  // see set_hold_frozen_regulators
-        real_type remote_vc_min_vm_pu_;  // see set_remote_voltage_control_vm_range
-        real_type remote_vc_max_vm_pu_;  // see set_remote_voltage_control_vm_range
         real_type sn_mva_;
 
         // powersystem representation
@@ -3498,6 +3551,7 @@ class LS2G_API LSGrid final
         // see clear_outer_loops / add_outer_loop; empty and `default` until edited
         std::vector<std::shared_ptr<BaseOuterLoop> > outer_loops_;
         bool outer_loops_default_ = true;
+        OuterLoopDriverParams outer_driver_params_;  // see set_outer_loop_driver_params
 
         // forced angle-reference slack bus (gridmodel id, -1 = none).
         // See set_reference_slack_bus.

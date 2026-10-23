@@ -19,17 +19,28 @@ class LSGrid;
 
 /**
  * Parameters of the outer-loop driver itself (not of any loop), with OpenLoadFlow's names.
- * The defaults are those of the pypowsybl build the comparisons are made with, see
- * docs/dev_notes/outer_loops_fixed_sparsity.md.
+ * The defaults are OpenLoadFlow's own (OpenLoadFlowParameters, AcLoadFlowParameters and
+ * AbstractLoadFlowParameters at v2.3.0). pypowsybl builds may ship others: a grid loaded
+ * from pypowsybl takes those of the OpenLoadFlow it ships (see init_from_pypowsybl).
  */
 struct OuterLoopDriverParams
 {
-    int max_outer_iterations = 30;                         ///< maxOuterLoopIterations
+    int max_outer_iterations = 20;                         ///< maxOuterLoopIterations
     bool voltage_remote_control_robust_mode = true;        ///< voltageRemoteControlRobustMode
-    real_type min_realistic_voltage = 0.8;                 ///< minRealisticVoltage, pu
-    real_type max_realistic_voltage = 1.2;                 ///< maxRealisticVoltage, pu
-    real_type min_nominal_voltage_realistic_check = 180.;  ///< minNominalVoltageRealisticVoltageCheck, kV
+    real_type min_realistic_voltage = 0.5;                 ///< minRealisticVoltage, pu
+    real_type max_realistic_voltage = 2.;                  ///< maxRealisticVoltage, pu
+    real_type min_nominal_voltage_realistic_check = 0.;    ///< minNominalVoltageRealisticVoltageCheck, kV
+    /// a solve starts its loops from where the last converged one left them -- buses frozen
+    /// PQ, controllers held, standby SVCs switched on, hvdc regimes, taps and sections -- rather
+    /// than from the grid (not OpenLoadFlow's: a sequence of solves of a time series). A batch
+    /// row decides it itself (OuterRowView::resume).
+    bool resume_outer_state = false;
 };
+
+/**
+ * Throws if `params` cannot drive a solve (a negative iteration cap, an empty realistic range).
+ */
+LS2G_API void check_driver_params(const OuterLoopDriverParams & params);
 
 /**
  * OpenLoadFlow's isStateUnrealistic: whether a bus whose voltage magnitude is an unknown of

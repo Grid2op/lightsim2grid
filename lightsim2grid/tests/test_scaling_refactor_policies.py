@@ -199,7 +199,7 @@ class TestAlgoConfigRoundTrip(unittest.TestCase):
 
     def test_config_int_params_length(self):
         cfg = self.s.get_config()
-        self.assertEqual(len(cfg.int_params), 4)
+        self.assertEqual(len(cfg.int_params), 5)
 
     def test_config_real_params_length(self):
         cfg = self.s.get_config()
@@ -278,7 +278,8 @@ class TestAlgoConfigRoundTrip(unittest.TestCase):
     def test_config_int_params_encoding(self):
         self._configure()
         cfg = self.s.get_config()
-        # int_params: [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n]
+        # int_params: [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n,
+        #              constrained_ordering]
         self.assertEqual(cfg.int_params[0], int(ScalingPolicyType.LineSearch))
         self.assertEqual(cfg.int_params[1], int(RefactorPolicyType.EveryN))
         self.assertEqual(cfg.int_params[2], 15)
@@ -467,7 +468,7 @@ class TestAlgoConfigViaGridModel(unittest.TestCase):
         # solvers don't override get_config/set_config (always empty AlgoConfig)
         ac_cfg = AlgoConfig()
         ac_cfg.int_params  = [int(ScalingPolicyType.MaxVoltageChange),
-                              int(RefactorPolicyType.EveryN), 20, 3]
+                              int(RefactorPolicyType.EveryN), 20, 3, 0]
         ac_cfg.real_params = [0.4, 0.08, 1e-3, 0.7, 5e-4, 0.9]
         gm.set_ac_algo_config(ac_cfg)
 

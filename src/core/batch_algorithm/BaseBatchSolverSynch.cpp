@@ -102,9 +102,10 @@ bool BaseBatchSolverSynch::warmup_solver(
     AlgoControl & control,
     const Eigen::Ref<const CplxVect> & Vinit_solver,
     int max_iter,
-    real_type tol)
+    real_type tol,
+    bool reset)
 {
-    algo.reset();
+    if(reset) algo.reset();
     control.tell_all_changed();
     algo.tell_solver_control(control);
     bool conv;
@@ -142,6 +143,7 @@ std::unique_ptr<AlgorithmSelector> BaseBatchSolverSynch::make_thread_algo() cons
     res->set_lsgrid(&_grid_model);
     res->change_algorithm(get_algo_name());  // by name, see the declaration
     res->set_config(_algo.get_config());     // match the member solver's configuration
+    _install_outer_loops(*res);
     return res;
 }
 
