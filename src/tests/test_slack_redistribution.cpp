@@ -579,3 +579,44 @@ TEST_CASE("every slack unit stranded: the units that can participate keep their 
         CHECK_THAT(grid.get_generators().get_slack_weight(0), Catch::Matchers::WithinAbs(1., 1e-15));
     }
 }
+
+TEST_CASE("a main component whose units all sit at 0 MW takes the slack on one of them", "[slack_redistribution]"){
+    // buses 0-1 (the slack generator, a load) and 2-3-4-5 (a synchronous condenser at 3, at
+    // 0 MW, loads at 4 and 5), joined by the line 1-2: open it and the larger part, the main
+    // component, has lost the slack with no unit producing in it
+    ls2g::LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(6u, 1, ls2g::RealVect::Constant(6, 138.), 0, 0);
+    Eigen::VectorXi fr(5), to(5);
+    fr << 0, 2, 3, 4, 1;
+    to << 1, 3, 4, 5, 2;
+    grid.init_powerlines(ls2g::RealVect::Constant(5, 0.01), ls2g::RealVect::Constant(5, 0.1),
+                         ls2g::CplxVect::Zero(5), fr, to);
+    ls2g::RealVect load_p(3), load_q(3);
+    load_p << 20., 15., 10.;
+    load_q << 5., 3., 2.;
+    Eigen::VectorXi load_bus(3);
+    load_bus << 1, 4, 5;
+    grid.init_loads(load_p, load_q, load_bus);
+    ls2g::RealVect gen_p(2), gen_v(2), min_q(2), max_q(2);
+    gen_p << 50., 0.;
+    gen_v << 1.02, 1.01;
+    min_q << -500., -500.;
+    max_q << 500., 500.;
+    Eigen::VectorXi gen_bus(2);
+    gen_bus << 0, 3;
+    grid.init_generators(gen_p, gen_v, min_q, max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+
+    grid.deactivate_powerline(4);
+    REQUIRE_NOTHROW(grid.consider_only_main_component(false));
+    CHECK_FALSE(grid.get_generators().get_status()[0]);
+    CHECK(grid.get_generators().is_slack(1));
+    const ls2g::CplxVect V = grid.ac_pf(ls2g::CplxVect::Constant(6, ls2g::cplx_type(1., 0.)), 20, 1e-8);
+    REQUIRE(V.size() > 0);
+    // it produces what the main component consumes, losses included
+    const real_type p1 = std::get<0>(grid.get_gen_res())(1);
+    CHECK(p1 > 25.);
+    CHECK(p1 < 26.);
+}

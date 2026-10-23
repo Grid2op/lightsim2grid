@@ -3440,6 +3440,30 @@ std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool island_fallback){
             max_vn = vn;
         }
     }
+    // no unit produces anything (synchronous condensers, units at 0 MW): any connected one
+    // may hold the slack, in the same order (OpenLoadFlow's most meshed bus is any bus, its
+    // slack needs no unit: lightsim2grid's does)
+    const bool none_produces = res_bus_id == -1;
+    if(none_produces){
+        std::vector<char> has_unit(nb_busbars, 0);
+        for(int gen_id = 0; gen_id < generators_.nb(); ++gen_id){
+            if(generators_.get_status(gen_id)) has_unit[static_cast<std::size_t>(generators_.get_bus(gen_id).cast_int())] = 1;
+        }
+        for(int storage_id = 0; storage_id < storages_.nb(); ++storage_id){
+            if(storages_.get_status(storage_id)) has_unit[static_cast<std::size_t>(storages_.get_bus(storage_id).cast_int())] = 1;
+        }
+        for(unsigned int bus_id = 0; bus_id < nb_busbars; ++bus_id)
+        {
+            if(!has_unit[bus_id]) continue;
+            const auto & nb_lines_this = nb_line_end_per_bus[bus_id];
+            const real_type vn = island_fallback ? vn_kv(bus_id) : 0.;
+            if((vn > max_vn) || ((vn == max_vn) && (nb_lines_this > max_line))){
+                res_bus_id = bus_id;
+                max_line = nb_lines_this;
+                max_vn = vn;
+            }
+        }
+    }
     // TODO DEBUG MODE
     if(res_bus_id == -1) throw std::runtime_error("LSGrid::assign_slack_to_most_connected: impossible to find anything connected to a node.");
     std::get<0>(res) = res_bus_id;
@@ -3459,6 +3483,12 @@ std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool island_fallback){
     const int res_storage_id = storages_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
     if(res_gen_id == -1 && res_storage_id == -1){
         throw std::runtime_error("LSGrid::assign_slack_to_most_connected: no generator nor storage unit on the chosen bus.");
+    }
+    // the two above put in the slack the units producing there: none does, the one producing
+    // the most (a generator first) holds it alone
+    if(none_produces){
+        if(res_gen_id != -1) generators_.add_slackbus(res_gen_id, 1., algo_controler_);
+        else storages_.add_slackbus(res_storage_id, 1., algo_controler_);
     }
     std::get<1>(res) = res_gen_id;
     ac_cache_.slack_bus_id_solver = SolverBusIdVect();
