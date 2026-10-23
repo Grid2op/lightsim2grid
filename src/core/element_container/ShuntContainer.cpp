@@ -78,10 +78,16 @@ void ShuntContainer::set_sections(int el, int section_count,
     if(p_mw.size() != q_mvar.size()){
         throw std::runtime_error("ShuntContainer::set_sections: one active and one reactive power per section count.");
     }
+    // checked before anything is written: a call that throws leaves the shunt as it was
+    if(section_count < 0 || section_count > static_cast<int>(q_mvar.size())){
+        std::ostringstream exc_;
+        exc_ << "ShuntContainer::set_sections: the table given for shunt " << el << " has " << q_mvar.size()
+             << " section(s), " << section_count << " cannot be on.";
+        throw std::runtime_error(exc_.str());
+    }
     const std::size_t k = static_cast<std::size_t>(el);
     section_p_mw_[k] = p_mw;
     section_q_mvar_[k] = q_mvar;
-    _check_section_count(el, section_count, "ShuntContainer::set_sections");
     section_count_[k] = section_count;
     min_section_count_[k] = std::max(0, std::min(min_section_count, get_max_section_count(el)));
     change_p_nothrow(el, _section_p(el, section_count), solver_control);
