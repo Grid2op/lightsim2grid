@@ -367,3 +367,135 @@ TEST_CASE("stations holding one bus share it by their widest reactive range", "[
     LSGrid copy(grid);
     CHECK(copy.get_station_reactive_range_max(2)(0) == 300.);
 }
+
+TEST_CASE("a resumed solve freezes the same buses again after a topology change", "[outer][reactive_limits]")
+{
+    // buses 0-1-2-3-4 in a line, two busbars per substation (the second ones unused): the
+    // slack generator at 0, a unit at 2 that cannot reach its voltage (frozen at its max), a
+    // unit at 3 with room to spare, a load at 4
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(5, 2, RealVect::Constant(10, 138.), 0, 0);
+    Eigen::VectorXi from_id(4), to_id(4);
+    from_id << 0, 1, 2, 3;
+    to_id << 1, 2, 3, 4;
+    grid.init_powerlines(RealVect::Constant(4, 0.01), RealVect::Constant(4, 0.08), CplxVect::Zero(4), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 80.;
+    load_q << 50.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 4;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p(3), gen_v(3), q(3), gen_min_q(3), gen_max_q(3);
+    gen_p << 0., 20., 20.;
+    gen_v << 1.02, 1.06, 1.03;
+    q << 0., 0., 0.;
+    gen_min_q << -500., -10., -500.;
+    gen_max_q << 500., 10., 500.;
+    Eigen::VectorXi gen_bus(3);
+    gen_bus << 0, 2, 3;
+    grid.init_generators_full(gen_p, gen_v, q, {true, true, true}, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ReactiveLimitsLoop>());
+    ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
+    cfg.int_params.back() = 1;  // resume_outer_state
+    grid.set_ac_algo_config(cfg);
+
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 10);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().nb_outer_iterations == 1);
+    REQUIRE(gen_q(grid, 1) == Approx(10.).margin(1e-6));
+    const real_type q2 = gen_q(grid, 2);
+    // resumed, nothing to do
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 10);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().nb_outer_iterations == 0);
+
+    // substation 1 moved to its second busbar: the same grid, but every bus after it
+    // has another solver id
+    grid.change_bus2_powerline_python(0, 6);
+    grid.change_bus1_powerline_python(1, 6);
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 10);
+    const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    // it starts with unit 1 frozen and unit 2 regulating, as the solve before left them
+    CHECK(stats.nb_outer_iterations == 0);
+    for (const ls2g::OuterDecision & d : stats.decisions) CHECK_FALSE(d.taken);
+    CHECK(gen_q(grid, 1) == Approx(10.).margin(1e-6));
+    CHECK(gen_q(grid, 2) == Approx(q2).margin(1e-6));
+}
+
+TEST_CASE("a resumed solve reads the previous voltages at the buses they belong to", "[outer][reactive_limits]")
+{
+    // an SVC frozen at its max, whose limit the resumed solve evaluates at the previous
+    // solve's voltage: after a topology change that adds a bus ahead of it, its bus has a
+    // solver id that solve did not have. Not relabelled, that is a read one past the end of
+    // the previous voltages: Eigen's bounds assertion (the assertion builds) stops it; ASan
+    // does not see it, Eigen pads its allocations under ASan
+    const auto make = [](bool split) {
+        LSGrid grid;
+        grid.set_sn_mva(100.);
+        grid.set_init_vm_pu(1.0);
+        grid.init_bus(5, 2, RealVect::Constant(10, 138.), 0, 0);
+        // substation 4 on its second busbar (bus 9), a ring 1-2-3
+        Eigen::VectorXi from_id(5), to_id(5);
+        from_id << 0, 1, 2, 3, 1;
+        to_id << 1, 2, 3, 9, 3;
+        grid.init_powerlines(RealVect::Constant(5, 0.01), RealVect::Constant(5, 0.08), CplxVect::Zero(5), from_id, to_id);
+        RealVect load_p(1), load_q(1);
+        load_p << 60.;
+        load_q << 30.;
+        Eigen::VectorXi load_bus(1);
+        load_bus << 9;
+        grid.init_loads(load_p, load_q, load_bus);
+        RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+        gen_p << 0.;
+        gen_v << 1.02;
+        gen_min_q << -500.;
+        gen_max_q << 500.;
+        Eigen::VectorXi gen_bus(1);
+        gen_bus << 0;
+        grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+        grid.add_gen_slackbus(0, 1.);
+        RealVect target_vm(1), q_set(1), slope(1), b_min(1), b_max(1);
+        target_vm << 1.06;
+        q_set << 0.;
+        slope << 0.;
+        b_min << -0.05;
+        b_max << 0.05;
+        Eigen::VectorXi svc_bus(1);
+        svc_bus << 9;
+        grid.init_svcs({1}, target_vm, q_set, slope, b_min, b_max, svc_bus, svc_bus);
+        grid.change_algorithm("NROuter_SparseLU");
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<ReactiveLimitsLoop>());
+        ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
+        cfg.int_params.back() = 1;  // resume_outer_state
+        grid.set_ac_algo_config(cfg);
+        // the line 1-3 from substation 1's second busbar (bus 6): a sixth solver bus, ahead of bus 9
+        if (split) grid.change_bus1_powerline_python(4, 6);
+        return grid;
+    };
+    LSGrid grid = make(false);
+    const CplxVect V0 = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V0.size() == 10);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    // frozen at its max (evaluated at the voltage of the solve that froze it)
+    REQUIRE(std::get<1>(grid.get_svcs().get_res())(0) == Approx(0.05 * std::norm(V0(9)) * 100.).margin(1e-2));
+
+    grid.change_bus1_powerline_python(4, 6);
+    const CplxVect V = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V.size() == 10);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+
+    // close to that grid solved from the start: not equal, the SVC is frozen at its limit
+    // at another solve's voltage
+    LSGrid ref = make(true);
+    const CplxVect V_ref = ref.ac_pf(flat_start(ref), 30, 1e-10);
+    REQUIRE(V_ref.size() == 10);
+    CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-4);
+    CHECK(std::get<1>(grid.get_svcs().get_res())(0) == Approx(std::get<1>(ref.get_svcs().get_res())(0)).margin(1e-2));
+}

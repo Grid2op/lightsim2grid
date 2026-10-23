@@ -259,6 +259,10 @@ private:
     // resuming: the taps and sections the last solve settled on, asked of the controls
     // before the loops initialize (one place for every loop that moves them)
     void _apply_carried_positions();
+    // resuming its own last solve: that solve's voltages, which the loops read before the
+    // first solve of this one, moved to this solve's solver labelling when a topology change
+    // since gave the buses other ids. `V` is this solve's start, for a bus that one did not have
+    void _relabel_carried_voltages(const Eigen::Ref<const CplxVect> & V);
 
     // the loop's name and its parameters, exactly: the only way to tell a loop from the one
     // already held (parameters are set at construction), so a decimal rendering, which loses
@@ -304,6 +308,7 @@ private:
     std::vector<int> carried_phase_tap_;
     std::vector<int> carried_ratio_tap_;
     std::vector<int> carried_sections_;
+    std::vector<int> carried_bus_grid_;  // the grid bus of each solver bus of that solve
     bool has_carry_ = false;
     OuterInjections injections_;  // what the loops inject; kept after the solve for its results
     OuterSolveCache solve_cache_;  // what the loops share, emptied at each solve (see _context)

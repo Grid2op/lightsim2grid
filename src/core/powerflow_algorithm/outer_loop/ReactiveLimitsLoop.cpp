@@ -113,19 +113,20 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             monitor_of_entry.push_back(ctrl.elem_id(c));
         }
     }
-    // resuming: the buses the previous solve left frozen, by solver bus (0: none; of two at
-    // one bus, the first), frozen again below for this solve
+    // resuming: the buses the previous solve left frozen, by grid bus (0: none; of two at one
+    // bus, the first), frozen again below for this solve. Not by solver bus: a topology change
+    // since that solve gives the buses other solver ids
     std::vector<int> carried_state;
     std::vector<char> carried_realistic;
     if (ctx.resume) {
-        const std::size_t nb_solver_bus = ctx.view().id_solver_to_me().size();
+        const std::size_t nb_grid_bus = static_cast<std::size_t>(ctx.grid->total_bus());
         for (const ControllerBus & bus : buses_) {
-            if (bus.state == 0 || bus.bus_solver < 0 || static_cast<std::size_t>(bus.bus_solver) >= nb_solver_bus) continue;
+            if (bus.state == 0 || bus.bus_grid < 0 || static_cast<std::size_t>(bus.bus_grid) >= nb_grid_bus) continue;
             if (carried_state.empty()) {
-                carried_state.assign(nb_solver_bus, 0);
-                carried_realistic.assign(nb_solver_bus, 0);
+                carried_state.assign(nb_grid_bus, 0);
+                carried_realistic.assign(nb_grid_bus, 0);
             }
-            const std::size_t b = static_cast<std::size_t>(bus.bus_solver);
+            const std::size_t b = static_cast<std::size_t>(bus.bus_grid);
             if (carried_state[b] != 0) continue;
             carried_state[b] = bus.state;
             carried_realistic[b] = bus.realistic ? 1 : 0;
@@ -152,6 +153,7 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
         ControllerBus bus;
         bus.entry = static_cast<int>(k);
         bus.bus_solver = entry.bus_solver;
+        bus.bus_grid = entry.bus_grid;
         bus.local = entry.ctrl_pos.empty() && entry.svc_ids.empty();
         if (bus.local && ctx.controls != nullptr) bus.voltage = ctx.controls->bus_voltage(entry.bus_solver);
         bus.monitor_svc = monitor_of_entry[k];
@@ -199,10 +201,10 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
     // target Q for the robust mode's; the release test lets it go when this solve calls for it
     if (!carried_state.empty() && ctx.injections != nullptr && ctx.controls != nullptr) {
         for (ControllerBus & bus : buses_) {
-            if (bus.bus_solver < 0 || static_cast<std::size_t>(bus.bus_solver) >= carried_state.size()) continue;
-            const int state = carried_state[static_cast<std::size_t>(bus.bus_solver)];
+            if (bus.bus_grid < 0 || static_cast<std::size_t>(bus.bus_grid) >= carried_state.size()) continue;
+            const int state = carried_state[static_cast<std::size_t>(bus.bus_grid)];
             if (state == 0) continue;
-            bus.realistic = carried_realistic[static_cast<std::size_t>(bus.bus_solver)] != 0;
+            bus.realistic = carried_realistic[static_cast<std::size_t>(bus.bus_grid)] != 0;
             real_type q_min, q_max;
             _limits(ctx, bus, q_min, q_max);
             _freeze(ctx, bus, bus.realistic ? bus.target_q : (state < 0 ? q_min : q_max), state);

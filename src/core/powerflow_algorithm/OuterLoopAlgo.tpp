@@ -91,6 +91,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     const bool resume = from != nullptr ||
                         (has_carry_ && (row_ != nullptr ? row_->resume : params_.resume_outer_state));
     if (from != nullptr) _take_targets(*from);
+    else if (resume) _relabel_carried_voltages(V);
     if (resume) _apply_carried_positions();
 
     // OpenLoadFlow's isNeeded filter, then initialize, both before the first solve
@@ -199,6 +200,12 @@ bool OuterLoopAlgo<Inner>::compute_pf(
         inner_.phase_tap(carried_phase_tap_);
         inner_.ratio_tap(carried_ratio_tap_);
         inner_.shunt_sections(carried_sections_);
+        carried_bus_grid_.clear();
+        if (lsgrid_ptr_ != nullptr) {
+            const GlobalBusIdVect & to_me = OuterGridView(*lsgrid_ptr_, row_).id_solver_to_me();
+            carried_bus_grid_.reserve(to_me.size());
+            for (std::size_t b = 0; b < to_me.size(); ++b) carried_bus_grid_.push_back(to_me[b].cast_int());
+        }
     }
     if (solver_ok) {
         if (stats_.status == OuterLoopStatus::FAILED) err_ = ErrorType::OuterLoopFailed;
@@ -291,6 +298,35 @@ void OuterLoopAlgo<Inner>::_apply_carried_positions()
             if (std::find(counts.begin(), counts.end(), none) == counts.end()) shunt->set_sections(counts);
         }
     }
+}
+
+template<class Inner>
+void OuterLoopAlgo<Inner>::_relabel_carried_voltages(const Eigen::Ref<const CplxVect> & V)
+{
+    if (lsgrid_ptr_ == nullptr) return;
+    const GlobalBusIdVect & to_me = OuterGridView(*lsgrid_ptr_, row_).id_solver_to_me();
+    const std::size_t n = to_me.size();
+    bool same = n == carried_bus_grid_.size() && static_cast<Eigen::Index>(n) == V_.size();
+    for (std::size_t b = 0; same && b < n; ++b) same = to_me[b].cast_int() == carried_bus_grid_[b];
+    if (same) return;
+    // the solver bus each grid bus had there (-1: none)
+    int nb_grid_bus = 0;
+    for (int g : carried_bus_grid_) nb_grid_bus = std::max(nb_grid_bus, g + 1);
+    std::vector<Eigen::Index> carried_of(static_cast<std::size_t>(nb_grid_bus), -1);
+    for (std::size_t b = 0; b < carried_bus_grid_.size() && static_cast<Eigen::Index>(b) < V_.size(); ++b) {
+        const int g = carried_bus_grid_[b];
+        if (g >= 0 && static_cast<std::size_t>(g) < carried_of.size()) carried_of[static_cast<std::size_t>(g)] = static_cast<Eigen::Index>(b);
+    }
+    CplxVect relabelled = V;
+    for (std::size_t b = 0; b < n && static_cast<Eigen::Index>(b) < relabelled.size(); ++b) {
+        const int g = to_me[b].cast_int();
+        if (g < 0 || static_cast<std::size_t>(g) >= carried_of.size()) continue;
+        const Eigen::Index from = carried_of[static_cast<std::size_t>(g)];
+        if (from >= 0) relabelled(static_cast<Eigen::Index>(b)) = V_(from);
+    }
+    V_ = relabelled;
+    Va_ = V_.array().arg();
+    Vm_ = V_.array().abs();
 }
 
 template<class Inner>
