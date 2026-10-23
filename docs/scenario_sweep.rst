@@ -194,9 +194,9 @@ generator. A row naming a load in both the mask and its topological action is re
 
 .. warning::
 
-    With an algorithm running outer loops, `compute()` raises if the mask names a shunt that
-    regulates a voltage: its sections belong to the ShuntVoltageControl loop, which does not
-    know of a row taking it out yet.
+    With an algorithm running outer loops among which a ShuntVoltageControl one, `compute()`
+    raises if the mask names a shunt that regulates a voltage: its sections belong to that
+    loop, which does not know of a row taking it out yet.
 
 Topological actions
 ---------------------

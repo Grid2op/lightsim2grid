@@ -8,6 +8,7 @@
 
 #include "DefaultOuterLoops.hpp"
 
+#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -101,6 +102,11 @@ void outer_detect(const std::vector<std::shared_ptr<BaseOuterLoop> > & loops,
 {
     ctx.injections = nullptr;
     ctx.controls = nullptr;
+    // the buses the transformer voltage controls listed so far regulate: they hide a shunt
+    // voltage control further down the list, as the reservations of a solve do
+    // (ShuntVoltageControlLoop::_declare)
+    std::set<int> ratio_group_buses;
+    ctx.detect_ratio_group_buses = &ratio_group_buses;
     for (const auto & loop : loops) {
         // not is_needed: it reads what an outer-loop solve set up (the monitors a plan holds
         // for VoltageMonitoring, ...), which a plain solve does not; each detect decides
@@ -109,7 +115,25 @@ void outer_detect(const std::vector<std::shared_ptr<BaseOuterLoop> > & loops,
         std::unique_ptr<BaseOuterLoop> fresh = loop->clone();
         fresh->initialize(ctx);
         fresh->detect(ctx, out);
+        // a visible group is one TransformerVoltageControlLoop::_declare reserves
+        const auto * tvc = dynamic_cast<const TransformerVoltageControlLoop *>(fresh.get());
+        if (tvc == nullptr) continue;
+        for (const TransformerVoltageControlLoop::Group & g : tvc->groups(ctx.view())) {
+            if (!g.hidden) ratio_group_buses.insert(g.bus_solver);
+        }
     }
+    ctx.detect_ratio_group_buses = nullptr;
+}
+
+std::vector<std::shared_ptr<BaseOuterLoop> > detection_loops(
+    const std::vector<std::shared_ptr<BaseOuterLoop> > & loops)
+{
+    std::vector<std::shared_ptr<BaseOuterLoop> > res(loops);
+    for (const auto & loop : loops) {
+        if (loop != nullptr && dynamic_cast<const ReactiveLimitsLoop *>(loop.get()) != nullptr) return res;
+    }
+    res.push_back(std::make_shared<ReactiveLimitsLoop>());
+    return res;
 }
 
 }  // namespace ls2g

@@ -1622,6 +1622,9 @@ class LS2G_API VoltageControl
             group_stranded_.clear();
         }
 
+        // number of controllers of the current solve (valid after update_state)
+        int n_controllers() const { return my_size_; }
+
         // converged reactive injection per controller (pu, registration order)
         Eigen::Ref<const RealVect>  controller_q()       const { return q_; }
         Eigen::Ref<const IntVect>   controller_kind()    const { return data_.kind; }
@@ -2136,6 +2139,13 @@ public:
     const std::vector<int>& vm_cols()     const { return ledger_.vm_cols(); }
 
     size_t total_state_variables() const { return static_cast<size_t>(ledger_.size()); }
+
+    // whether the current solve has voltage-control groups: their bordered rows are what
+    // makes a refactorization's pivots go stale (see KLULinearSolver::set_pivot_growth_guard)
+    bool has_voltage_controllers() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc != nullptr && vc->n_controllers() > 0;
+    }
 
     // ----- VoltageControl results (empty when the extension is not in the tuple) --
     // converged reactive injection / kind / element id per controller (pu, in the

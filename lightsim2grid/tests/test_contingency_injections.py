@@ -200,6 +200,53 @@ class TestContingencyAnalysisWrapper(_Base):
         V_mixed = self._reference_V(branches=(5,), loads=(2,))
         self.assertGreater(np.abs(V_line - V_mixed).max(), 1e-5)
 
+    def test_a_single_line_by_name_or_numpy_id(self):
+        # one line, given alone rather than in a list: by name, by python int, by numpy int
+        for lines in (self.env.name_line[5], 5, np.int64(5), np.int32(5)):
+            sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+            sa.add_contingency(lines=lines, loads=[2])
+            res = sa.run()
+            self.assertEqual(len(res.post_contingency_results), 1, msg=repr(lines))
+            cont = res.post_contingency_results[0]
+            self.assertEqual(cont.element_ids, [5], msg=repr(lines))
+            self.assertEqual(cont.load_ids, [2], msg=repr(lines))
+            sa.close()
+
+    def test_an_element_named_twice_is_tripped_once(self):
+        sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+        sa.add_contingency(lines=[5, 5], loads=[2, 2], gens=[self.gen_alone, self.gen_alone])
+        # the same contingency, each element named once: not a second one
+        sa.add_contingency(lines=[5], loads=[2], gens=[self.gen_alone])
+        res = sa.run()
+        self.assertEqual(len(res.post_contingency_results), 1)
+        cont = res.post_contingency_results[0]
+        self.assertEqual(cont.element_ids, [5])
+        self.assertEqual(cont.load_ids, [2])
+        self.assertEqual(cont.gen_ids, [self.gen_alone])
+        _, _, res_v = sa.get_flows()
+        self.assertEqual(res_v.shape[0], 1)
+
+    def test_a_contingency_tripping_nothing_is_refused(self):
+        sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+        for kwargs in ({}, {"lines": [], "shunts": [], "loads": [], "gens": []}):
+            with self.assertRaises(RuntimeError, msg=repr(kwargs)):
+                sa.add_contingency(**kwargs)
+        self.assertEqual(sa.all_contingencies, [])
+        self.assertEqual(len(sa.computer.my_contingencies()), 0)
+
+    def test_branch_only_ids_in_any_order_or_twice(self):
+        # the c++ side keeps each contingency's branches as a sorted set
+        sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+        sa.add_single_contingency(7, 3)
+        sa.add_single_contingency(5, 5)
+        sa.add_single_contingency(3, 7)   # the first one again
+        res = sa.run()
+        self.assertEqual([cont.element_ids for cont in res.post_contingency_results], [[3, 7], [5]])
+        _, _, res_v = sa.get_flows()
+        self.assertEqual(res_v.shape[0], 2)
+        _, _, res_v = sa.get_flows([7, 3])
+        np.testing.assert_array_equal(res_v[0], sa.get_flows([3, 7])[2][0])
+
 
 class TestScenarioSweep(_Base):
     def test_shunt_and_load_masks_match_a_one_off_powerflow(self):
@@ -233,6 +280,23 @@ class TestScenarioSweep(_Base):
         sweep.set_topo_actions([act])
         with self.assertRaises(RuntimeError):
             sweep.compute()
+
+    def test_a_load_in_the_mask_set_after_a_compute_is_refused(self):
+        # the action moves load 2 (with line 6's origin, so that its new bus stays connected)
+        # or takes it out, a first compute() settles it, then the mask trips the same load in
+        # the same row: refused all the same
+        for set_bus in ({"loads_id": [(2, 2)], "lines_or_id": [(6, 2)]},
+                        {"loads_id": [(2, -1)]}):
+            with self.subTest(set_bus=set_bus):
+                act = self.env.action_space({"set_bus": set_bus})
+                sweep = ScenarioSweep(self.env)
+                sweep.set_topo_actions([act])
+                sweep.compute()
+                load_off = np.zeros((1, self.env.n_load), dtype=bool)
+                load_off[0, 2] = True
+                sweep.set_contingency_loads(load_off)
+                with self.assertRaises(RuntimeError):
+                    sweep.compute()
 
 
 if __name__ == "__main__":

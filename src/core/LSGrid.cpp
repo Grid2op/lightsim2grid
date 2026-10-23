@@ -134,9 +134,9 @@ void LSGrid::add_outer_loop(const std::shared_ptr<BaseOuterLoop> & loop)
     _tell_outer_loops_changed();
 }
 
-bool LSGrid::_holds_svc_monitors() const
+bool LSGrid::_holds_svc_monitors(bool runs_outer_loops) const
 {
-    if (!_algo.supports_outer_loops()) return false;
+    if (!runs_outer_loops) return false;
     for (const auto & loop : get_outer_loops()) {
         if (loop->holds_svc_monitors()) return true;
     }
@@ -1307,7 +1307,7 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     plan.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                            ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
                            ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq,
-                           sn_mva_, hold_frozen_regulators_, _holds_svc_monitors());
+                           sn_mva_, hold_frozen_regulators_, _holds_svc_monitors(_algo.supports_outer_loops()));
     data = plan.controllers();
 }
 
@@ -1611,6 +1611,7 @@ CplxVect LSGrid::_build_into_cache(
     bool force_full_rebuild,
     bool init_pv_vm_targets,
     bool supports_voltage_control,
+    bool holds_svc_monitors,
     const std::vector<int> * extra_buses_me)
 {
     bool redo_all =
@@ -1743,7 +1744,7 @@ CplxVect LSGrid::_build_into_cache(
         cache.voltage_control.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                                                 cache.id_me_to_solver, cache.id_solver_to_me,
                                                 cache.slack_bus_id_solver, cache.bus_pq,
-                                                sn_mva_, hold_frozen, _holds_svc_monitors());
+                                                sn_mva_, hold_frozen, holds_svc_monitors);
     }
 
     // type-specific injection assembly (complex Sbus for AC, real Pbus for DC)
@@ -1903,7 +1904,8 @@ CplxVect LSGrid::_pre_process_own_cache(
     // the DC family's use of layer 1 is deliberately left alone (see _build_into_cache).
     const bool supports_voltage_control = _algo.supports_remote_voltage_control();
     CplxVect V = _build_into_cache(Vinit, cache, solver_control, cache_unusable,
-                                   init_pv_vm_targets, supports_voltage_control);
+                                   init_pv_vm_targets, supports_voltage_control,
+                                   _holds_svc_monitors(_algo.supports_outer_loops()));
 
     // `cache.algo_needs_rebuild` is set when this family's previous powerflow
     // diverged (see process_results): the algorithm is NOT reset there, its last
@@ -1990,9 +1992,10 @@ CplxVect LSGrid::build_solver_input(
     const Eigen::Ref<const CplxVect> & Vinit,
     AcSolverCache & out,
     const AlgoControl & solver_control,
-    const std::vector<int> * extra_buses_me)
+    const std::vector<int> * extra_buses_me,
+    bool runs_outer_loops)
 {
-    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control, extra_buses_me);
+    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control, extra_buses_me, runs_outer_loops);
 }
 
 CplxVect LSGrid::build_dc_solver_input(
@@ -2001,7 +2004,8 @@ CplxVect LSGrid::build_dc_solver_input(
     const AlgoControl & solver_control,
     const std::vector<int> * extra_buses_me)
 {
-    return _build_foreign_cache<real_type>(Vinit, out, solver_control, extra_buses_me);
+    // the plan's controllers are AC only
+    return _build_foreign_cache<real_type>(Vinit, out, solver_control, extra_buses_me, false);
 }
 
 template<class MatScalar>
@@ -2009,7 +2013,8 @@ CplxVect LSGrid::_build_foreign_cache(
     const Eigen::Ref<const CplxVect> & Vinit,
     SolverSideCache<MatScalar> & out,
     const AlgoControl & solver_control,
-    const std::vector<int> * extra_buses_me)
+    const std::vector<int> * extra_buses_me,
+    bool runs_outer_loops)
 {
     // Our own cache is not a foreign one: taking this path with it would rebuild
     // it while telling our algorithm nothing, then retire what was just built.
@@ -2029,11 +2034,13 @@ CplxVect LSGrid::_build_foreign_cache(
     // read off `_algo`: the caller solves `out` with an algorithm of its OWN, which
     // this grid knows nothing about. Building the plan is what preserves the batch
     // path exactly as it was; a caller whose algorithm cannot consume it simply does
-    // not read it.
+    // not read it. Whether it holds the idle standby SVCs is the caller's algorithm's
+    // call too (`runs_outer_loops`), not `_algo`'s.
     CplxVect V = _build_into_cache(Vinit, out, solver_control,
                                    /*force_full_rebuild=*/true,
                                    /*init_pv_vm_targets=*/true,
                                    /*supports_voltage_control=*/true,
+                                   _holds_svc_monitors(runs_outer_loops),
                                    extra_buses_me);
 
     // `_algo` / `_dc_algo` are deliberately untouched: they are THIS grid's, they
@@ -2621,9 +2628,7 @@ void LSGrid::generator_results(bool ac,
             const int gen_id = gen_bus.first;
             if(is_off(gen_id)) continue;
             if(generators_.would_be_local_voltage_controller(gen_id)){
-                shares.push_back({gen_bus.second,
-                                  generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
-                                  VoltageControlSolverData::GEN, gen_id});
+                shares.push_back(_gen_q_share(gen_id, gen_bus.second));
             } else if(!generators_.get_voltage_regulator_on(gen_id)){
                 q_mvar(gen_id) = generators_.get_target_q_mvar(gen_id);
             }
@@ -2754,6 +2759,18 @@ void LSGrid::_mark_q_solved_by_algo(const IntVect & ctrl_kind,
     }
 }
 
+LSGrid::QShare LSGrid::_gen_q_share(int gen_id, int bus_id) const
+{
+    QShare sh{bus_id, generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
+              VoltageControlSolverData::GEN, gen_id};
+    gen_limits_at_outer_target(gen_id, results_gen_target_p_, sh.min_q, sh.max_q);
+    const real_type key = generators_.get_reactive_key(gen_id);
+    if(std::isfinite(key) && key > 0.) sh.key = key;
+    sh.range_max = (gen_reactive_range_max_.size() > gen_id && std::isfinite(gen_reactive_range_max_(gen_id)))
+                   ? gen_reactive_range_max_(gen_id) : sh.span;
+    return sh;
+}
+
 std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector<bool> & gen_solved,
                                                                const std::vector<bool> & hvdc1_solved,
                                                                const std::vector<bool> & hvdc2_solved,
@@ -2774,15 +2791,7 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(gen_off != nullptr && static_cast<std::size_t>(gen_id) < gen_off->size() && (*gen_off)[gen_id]) continue;
         if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
-        QShare sh{gen_buses(gen_id).cast_int(),
-                  generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
-                  VoltageControlSolverData::GEN, gen_id};
-        gen_limits_at_outer_target(gen_id, results_gen_target_p_, sh.min_q, sh.max_q);
-        const real_type key = generators_.get_reactive_key(gen_id);
-        if(std::isfinite(key) && key > 0.) sh.key = key;
-        sh.range_max = (gen_reactive_range_max_.size() > gen_id && std::isfinite(gen_reactive_range_max_(gen_id)))
-                       ? gen_reactive_range_max_(gen_id) : sh.span;
-        shares.push_back(sh);
+        shares.push_back(_gen_q_share(gen_id, gen_buses(gen_id).cast_int()));
     }
     const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
@@ -3612,7 +3621,7 @@ std::tuple<int, int> LSGrid::assign_slack_to_most_connected(){
     return _assign_slack_most_connected(false);
 }
 
-std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool highest_voltage_first){
+std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool island_fallback){
     auto res = std::tuple<int, int>(-1, -1);
     int res_bus_id = -1;
     int res_gen_id = -1;
@@ -3639,24 +3648,62 @@ std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool highest_voltage_f
     {
         if(!(gen_p_per_bus[bus_id] > 0.)) continue;
         const auto & nb_lines_this = nb_line_end_per_bus[bus_id];
-        const real_type vn = highest_voltage_first ? vn_kv(bus_id) : 0.;
+        const real_type vn = island_fallback ? vn_kv(bus_id) : 0.;
         if((vn > max_vn) || ((vn == max_vn) && (nb_lines_this > max_line))){
             res_bus_id = bus_id;
             max_line = nb_lines_this;
             max_vn = vn;
         }
     }
+    // no unit produces anything (synchronous condensers, units at 0 MW): any connected one
+    // may hold the slack, in the same order (OpenLoadFlow's most meshed bus is any bus, its
+    // slack needs no unit: lightsim2grid's does)
+    const bool none_produces = res_bus_id == -1;
+    if(none_produces){
+        std::vector<char> has_unit(nb_busbars, 0);
+        for(int gen_id = 0; gen_id < generators_.nb(); ++gen_id){
+            if(generators_.get_status(gen_id)) has_unit[static_cast<std::size_t>(generators_.get_bus(gen_id).cast_int())] = 1;
+        }
+        for(int storage_id = 0; storage_id < storages_.nb(); ++storage_id){
+            if(storages_.get_status(storage_id)) has_unit[static_cast<std::size_t>(storages_.get_bus(storage_id).cast_int())] = 1;
+        }
+        for(unsigned int bus_id = 0; bus_id < nb_busbars; ++bus_id)
+        {
+            if(!has_unit[bus_id]) continue;
+            const auto & nb_lines_this = nb_line_end_per_bus[bus_id];
+            const real_type vn = island_fallback ? vn_kv(bus_id) : 0.;
+            if((vn > max_vn) || ((vn == max_vn) && (nb_lines_this > max_line))){
+                res_bus_id = bus_id;
+                max_line = nb_lines_this;
+                max_vn = vn;
+            }
+        }
+    }
     // TODO DEBUG MODE
     if(res_bus_id == -1) throw std::runtime_error("LSGrid::assign_slack_to_most_connected: impossible to find anything connected to a node.");
     std::get<0>(res) = res_bus_id;
 
-    // and reset the slack bus
-    generators_.remove_all_slackbus();
-    storages_.remove_all_slackbus();
+    // and reset the slack bus. Losing the slack to an island moves the slack, not the units
+    // able to share it: they keep their "can participate" flag, so the redistribution below
+    // and a DistributedSlack loop still count them, and a stranded slack unit goes back into
+    // the slack once reconnected (see SlackParticipation::leave_all / rejoin_if_able)
+    if(island_fallback){
+        generators_.leave_all_slackbus();
+        storages_.leave_all_slackbus();
+    }else{
+        generators_.remove_all_slackbus();
+        storages_.remove_all_slackbus();
+    }
     res_gen_id = generators_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
     const int res_storage_id = storages_.assign_slack_bus(res_bus_id, gen_p_per_bus, algo_controler_);
     if(res_gen_id == -1 && res_storage_id == -1){
         throw std::runtime_error("LSGrid::assign_slack_to_most_connected: no generator nor storage unit on the chosen bus.");
+    }
+    // the two above put in the slack the units producing there: none does, the one producing
+    // the most (a generator first) holds it alone
+    if(none_produces){
+        if(res_gen_id != -1) generators_.add_slackbus(res_gen_id, 1., algo_controler_);
+        else storages_.add_slackbus(res_storage_id, 1., algo_controler_);
     }
     std::get<1>(res) = res_gen_id;
     ac_cache_.slack_bus_id_solver = SolverBusIdVect();
@@ -3795,11 +3842,26 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         ctx.tol_mw = tol_mva;
         ctx.tol_vm_pu = tol_vm_pu;
         ctx.vm_checks = ac;
+        ctx.ac = ac;
         OuterRowView as_solved;
         as_solved.layout = &layout;
         as_solved.masked = no_mask;
+        // at the targets the solve's own loops moved (DistributedSlack): a unit's reactive
+        // limits follow its target P, and the solve held it within the ones at that P; and
+        // the transformers at the taps they left them at
+        std::vector<std::pair<int, std::array<cplx_type, 4> > > trafo_blocks;
+        if(ac){
+            std::vector<real_type> gen_target_p, storage_target_p;
+            algo.get_outer_target_p(gen_target_p, storage_target_p);
+            as_solved.take_moved_targets(gen_target_p, storage_target_p);
+            std::vector<int> phase_tap, ratio_tap;
+            algo.get_outer_phase_tap(phase_tap);
+            algo.get_outer_ratio_tap(ratio_tap);
+            trafo_blocks = trafos_.moved_tap_blocks(trafos_.moved_taps(false, ratio_tap), trafos_.moved_taps(true, phase_tap));
+            if(!trafo_blocks.empty()) as_solved.moved_trafo_blocks = &trafo_blocks;
+        }
         ctx.row = &as_solved;
-        outer_detect(get_outer_loops(), ctx, out);
+        outer_detect(detection_loops(get_outer_loops()), ctx, out);
     }
     // the PQ -> PV release of the machines the caller froze at a reactive limit
     // (set_gen_can_be_pv): no OpenLoadFlow loop releases a unit loaded without voltage
@@ -4059,7 +4121,8 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     // participant takes no share (as OLF, which only distributes on the main component).
     // They stay in the slack, so that reconnecting one puts it back where it was; their
     // buses, out of the grid, are no slack buses meanwhile (see _slack_bus_id_me). The
-    // main component, the largest one, may then have no slack left (given one at the end).
+    // main component, the largest one, may then have no slack left: it is given one at the
+    // end, and the stranded units leave the slack, still able to rejoin it.
     bool slack_in_main = false;
     for(const auto & el : slack_buses_id) slack_in_main = slack_in_main || bus_in_main_cc[el.cast_int()];
     if((_forced_ref_slack_bus_id >= 0) && !bus_in_main_cc[_forced_ref_slack_bus_id]){
@@ -4080,8 +4143,8 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     // voltage ones, when the slack it was named is not in the main component)
     if(!slack_in_main) _assign_slack_most_connected(true);
 
-    // the lost power is shared on the slack units that remain (the stranded ones are
-    // out of the slack and off by now), with their bounds
+    // the lost power is shared on the units of the main component that take part in the
+    // slack or can (the stranded ones are off by now), with their bounds
     slack_redistribution::Report report;
     if(redistribute_slack && std::abs(lost_mw) > slack_redistribution::default_eps_mw){
         report = redistribute_active_power(lost_mw);

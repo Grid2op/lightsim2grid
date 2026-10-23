@@ -55,6 +55,11 @@ ErrorType KLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
                               const_cast<real_type*>(J.valuePtr()),
                               symbolic_.get(), &common_));
     if(common_.status != KLU_OK) return ErrorType::SolverFactor;
+    if(guard_pivot_growth_){
+        // the reference a later refactorization is judged against
+        rcond_ref_ = 0.;
+        if(klu_rcond(symbolic_.get(), numeric_.get(), &common_) == 1) rcond_ref_ = common_.rcond;
+    }
     return ErrorType::NoError;
 }
 
@@ -77,6 +82,14 @@ ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
                          symbolic_.get(), numeric_.get(), &common_);
         if(ok == 1) last_rgrowth_ = common_.rgrowth;
         if(ok != 1 || !(common_.rgrowth >= rgrowth_threshold_)) return ErrorType::SolverReFactor;
+    }
+    if(guard_pivot_growth_ && rcond_ref_ > 0.){
+        // klu_rcond is min|diag(U)| / max|diag(U)|, O(n). Healthy refactorizations stay
+        // within a modest factor of the reference; one that falls by this many orders of
+        // magnitude has pivots that no longer suit the matrix
+        constexpr double MAX_RCOND_DROP = 1e-8;
+        if(klu_rcond(symbolic_.get(), numeric_.get(), &common_) != 1 ||
+           !(common_.rcond >= MAX_RCOND_DROP * rcond_ref_)) return ErrorType::SolverReFactor;
     }
     return ErrorType::NoError;
 }

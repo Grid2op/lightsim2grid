@@ -1754,7 +1754,8 @@ class LS2G_API LSGrid final
         /**
          * What the ratio tap changer of transformer `trafo_id` regulates: the voltage of
          * `regulated_bus` (a grid bus id, -1 for none) at `target_vm_pu` within
-         * `deadband_pu`, both in pu of that bus' nominal voltage. Data only for now.
+         * `deadband_pu`, both in pu of that bus' nominal voltage. Read by the
+         * TransformerVoltageControl outer loop.
          */
         void set_trafo_ratio_tap_regulation(int trafo_id, bool regulating, real_type target_vm_pu,
                                             real_type deadband_pu, int regulated_bus){
@@ -1763,11 +1764,12 @@ class LS2G_API LSGrid final
             }
             trafos_.set_tap_regulation(false, trafo_id, RegulationMode::VOLTAGE, regulating, target_vm_pu,
                                        deadband_pu, regulated_bus);
+            _tell_outer_regulation_changed();
         }
         /**
          * What the phase tap changer of transformer `trafo_id` regulates: `mode` FIXED,
          * ACTIVE_POWER (`target` and `deadband` in MW) or CURRENT_LIMITER (in A), through
-         * `regulated_side` (1 or 2) of the transformer. Data only for now.
+         * `regulated_side` (1 or 2) of the transformer. Read by the PhaseControl outer loop.
          */
         void set_trafo_phase_tap_regulation(int trafo_id, RegulationMode mode, bool regulating,
                                             real_type target, real_type deadband, int regulated_side){
@@ -1780,6 +1782,7 @@ class LS2G_API LSGrid final
                 throw std::runtime_error("LSGrid::set_trafo_phase_tap_regulation: the regulated side is 1 or 2.");
             }
             trafos_.set_tap_regulation(true, trafo_id, mode, regulating, target, deadband, regulated_side);
+            _tell_outer_regulation_changed();
         }
         /// move the ratio tap changer of transformer `trafo_id` to `position`
         void change_trafo_ratio_tap(int trafo_id, int position){
@@ -1885,13 +1888,15 @@ class LS2G_API LSGrid final
                                 const std::vector<real_type> & q_mvar){
             shunts_.set_sections(shunt_id, section_count, p_mw, q_mvar, algo_controler_);
         }
-        /// the voltage they regulate, see ShuntContainer::set_section_regulation. Data only for now.
+        /// the voltage they regulate, see ShuntContainer::set_section_regulation. Read by the
+        /// ShuntVoltageControl outer loop.
         void set_shunt_section_regulation(int shunt_id, bool regulating, real_type target_vm_pu,
                                           real_type deadband_pu, int regulated_bus){
             if(regulated_bus < -1 || regulated_bus >= static_cast<int>(total_bus())){
                 throw std::out_of_range("LSGrid::set_shunt_section_regulation: no bus with that id.");
             }
             shunts_.set_section_regulation(shunt_id, regulating, target_vm_pu, deadband_pu, regulated_bus);
+            _tell_outer_regulation_changed();
         }
         /// switch `section_count` sections of shunt `shunt_id` on
         void change_shunt_section_count(int shunt_id, int section_count){
@@ -2879,12 +2884,17 @@ class LS2G_API LSGrid final
          *    the caller's labelling, or remote voltage control is silently dropped.
          *    See the publication step at the end of `_build_foreign_cache`.
          *
+         * `runs_outer_loops`: whether the CALLER's algorithm runs outer loops
+         * (BaseAlgo::supports_outer_loops), for who the plan holds for them (see
+         * _holds_svc_monitors): this grid's own algorithm says nothing about it.
+         *
          * Throws if handed this grid's own cache -- that is `pre_process_solver`.
          */
         CplxVect build_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
                                     AcSolverCache & out,
                                     const AlgoControl & solver_control,
-                                    const std::vector<int> * extra_buses_me = nullptr);
+                                    const std::vector<int> * extra_buses_me = nullptr,
+                                    bool runs_outer_loops = false);
 
         /// DC counterpart of `build_solver_input`: real Bbus / Pbus into `out`.
         CplxVect build_dc_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
@@ -2964,9 +2974,10 @@ class LS2G_API LSGrid final
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
-        /// assign_slack_to_most_connected, the buses compared on the highest nominal voltage first
-        /// when `highest_voltage_first` (consider_only_main_component's fallback)
-        std::tuple<int, int> _assign_slack_most_connected(bool highest_voltage_first);
+        /// assign_slack_to_most_connected. With `island_fallback` (consider_only_main_component's
+        /// fallback) the buses are compared on the highest nominal voltage first, and the units
+        /// taken out of the slack keep their "can participate" flag, as every other unit does
+        std::tuple<int, int> _assign_slack_most_connected(bool island_fallback);
         // the generators / storage units whose status went from off (in the `*_before`
         // snapshots) to on try to rejoin the slack (see SlackParticipation::rejoin_if_able)
         void _rejoin_slack_if_reconnected(const std::vector<bool> & gen_status_before,
@@ -3133,6 +3144,8 @@ class LS2G_API LSGrid final
         /// `supports_voltage_control`: may the voltage-control layers be built at all
         /// (BaseAlgo::supports_remote_voltage_control of the algorithm that will solve
         /// this cache)? False leaves the plan empty and gives the classical pv/pq split.
+        /// `holds_svc_monitors`: does that plan hold the idle standby SVCs (see
+        /// _holds_svc_monitors)?
         template<class MatScalar>
         CplxVect _build_into_cache(const Eigen::Ref<const CplxVect> & Vinit,
                                    SolverSideCache<MatScalar> & cache,
@@ -3140,6 +3153,7 @@ class LS2G_API LSGrid final
                                    bool force_full_rebuild,
                                    bool init_pv_vm_targets,
                                    bool supports_voltage_control,
+                                   bool holds_svc_monitors,
                                    const std::vector<int> * extra_buses_me = nullptr);
 
         /**
@@ -3192,7 +3206,8 @@ class LS2G_API LSGrid final
         CplxVect _build_foreign_cache(const Eigen::Ref<const CplxVect> & Vinit,
                                       SolverSideCache<MatScalar> & out,
                                       const AlgoControl & solver_control,
-                                      const std::vector<int> * extra_buses_me = nullptr);
+                                      const std::vector<int> * extra_buses_me,
+                                      bool runs_outer_loops);
 
         // Is `cache` this grid's own cache for its family, or someone else's?
         // No longer a dispatch -- which entry point you called is what decides that
@@ -3306,6 +3321,9 @@ class LS2G_API LSGrid final
             real_type key = std::numeric_limits<real_type>::quiet_NaN();        ///< its reactive key, NaN if none
             real_type range_max = std::numeric_limits<real_type>::quiet_NaN();  ///< its widest range, MVar
         };
+        /// generator `gen_id`'s share, on grid bus `bus_id` (its own, or the one a batch row
+        /// places it on): every field filled, what either dispatch reads
+        QShare _gen_q_share(int gen_id, int bus_id) const;
         /// OpenLoadFlow's split of one bus' reactive power between its units (see
         /// set_reactive_dispatch_olf): `q_mvar` shared out, written into `q_out` (aligned
         /// with `units`)
@@ -3421,6 +3439,13 @@ class LS2G_API LSGrid final
         // it marked the MEMBER control, and the only caller -- process_results -- must
         // now mark the powerflow's working copy instead. Bringing it back would be the
         // easy way to reintroduce the bug the working-copy protocol removes.)
+
+        // A tap changer's or a shunt's regulation changed: the outer loops reserve their
+        // controls in the Newton (BaseOuterLoop::declare) only when it rebuilds, so the
+        // next AC solve must rebuild, as for a set_svc_standby. Nothing in DC reads it.
+        void _tell_outer_regulation_changed() noexcept {
+            algo_controler_.ac_algo_controler().tell_pv_changed();
+        }
 
         /**
          * One family's half of `unset_changes()`: record the claim if the cache can
@@ -3584,8 +3609,9 @@ class LS2G_API LSGrid final
             algo_controler_.dc_algo_controler().tell_slack_weight_changed();
         }
         // whether the voltage-control plan holds the idle standby SVCs: the AC algorithm
-        // runs outer loops and one of them asks for it (BaseOuterLoop::holds_svc_monitors)
-        bool _holds_svc_monitors() const;
+        // that solves it runs outer loops (`runs_outer_loops`: ours, or a batch's own) and
+        // one of them asks for it (BaseOuterLoop::holds_svc_monitors)
+        bool _holds_svc_monitors(bool runs_outer_loops) const;
         // a loop list may change who that plan holds
         void _tell_outer_loops_changed() {
             algo_controler_.tell_pv_changed();

@@ -20,6 +20,26 @@ namespace ls2g {
 // out-of-class definition: the C++14 build odr-uses it (vector::assign takes a const reference)
 constexpr int OuterRowView::Units::GRID_BUS;
 
+namespace {
+
+void overlay_targets(std::vector<real_type> & row, const std::vector<real_type> & moved)
+{
+    for (std::size_t k = 0; k < moved.size(); ++k) {
+        if (std::isnan(moved[k])) continue;
+        if (row.size() < moved.size()) row.resize(moved.size(), std::numeric_limits<real_type>::quiet_NaN());
+        row[k] = moved[k];
+    }
+}
+
+}  // namespace
+
+void OuterRowView::take_moved_targets(const std::vector<real_type> & gen_target_p,
+                                      const std::vector<real_type> & storage_target_p)
+{
+    overlay_targets(gens.target_p, gen_target_p);
+    overlay_targets(storages.target_p, storage_target_p);
+}
+
 const SolverBusLayout & OuterGridView::layout() const
 {
     return (row_ != nullptr && row_->layout != nullptr) ? *row_->layout : grid_.get_ac_layout();
@@ -240,6 +260,19 @@ bool OuterGridView::line_closed(int line_id, int & bus1_solver, int & bus2_solve
 {
     return branch_closed(grid_.get_lines(), row_ != nullptr ? &row_->lines : nullptr, line_id,
                          id_me_to_solver(), bus1_solver, bus2_solver);
+}
+
+std::array<cplx_type, 4> OuterGridView::trafo_block(int trafo_id) const
+{
+    const auto * moved = row_ != nullptr ? row_->moved_trafo_blocks : nullptr;
+    if (moved != nullptr) {
+        const auto it = std::lower_bound(moved->begin(), moved->end(), trafo_id,
+            [](const std::pair<int, std::array<cplx_type, 4> > & e, int t) { return e.first < t; });
+        if (it != moved->end() && it->first == trafo_id) return it->second;
+    }
+    const TrafoContainer & trafos = grid_.get_trafos();
+    return {trafos.yac_eff_11()(trafo_id), trafos.yac_eff_12()(trafo_id),
+            trafos.yac_eff_21()(trafo_id), trafos.yac_eff_22()(trafo_id)};
 }
 
 bool OuterGridView::trafo_closed(int trafo_id, int & bus1_solver, int & bus2_solver) const

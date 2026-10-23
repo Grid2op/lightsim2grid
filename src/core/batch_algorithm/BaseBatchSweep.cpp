@@ -415,7 +415,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
         // the refactorize fallback the member algo got (see _maybe_prepare_masks /
         // _push_switchable_to_algo): a fresh algo starts without it
-        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary()) algos[t]->set_refactor_fallback(true);
+        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary() ||
+           (ac_solver_used && _has_voltage_control_groups())) algos[t]->set_refactor_fallback(true);
         // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
         // yet, so telling it here is enough -- its first build_J_sparsity() already
         // accounts for them. Starts fully pinned, like _algo; each row releases what
@@ -425,6 +426,19 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
             algos[t]->set_pv_pinned_buses(_switchable_buses_);
         }
         ybus_copies[t] = ac_cache_.mat;
+        // An algorithm running outer loops reserves its controls (the buses ReactiveLimits
+        // may switch, the transformers a loop moves, ...) on its first solve, for the view
+        // that solve has. The member algorithm's is the "n" solve; a fresh worker's would
+        // be its first row, which leaves out what that row strands or opens -- for every
+        // later row of the worker, whose results would then depend on the thread count.
+        // So a fresh worker solves the base case first too, configured as the member
+        // algorithm was for it (above), and its range does not rebuild after that.
+        if(ac_solver_used && th_needs_init[t] && algos[t]->supports_outer_loops()){
+            if(mask_mode) algos[t]->set_masked_buses(_base_masked_);
+            algos[t]->set_outer_row_view(&_base_row_view_);
+            warmup_solver(*algos[t], controls[t], Vinit_solver, max_iter, tol_, false);
+            th_needs_init[t] = 0;
+        }
     };
 
     auto timer_thread = CustTimer();
@@ -623,7 +637,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     }
 
     // the injections, on the other hand, are exactly what a second compute() came to
-    // change: always rebuilt (a no-op where Sbus does not vary).
+    // change: always rebuilt (a no-op where Sbus does not vary). A load they trip must
+    // not be one the row's topological action places as well.
+    _check_topo_load_overlap();
     _prepare_sbus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
     // ... and with them the buses several generators regulate at once, which is what a
     // per-row gen_v has to agree on (see _row_gen_v_conflicts)
@@ -656,6 +672,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     bool n_powerflow_has_conv = _finish_preprocessing(
         nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v
     );
+    // a remote regulator / SVC border zeroes diagonal pivots a row's Ybus edit can hit
+    // (see _has_voltage_control_groups); the plan exists once the "n" solve has run
+    if(ac_solver_used && _has_voltage_control_groups()) _algo.set_refactor_fallback(true);
 
     if(!n_powerflow_has_conv){
         // a diverging base case: a Vary-carrying instantiation (TimeSeries /

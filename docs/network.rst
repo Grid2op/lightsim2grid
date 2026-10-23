@@ -579,6 +579,13 @@ each distinct contingency once:
     propagator.add_contingencies([[name] for name in net.get_lines().index])
     propagator.add_contingencies([[name] for name in net.get_2_windings_transformers().index])
     unique, inverse = propagator.group_contingencies()
+    # the branches each contingency opens at one end only, and which end (those of the
+    # first contingency of each group, as `unique` holds)
+    sides = [{**opened, **dead} for opened, dead in zip(propagator.opened_sides(), propagator.dead_ends())]
+    first = {}
+    for i, k in enumerate(inverse):
+        first.setdefault(k, i)
+    unique_sides = [sides[first[k]] for k in range(len(unique))]
 
     # pypowsybl names -> ids of the contingency analysis, per kind of element
     def ids(elements):
@@ -589,8 +596,13 @@ each distinct contingency once:
     ca = ContingencyAnalysisCPP(grid)
     ca.handle_disconnected_grid = True
     keys = []
-    for cont in unique:
-        key = tuple(tuple(sorted(kind[name] for name in cont if name in kind)) for kind in kinds)
+    for cont, opened in zip(unique, unique_sides):
+        # what is tripped (all its ends), then the branches opened at side 1, at side 2:
+        # the six lists of add_contingency, each sorted, as my_contingencies() gives them
+        tripped = [name for name in cont if name not in opened]
+        key = tuple(tuple(sorted(kind[name] for name in tripped if name in kind)) for kind in kinds)
+        key += tuple(tuple(sorted(branch_id[name] for name, side in opened.items()
+                                  if side == end and name in branch_id)) for end in (1, 2))
         keys.append(key)
         ca.add_contingency(*key)
     ca.compute(v_init, max_iter, tol)

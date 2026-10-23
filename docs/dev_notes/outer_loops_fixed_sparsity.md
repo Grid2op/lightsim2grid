@@ -254,7 +254,7 @@ to one protected `_xxx` hook.
 | `check(ctx)` | `detect` then act; STABLE / UNSTABLE / FAILED | -- |
 | `cleanup(ctx)` | after the last solve, reverse order | no-op |
 | `can_fix_unrealistic_state()` | for the driver | false |
-| `clone()`, `get_params()` / `set_params()` | copies, threads, persistence | -- |
+| `clone()`, `get_params()` | copies, threads, persistence (the parameters are set at construction, `const` afterwards) | -- |
 
 `declare` is called from `init_topology`, before `build_J_sparsity`: the grid data and the
 number of units that may switch, participate or regulate are known there. That is the only

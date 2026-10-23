@@ -164,6 +164,18 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
              << "the NR algorithms (eg NR_KLU / NR_SparseLU).";
         throw std::runtime_error(exc_.str());
     }
+    if(_algo.supports_outer_loops() && !_grid_model.get_outer_loops().empty()){
+        // the corrector solves at a fixed lambda, on one system: the outer loops change it
+        // between two correctors (and the tangent is taken from whatever they left), so the
+        // points would not be those of the lambda-parametrised curve
+        std::ostringstream exc_;
+        exc_ << "ContinuationSweep::compute: the algorithm '" << _algo.get_name() << "' runs the grid's "
+             << "outer loops, which a continuation does not support: between two correctors they "
+             << "change the system it continues (DistributedSlack moves the units' targets off the "
+             << "curve's injection, ReactiveLimits switches buses between PV and PQ). Pick a plain "
+             << "Newton-Raphson algorithm (eg NR_KLU / NR_SparseLU).";
+        throw std::runtime_error(exc_.str());
+    }
     if(_step_min > _step_max){
         std::ostringstream exc_;
         exc_ << "ContinuationSweep::compute: step_min (" << _step_min << ") is larger than "

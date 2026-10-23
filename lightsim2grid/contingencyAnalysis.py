@@ -456,7 +456,8 @@ class ContingencyAnalysis(object):
         * the **own bus** of every generator regulating a remote bus
           (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the
           ``GENERATOR``): does holding the remote target take it outside the realistic range
-          of the ``ReactiveLimits`` loop? OpenLoadFlow's
+          of the ``ReactiveLimits`` loop (the grid's, or one with its default parameters when
+          the grid runs none, as for the reactive capability above)? OpenLoadFlow's
           ``ReactiveLimits``, in its robust remote voltage control mode. ``value`` and
           ``limit`` in kV, compared with :attr:`physical_violation_tol_vm_pu`.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
@@ -691,7 +692,7 @@ class ContingencyAnalysis(object):
             raise RuntimeError("This is closed, you cannot use it.")
         
         li_disc = self._single_cont_to_li_int(args)
-        li_disc_tup = tuple(li_disc)
+        li_disc_tup = self._cont_key(li_disc)
         if li_disc_tup not in self._contingency_order:
             # this is really the first time this contingency is seen
             try:
@@ -786,14 +787,17 @@ class ContingencyAnalysis(object):
 
     @staticmethod
     def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=()):
-        """internal: the key a contingency is known by on this side. A branch-only one keeps
-        the flat tuple of its branch ids (what `add_single_contingency` always used); one
-        tripping shunts, loads or generators is the nested tuple of its four sorted lists.
-        (This class never opens a branch at one end only: the last two lists
-        `my_contingencies` gives are empty.)"""
+        """internal: the key a contingency is known by on this side. A branch-only one is
+        the flat tuple of its branch ids; one tripping shunts, loads or generators is the
+        nested tuple of its four lists. Each list sorted, every id once: the c++ side keeps
+        sets, and `my_contingencies` must give back the key that was registered. (This class
+        never opens a branch at one end only: the last two lists `my_contingencies` gives
+        are empty.)"""
+        def _ids(stuff):
+            return tuple(sorted({int(el) for el in stuff}))
         if not shunts and not loads and not gens:
-            return tuple(branches)
-        return (tuple(sorted(branches)), tuple(sorted(shunts)), tuple(sorted(loads)), tuple(sorted(gens)))
+            return _ids(branches)
+        return (_ids(branches), _ids(shunts), _ids(loads), _ids(gens))
 
     def _cpp_keys(self):
         """internal: the key of every contingency of the c++ side, in its row order"""
@@ -836,10 +840,17 @@ class ContingencyAnalysis(object):
         """
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
-        branch_ids = self._single_cont_to_li_int(list(lines) if not isinstance(lines, (int, np.integer) + type(self).STR_TYPES) else lines)
+        if isinstance(lines, (int, np.integer) + type(self).STR_TYPES):
+            lines = [lines]  # one line, by id or by name
+        branch_ids = self._single_cont_to_li_int(list(lines))
         shunt_ids = self._ids_of(shunts, getattr(type(self._ls_backend), "name_shunt", []), "shunt")
         load_ids = self._ids_of(loads, type(self._ls_backend).name_load, "load")
         gen_ids = self._ids_of(gens, type(self._ls_backend).name_gen, "generator")
+        if not branch_ids and not shunt_ids and not load_ids and not gen_ids:
+            # add_single_contingency() would register it (add_nk([])), the c++
+            # add_contingency refuses it
+            raise RuntimeError("Impossible to add the contingency: it trips nothing "
+                               "(lines, shunts, loads and gens are all empty).")
         if not shunt_ids and not load_ids and not gen_ids:
             # a branch-only contingency: the same one as add_single_contingency's
             self.add_single_contingency(*branch_ids, name=name)
@@ -914,7 +925,7 @@ class ContingencyAnalysis(object):
             orders_ = np.zeros(len(args), dtype=int)
             for id_me, cont_ in enumerate(args):
                 cont_li = self._single_cont_to_li_int(cont_)
-                tup_ = tuple(cont_li)
+                tup_ = self._cont_key(cont_li)
                 if tup_ not in self._contingency_order:
                     raise RuntimeError(f"Contingency {cont_} is not simulated by this class. Have you called "
                                        f"`add_single_contingency` or `add_multiple_contingencies` ?")

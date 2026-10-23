@@ -431,3 +431,33 @@ TEST_CASE("NROuter declares the capabilities of the Newton it wraps", "[outer_lo
     CHECK(remote);
     CHECK(mismatch);
 }
+
+namespace {
+
+// a config whose first values are valid and changed, and whose refactor_every_n (int_params[3])
+// is refused: the call throws, and must leave every parameter as it was
+template<class Algo>
+void check_rejected_config_changes_nothing()
+{
+    Algo algo;
+    const ls2g::AlgoConfig before = algo.get_config();
+    ls2g::AlgoConfig cfg = before;
+    REQUIRE(cfg.int_params.size() >= 4);
+    REQUIRE(cfg.real_params.size() >= 6);
+    cfg.real_params[0] = 0.5 * before.real_params[0];  // max_dVa
+    cfg.real_params[1] = 0.5 * before.real_params[1];  // max_dVm
+    cfg.int_params[2] = before.int_params[2] + 1;      // ls_max_iter
+    cfg.int_params[3] = 0;                             // refactor_every_n: refused
+    CHECK_THROWS(algo.set_config(cfg));
+    const ls2g::AlgoConfig after = algo.get_config();
+    CHECK(after.int_params == before.int_params);
+    CHECK(after.real_params == before.real_params);
+}
+
+}  // namespace
+
+TEST_CASE("a rejected AlgoConfig leaves the algorithm as it was", "[outer_loop][algo_config]")
+{
+    SECTION("the Newton") { check_rejected_config_changes_nothing<ls2g::NR_SparseLU>(); }
+    SECTION("the outer-loop driver around it") { check_rejected_config_changes_nothing<ls2g::NROuter_SparseLU>(); }
+}

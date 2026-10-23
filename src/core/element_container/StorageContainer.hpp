@@ -251,6 +251,8 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
                                          solver_control, "StorageContainer::rejoin_slackbus_if_able");
         }
         void remove_all_slackbus(){ slack_.remove_all(); }
+        /// every storage unit out of the slack, still flagged "can participate" (see SlackParticipation::leave_all)
+        void leave_all_slackbus(){ slack_.leave_all(); }
         bool is_slack(int storage_id) const {return slack_.is_slack(storage_id);}
         /// the unit's own (un-normalised) share of the distributed slack
         real_type get_slack_weight(int storage_id) const {return slack_.weight(storage_id);}

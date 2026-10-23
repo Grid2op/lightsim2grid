@@ -9,8 +9,10 @@
 #ifndef OUTER_ROW_VIEW_H
 #define OUTER_ROW_VIEW_H
 
+#include <array>
 #include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "Utils.hpp"
@@ -80,6 +82,10 @@ struct OuterRowView
     /// OpenLoadFlow's security analysis does (a batch's `redistribute_slack`). NaN: nothing to
     /// share.
     real_type lost_p_mw = std::numeric_limits<real_type>::quiet_NaN();
+    /// detection only: the pi blocks (y11, y12, y21, y22, pu) of the transformers the solve's
+    /// outer loops left at another tap, by increasing transformer id (TrafoContainer::
+    /// moved_tap_blocks): the state that solve ended in (null: none moved, or not a detection)
+    const std::vector<std::pair<int, std::array<cplx_type, 4> > > * moved_trafo_blocks = nullptr;
 
     /// One element kind's overrides. Each vector is empty, or sized by the element count.
     struct Units
@@ -127,6 +133,11 @@ struct OuterRowView
         lines.clear();
         trafos.clear();
     }
+    /// lay the active targets a solve's outer loops moved (OuterInjections' convention: NaN
+    /// where a loop kept the unit's) over this row's: the state that solve ended in, which a
+    /// detection after it reads (a unit's reactive limits follow its target P)
+    void take_moved_targets(const std::vector<real_type> & gen_target_p,
+                            const std::vector<real_type> & storage_target_p);
 };
 
 /**
@@ -187,6 +198,9 @@ class LS2G_API OuterGridView
         /// of its two ends (both solved, possibly equal)
         bool line_closed(int line_id, int & bus1_solver, int & bus2_solver) const;
         bool trafo_closed(int trafo_id, int & bus1_solver, int & bus2_solver) const;
+        /// its pi block (y11, y12, y21, y22, pu): at the tap the solve's loops left it at (see
+        /// OuterRowView::moved_trafo_blocks), the one the grid stamps otherwise
+        std::array<cplx_type, 4> trafo_block(int trafo_id) const;
 
         /// a generator's target P where a loop or the row moved it, NaN where neither did: what
         /// LSGrid::gen_limits_at_outer_target reads. `loops` (per generator, may be empty) wins

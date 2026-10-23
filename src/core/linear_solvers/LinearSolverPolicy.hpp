@@ -54,6 +54,15 @@ namespace detail {
     }
     template<class T>
     double last_rgrowth_impl(const T &, long) { return std::numeric_limits<double>::quiet_NaN(); }
+
+    // overload on the extra int/long argument: the first is chosen (as int is the exact match)
+    // when the solver has set_pivot_growth_guard, the second is the no-op for the others
+    template<class S>
+    auto set_pivot_growth_guard_impl(S & solver, bool val, int) noexcept -> decltype(solver.set_pivot_growth_guard(val), void()) {
+        solver.set_pivot_growth_guard(val);
+    }
+    template<class S>
+    void set_pivot_growth_guard_impl(S &, bool, long) noexcept {}
 }  // namespace detail
 
 template<class LinearSolver>
@@ -138,6 +147,16 @@ class LinearSolverPolicy
         void set_refactor_fallback(bool val) noexcept {
             refactor_fallback_ = val;
             detail::set_rgrowth_threshold_impl(inner_, val ? rgrowth_threshold_ : 0., 0);
+            _apply_pivot_growth_guard();
+        }
+
+        // Asks a solver that can tell a poor refactorization from a failed one (KLU) to do
+        // so, for the algorithm that knows its Jacobian needs it (bordered voltage-control
+        // rows). Only effective with the fallback on: with nothing to catch the failure, it
+        // would turn a poor-but-working solve into an error. A no-op for the other solvers.
+        void set_pivot_growth_guard(bool val) noexcept {
+            guard_wanted_ = val;
+            _apply_pivot_growth_guard();
         }
         bool refactor_fallback() const noexcept { return refactor_fallback_; }
 
@@ -210,6 +229,10 @@ class LinearSolverPolicy
         LinearSolverStats stats_;
         bool refactor_fallback_ = false;
         real_type rgrowth_threshold_ = RGROWTH_THRESHOLD;
+        bool guard_wanted_      = false;
+        void _apply_pivot_growth_guard() noexcept {
+            detail::set_pivot_growth_guard_impl(inner_, guard_wanted_ && refactor_fallback_, 0);
+        }
 
     private:
         // no copy allowed (matches the concrete solver classes' own convention)

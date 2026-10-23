@@ -3,6 +3,17 @@ Change Log
 
 [TODO]
 --------
+- Batches with ``init_from_n_powerflow``: the "n" solve's resume point clones every outer loop, the ones
+  that did not run in that solve too, so a row needing one resumes it from what an earlier solve left in
+  it. Not reproduced: no built-in loop is idle in the base case yet needed in a row. Follow-up: carry a
+  fresh loop for those (``OuterLoopAlgo::get_outer_resume_point``).
+- ``compute_physical_violations`` in the batches: each converged row builds its own row view, clones
+  every outer loop and builds the bus reactive plan once per loop reading it. Reusing the view the row
+  was solved with and sharing one plan did not change the timing measurably on the default loop list.
+  Follow-up: profile the per-row checks before optimising them.
+- ``LSGrid``'s result getters (``get_gen_res``...) return views that do not keep the grid alive:
+  read after the grid is gone, they show freed memory. ``reference_internal`` would fix it; to
+  benchmark and weigh first (``docs/dev_notes/result_view_lifetime.md``).
 - ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
   element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
   slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
@@ -253,6 +264,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``DistributedSlack`` only caps the units pushed past ``min_p`` / ``max_p`` / 0 MW, out of the share.
 - [FIXED] ``ContingencyPropagator``: breakers right at a terminal whose other switches are breakers stay
   closed, and a node holding only breakers is walked through, as in OpenLoadFlow.
+- [FIXED] ``set_config`` of the ``NR*`` algorithms: a config refused for one value no longer leaves
+  the values checked before it applied.
+- [FIXED] ``ContingencyAnalysis``: a contingency naming its lines out of order or twice
+  (``add_single_contingency(7, 3)``) made ``run()`` and ``get_flows()`` raise ``KeyError``.
 - [FIXED] ``ContingencyPropagator``: a branch alone behind an opened breaker, but not right behind it, stays
   in service, as in OpenLoadFlow. ``ContingencyPropagator.dead_ends`` gives them.
 - [ADDED] ``ContingencyAnalysis.add_contingency(branch_ids_side1=, branch_ids_side2=)``: a branch opened at one
@@ -270,10 +285,16 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``compute_pf`` / ``solve`` of the algorithms (*eg* ``NR_KLU().solve(...)``) take
   named arguments, and their tolerance is ``tol_pu``: in per unit, unlike the ``tol`` (in MVA)
   of ``LSGrid.ac_pf`` and the batch algorithms.
-- [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
-  algorithms is in MVA (divided by ``sn_mva`` internally), which was nowhere stated.
+- [FIXED] ``ContingencyAnalysis`` with a remote voltage regulator: connected rows failed after one
+  iteration. A KLU refactorization with a zero or collapsed pivot now re-pivots (no new ``analyze``).
 - [FIXED] ``ContinuationSweep``: the correctors read ``tol`` in per unit, not in MVA like the base
   case: they accepted points ``sn_mva`` times less converged than asked.
+- [FIXED] documentation: the ``tol`` of ``LightSimBackend``, ``LSGrid.ac_pf`` and the batch
+  algorithms is in MVA (divided by ``sn_mva`` internally), and a solver plugin receives it in
+  per unit; neither was stated.
+- [FIXED] the wheel and the sdist ship the licenses of the bundled SuiteSparse and Eigen code.
+- [ADDED] (C++ / plugins) the wheel ships the KLU headers (``include/suitesparse/``, on
+  ``lightsim2grid::core``'s include path): plugins no longer need a SuiteSparse checkout.
 - [ADDED] ``get_algo().get_outer_control_layout()``: the J rows / columns of the phase shifters, ratio
   groups and shunt controllers, for solvers that pose the same system (gpusim2grid).
 - [ADDED] ``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot``, ``NROuter_KLUStaticPivot``: KLU with a

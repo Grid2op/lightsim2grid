@@ -190,7 +190,7 @@ void bind_gridmodel(py::module_& m) {
         .def("add_storage_slackbus", &LSGrid::add_storage_slackbus, DocLSGrid::add_storage_slackbus.c_str())
         .def("remove_storage_slackbus", &LSGrid::remove_storage_slackbus, DocLSGrid::remove_storage_slackbus.c_str())
         .def("get_bus_vn_kv", &LSGrid::get_bus_vn_kv, DocLSGrid::get_bus_vn_kv.c_str(), py::return_value_policy::reference_internal)
-        // NB no return_value_policy::reference_internal: get_bus_status() now BUILDS the vector from the
+        // NB no return_value_policy::reference: get_bus_status() now BUILDS the vector from the
         // per-bus element counts and returns it by value, so pybind must copy (the default).
         .def("get_bus_status", &LSGrid::get_bus_status, DocLSGrid::get_bus_status.c_str())
         .def("set_bus_voltage_limits", &LSGrid::set_bus_voltage_limits, DocLSGrid::set_bus_voltage_limits.c_str())
@@ -363,18 +363,22 @@ void bind_gridmodel(py::module_& m) {
              "The widest reactive range of each generator, MVar (over its whole capability curve), "
              "what `set_reactive_dispatch_olf` shares by; NaN for its range at its target P. Copied "
              "with the grid and serialized.")
-        .def("get_gen_reactive_range_max", &LSGrid::get_gen_reactive_range_max, py::return_value_policy::reference_internal)
+        // a copy, as the two getters below: read rarely, and a view would keep neither the grid
+        // nor the buffer a later set_* reallocates alive
+        .def("get_gen_reactive_range_max", [](const LSGrid & self) { return RealVect(self.get_gen_reactive_range_max()); })
         .def("set_station_reactive_range_max", &LSGrid::set_station_reactive_range_max,
              py::arg("range1_mvar"), py::arg("range2_mvar"),
              "The same as `set_gen_reactive_range_max` for the converter stations, one value per hvdc "
              "line on each side (NaN for the range at its active power). Copied with the grid and serialized.")
-        .def("get_station_reactive_range_max", &LSGrid::get_station_reactive_range_max, py::arg("side"), py::return_value_policy::reference_internal)
+        .def("get_station_reactive_range_max",
+             [](const LSGrid & self, int side) { return RealVect(self.get_station_reactive_range_max(side)); },
+             py::arg("side"))
         .def("set_gen_raw_target_q", &LSGrid::set_gen_raw_target_q, py::arg("q_mvar"),
              "OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target Q "
              "(MVar) before it was clamped into its limits at its target P (NaN: none). A non-regulating "
              "generator whose target P an outer loop moved injects it clamped into its limits at the new "
              "P. Copied with the grid and serialized.")
-        .def("get_gen_raw_target_q", &LSGrid::get_gen_raw_target_q, py::return_value_policy::reference_internal)
+        .def("get_gen_raw_target_q", [](const LSGrid & self) { return RealVect(self.get_gen_raw_target_q()); })
         .def("set_gen_capability_curves", &LSGrid::set_gen_capability_curves,
              py::arg("gen_id"), py::arg("p_mw"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
              "The reactive capability curve of some generators, one point per entry (generator id, "
@@ -427,8 +431,8 @@ void bind_gridmodel(py::module_& m) {
         .def("reactivate_powerline_side2", &LSGrid::reactivate_powerline_side2, DocLSGrid::reactivate_powerline_side2.c_str())
         .def("change_bus1_powerline", &LSGrid::change_bus1_powerline_python, DocLSGrid::change_bus1_powerline.c_str())
         .def("change_bus2_powerline", &LSGrid::change_bus2_powerline_python, DocLSGrid::change_bus2_powerline.c_str())
-        .def("get_bus1_powerline", &LSGrid::get_bus1_powerline, DocLSGrid::get_bus1_powerline.c_str(), py::return_value_policy::reference_internal)
-        .def("get_bus2_powerline", &LSGrid::get_bus2_powerline, DocLSGrid::get_bus2_powerline.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus1_powerline", &LSGrid::get_bus1_powerline, DocLSGrid::get_bus1_powerline.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_powerline", &LSGrid::get_bus2_powerline, DocLSGrid::get_bus2_powerline.c_str(), py::return_value_policy::reference)
 
         .def("deactivate_trafo", &LSGrid::deactivate_trafo, DocLSGrid::deactivate_trafo.c_str())
         .def("reactivate_trafo", &LSGrid::reactivate_trafo, DocLSGrid::reactivate_trafo.c_str())
@@ -438,8 +442,8 @@ void bind_gridmodel(py::module_& m) {
         .def("reactivate_trafo_side2", &LSGrid::reactivate_trafo_side2, DocLSGrid::reactivate_trafo_side2.c_str())
         .def("change_bus1_trafo", &LSGrid::change_bus1_trafo_python, DocLSGrid::change_bus1_trafo.c_str())
         .def("change_bus2_trafo", &LSGrid::change_bus2_trafo_python, DocLSGrid::change_bus2_trafo.c_str())
-        .def("get_bus1_trafo", &LSGrid::get_bus1_trafo, DocLSGrid::get_bus1_trafo.c_str(), py::return_value_policy::reference_internal)
-        .def("get_bus2_trafo", &LSGrid::get_bus2_trafo, DocLSGrid::get_bus2_trafo.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus1_trafo", &LSGrid::get_bus1_trafo, DocLSGrid::get_bus1_trafo.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_trafo", &LSGrid::get_bus2_trafo, DocLSGrid::get_bus2_trafo.c_str(), py::return_value_policy::reference)
         .def("change_ratio_trafo", &LSGrid::change_ratio_trafo, DocLSGrid::change_ratio_trafo.c_str())
         .def("change_shift_trafo", &LSGrid::change_shift_trafo, DocLSGrid::change_shift_trafo.c_str())
         .def("change_shift_trafo_deg", &LSGrid::change_shift_trafo_deg, DocLSGrid::change_shift_trafo_deg.c_str())
@@ -465,12 +469,14 @@ void bind_gridmodel(py::module_& m) {
              py::arg("trafo_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
              py::arg("regulated_bus"),
              "What the ratio tap changer regulates: the voltage of `regulated_bus` (grid bus id, -1 for "
-             "none), target and deadband in pu of its nominal voltage. Data only for now.")
+             "none), target and deadband in pu of its nominal voltage. Read by the TransformerVoltageControl "
+             "outer loop.")
         .def("set_trafo_phase_tap_regulation", &LSGrid::set_trafo_phase_tap_regulation,
              py::arg("trafo_id"), py::arg("mode"), py::arg("regulating"), py::arg("target"), py::arg("deadband"),
              py::arg("regulated_side"),
              "What the phase tap changer regulates: RegulationMode FIXED, ACTIVE_POWER (MW) or "
-             "CURRENT_LIMITER (A), through `regulated_side` (1 or 2) of the transformer. Data only for now.")
+             "CURRENT_LIMITER (A), through `regulated_side` (1 or 2) of the transformer. Read by the "
+             "PhaseControl outer loop.")
         .def("change_trafo_ratio_tap", &LSGrid::change_trafo_ratio_tap, py::arg("trafo_id"), py::arg("position"),
              "Move the ratio tap changer of a transformer: its pi model, ratio included, follows.")
         .def("change_trafo_phase_tap", &LSGrid::change_trafo_phase_tap, py::arg("trafo_id"), py::arg("position"),
@@ -483,14 +489,14 @@ void bind_gridmodel(py::module_& m) {
         .def("deactivate_load", &LSGrid::deactivate_load, DocLSGrid::deactivate_load.c_str())
         .def("reactivate_load", &LSGrid::reactivate_load, DocLSGrid::reactivate_load.c_str())
         .def("change_bus_load", &LSGrid::change_bus_load_python, DocLSGrid::change_bus_load.c_str())
-        .def("get_bus_load", &LSGrid::get_bus_load, DocLSGrid::get_bus_load.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_load", &LSGrid::get_bus_load, DocLSGrid::get_bus_load.c_str(), py::return_value_policy::reference)
         .def("change_p_load", &LSGrid::change_p_load, DocLSGrid::change_p_load.c_str())
         .def("change_q_load", &LSGrid::change_q_load, DocLSGrid::change_q_load.c_str())
 
         .def("deactivate_gen", &LSGrid::deactivate_gen, DocLSGrid::deactivate_gen.c_str())
         .def("reactivate_gen", &LSGrid::reactivate_gen, DocLSGrid::reactivate_gen.c_str())
         .def("change_bus_gen", &LSGrid::change_bus_gen_python, DocLSGrid::change_bus_gen.c_str())
-        .def("get_bus_gen", &LSGrid::get_bus_gen, DocLSGrid::get_bus_gen.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_gen", &LSGrid::get_bus_gen, DocLSGrid::get_bus_gen.c_str(), py::return_value_policy::reference)
         .def("change_p_gen", &LSGrid::change_p_gen, DocLSGrid::change_p_gen.c_str())
         .def("change_v_gen", &LSGrid::change_v_gen, DocLSGrid::change_v_gen.c_str())
         .def("set_gen_regulated_bus", &LSGrid::set_gen_regulated_bus, DocLSGrid::set_gen_regulated_bus.c_str())
@@ -504,7 +510,7 @@ void bind_gridmodel(py::module_& m) {
         .def("deactivate_shunt", &LSGrid::deactivate_shunt, DocLSGrid::deactivate_shunt.c_str())
         .def("reactivate_shunt", &LSGrid::reactivate_shunt, DocLSGrid::reactivate_shunt.c_str())
         .def("change_bus_shunt", &LSGrid::change_bus_shunt_python, DocLSGrid::change_bus_shunt.c_str())
-        .def("get_bus_shunt", &LSGrid::get_bus_shunt, DocLSGrid::get_bus_shunt.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_shunt", &LSGrid::get_bus_shunt, DocLSGrid::get_bus_shunt.c_str(), py::return_value_policy::reference)
         .def("change_p_shunt", &LSGrid::change_p_shunt, DocLSGrid::change_p_shunt.c_str())
         .def("change_q_shunt", &LSGrid::change_q_shunt, DocLSGrid::change_q_shunt.c_str())
         .def("set_shunt_sections", &LSGrid::set_shunt_sections,
@@ -516,7 +522,7 @@ void bind_gridmodel(py::module_& m) {
              py::arg("shunt_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
              py::arg("regulated_bus"),
              "The voltage its sections regulate: `regulated_bus` (grid bus id, -1 for none), target and "
-             "deadband in pu of its nominal voltage. Data only for now.")
+             "deadband in pu of its nominal voltage. Read by the ShuntVoltageControl outer loop.")
         .def("change_shunt_section_count", &LSGrid::change_shunt_section_count,
              py::arg("shunt_id"), py::arg("section_count"),
              "Switch that many sections of a shunt on: its p and q follow.")
@@ -524,14 +530,14 @@ void bind_gridmodel(py::module_& m) {
         .def("deactivate_sgen", &LSGrid::deactivate_sgen, DocLSGrid::deactivate_sgen.c_str())
         .def("reactivate_sgen", &LSGrid::reactivate_sgen, DocLSGrid::reactivate_sgen.c_str())
         .def("change_bus_sgen", &LSGrid::change_bus_sgen_python, DocLSGrid::change_bus_sgen.c_str())
-        .def("get_bus_sgen", &LSGrid::get_bus_sgen, DocLSGrid::get_bus_sgen.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_sgen", &LSGrid::get_bus_sgen, DocLSGrid::get_bus_sgen.c_str(), py::return_value_policy::reference)
         .def("change_p_sgen", &LSGrid::change_p_sgen, DocLSGrid::change_p_sgen.c_str())
         .def("change_q_sgen", &LSGrid::change_q_sgen, DocLSGrid::change_q_sgen.c_str())
 
         .def("deactivate_storage", &LSGrid::deactivate_storage, DocLSGrid::deactivate_storage.c_str())
         .def("reactivate_storage", &LSGrid::reactivate_storage, DocLSGrid::reactivate_storage.c_str())
         .def("change_bus_storage", &LSGrid::change_bus_storage_python, DocLSGrid::change_bus_storage.c_str())
-        .def("get_bus_storage", &LSGrid::get_bus_storage, DocLSGrid::get_bus_storage.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_storage", &LSGrid::get_bus_storage, DocLSGrid::get_bus_storage.c_str(), py::return_value_policy::reference)
         .def("change_p_storage", &LSGrid::change_p_storage, DocLSGrid::change_p_storage.c_str())
         .def("change_q_storage", &LSGrid::change_q_storage, DocLSGrid::change_q_storage.c_str())
         .def("change_v_storage", &LSGrid::change_v_storage, DocLSGrid::change_v_storage.c_str())
@@ -545,11 +551,11 @@ void bind_gridmodel(py::module_& m) {
         .def("change_v2_dcline", &LSGrid::change_v2_dcline, DocLSGrid::change_v2_dcline.c_str())
         .def("change_bus1_dcline", &LSGrid::change_bus1_dcline, DocLSGrid::change_bus1_dcline.c_str())
         .def("change_bus2_dcline", &LSGrid::change_bus2_dcline, DocLSGrid::change_bus2_dcline.c_str())
-        .def("get_bus1_dcline", &LSGrid::get_bus1_dcline, DocLSGrid::get_bus1_dcline.c_str(), py::return_value_policy::reference_internal)
-        .def("get_bus2_dcline", &LSGrid::get_bus2_dcline, DocLSGrid::get_bus2_dcline.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus1_dcline", &LSGrid::get_bus1_dcline, DocLSGrid::get_bus1_dcline.c_str(), py::return_value_policy::reference)
+        .def("get_bus2_dcline", &LSGrid::get_bus2_dcline, DocLSGrid::get_bus2_dcline.c_str(), py::return_value_policy::reference)
         .def("set_status_droop_hvdc", &LSGrid::set_status_droop_hvdc, DocLSGrid::set_status_droop_hvdc.c_str())
         .def("get_status_droop_hvdc", &LSGrid::get_status_droop_hvdc, DocLSGrid::get_status_droop_hvdc.c_str())
-        .def("get_status_droop_hvdc_vect", &LSGrid::get_status_droop_hvdc_vect, DocLSGrid::get_status_droop_hvdc_vect.c_str(), py::return_value_policy::reference_internal)
+        .def("get_status_droop_hvdc_vect", &LSGrid::get_status_droop_hvdc_vect, DocLSGrid::get_status_droop_hvdc_vect.c_str())
 
         // get back the results
         .def("get_V", &LSGrid::get_V, DocLSGrid::get_V.c_str())
@@ -558,68 +564,55 @@ void bind_gridmodel(py::module_& m) {
         .def("get_V_solver", &LSGrid::get_V_solver, DocLSGrid::get_V_solver.c_str(), py::return_value_policy::reference_internal)
         .def("get_Va_solver", &LSGrid::get_Va_solver, DocLSGrid::get_Va_solver.c_str(), py::return_value_policy::reference_internal)
         .def("get_Vm_solver", &LSGrid::get_Vm_solver, DocLSGrid::get_Vm_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_J_solver", &LSGrid::get_J_python_solver, DocLSGrid::get_J_python_solver.c_str(), py::return_value_policy::reference_internal)
+        .def("get_J_solver", &LSGrid::get_J_python_solver, DocLSGrid::get_J_python_solver.c_str(), py::return_value_policy::reference)
 
-        .def("id_me_to_ac_solver", &LSGrid::id_me_to_ac_solver_numpy, DocLSGrid::id_me_to_ac_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("id_ac_solver_to_me", &LSGrid::id_ac_solver_to_me_numpy, DocLSGrid::id_ac_solver_to_me.c_str(), py::return_value_policy::reference_internal)
-        .def("id_me_to_dc_solver", &LSGrid::id_me_to_dc_solver_numpy, DocLSGrid::id_me_to_dc_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("id_dc_solver_to_me", &LSGrid::id_dc_solver_to_me_numpy, DocLSGrid::id_dc_solver_to_me.c_str(), py::return_value_policy::reference_internal)
+        .def("id_me_to_ac_solver", &LSGrid::id_me_to_ac_solver_numpy, DocLSGrid::id_me_to_ac_solver.c_str(), py::return_value_policy::reference)
+        .def("id_ac_solver_to_me", &LSGrid::id_ac_solver_to_me_numpy, DocLSGrid::id_ac_solver_to_me.c_str(), py::return_value_policy::reference)
+        .def("id_me_to_dc_solver", &LSGrid::id_me_to_dc_solver_numpy, DocLSGrid::id_me_to_dc_solver.c_str(), py::return_value_policy::reference)
+        .def("id_dc_solver_to_me", &LSGrid::id_dc_solver_to_me_numpy, DocLSGrid::id_dc_solver_to_me.c_str(), py::return_value_policy::reference)
         .def("total_bus", &LSGrid::total_bus, DocLSGrid::total_bus.c_str())
         .def("nb_connected_bus", &LSGrid::nb_connected_bus, DocLSGrid::nb_connected_bus.c_str())
 
-        .def("get_pv", &LSGrid::get_pv_numpy, DocLSGrid::get_pv.c_str(), py::return_value_policy::reference_internal)
-        .def("get_pq", &LSGrid::get_pq_numpy, DocLSGrid::get_pq.c_str(), py::return_value_policy::reference_internal)
-        .def("get_slack_ids", &LSGrid::get_slack_ids_numpy, DocLSGrid::get_slack_ids.c_str(), py::return_value_policy::reference_internal)
-        .def("get_slack_ids_dc", &LSGrid::get_slack_ids_dc_numpy, DocLSGrid::get_slack_ids_dc.c_str(), py::return_value_policy::reference_internal)
-        .def("get_slack_weights", &LSGrid::get_slack_weights, DocLSGrid::get_slack_weights.c_str(), py::return_value_policy::reference_internal)
+        .def("get_pv", &LSGrid::get_pv_numpy, DocLSGrid::get_pv.c_str(), py::return_value_policy::reference)
+        .def("get_pq", &LSGrid::get_pq_numpy, DocLSGrid::get_pq.c_str(), py::return_value_policy::reference)
+        .def("get_slack_ids", &LSGrid::get_slack_ids_numpy, DocLSGrid::get_slack_ids.c_str(), py::return_value_policy::reference)
+        .def("get_slack_ids_dc", &LSGrid::get_slack_ids_dc_numpy, DocLSGrid::get_slack_ids_dc.c_str(), py::return_value_policy::reference)
+        .def("get_slack_weights", &LSGrid::get_slack_weights, DocLSGrid::get_slack_weights.c_str(), py::return_value_policy::reference)
         .def("get_gen_slack_shares", &LSGrid::get_gen_slack_shares,
              "Each generator's share of the distributed slack: its weight over the total weight "
              "of every connected participant (storage units included), so that "
              "P = target_p + share * (slack absorbed). 0 for a generator that does not take part. "
              "Read off the current weights, which change_p_gen does not update (see "
              "update_slack_weights).")
-        .def("get_pv_solver", &LSGrid::get_pv_solver_numpy, DocLSGrid::get_pv_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_pq_solver", &LSGrid::get_pq_solver_numpy, DocLSGrid::get_pq_solver.c_str(), py::return_value_policy::reference_internal)
+        .def("get_pv_solver", &LSGrid::get_pv_solver_numpy, DocLSGrid::get_pv_solver.c_str(), py::return_value_policy::reference)
+        .def("get_pq_solver", &LSGrid::get_pq_solver_numpy, DocLSGrid::get_pq_solver.c_str(), py::return_value_policy::reference)
         // per-family variants: the AC and the DC solver each keep their own split
-        .def("get_ac_pv_solver", &LSGrid::get_ac_pv_solver_numpy, DocLSGrid::get_ac_pv_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_dc_pv_solver", &LSGrid::get_dc_pv_solver_numpy, DocLSGrid::get_dc_pv_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_ac_pq_solver", &LSGrid::get_ac_pq_solver_numpy, DocLSGrid::get_ac_pq_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_dc_pq_solver", &LSGrid::get_dc_pq_solver_numpy, DocLSGrid::get_dc_pq_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_slack_ids_solver", &LSGrid::get_slack_ids_solver_numpy, DocLSGrid::get_slack_ids_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_slack_ids_dc_solver", &LSGrid::get_slack_ids_dc_solver_numpy, DocLSGrid::get_slack_ids_dc_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_slack_weights_solver", &LSGrid::get_slack_weights_solver, DocLSGrid::get_slack_weights_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_ac_slack_weights_solver", &LSGrid::get_ac_slack_weights_solver, DocLSGrid::get_ac_slack_weights_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_dc_slack_weights_solver", &LSGrid::get_dc_slack_weights_solver, DocLSGrid::get_dc_slack_weights_solver.c_str(), py::return_value_policy::reference_internal)
+        .def("get_ac_pv_solver", &LSGrid::get_ac_pv_solver_numpy, DocLSGrid::get_ac_pv_solver.c_str(), py::return_value_policy::reference)
+        .def("get_dc_pv_solver", &LSGrid::get_dc_pv_solver_numpy, DocLSGrid::get_dc_pv_solver.c_str(), py::return_value_policy::reference)
+        .def("get_ac_pq_solver", &LSGrid::get_ac_pq_solver_numpy, DocLSGrid::get_ac_pq_solver.c_str(), py::return_value_policy::reference)
+        .def("get_dc_pq_solver", &LSGrid::get_dc_pq_solver_numpy, DocLSGrid::get_dc_pq_solver.c_str(), py::return_value_policy::reference)
+        .def("get_slack_ids_solver", &LSGrid::get_slack_ids_solver_numpy, DocLSGrid::get_slack_ids_solver.c_str(), py::return_value_policy::reference)
+        .def("get_slack_ids_dc_solver", &LSGrid::get_slack_ids_dc_solver_numpy, DocLSGrid::get_slack_ids_dc_solver.c_str(), py::return_value_policy::reference)
+        .def("get_slack_weights_solver", &LSGrid::get_slack_weights_solver, DocLSGrid::get_slack_weights_solver.c_str(), py::return_value_policy::reference)
+        .def("get_ac_slack_weights_solver", &LSGrid::get_ac_slack_weights_solver, DocLSGrid::get_ac_slack_weights_solver.c_str(), py::return_value_policy::reference)
+        .def("get_dc_slack_weights_solver", &LSGrid::get_dc_slack_weights_solver, DocLSGrid::get_dc_slack_weights_solver.c_str(), py::return_value_policy::reference)
         .def("get_slack_col_solver", &LSGrid::get_slack_col_solver, DocLSGrid::get_slack_col_solver.c_str())
         .def("get_slack_absorbed_solver", &LSGrid::get_slack_absorbed_solver, DocLSGrid::get_slack_absorbed_solver.c_str())
-        .def("get_controller_q_solver", &LSGrid::get_controller_q_solver, py::return_value_policy::reference_internal, DocLSGrid::get_controller_q_solver.c_str())
-        .def("get_controller_kind_solver", &LSGrid::get_controller_kind_solver, py::return_value_policy::reference_internal, DocLSGrid::get_controller_kind_solver.c_str())
-        .def("get_controller_elem_id_solver", &LSGrid::get_controller_elem_id_solver, py::return_value_policy::reference_internal, DocLSGrid::get_controller_elem_id_solver.c_str())
+        .def("get_controller_q_solver", &LSGrid::get_controller_q_solver, py::return_value_policy::reference, DocLSGrid::get_controller_q_solver.c_str())
+        .def("get_controller_kind_solver", &LSGrid::get_controller_kind_solver, py::return_value_policy::reference, DocLSGrid::get_controller_kind_solver.c_str())
+        .def("get_controller_elem_id_solver", &LSGrid::get_controller_elem_id_solver, py::return_value_policy::reference, DocLSGrid::get_controller_elem_id_solver.c_str())
         .def("get_controller_held_solver", &LSGrid::get_controller_held_solver, DocLSGrid::get_controller_held_solver.c_str())
-        .def("get_controller_q_col_solver", &LSGrid::get_controller_q_col_solver, py::return_value_policy::reference_internal, DocLSGrid::get_controller_q_col_solver.c_str())
+        .def("get_controller_q_col_solver", &LSGrid::get_controller_q_col_solver, py::return_value_policy::reference, DocLSGrid::get_controller_q_col_solver.c_str())
 
-        .def("get_p_buses_solver", &LSGrid::get_p_buses_solver, py::return_value_policy::reference_internal, DocLSGrid::get_p_buses_solver.c_str())
-        .def("get_p_rows_solver", &LSGrid::get_p_rows_solver, py::return_value_policy::reference_internal, DocLSGrid::get_p_rows_solver.c_str())
-        .def("get_q_buses_solver", &LSGrid::get_q_buses_solver, py::return_value_policy::reference_internal, DocLSGrid::get_q_buses_solver.c_str())
-        .def("get_q_rows_solver", &LSGrid::get_q_rows_solver, py::return_value_policy::reference_internal, DocLSGrid::get_q_rows_solver.c_str())
-        .def("get_theta_buses_solver", &LSGrid::get_theta_buses_solver, py::return_value_policy::reference_internal, DocLSGrid::get_theta_buses_solver.c_str())
-        .def("get_theta_cols_solver", &LSGrid::get_theta_cols_solver, py::return_value_policy::reference_internal, DocLSGrid::get_theta_cols_solver.c_str())
-        .def("get_vm_buses_solver", &LSGrid::get_vm_buses_solver, py::return_value_policy::reference_internal, DocLSGrid::get_vm_buses_solver.c_str())
-        .def("get_vm_cols_solver", &LSGrid::get_vm_cols_solver, py::return_value_policy::reference_internal, DocLSGrid::get_vm_cols_solver.c_str())
+        .def("get_p_buses_solver", &LSGrid::get_p_buses_solver, py::return_value_policy::reference, DocLSGrid::get_p_buses_solver.c_str())
+        .def("get_p_rows_solver", &LSGrid::get_p_rows_solver, py::return_value_policy::reference, DocLSGrid::get_p_rows_solver.c_str())
+        .def("get_q_buses_solver", &LSGrid::get_q_buses_solver, py::return_value_policy::reference, DocLSGrid::get_q_buses_solver.c_str())
+        .def("get_q_rows_solver", &LSGrid::get_q_rows_solver, py::return_value_policy::reference, DocLSGrid::get_q_rows_solver.c_str())
+        .def("get_theta_buses_solver", &LSGrid::get_theta_buses_solver, py::return_value_policy::reference, DocLSGrid::get_theta_buses_solver.c_str())
+        .def("get_theta_cols_solver", &LSGrid::get_theta_cols_solver, py::return_value_policy::reference, DocLSGrid::get_theta_cols_solver.c_str())
+        .def("get_vm_buses_solver", &LSGrid::get_vm_buses_solver, py::return_value_policy::reference, DocLSGrid::get_vm_buses_solver.c_str())
+        .def("get_vm_cols_solver", &LSGrid::get_vm_cols_solver, py::return_value_policy::reference, DocLSGrid::get_vm_cols_solver.c_str())
         .def("get_hvdc_droop_data_solver", &LSGrid::get_hvdc_droop_data_solver, DocLSGrid::get_hvdc_droop_data_solver.c_str())
-
-        // reverse-mode differentiation of the last AC powerflow
-        .def("dim_J", &LSGrid::dim_J, DocLSGrid::dim_J.c_str())
-        .def("get_theta_col_of_bus", &LSGrid::get_theta_col_of_bus, DocLSGrid::get_theta_col_of_bus.c_str())
-        .def("get_vm_col_of_bus", &LSGrid::get_vm_col_of_bus, DocLSGrid::get_vm_col_of_bus.c_str())
-        .def("get_p_row_of_bus", &LSGrid::get_p_row_of_bus, DocLSGrid::get_p_row_of_bus.c_str())
-        .def("get_q_row_of_bus", &LSGrid::get_q_row_of_bus, DocLSGrid::get_q_row_of_bus.c_str())
-        .def("solve_JT", &LSGrid::solve_JT, py::arg("xbar"), DocLSGrid::solve_JT.c_str())
-        .def("gen_v_indirect_grad", &LSGrid::gen_v_indirect_grad, py::arg("lambda_"), DocLSGrid::gen_v_indirect_grad.c_str())
-        .def("gen_p_indirect_grad", &LSGrid::gen_p_indirect_grad, py::arg("lambda_"), DocLSGrid::gen_p_indirect_grad.c_str())
-        .def("get_gen_v_target_bus", &LSGrid::get_gen_v_target_bus, DocLSGrid::get_gen_v_target_bus.c_str())
-        .def("get_gen_v_share", &LSGrid::get_gen_v_share, DocLSGrid::get_gen_v_share.c_str())
-        .def("get_outer_trafo_admittances", &LSGrid::get_outer_trafo_admittances, DocLSGrid::get_outer_trafo_admittances.c_str())
 
         // the grid-numbered matrices are built by the call: handed over, not copied
         .def("get_Ybus", [](const LSGrid & self){ return sparse_to_scipy(self.get_Ybus()); }, DocLSGrid::get_Ybus.c_str())
@@ -633,59 +626,59 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dcYbus_solver", [](const py::object & self){
                 return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_dcYbus_solver(), self);
             }, DocLSGrid::get_dcYbus_solver.c_str())
-        .def("get_Sbus_solver", &LSGrid::get_Sbus_solver, DocLSGrid::get_Sbus_solver.c_str(), py::return_value_policy::reference_internal)
-        .def("get_dcSbus_solver", &LSGrid::get_dcSbus_solver, DocLSGrid::get_dcSbus_solver.c_str(), py::return_value_policy::reference_internal)
+        .def("get_Sbus_solver", &LSGrid::get_Sbus_solver, DocLSGrid::get_Sbus_solver.c_str(), py::return_value_policy::reference)
+        .def("get_dcSbus_solver", &LSGrid::get_dcSbus_solver, DocLSGrid::get_dcSbus_solver.c_str(), py::return_value_policy::reference)
 
         .def("check_solution", &LSGrid::check_solution, DocLSGrid::check_solution.c_str())
 
-        .def("get_loads_res", &LSGrid::get_loads_res, DocLSGrid::get_loads_res.c_str(), py::return_value_policy::reference_internal)
-        .def("get_loads_status", &LSGrid::get_loads_status, DocLSGrid::get_loads_status.c_str(), py::return_value_policy::reference_internal)
-        .def("get_shunts_res", &LSGrid::get_shunts_res, DocLSGrid::get_shunts_res.c_str(), py::return_value_policy::reference_internal)
-        .def("get_shunts_status", &LSGrid::get_shunts_status, DocLSGrid::get_shunts_status.c_str(), py::return_value_policy::reference_internal)
-        .def("get_gen_res", &LSGrid::get_gen_res, DocLSGrid::get_gen_res.c_str(), py::return_value_policy::reference_internal)
-        .def("get_gen_status", &LSGrid::get_gen_status, DocLSGrid::get_gen_status.c_str(), py::return_value_policy::reference_internal)
-        .def("get_line_res1", &LSGrid::get_line_res1, DocLSGrid::get_line_res1.c_str(), py::return_value_policy::reference_internal)
-        .def("get_line_res2", &LSGrid::get_line_res2, DocLSGrid::get_line_res2.c_str(), py::return_value_policy::reference_internal)
-        .def("get_lines_status", &LSGrid::get_lines_status, DocLSGrid::get_lines_status.c_str(), py::return_value_policy::reference_internal)
-        .def("get_lines_status_side1", &LSGrid::get_lines_status_side1, DocLSGrid::get_lines_status_side1.c_str(), py::return_value_policy::reference_internal)
-        .def("get_lines_status_side2", &LSGrid::get_lines_status_side2, DocLSGrid::get_lines_status_side2.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_res1", &LSGrid::get_trafo_res1, DocLSGrid::get_trafo_res1.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_res2", &LSGrid::get_trafo_res2, DocLSGrid::get_trafo_res2.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_status", &LSGrid::get_trafo_status, DocLSGrid::get_trafo_status.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_status_side1", &LSGrid::get_trafo_status_side1, DocLSGrid::get_trafo_status_side1.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_status_side2", &LSGrid::get_trafo_status_side2, DocLSGrid::get_trafo_status_side2.c_str(), py::return_value_policy::reference_internal)
-        .def("get_storages_res", &LSGrid::get_storages_res, DocLSGrid::get_storages_res.c_str(), py::return_value_policy::reference_internal)
-        .def("get_storages_status", &LSGrid::get_storages_status, DocLSGrid::get_storages_status.c_str(), py::return_value_policy::reference_internal)
-        .def("get_sgens_res", &LSGrid::get_sgens_res, DocLSGrid::get_sgens_res.c_str(), py::return_value_policy::reference_internal)
-        .def("get_sgens_status", &LSGrid::get_sgens_status, DocLSGrid::get_sgens_status.c_str(), py::return_value_policy::reference_internal)
+        .def("get_loads_res", &LSGrid::get_loads_res, DocLSGrid::get_loads_res.c_str(), py::return_value_policy::reference)
+        .def("get_loads_status", &LSGrid::get_loads_status, DocLSGrid::get_loads_status.c_str(), py::return_value_policy::reference)
+        .def("get_shunts_res", &LSGrid::get_shunts_res, DocLSGrid::get_shunts_res.c_str(), py::return_value_policy::reference)
+        .def("get_shunts_status", &LSGrid::get_shunts_status, DocLSGrid::get_shunts_status.c_str(), py::return_value_policy::reference)
+        .def("get_gen_res", &LSGrid::get_gen_res, DocLSGrid::get_gen_res.c_str(), py::return_value_policy::reference)
+        .def("get_gen_status", &LSGrid::get_gen_status, DocLSGrid::get_gen_status.c_str(), py::return_value_policy::reference)
+        .def("get_line_res1", &LSGrid::get_line_res1, DocLSGrid::get_line_res1.c_str(), py::return_value_policy::reference)
+        .def("get_line_res2", &LSGrid::get_line_res2, DocLSGrid::get_line_res2.c_str(), py::return_value_policy::reference)
+        .def("get_lines_status", &LSGrid::get_lines_status, DocLSGrid::get_lines_status.c_str(), py::return_value_policy::reference)
+        .def("get_lines_status_side1", &LSGrid::get_lines_status_side1, DocLSGrid::get_lines_status_side1.c_str(), py::return_value_policy::reference)
+        .def("get_lines_status_side2", &LSGrid::get_lines_status_side2, DocLSGrid::get_lines_status_side2.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res1", &LSGrid::get_trafo_res1, DocLSGrid::get_trafo_res1.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res2", &LSGrid::get_trafo_res2, DocLSGrid::get_trafo_res2.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_status", &LSGrid::get_trafo_status, DocLSGrid::get_trafo_status.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_status_side1", &LSGrid::get_trafo_status_side1, DocLSGrid::get_trafo_status_side1.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_status_side2", &LSGrid::get_trafo_status_side2, DocLSGrid::get_trafo_status_side2.c_str(), py::return_value_policy::reference)
+        .def("get_storages_res", &LSGrid::get_storages_res, DocLSGrid::get_storages_res.c_str(), py::return_value_policy::reference)
+        .def("get_storages_status", &LSGrid::get_storages_status, DocLSGrid::get_storages_status.c_str(), py::return_value_policy::reference)
+        .def("get_sgens_res", &LSGrid::get_sgens_res, DocLSGrid::get_sgens_res.c_str(), py::return_value_policy::reference)
+        .def("get_sgens_status", &LSGrid::get_sgens_status, DocLSGrid::get_sgens_status.c_str(), py::return_value_policy::reference)
 
-        .def("get_gen_theta", &LSGrid::get_gen_theta, DocLSGrid::get_gen_theta.c_str(), py::return_value_policy::reference_internal)
-        .def("get_load_theta", &LSGrid::get_load_theta, DocLSGrid::get_load_theta.c_str(), py::return_value_policy::reference_internal)
-        .def("get_shunt_theta", &LSGrid::get_shunt_theta, DocLSGrid::get_shunt_theta.c_str(), py::return_value_policy::reference_internal)
-        .def("get_storage_theta", &LSGrid::get_storage_theta, DocLSGrid::get_storage_theta.c_str(), py::return_value_policy::reference_internal)
-        .def("get_line_theta1", &LSGrid::get_line_theta1, DocLSGrid::get_line_theta1.c_str(), py::return_value_policy::reference_internal)
-        .def("get_line_theta2", &LSGrid::get_line_theta2, DocLSGrid::get_line_theta2.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_theta1", &LSGrid::get_trafo_theta1, DocLSGrid::get_trafo_theta1.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_theta2", &LSGrid::get_trafo_theta2, DocLSGrid::get_trafo_theta2.c_str(), py::return_value_policy::reference_internal)
+        .def("get_gen_theta", &LSGrid::get_gen_theta, DocLSGrid::get_gen_theta.c_str(), py::return_value_policy::reference)
+        .def("get_load_theta", &LSGrid::get_load_theta, DocLSGrid::get_load_theta.c_str(), py::return_value_policy::reference)
+        .def("get_shunt_theta", &LSGrid::get_shunt_theta, DocLSGrid::get_shunt_theta.c_str(), py::return_value_policy::reference)
+        .def("get_storage_theta", &LSGrid::get_storage_theta, DocLSGrid::get_storage_theta.c_str(), py::return_value_policy::reference)
+        .def("get_line_theta1", &LSGrid::get_line_theta1, DocLSGrid::get_line_theta1.c_str(), py::return_value_policy::reference)
+        .def("get_line_theta2", &LSGrid::get_line_theta2, DocLSGrid::get_line_theta2.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_theta1", &LSGrid::get_trafo_theta1, DocLSGrid::get_trafo_theta1.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_theta2", &LSGrid::get_trafo_theta2, DocLSGrid::get_trafo_theta2.c_str(), py::return_value_policy::reference)
 
-        .def("get_all_shunt_buses", &LSGrid::get_all_shunt_buses_numpy, DocLSGrid::get_all_shunt_buses.c_str(), py::return_value_policy::reference_internal)
-        .def("get_loads_res_full", &LSGrid::get_loads_res_full, DocLSGrid::get_loads_res_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_shunts_res_full", &LSGrid::get_shunts_res_full, DocLSGrid::get_shunts_res_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_gen_res_full", &LSGrid::get_gen_res_full, DocLSGrid::get_gen_res_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_line_res1_full", &LSGrid::get_line_res1_full, DocLSGrid::get_line_res1_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_line_res2_full", &LSGrid::get_line_res2_full, DocLSGrid::get_line_res2_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_res1_full", &LSGrid::get_trafo_res1_full, DocLSGrid::get_trafo_res1_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_trafo_res2_full", &LSGrid::get_trafo_res2_full, DocLSGrid::get_trafo_res2_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_storages_res_full", &LSGrid::get_storages_res_full, DocLSGrid::get_storages_res_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_sgens_res_full", &LSGrid::get_sgens_res_full, DocLSGrid::get_sgens_res_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_dcline_res1_full", &LSGrid::get_dcline_res1_full, DocLSGrid::get_dcline_res1_full.c_str(), py::return_value_policy::reference_internal)
-        .def("get_dcline_res2_full", &LSGrid::get_dcline_res2_full, DocLSGrid::get_dcline_res2_full.c_str(), py::return_value_policy::reference_internal)
+        .def("get_all_shunt_buses", &LSGrid::get_all_shunt_buses_numpy, DocLSGrid::get_all_shunt_buses.c_str(), py::return_value_policy::reference)
+        .def("get_loads_res_full", &LSGrid::get_loads_res_full, DocLSGrid::get_loads_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_shunts_res_full", &LSGrid::get_shunts_res_full, DocLSGrid::get_shunts_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_gen_res_full", &LSGrid::get_gen_res_full, DocLSGrid::get_gen_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_line_res1_full", &LSGrid::get_line_res1_full, DocLSGrid::get_line_res1_full.c_str(), py::return_value_policy::reference)
+        .def("get_line_res2_full", &LSGrid::get_line_res2_full, DocLSGrid::get_line_res2_full.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res1_full", &LSGrid::get_trafo_res1_full, DocLSGrid::get_trafo_res1_full.c_str(), py::return_value_policy::reference)
+        .def("get_trafo_res2_full", &LSGrid::get_trafo_res2_full, DocLSGrid::get_trafo_res2_full.c_str(), py::return_value_policy::reference)
+        .def("get_storages_res_full", &LSGrid::get_storages_res_full, DocLSGrid::get_storages_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_sgens_res_full", &LSGrid::get_sgens_res_full, DocLSGrid::get_sgens_res_full.c_str(), py::return_value_policy::reference)
+        .def("get_dcline_res1_full", &LSGrid::get_dcline_res1_full, DocLSGrid::get_dcline_res1_full.c_str(), py::return_value_policy::reference)
+        .def("get_dcline_res2_full", &LSGrid::get_dcline_res2_full, DocLSGrid::get_dcline_res2_full.c_str(), py::return_value_policy::reference)
 
-        .def("get_shunt_target_p", &LSGrid::get_shunt_target_p, DocLSGrid::get_shunt_target_p.c_str(), py::return_value_policy::reference_internal)
-        .def("get_load_target_p", &LSGrid::get_load_target_p, DocLSGrid::get_load_target_p.c_str(), py::return_value_policy::reference_internal)
-        .def("get_gen_target_p", &LSGrid::get_gen_target_p, DocLSGrid::get_gen_target_p.c_str(), py::return_value_policy::reference_internal)
-        .def("get_sgen_target_p", &LSGrid::get_sgen_target_p, DocLSGrid::get_sgen_target_p.c_str(), py::return_value_policy::reference_internal)
-        .def("get_storage_target_p", &LSGrid::get_storage_target_p, DocLSGrid::get_storage_target_p.c_str(), py::return_value_policy::reference_internal)
+        .def("get_shunt_target_p", &LSGrid::get_shunt_target_p, DocLSGrid::get_shunt_target_p.c_str(), py::return_value_policy::reference)
+        .def("get_load_target_p", &LSGrid::get_load_target_p, DocLSGrid::get_load_target_p.c_str(), py::return_value_policy::reference)
+        .def("get_gen_target_p", &LSGrid::get_gen_target_p, DocLSGrid::get_gen_target_p.c_str(), py::return_value_policy::reference)
+        .def("get_sgen_target_p", &LSGrid::get_sgen_target_p, DocLSGrid::get_sgen_target_p.c_str(), py::return_value_policy::reference)
+        .def("get_storage_target_p", &LSGrid::get_storage_target_p, DocLSGrid::get_storage_target_p.c_str(), py::return_value_policy::reference)
 
         // do something with the grid
         .def("deactivate_result_computation", &LSGrid::deactivate_result_computation, DocLSGrid::deactivate_result_computation.c_str())
@@ -707,13 +700,13 @@ void bind_gridmodel(py::module_& m) {
         .def("tell_recompute_sbus", &LSGrid::tell_recompute_sbus, DocLSGrid::_internal_do_not_use.c_str())
         .def("tell_solver_need_reset", &LSGrid::tell_solver_need_reset, DocLSGrid::tell_solver_need_reset.c_str())
         .def("tell_ybus_change_sparsity_pattern", &LSGrid::tell_ybus_change_sparsity_pattern, DocLSGrid::_internal_do_not_use.c_str())
-        .def("get_ac_algo_controler", &LSGrid::get_ac_algo_controler, DocLSGrid::get_ac_algo_controler.c_str(), py::return_value_policy::reference_internal)
-        .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, DocLSGrid::get_dc_algo_controler.c_str(), py::return_value_policy::reference_internal)
-        // .def("get_solver_control",  &LSGrid::get_algo_controler, "DEPRECATED use 'get_algo_controler'", py::return_value_policy::reference_internal)
+        .def("get_ac_algo_controler", &LSGrid::get_ac_algo_controler, DocLSGrid::get_ac_algo_controler.c_str(), py::return_value_policy::reference)
+        .def("get_dc_algo_controler", &LSGrid::get_dc_algo_controler, DocLSGrid::get_dc_algo_controler.c_str(), py::return_value_policy::reference)
+        // .def("get_solver_control",  &LSGrid::get_algo_controler, "DEPRECATED use 'get_algo_controler'", py::return_value_policy::reference)
         .def("compute_newton", &LSGrid::ac_pf, DocLSGrid::ac_pf.c_str())
         // get_ptdf/get_ptdf_solver/get_lodf/get_Bf/get_Bf_solver all return their
         // matrix BY VALUE (freshly computed, not a reference to persistent state):
-        // no return_value_policy::reference_internal here, since that would wrap the numpy
+        // no return_value_policy::reference here, since that would wrap the numpy
         // array around the returned temporary's memory, which is freed as soon as
         // this call returns (dangling on the Python side). The default policy
         // (copy/move into a Python-owned array) is the only safe choice for a

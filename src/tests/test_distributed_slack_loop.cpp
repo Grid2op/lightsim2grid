@@ -19,7 +19,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "batch_algorithm/BaseBatchSweep.hpp"
 #include "powerflow_algorithm/outer_loop/DistributedSlackLoop.hpp"
+#include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 
 using Catch::Approx;
 using ls2g::CplxVect;
@@ -30,6 +32,7 @@ using ls2g::LimitViolation;
 using ls2g::LimitViolationType;
 using ls2g::OuterLoopStatus;
 using ls2g::RealVect;
+using ls2g::ReactiveLimitsLoop;
 using ls2g::real_type;
 
 namespace {
@@ -371,4 +374,90 @@ TEST_CASE("in the Newton, without the loop: the single slack", "[outer_loop][dis
     for (int i = 0; i < 4; ++i) CHECK(std::abs(V(i) - V_ref(i)) < 1e-9);
     const RealVect p = gen_p(grid), p_ref = gen_p(ref);
     for (int i = 0; i < 3; ++i) CHECK(p(i) == Approx(p_ref(i)).margin(1e-6));
+}
+
+namespace {
+
+// generator 1 has a capability curve, its fixed limits are the curve's at its target P
+// (40 MW: +-30 MVar), and a voltage it cannot hold: the loops move it to a higher P, where
+// its range is wider, and freeze it at that limit
+LSGrid make_curve_grid()
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(4, 1, RealVect::Constant(4, 138.), 0, 0);
+    Eigen::VectorXi from_id(3), to_id(3);
+    from_id << 0, 1, 2;
+    to_id << 1, 2, 3;
+    grid.init_powerlines(RealVect::Constant(3, 0.01), RealVect::Constant(3, 0.05),
+                         CplxVect::Zero(3), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 200.;
+    load_q << 20.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 3;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p0(3), gen_v(3), gen_min_q(3), gen_max_q(3);
+    gen_p0 << 50., 40., 60.;
+    gen_v << 1.02, 1.06, 1.01;
+    gen_min_q << -500., -30., -500.;
+    gen_max_q << 500., 30., 500.;
+    Eigen::VectorXi gen_bus(3);
+    gen_bus << 0, 1, 2;
+    grid.init_generators(gen_p0, gen_v, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_can_participate_slack({true, true, true}, RealVect::Ones(3));
+    grid.set_gen_p_limits(RealVect::Zero(3), RealVect::Constant(3, 1000.));
+    Eigen::VectorXi curve_gen(2);
+    curve_gen << 1, 1;
+    RealVect curve_p(2), curve_min_q(2), curve_max_q(2);
+    curve_p << 0., 100.;
+    curve_min_q << -10., -60.;
+    curve_max_q << 10., 60.;
+    grid.set_gen_capability_curves(curve_gen, curve_p, curve_min_q, curve_max_q);
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<DistributedSlackLoop>());
+    grid.add_outer_loop(std::make_shared<ReactiveLimitsLoop>());
+    return grid;
+}
+
+void check_no_reactive_violation(const std::vector<LimitViolation> & out)
+{
+    for (const LimitViolation & v : out) {
+        INFO("violation " << static_cast<int>(v.violation_type) << " on " << v.element_id
+             << ": " << v.value << " against " << v.limit);
+        CHECK_FALSE((v.violation_type == LimitViolationType::HIGH_Q || v.violation_type == LimitViolationType::LOW_Q));
+    }
+}
+
+}  // namespace
+
+TEST_CASE("the reactive limits a solve's report reads are at the target P the loops gave", "[outer_loop][distributed_slack][reactive_limits]")
+{
+    LSGrid grid = make_curve_grid();
+    REQUIRE(solve(grid).size() == 4);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    const real_type p1 = gen_p(grid)(1);
+    REQUIRE(p1 > 45.);
+    const real_type q_max = 10. + 50. * p1 / 100.;
+    const real_type q1 = std::get<1>(grid.get_generators().get_res())(1);
+    REQUIRE(q1 == Approx(q_max).margin(1e-4));
+    REQUIRE(q1 > 30. + 1.);
+
+    SECTION("the grid's report") {
+        // what the solve did is within the limits it read: nothing for that bus
+        check_no_reactive_violation(grid.get_physical_violations(true, 1e-4, 1e-4));
+    }
+    SECTION("a batch row's") {
+        ls2g::ContingencyAnalysis ca(grid);
+        ca.set_compute_physical_violations(true);
+        ca.add_nk(std::vector<int>());
+        ca.compute(CplxVect::Constant(grid.total_bus(), ls2g::cplx_type(1., 0.)), 30, 1e-10);
+        REQUIRE(ca.converged_mask()[0]);
+        REQUIRE(ca.get_physical_violations().size() == 1);
+        check_no_reactive_violation(ca.get_physical_violations()[0]);
+        check_no_reactive_violation(ca.get_physical_violations_n());
+    }
 }

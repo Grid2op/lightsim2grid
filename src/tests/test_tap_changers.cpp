@@ -236,3 +236,55 @@ TEST_CASE("a shunt's sections give its reactive power", "[tap_changer][shunt]")
     CHECK_THROWS(grid.change_shunt_section_count(0, 4));
     CHECK_THROWS(grid.change_shunt_section_count(0, -1));
 }
+
+TEST_CASE("a rejected tap changer or section table leaves the element as it was", "[tap_changer][shunt]")
+{
+    // the tables are checked before anything is written: a call that throws must not leave
+    // a new, shorter table read at the old position (an out-of-bounds read)
+    SECTION("a ratio tap changer") {
+        LSGrid grid = make_grid(R0, X0, B0, 1., 0.);
+        add_ratio_taps(grid);
+        grid.change_trafo_ratio_tap(0, 2);
+        const CplxVect V = solve(grid);
+        REQUIRE(V.size() == 3);
+        // two positions, and a position beyond them
+        CHECK_THROWS(grid.set_trafo_ratio_tap_changer(0, 0, 5, {0.9, 1.}, {0., 0.}, {0., 0.}, {0., 0.}, {0., 0.}));
+        const ls2g::TapChangers & taps = grid.get_trafos().get_tap_changers(false);
+        CHECK(taps.high_tap(0) == 2);
+        CHECK(taps.position(0) == 2);
+        CHECK(taps.rho(0) == 1.1);
+        const CplxVect V_after = solve(grid);
+        REQUIRE(V_after.size() == 3);
+        CHECK((V_after - V).cwiseAbs().maxCoeff() < 1e-12);
+    }
+    SECTION("a phase tap changer") {
+        LSGrid grid = make_grid(R0, X0, B0, 1., 0.);
+        grid.set_trafo_phase_tap_changer(0, -1, 1, {1., 1., 1.}, {-5., 0., 5.}, {0., 0., 0.},
+                                         {0., 0., 0.}, {0., 0., 0.}, {0., 0., 0.});
+        const CplxVect V = solve(grid);
+        REQUIRE(V.size() == 3);
+        CHECK_THROWS(grid.set_trafo_phase_tap_changer(0, -1, 3, {1.}, {0.}, {0.}, {0.}, {0.}, {0.}));
+        const ls2g::TapChangers & taps = grid.get_trafos().get_tap_changers(true);
+        CHECK(taps.low_tap(0) == -1);
+        CHECK(taps.high_tap(0) == 1);
+        CHECK(taps.position(0) == 1);
+        const CplxVect V_after = solve(grid);
+        REQUIRE(V_after.size() == 3);
+        CHECK((V_after - V).cwiseAbs().maxCoeff() < 1e-12);
+    }
+    SECTION("a shunt's sections") {
+        LSGrid grid = make_grid(R0, X0, 0., 1., 0.);
+        grid.set_shunt_sections(0, 3, {0., 0., 0., 0.}, {10., 25., 45., 70.});
+        const CplxVect V = solve(grid);
+        REQUIRE(V.size() == 3);
+        // two sections, five asked for
+        CHECK_THROWS(grid.set_shunt_sections(0, 5, {0., 0.}, {5., 8.}));
+        CHECK(grid.get_shunts().get_max_section_count(0) == 4);
+        CHECK(grid.get_shunts().get_section_count(0) == 3);
+        CHECK(grid.get_shunts()[0].target_q_mvar == 45.);
+        CHECK(grid.get_shunts().section_q(0, 3) == 45.);
+        const CplxVect V_after = solve(grid);
+        REQUIRE(V_after.size() == 3);
+        CHECK((V_after - V).cwiseAbs().maxCoeff() < 1e-12);
+    }
+}

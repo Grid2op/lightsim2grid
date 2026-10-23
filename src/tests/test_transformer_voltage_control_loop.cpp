@@ -188,3 +188,40 @@ TEST_CASE("nothing is reserved when the inner algorithm solves no ratio", "[oute
     CHECK_FALSE(plain.holds_voltage_controllers());
     CHECK(plain.switchable_buses().empty());
 }
+
+TEST_CASE("a regulation set between two solves is the one the next solve holds", "[outer][transformer_voltage_control]")
+{
+    // what the outer loops reserve in the Newton is built from the regulation data: a new
+    // target, or a transformer that starts regulating, must reach the next solve
+    const auto solve = [](LSGrid & grid) {
+        grid.change_algorithm("NROuter_SparseLU");
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<TransformerVoltageControlLoop>());
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+        return V;
+    };
+    LSGrid expected = make_grid(2001, 1.03, 0.002);
+    const CplxVect V_expected = solve(expected);
+    const int pos_expected = expected.get_trafos()[0].res_ratio_tap_position;
+
+    SECTION("a new target") {
+        LSGrid grid = make_grid(2001, 1.0, 0.002);
+        solve(grid);
+        grid.set_trafo_ratio_tap_regulation(0, true, 1.03, 0.002, 1);
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_trafos()[0].res_ratio_tap_position == pos_expected);
+        CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
+    SECTION("a transformer that starts regulating") {
+        LSGrid grid = make_grid(2001, 1.03, 0.002, false);
+        solve(grid);
+        grid.set_trafo_ratio_tap_regulation(0, true, 1.03, 0.002, 1);
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_trafos()[0].res_ratio_tap_position == pos_expected);
+        CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
+}

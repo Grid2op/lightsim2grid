@@ -79,8 +79,8 @@ OpenLoadFlow-style before the solve). `run()` reports, for each contingency, the
 what each row trips.
 
 Two limits for now: a generator regulating a remote bus, or standing on a bus a control group
-holds, is refused, and so is a shunt that regulates a voltage when the algorithm runs outer
-loops (its sections belong to the ShuntVoltageControl loop).
+holds, is refused, and so is a shunt that regulates a voltage when the algorithm runs a
+ShuntVoltageControl outer loop (its sections belong to that loop).
 
 Handling contingencies that split the grid
 -------------------------------------------

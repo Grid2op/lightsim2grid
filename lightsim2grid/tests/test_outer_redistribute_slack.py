@@ -114,8 +114,8 @@ class TestOuterRedistributeSlack(unittest.TestCase):
         np.testing.assert_array_equal(np.flatnonzero(np.abs(V) == 0.), [LEAF_BUS])  # the island
         main = np.abs(V) > 0.
         np.testing.assert_allclose(V[main], V_ref[main], rtol=0., atol=1e-10)
-        # a copy: get_gen_res views the grid's own buffers, and `ref` dies with this call
-        p = np.array(ref.get_gen_res()[0])
+        # get_gen_res is a view into `ref`, which does not keep it alive: `p` outlives it
+        p = ref.get_gen_res()[0].copy()
         np.testing.assert_allclose(ca.get_gen_results()[0, :, 0], p, rtol=0., atol=1e-6)
         return p
 
@@ -129,6 +129,42 @@ class TestOuterRedistributeSlack(unittest.TestCase):
         # the loop shared the lost load and the losses together: what is left goes down, the
         # units at 0 MW stay there
         self.assertTrue(np.all(p[p < 10.] == 0.))
+
+
+class TestOuterRedistributeSlackFromN(unittest.TestCase):
+    """With init_from_n_powerflow, a row counts what it loses at the targets in force after the
+    "n" solve, as OpenLoadFlow does: a generator whose grid target is 0 MW, but that the "n"
+    solve's DistributedSlack moved up, takes that much generation with it when tripped -- even
+    though the loss at the grid's targets is nothing."""
+
+    TRIPPED = 3  # a synchronous condenser, 0 MW in the grid
+
+    def test_a_unit_at_zero_in_the_grid_moved_by_the_n_solve(self):
+        grid = _grid()
+        self.assertEqual(grid.get_generators()[self.TRIPPED].target_p_mw, 0.)
+        grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        # the non-slack units produce their target exactly: the "n" solve's moved targets
+        p_n = grid.get_gen_res()[0].copy()
+        is_slack = np.array([el.is_slack for el in grid.get_generators()])
+        self.assertGreater(p_n[self.TRIPPED], 1.)
+
+        ca = ContingencyAnalysisCPP(grid)
+        ca.init_from_n_powerflow = True
+        ca.redistribute_slack = True
+        ca.add_contingency_gen(self.TRIPPED)
+        ca.change_algorithm(OUTER)
+        ca.compute(_v0(grid), MAX_IT, TOL)
+        res = ca.get_outer_results()[0]
+        self.assertTrue(res.converged)
+        moved = dict(res.gen_target_p)
+        # every remaining unit has the same weight and stays within its range: each takes a
+        # quarter of what the tripped one produced, before the first solve; what the losses
+        # change afterwards is below the loop's 1 MW threshold, so nothing moves after it
+        for gen_id in range(len(p_n)):
+            if gen_id == self.TRIPPED or is_slack[gen_id]:
+                continue
+            self.assertAlmostEqual(moved[gen_id], p_n[gen_id] + 0.25 * p_n[self.TRIPPED], places=6,
+                                   msg=f"generator {gen_id}")
 
 
 if __name__ == "__main__":

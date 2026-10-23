@@ -583,12 +583,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // n-powerflow. Mirrors the n-powerflow block of _finish_preprocessing
         // (works on the member ac_cache_.mat / dc_cache_.mat / ac_cache_.inj / dc_cache_.inj — all read-only).
         // `control` is left in the "nothing changed" state on return so the
-        // subsequent per-contingency solves reuse the factorization.
+        // subsequent per-contingency solves reuse the factorization. `reset` false keeps
+        // what the caller configured the solver with (masking, PV pinning), which a
+        // reset drops.
         bool warmup_solver(AlgorithmSelector & algo,
                            AlgoControl & control,
                            const Eigen::Ref<const CplxVect> & Vinit_solver,
                            int max_iter,
-                           real_type tol);
+                           real_type tol,
+                           bool reset = true);
 
         void compute_flows_from_Vs(bool amps=true);
         // fills _branch_results from the stored voltages (see get_branch_results). Every
@@ -786,7 +789,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _algo_controler.tell_all_changed();
             CplxVect res;
             if(ac_solver_used){
-                res = _grid_model.build_solver_input(Vinit, ac_cache_, _algo_controler, extra_buses_me);
+                res = _grid_model.build_solver_input(Vinit, ac_cache_, _algo_controler, extra_buses_me,
+                                                     _algo.supports_outer_loops());
                 nb_buses_solver_ = static_cast<int>(ac_cache_.mat.cols());
             } else {
                 // native real DC path: build the real Bbus / Pbus

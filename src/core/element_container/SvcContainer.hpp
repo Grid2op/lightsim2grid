@@ -263,9 +263,11 @@ class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>,
             real_type sn_mva,
             bool ac) override;
         // the voltage-source flags, plus `one_el_changed_bus` (kept from before the
-        // shared base: an SVC's status change raised it, a generator's did not)
+        // shared base: an SVC's status change raised it, a generator's did not), plus
+        // Ybus for an SVC whose b0 it holds
         void _on_deactivate(int svc_id, DualAlgoControl & solver_control) override final;
         void _on_reactivate(int svc_id, DualAlgoControl & solver_control) override final;
+        void _on_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control) override final;
 
     private:
         // voltage_regulator_on_ (the base's) is `regulation_mode_ == VOLTAGE`

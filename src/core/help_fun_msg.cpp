@@ -4592,7 +4592,9 @@ const std::string DocLSGrid::get_physical_violations = R"mydelimiter(
       regulated voltage and ``limit`` the threshold, in kV; AC only);
     - a generator regulating a remote bus whose own bus leaves the realistic range of the
       ``ReactiveLimits`` loop (``min_realistic_voltage`` / ``max_realistic_voltage``, the
-      driver's unless the loop sets its own, with its margin) by more than ``tol_vm_pu``:
+      driver's unless the loop sets its own, with its margin) by more than ``tol_vm_pu``
+      (this check and the reactive capability above are that loop's test: the grid's, or one
+      with its default parameters when the grid runs none):
       OpenLoadFlow's robust remote voltage control would switch it to PQ
       (``LOW_VOLTAGE_REMOTE_CONTROL`` /
       ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the ``GENERATOR``, ``value`` its own bus voltage and
@@ -8136,8 +8138,8 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
     - a branch (powerline or transformer, numbered lines then transformers) is taken out of Ybus, as with
       :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_nk`;
     - a shunt too: it is an admittance, one diagonal coefficient (in DC its active part leaves the injection).
-      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` raises with an algorithm running outer
-      loops if the shunt regulates a voltage (the ShuntVoltageControl loop owns its sections);
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` raises if the shunt regulates a
+      voltage and the outer loops run hold a ShuntVoltageControl one (that loop owns its sections);
     - a load leaves the injection, its active and reactive power;
     - a generator leaves it too (its active power, and the reactive setpoint of one that does not regulate voltage)
       and the distributed slack is re-weighted without it. When it is the last one regulating its own bus, that bus

@@ -300,12 +300,21 @@ void SvcContainer::_on_deactivate(int svc_id, DualAlgoControl & solver_control)
     // tell_pv_changed.)
     VoltageSourceContainer<SvcContainer>::_on_deactivate(svc_id, solver_control);
     solver_control.tell_one_el_changed_bus();
+    // its b0 leaves Ybus (AC only, see _fillYbus)
+    if(b0_pu_.coeff(svc_id) != 0.) solver_control.ac_algo_controler().tell_recompute_ybus();
 }
 
 void SvcContainer::_on_reactivate(int svc_id, DualAlgoControl & solver_control)
 {
     VoltageSourceContainer<SvcContainer>::_on_reactivate(svc_id, solver_control);
     solver_control.tell_one_el_changed_bus();
+    if(b0_pu_.coeff(svc_id) != 0.) solver_control.ac_algo_controler().tell_recompute_ybus();
+}
+
+void SvcContainer::_on_change_bus(int svc_id, GridModelBusId new_bus_id, DualAlgoControl & solver_control)
+{
+    VoltageSourceContainer<SvcContainer>::_on_change_bus(svc_id, new_bus_id, solver_control);
+    if(b0_pu_.coeff(svc_id) != 0.) solver_control.ac_algo_controler().tell_recompute_ybus();
 }
 
 void SvcContainer::save_binary(const std::string & path, bool atomic) const {

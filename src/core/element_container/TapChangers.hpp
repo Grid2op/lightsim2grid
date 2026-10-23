@@ -128,6 +128,13 @@ class LS2G_API TapChangers
                      << "lengths (or none at all): every column has one value per position.";
                 throw std::runtime_error(exc_.str());
             }
+            // checked before anything is written: a call that throws leaves the changer as it was
+            if (position < low_tap || position > low_tap + static_cast<int>(n) - 1) {
+                std::ostringstream exc_;
+                exc_ << where << ": position " << position << " is not one of the table given for transformer "
+                     << el << " (from " << low_tap << " to " << low_tap + static_cast<int>(n) - 1 << ")";
+                throw std::runtime_error(exc_.str());
+            }
             const std::size_t k = static_cast<std::size_t>(el);
             low_tap_[k] = low_tap;
             rho_[k] = rho;

@@ -112,6 +112,11 @@ bool ShuntVoltageControlLoop::_is_needed(const OuterContext & ctx) const
 
 void ShuntVoltageControlLoop::_initialize(OuterContext & ctx)
 {
+    // nothing was declared in detection: the transformer buses come with the context
+    if (ctx.controls == nullptr) {
+        transformer_buses_ = ctx.detect_ratio_group_buses != nullptr ? *ctx.detect_ratio_group_buses
+                                                                     : std::set<int>();
+    }
     groups_ = groups(ctx.view(), transformer_buses_);
     // every controller on for the first solve (no control to act through in detection mode)
     if (ctx.controls == nullptr) return;

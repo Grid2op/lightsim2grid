@@ -19,6 +19,7 @@
 
 #include "LSGrid.hpp"
 #include "powerflow_algorithm/outer_loop/ShuntVoltageControlLoop.hpp"
+#include "powerflow_algorithm/outer_loop/TransformerVoltageControlLoop.hpp"
 
 using Catch::Approx;
 using ls2g::CplxVect;
@@ -26,6 +27,7 @@ using ls2g::LSGrid;
 using ls2g::OuterLoopStatus;
 using ls2g::RealVect;
 using ls2g::ShuntVoltageControlLoop;
+using ls2g::TransformerVoltageControlLoop;
 using ls2g::real_type;
 
 namespace {
@@ -121,4 +123,142 @@ TEST_CASE("a non-regulating shunt does not run the loop", "[outer][shunt_voltage
     CHECK(grid.get_algo().get_outer_loop_stats().loop_iterations.empty());
     CHECK(grid.get_shunts()[0].res_section_count == 2);
     CHECK(std::abs(V(2)) == Approx(vm_with(10, 2)).margin(1e-12));
+}
+
+namespace {
+
+// bus 0 (138 kV, the slack generator), a transformer 0 -> 1 (20 kV) whose ratio tap changer
+// regulates bus 1 at 1.02 pu, a line 1 -> 2 and a load at 2; a shunt at bus 1 regulating the
+// same bus at 1.05 pu. Neither target is met at the grid's tap and sections.
+LSGrid make_shared_bus_grid()
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    RealVect vn(3);
+    vn << 138., 20., 20.;
+    grid.init_bus(3, 1, vn, 0, 0);
+    Eigen::VectorXi line_from(1), line_to(1);
+    line_from << 1;
+    line_to << 2;
+    grid.init_powerlines(RealVect::Constant(1, 0.02), RealVect::Constant(1, 0.1), CplxVect::Zero(1), line_from, line_to);
+    RealVect trafo_r(1), trafo_x(1), trafo_ratio(1), trafo_shift(1);
+    trafo_r << 0.005;
+    trafo_x << 0.08;
+    trafo_ratio << 1.;
+    trafo_shift << 0.;
+    Eigen::VectorXi trafo_bus1(1), trafo_bus2(1);
+    trafo_bus1 << 0;
+    trafo_bus2 << 1;
+    grid.init_trafo(trafo_r, trafo_x, CplxVect::Zero(1), trafo_ratio, trafo_shift, {false}, trafo_bus1, trafo_bus2, false);
+    RealVect load_p(1), load_q(1);
+    load_p << 40.;
+    load_q << 20.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 2;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect shunt_p(1), shunt_q(1);
+    shunt_p << 0.;
+    shunt_q << 0.;
+    Eigen::VectorXi shunt_bus(1);
+    shunt_bus << 1;
+    grid.init_shunt(shunt_p, shunt_q, shunt_bus);
+    RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+    gen_p << 0.;
+    gen_v << 1.0;
+    gen_min_q << -1000.;
+    gen_max_q << 1000.;
+    Eigen::VectorXi gen_bus(1);
+    gen_bus << 0;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+
+    const int n_steps = 21;
+    std::vector<real_type> rho, zero(static_cast<std::size_t>(n_steps), 0.);
+    for (int k = 0; k < n_steps; ++k) rho.push_back(0.9 + 0.2 * k / (n_steps - 1));
+    grid.set_trafo_ratio_tap_changer(0, 0, (n_steps - 1) / 2, rho, zero, zero, zero, zero);
+    grid.set_trafo_ratio_tap_regulation(0, true, 1.02, 0., 1);
+    std::vector<real_type> p(10, 0.), q;
+    for (int k = 1; k <= 10; ++k) q.push_back(-5. * k);
+    grid.set_shunt_sections(0, 0, p, q);
+    grid.set_shunt_section_regulation(0, true, 1.05, 0., 1);
+    return grid;
+}
+
+int count_of(const std::vector<ls2g::LimitViolation> & viols, ls2g::LimitViolationType type)
+{
+    int res = 0;
+    for (const auto & v : viols) res += (v.violation_type == type) ? 1 : 0;
+    return res;
+}
+
+}  // namespace
+
+TEST_CASE("detection: a transformer voltage control listed first hides the shunt one of its bus",
+          "[outer][shunt_voltage_control][detection]")
+{
+    // the solve leaves such a bus to the transformers (ShuntVoltageControlLoop::_declare): the
+    // detection reports what the loops would act on, so the same
+    LSGrid grid = make_shared_bus_grid();
+    grid.change_algorithm("NRSing_SparseLU");
+    REQUIRE(grid.ac_pf(flat(grid), 30, 1e-12).size() == 3);
+    SECTION("the transformer's loop first: only it is reported") {
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<TransformerVoltageControlLoop>());
+        grid.add_outer_loop(std::make_shared<ShuntVoltageControlLoop>());
+        const std::vector<ls2g::LimitViolation> viols = grid.get_physical_violations();
+        CHECK(count_of(viols, ls2g::LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND) == 1);
+        CHECK(count_of(viols, ls2g::LimitViolationType::SHUNT_VOLTAGE_CONTROL) == 0);
+    }
+    SECTION("the shunt's loop first: both are") {
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<ShuntVoltageControlLoop>());
+        grid.add_outer_loop(std::make_shared<TransformerVoltageControlLoop>());
+        const std::vector<ls2g::LimitViolation> viols = grid.get_physical_violations();
+        CHECK(count_of(viols, ls2g::LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND) == 1);
+        CHECK(count_of(viols, ls2g::LimitViolationType::SHUNT_VOLTAGE_CONTROL) == 1);
+    }
+    SECTION("without the transformer's loop, the shunt is reported") {
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<ShuntVoltageControlLoop>());
+        CHECK(count_of(grid.get_physical_violations(), ls2g::LimitViolationType::SHUNT_VOLTAGE_CONTROL) == 1);
+    }
+}
+
+TEST_CASE("a section regulation set between two solves is the one the next solve holds", "[outer][shunt_voltage_control]")
+{
+    // what the outer loops reserve in the Newton is built from the regulation data: a new
+    // target, or a shunt that starts regulating, must reach the next solve
+    const auto solve = [](LSGrid & grid) {
+        grid.change_algorithm("NROuter_SparseLU");
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<ShuntVoltageControlLoop>());
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+        return V;
+    };
+    LSGrid expected = make_grid(40, 0, 0.99);
+    const CplxVect V_expected = solve(expected);
+    const int count_expected = expected.get_shunts()[0].res_section_count;
+    REQUIRE(count_expected > 0);
+
+    SECTION("a new target") {
+        LSGrid grid = make_grid(40, 0, 0.97);
+        solve(grid);
+        grid.set_shunt_section_regulation(0, true, 0.99, 0., 2);
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_shunts()[0].res_section_count == count_expected);
+        CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
+    SECTION("a shunt that starts regulating") {
+        LSGrid grid = make_grid(40, 0, 0.99, false);
+        solve(grid);
+        grid.set_shunt_section_regulation(0, true, 0.99, 0., 2);
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_shunts()[0].res_section_count == count_expected);
+        CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
 }

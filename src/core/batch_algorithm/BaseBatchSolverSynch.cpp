@@ -102,9 +102,10 @@ bool BaseBatchSolverSynch::warmup_solver(
     AlgoControl & control,
     const Eigen::Ref<const CplxVect> & Vinit_solver,
     int max_iter,
-    real_type tol)
+    real_type tol,
+    bool reset)
 {
-    algo.reset();
+    if(reset) algo.reset();
     control.tell_all_changed();
     algo.tell_solver_control(control);
     bool conv;
