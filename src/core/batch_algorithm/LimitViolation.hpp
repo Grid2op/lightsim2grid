@@ -28,7 +28,7 @@ enum class LS2G_API ViolationElementType : int {
     // pinned at a reactive limit, the voltage of the bus it would regulate
     // (LOW_VOLTAGE_AT_MIN_Q / HIGH_VOLTAGE_AT_MAX_Q), and, for a machine regulating a REMOTE
     // bus, the voltage of its own bus (LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL,
-    // see RemoteVoltageControlCheck.hpp). A REGULATING machine's reactive
+    // ReactiveLimits' robust mode). A REGULATING machine's reactive
     // violation is reported on the BUS instead, because how a bus' reactive power is
     // divided between its machines is a convention, while the active one is divided by the
     // participation factors the caller chose. See BusQCheck.hpp / GenPCheck.hpp /
@@ -110,13 +110,13 @@ enum class LS2G_API LimitViolationType : int {
     // ... and the mirror: regulated bus ABOVE the high voltage threshold (value above limit).
     HIGH_VOLTAGE_SVC_STANDBY = 12,
     // A GENERATOR regulating a REMOTE bus whose OWN bus sits BELOW the lowest voltage the
-    // caller deems realistic for a controller (LSGrid::set_remote_voltage_control_vm_range):
+    // ReactiveLimits loop deems realistic for a controller (its min_realistic_voltage):
     // OpenLoadFlow's ReactiveLimits loop, in its "robust" remote voltage control mode,
     // switches such a controller to PQ at its target reactive power rather than let it hold
     // the remote target at that price. ViolationCategory::PHYSICAL: a controller's own bus
     // at that voltage is a state the equipment is not meant to reach. `value`
     // the generator's own bus voltage and `limit` the threshold, both in kV of that bus
-    // (value below limit). See RemoteVoltageControlCheck.hpp.
+    // (value below limit). The trigger of ReactiveLimitsLoop's robust mode.
     LOW_VOLTAGE_REMOTE_CONTROL = 13,
     // ... and the mirror: own bus ABOVE the highest realistic voltage (value above limit).
     HIGH_VOLTAGE_REMOTE_CONTROL = 14,
@@ -245,7 +245,8 @@ struct LS2G_API LimitViolation {
     // generator / storage / svc id otherwise ; unused (-1) for GRID
     int element_id;
     // 1 or 2 for LINE / TRAFO (the terminal) and for HVDC (the direction: 1 means the flow
-    // leaves side 1, ie 1 -> 2) ; unused (0) for BUS / GENERATOR / STORAGE / SVC / GRID
+    // leaves side 1, ie 1 -> 2; for HVDC_AC_EMULATION_RELEASE the direction the line is
+    // frozen in) ; unused (0) for BUS / GENERATOR / STORAGE / SVC / GRID
     int side;
     LimitViolationType violation_type;
     // value reached: MVAr for LOW_Q / HIGH_Q (what the machines holding that bus had to
@@ -255,7 +256,8 @@ struct LS2G_API LimitViolation {
     // of the bus the pinned generator would regulate) and for LOW_VOLTAGE_SVC_STANDBY /
     // HIGH_VOLTAGE_SVC_STANDBY (the voltage of the bus the standby SVC regulates) and for
     // LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL (the voltage of the remote
-    // controller's own bus) ; unused
+    // controller's own bus), MW for HVDC_AC_EMULATION_RELEASE (the flow the frozen line's
+    // droop asks for in the direction `side` names) ; unused
     // (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type value;
     // limit that was violated. For LOW_Q / HIGH_Q the SUMMED capability of the machines
@@ -266,7 +268,8 @@ struct LS2G_API LimitViolation {
     // the generator's target voltage, in kV of the regulated bus; for LOW_VOLTAGE_SVC_STANDBY
     // / HIGH_VOLTAGE_SVC_STANDBY the automaton's low / high threshold, in kV of the
     // regulated bus; for LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL the realistic
-    // voltage bound, in kV of the controller's own bus. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // voltage bound, in kV of the controller's own bus; for HVDC_AC_EMULATION_RELEASE the pmax
+    // of the direction the line is frozen in. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
     real_type limit;
     // element name: LINE / TRAFO / HVDC / GENERATOR / STORAGE / SVC (from
     // LSGrid::set_line_names / set_trafo_names / set_dcline_names / set_gen_names /

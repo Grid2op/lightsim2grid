@@ -86,7 +86,9 @@ Suppose you somehow get:
 - `pv` list of PV buses
 - `pq` list of PQ buses
 - `ppci` a ppc internal pandapower test case (or dictionary, is used to retrieve the coefficients associated to each slack bus)
-- `options` list of pandapower "options" (or dictionary with keys `max_iteration` and `tolerance_mva`)
+- `options` list of pandapower "options" (or dictionary with keys `max_iteration` and `tolerance_mva`).
+  As pandapower's own `newtonpf` does, `tolerance_mva` is compared with the per-unit mismatch as
+  is, not divided by `baseMVA`.
 
 You can define replace the `newtonpf` function of `pandapower.pandapower.newtonpf` function with the following
 piece of code:

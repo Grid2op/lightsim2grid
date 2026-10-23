@@ -61,8 +61,8 @@ The setter-based API
 Unlike `TimeSerie` / `InjectionSweep`'s single bundled `compute_V_from_inj` call,
 `ScenarioSweep` is built up incrementally: call as many of `modify_gen_p` /
 `modify_sgen_p` / `modify_load_p` / `modify_load_q` / `modify_gen_v` /
-`set_contingency_lines` / `set_contingency_trafos` / `set_contingency_gens` as are
-relevant, then `compute()`.
+`set_contingency_lines` / `set_contingency_trafos` / `set_contingency_gens` /
+`set_contingency_shunts` / `set_contingency_loads` as are relevant, then `compute()`.
 
 - **Row-count locking.** The first setter you call fixes the number of simulations for
   the whole object; every later setter is checked against it immediately -- a shape
@@ -70,7 +70,8 @@ relevant, then `compute()`.
 - **Unset axes.** Any injection axis you never call (eg `modify_gen_p`) defaults to the
   grid's own current target value, broadcast across every row -- not zero. Any
   contingency mask you never call (`set_contingency_lines` / `set_contingency_trafos` /
-  `set_contingency_gens`) defaults to all-`False` -- nothing disconnected. `compute()` raises if you never call
+  `set_contingency_gens` / `set_contingency_shunts` / `set_contingency_loads`) defaults to
+  all-`False` -- nothing disconnected. `compute()` raises if you never call
   *any* setter (a degenerate call -- use `ac_pf()` / `dc_pf()` directly for a single
   powerflow).
 - **`modify_gen_v` is different from the other four `modify_*` setters.** It does not
@@ -98,7 +99,9 @@ naming inconsistency:
   `True` = "deactivate this branch for this simulation") is the natural fit instead.
 
 `ScenarioSweep` does not have `add_n1` / `add_nk`; `ContingencyAnalysis` does not have
-`set_contingency_lines` / `set_contingency_trafos`.
+`set_contingency_lines` / `set_contingency_trafos`. The same split holds for the other
+elements: `ContingencyAnalysis.add_contingency` registers one contingency tripping branches,
+shunts, loads and generators together, `ScenarioSweep` takes one mask per kind of element.
 
 .. note::
 
@@ -174,6 +177,27 @@ the change in the losses it causes is left to the powerflow's distributed slack.
     converter station). Those go through a different part of the Jacobian, with columns
     and rows of their own that this feature does not yet reserve and mask.
 
+Shunt and load contingencies
+------------------------------------
+
+`set_contingency_shunts(mask)` (shape `(n_simul, n_shunt)`) and `set_contingency_loads(mask)`
+(shape `(n_simul, n_load)`) take the elements out of the rows where the mask is `True`:
+
+- a shunt is an admittance: the row loses its diagonal coefficient of the admittance matrix
+  (in DC, its active part leaves the injection), as a branch mask edits it;
+- a load leaves the row's injection, with the row's own value (`modify_load_p` /
+  `modify_load_q`, or the grid's).
+
+What that changes in the balance is made up by the distributed slack, and with
+`redistribute_slack = True` it is shared OpenLoadFlow-style before the solve, as for a
+generator. A row naming a load in both the mask and its topological action is refused.
+
+.. warning::
+
+    With an algorithm running outer loops among which a ShuntVoltageControl one, `compute()`
+    raises if the mask names a shunt that regulates a voltage: its sections belong to that
+    loop, which does not know of a row taking it out yet.
+
 Topological actions
 ---------------------
 
@@ -223,18 +247,154 @@ coefficients of the branches it moves, the injections of the elements it moves, 
 of the buses whose generators it moves (a bus a generator lands on is held at the set-point,
 a bus its last generator leaves is solved for), and the masking of the buses of the union
 it does not use, exactly as ``handle_disconnected_grid`` masks a stranded bus. A row that
-leaves an element alone on a busbar (an island of one bus) has that bus masked and its
-injection left out, as the disconnected-grid mode would; without ``handle_disconnected_grid``
-a row that strands one of the base grid's buses is still ``NOT_SIMULATED``.
+leaves an element alone on a busbar (an island of one bus) strands it, wherever that busbar
+is: without ``handle_disconnected_grid`` the row is ``NOT_SIMULATED``, as for a contingency
+that strands a bus; with it, the bus is masked and the element's injection left out. A busbar
+the row leaves with no element at all (a merge), or does not use, strands nothing: it is
+masked, and the row solved, in either mode.
 
 .. warning::
 
     Refused by ``compute`` for now: moving or reactivating a slack participant, a generator
     on a slack bus, a generator that regulates a remote bus or whose bus a control group
-    holds, a storage unit that regulates voltage; ``keep_jacobian`` on a batch that moves or
-    reactivates a generator; and the DC algorithm. See the TODO section of the changelog.
+    holds, a storage unit that regulates voltage; a branch with one end open in the base grid
+    put back on (taking it out works); ``keep_jacobian`` on a batch that moves or reactivates a
+    generator; and the DC algorithm. See the TODO section of the changelog.
     ``compute_physical_violations`` follows the row: a generator the row moves or reactivates
     is checked on the bus the row gives it.
+
+Per-row results
+--------------------------
+
+Besides the voltages, the C++ object (`ScenarioSweepCPP`, or `sweep.computer` from the
+Python wrapper) reports, for every row of the last `compute()`:
+
+- `compute_branch_results()`: active and reactive power at both ends of every branch, as
+  an array of shape `(n_simul, n_branch, 4)` -- `P` and `Q` at side 1, then at side 2, in
+  MW and MVAr, branches numbered lines then transformers like `get_flows`. They are what
+  `get_line_res1/2` and `get_trafo_res1/2` would read after solving that row's topology
+  on its own. A branch the row disconnects reads 0, and so does a row that did not
+  converge. In DC, `Q` is 0 and side 2 carries the opposite of side 1.
+- `get_Ybus(row)` (AC) / `get_dcYbus(row)` (DC): the admittance matrix that row was
+  solved with, in grid bus numbering like `LSGrid.get_Ybus` (`solver_numbering=True` for
+  the solver one). An entry only the disconnected branches contributed to is removed from
+  the pattern rather than stored as an explicit zero.
+- `get_row_solve_times()` / `get_row_nb_iter()`: what the algorithm reported for each
+  row's solve, 0 for a row that never reached it.
+- `get_gen_results()`, once `compute_gen_results = True` was set before `compute()`: the
+  active and reactive output of every generator, shape `(n_simul, n_gen, 2)`, MW and
+  MVAr. The rules are the ones `get_gen_res` follows after a single powerflow: the
+  setpoint plus the generator's share of the distributed slack (re-weighted without the
+  participants the row disconnects); for Q, the setpoint of a machine that does not
+  regulate, the solver's own value for a controller it solved (a remote voltage control
+  group), or a share of its bus' reactive residual proportional to each machine's reactive
+  range. A generator the row disconnects reads 0. In DC, Q is 0.
+
+With `set_topo_actions`, the branch and generator results follow the row's action: an
+element it moves, reconnects or reactivates is reported on the buses the row gives it.
+
+`compute_branch_results`, `get_gen_results`, `get_row_solve_times` and `get_row_nb_iter`
+exist on every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP` too); `get_Ybus` /
+`get_dcYbus` only where the topology varies per row (`ScenarioSweepCPP`,
+`ContingencyAnalysisCPP`).
+
+.. code-block:: python
+
+    computer = sweep.computer
+    res = computer.compute_branch_results()   # (n_simul, n_branch, 4)
+    p_or, q_or, p_ex, q_ex = res[..., 0], res[..., 1], res[..., 2], res[..., 3]
+    ybus_row_3 = computer.get_Ybus(3)          # scipy.sparse, (total_bus, total_bus)
+
+    computer.compute_gen_results = True        # before compute()
+    computer.compute(v_init, max_iter, tol)
+    gen = computer.get_gen_results()           # (n_simul, n_gen, 2): P, Q
+
+Outside a batch, `LSGrid.get_gen_slack_shares()` gives each generator's share of the
+distributed slack (`P = target_p + share * slack absorbed`). The weights it reads are set
+when the grid is built and by `update_slack_weights`; `change_p_gen` does not update them.
+
+.. _batch_outer_loops:
+
+OpenLoadFlow's outer loops in a batch
+---------------------------------------
+
+With an algorithm that runs OpenLoadFlow's outer loops (``NROuter_KLU``, ``NROuter_SparseLU``,
+...), every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP`,
+`ScenarioSweepCPP`) solves each row with the grid's loops (`LSGrid.get_outer_loops`): a row
+gets what `ac_pf` gets on the row's own grid -- the same voltages, flows (at the taps the
+loops settled on) and generator output (at the targets `DistributedSlack` moved them to).
+The loops restart from the grid's own state on every row, as OpenLoadFlow's security
+analysis restarts each contingency -- but in a `TimeSeriesCPP`, whose rows are chained: there a
+row starts from the previous row's voltages and equations (the buses its loops froze PQ, the
+controllers they held, the SVCs they switched on, the hvdc regimes, the taps and sections),
+and the loops undo what the new row does not call for; `DistributedSlack` restarts from the
+row's own targets. (`resume_outer_state` on an ``NROuter_*`` algorithm does the same for a
+sequence of `ac_pf`.) The whole batch still runs one symbolic analysis (one per thread). A batch built from a grid inherits its algorithm, and the Python
+wrappers keep an ``NROuter_*`` one.
+
+.. code-block:: python
+
+    grid.change_algorithm("NROuter_KLU")      # the grid's loops: OpenLoadFlow's default list
+    ca = ContingencyAnalysisCPP(grid)
+    ca.add_all_n1()
+    ca.compute(v_init, max_iter, tol)
+    res = ca.get_outer_results()               # one OuterRowResult per row
+    res[3].status, res[3].nb_outer_iterations, res[3].ratio_tap
+
+`get_outer_results()` gives, per row, whether it converged (``converged``), how the loops
+ended (``status``: a row they leave ``UNSTABLE`` or ``FAILED`` does not converge, but a row
+whose Newton diverged reads ``STABLE`` too) and what they settled on where it differs from
+the grid: the moved targets, the hvdc regimes, the tap positions and the shunt sections.
+`keep_jacobian` is refused with such an algorithm.
+
+`compute_physical_violations` reports, with any algorithm, what each loop would still do on
+the row -- the loop's own trigger, checked on the row as it is (its machines, targets,
+branches). After an outer-loop solve that converged, the loops have nothing left to report.
+
+Many sweeps in a row
+--------------------------
+
+A sweep holds its own copy of the grid, taken at construction: changing the grid
+afterwards (`change_p_gen`, `change_p_load`, ...) does not reach it. A scenario that
+differs from the grid by its injections is therefore expressed through the sweep, not by
+editing the grid and building a new sweep:
+
+.. code-block:: python
+
+    computer = ScenarioSweepCPP(grid)
+    computer.set_contingency_lines(line_mask)       # the outages, once
+    for scenario in scenarios:
+        computer.modify_gen_p(scenario.gen_p)        # one row per simulation
+        computer.modify_load_p(scenario.load_p)
+        computer.modify_load_q(scenario.load_q)
+        computer.compute(v_init, max_iter, tol)
+        assert computer.base_case_was_reused()       # nothing rebuilt but the injections
+
+What one `compute()` builds is kept for the next, and only what an input changed is
+rebuilt:
+
+- new injections (`modify_*`) keep everything: the admittance matrix, the base-case
+  powerflow, the symbolic analysis of the Jacobian;
+- new contingency masks (`set_contingency_*`) rebuild the base case (which branches each
+  row disconnects is part of it) but keep what was read off the grid. A fixed outage
+  list across scenarios is the fastest way to use one sweep.
+
+Building a new sweep per scenario stays correct, only slower; it is what to do when the
+grid itself changes (its parameters, its topology).
+
+Threads and processes
+--------------------------
+
+`compute()` releases Python's GIL. Two ways to use several cores follow from that:
+
+- a pool of Python threads, each running its own sweep (one object per thread: a sweep
+  is not meant to be used by two threads at once). This works because the GIL is
+  released for the whole solve;
+- `nb_thread` on one sweep, which splits its rows over C++ threads. It defaults to 1.
+
+In a caller that already runs one process per core, keep `nb_thread = 1`: more threads
+than cores only adds contention. `nb_thread > 1` pays one symbolic analysis per thread,
+so it is worth it for many rows rather than for a few.
 
 Handling disconnected grids and limit violations
 ------------------------------------------------------

@@ -142,6 +142,9 @@ class LS2G_API AlgorithmSelector final
         bool supports_remote_voltage_control() const {
             return get_prt_solver("supports_remote_voltage_control", false)->supports_remote_voltage_control();
         }
+        bool distributes_slack() const {
+            return get_prt_solver("distributes_slack", false)->distributes_slack();
+        }
         // The no-argument form of is_fdpf(AlgorithmType) above. The type-keyed one
         // cannot answer for a solver selected BY NAME -- an FDPF built-in reached
         // through the registry, or a plugin implementing the method -- because their
@@ -299,8 +302,12 @@ class LS2G_API AlgorithmSelector final
         bool supports_outer_loops() const {
             return get_prt_solver("supports_outer_loops", false)->supports_outer_loops();
         }
-        void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops) {
-            get_prt_solver("set_outer_loops", false)->set_outer_loops(loops);
+        void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops,
+                             const OuterLoopDriverParams & driver) {
+            get_prt_solver("set_outer_loops", false)->set_outer_loops(loops, driver);
+        }
+        void set_outer_row_view(const OuterRowView * row) {
+            get_prt_solver("set_outer_row_view", false)->set_outer_row_view(row);
         }
         OuterLoopStats get_outer_loop_stats() const {
             return get_prt_solver("get_outer_loop_stats", false)->get_outer_loop_stats();
@@ -319,6 +326,12 @@ class LS2G_API AlgorithmSelector final
         }
         void get_outer_ratio_tap(std::vector<int> & positions) const {
             get_prt_solver("get_outer_ratio_tap", false)->get_outer_ratio_tap(positions);
+        }
+        std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const {
+            return get_prt_solver("get_outer_resume_point", false)->get_outer_resume_point();
+        }
+        OuterControlLayout get_outer_control_layout() const {
+            return get_prt_solver("get_outer_control_layout", false)->get_outer_control_layout();
         }
 
         // continuation powerflow primitives (ContinuationSweep) -- NR-based

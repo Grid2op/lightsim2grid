@@ -12,6 +12,7 @@
 #include "LSGrid.hpp"
 #include "OperationalCheck.hpp"  // BranchBusOverride
 
+#include <array>
 #include <memory>
 
 namespace ls2g {
@@ -255,6 +256,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 _batch_inputs_valid_ = false;
                 _algo.reset();
                 _base_case_v_solver_ = CplxVect();
+                _base_resume_point_.reset();
                 _prepared_nb_steps_ = _nb_steps_none;
             }
             clear_batch_outputs();
@@ -268,16 +270,19 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _voltages = CplxMat();
             _amps_flows = RealMat();
             _active_power_flows = RealMat();
+            _branch_results = RealMat();
             // the DC fast path holds the same voltages as an angle plus a shared
             // magnitude (see _dc_vm_row_grid): one result in several pieces, so the
             // pieces go together -- a stale one would be reconstructed into a voltage
             // that was never solved
             _thetas = RealMat();
+            _row_trafo_blocks_.clear();
             _dc_row_solved_.clear();
             _dc_lazy_storage_used_ = false;
             _dc_base_vm_solver_ = RealVect();
             _dc_base_vm_grid_ = RealVect();
             _dc_gen_v_ = RealMat();
+            _dc_row_vm_reset_.clear();
             _nb_solved = 0;
             _nb_converged = 0;
             _timer_compute_A = 0.;
@@ -356,6 +361,16 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // tl;dr: const can make copies ! OR NOT I AM LOST
         const RealMat & get_flows() const {return _amps_flows;}
         const RealMat & get_power_flows() const {return _active_power_flows;}
+
+        /**
+         * The last compute_branch_results(): one row per batch row, four columns per
+         * branch (lines then trafos, the numbering of get_flows), in this order: active
+         * and reactive power entering the branch at side 1, then at side 2, in MW and
+         * MVAr. DC has no reactive power (0) and side 2 carries the opposite of side 1.
+         * RealMat is row-major, so one row's branches -- and one branch's four values --
+         * are contiguous: what Python reads as an (nb_rows, nb_branch, 4) array.
+         */
+        const RealMat & get_branch_results() const {return _branch_results;}
         // DC theta-only fast path (see BaseAlgo::set_lazy_v): when a compute() used
         // it, _voltages is left empty and _thetas (+ the small _dc_* inputs) holds
         // everything needed to rebuild it -- done here, lazily, on first request, and
@@ -422,6 +437,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             Eigen::Ref<const CplxVect> vect_yac_raw_ft = structure_data.yac_12();
             Eigen::Ref<const RealVect> vect_ydc_ff = structure_data.ydc_11();
             Eigen::Ref<const RealVect> vect_ydc_ft = structure_data.ydc_12();
+            Eigen::Ref<const RealVect> vect_ydc_tf = structure_data.ydc_21();
+            Eigen::Ref<const RealVect> vect_ydc_tt = structure_data.ydc_22();
             Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift(); // not used in AC nor if it's powerline anyway
 
             const size_t nb_el = structure_data.nb();
@@ -473,8 +490,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 if(is_ac){
                     const cplx_type Efrom = s1 ? V_row[from_me] : cplx_type(0., 0.);
                     const cplx_type Eto = s2 ? V_row[to_me] : cplx_type(0., 0.);
-                    const cplx_type y_ff = own_placement ? vect_yac_raw_ff(el_id) : vect_yac_ff(el_id);
-                    const cplx_type y_ft = own_placement ? vect_yac_raw_ft(el_id) : vect_yac_ft(el_id);
+                    cplx_type y_ff = own_placement ? vect_yac_raw_ff(el_id) : vect_yac_ff(el_id);
+                    cplx_type y_ft = own_placement ? vect_yac_raw_ft(el_id) : vect_yac_ft(el_id);
+                    // the taps this row's outer loops left the transformer at
+                    const std::array<cplx_type, 4> * block = is_trafo ? _row_trafo_block(i, static_cast<int>(el_id)) : nullptr;
+                    if(block != nullptr){ y_ff = (*block)[0]; y_ft = (*block)[1]; }
                     // trafo equations (to get the power at the "from" side)
                     cplx_type I_ft = y_ff * Efrom + y_ft * Eto;
                     I_ft = std::conj(I_ft);
@@ -496,14 +516,16 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                         out(i, col) = 0.;
                         continue;
                     }
-                    // DC active flow from the bus angles (theta) directly, like the
-                    // gridmodel results: P = ydc_ff . theta_from + ydc_ft . theta_to
+                    // DC active flow from the bus angles (theta) directly, the phase
+                    // shift included: the model dc_pf publishes (see dc_branch_p_pu)
                     const real_type theta_from = dc_lazy ? theta_row[from_me] : std::arg(V_row[from_me]);
                     const real_type theta_to = dc_lazy ? theta_row[to_me] : std::arg(V_row[to_me]);
-                    const real_type y_ff = vect_ydc_ff(el_id);
-                    const real_type y_ft = vect_ydc_ft(el_id);
-                    res = (y_ff * theta_from + y_ft * theta_to) * sn_mva;
-                    if(is_trafo) res -= dc_x_tau_shift(el_id);
+                    real_type p_from, p_to;
+                    dc_branch_p_pu(vect_ydc_ff(el_id), vect_ydc_ft(el_id),
+                                   vect_ydc_tf(el_id), vect_ydc_tt(el_id),
+                                   is_trafo ? dc_x_tau_shift(el_id) : real_type(0.),
+                                   theta_from, theta_to, p_from, p_to);
+                    res = p_from * sn_mva;
                     if(amps){
                         res = std::abs(res);
                         // the magnitude: the row's reconstructed one on the fast path,
@@ -560,14 +582,124 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // n-powerflow. Mirrors the n-powerflow block of _finish_preprocessing
         // (works on the member ac_cache_.mat / dc_cache_.mat / ac_cache_.inj / dc_cache_.inj — all read-only).
         // `control` is left in the "nothing changed" state on return so the
-        // subsequent per-contingency solves reuse the factorization.
+        // subsequent per-contingency solves reuse the factorization. `reset` false keeps
+        // what the caller configured the solver with (masking, PV pinning), which a
+        // reset drops.
         bool warmup_solver(AlgorithmSelector & algo,
                            AlgoControl & control,
                            const Eigen::Ref<const CplxVect> & Vinit_solver,
                            int max_iter,
-                           real_type tol);
+                           real_type tol,
+                           bool reset = true);
 
         void compute_flows_from_Vs(bool amps=true);
+        // fills _branch_results from the stored voltages (see get_branch_results). Every
+        // branch in service in the GRID gets its flows: a branch a row disconnects, and a
+        // row that did not converge, are the caller's to zero (only BaseBatchSweep knows
+        // either).
+        void compute_branch_results_from_Vs();
+
+        /**
+         * The P and Q at both ends of the branches of `structure_data` (lines or trafos)
+         * for row `i`, into `_branch_results.row(i)` from column `4 * lag_id`. The
+         * formulas are the ones the grid publishes after a single solve
+         * (BranchContainer::_compute_branch_results_no_amps, and dc_branch_p_pu for a DC
+         * phase shifter), so a row reports what a one-at-a-time solve would.
+         *
+         * Exactly one of `V_row` (complex voltages, grid numbering) and `theta_row` (the
+         * angles, grid numbering: the DC fast path) is non-null.
+         */
+        template<class T>
+        void _branch_results_of_row(const T & structure_data,
+                                    Eigen::Index i,
+                                    size_t lag_id,
+                                    bool is_trafo,
+                                    bool is_ac,
+                                    real_type sn_mva,
+                                    const cplx_type * V_row,
+                                    const real_type * theta_row)
+        {
+            const auto & el_status = structure_data.get_status_global();
+            const auto & status1 = structure_data.get_status_side_1();
+            const auto & status2 = structure_data.get_status_side_2();
+            const GlobalBusIdVect & bus_from = structure_data.get_bus_id_side_1();
+            const GlobalBusIdVect & bus_to = structure_data.get_bus_id_side_2();
+            Eigen::Ref<const CplxVect> yac_11 = structure_data.yac_eff_11();
+            Eigen::Ref<const CplxVect> yac_12 = structure_data.yac_eff_12();
+            Eigen::Ref<const CplxVect> yac_21 = structure_data.yac_eff_21();
+            Eigen::Ref<const CplxVect> yac_22 = structure_data.yac_eff_22();
+            Eigen::Ref<const RealVect> ydc_11 = structure_data.ydc_11();
+            Eigen::Ref<const RealVect> ydc_12 = structure_data.ydc_12();
+            Eigen::Ref<const RealVect> ydc_21 = structure_data.ydc_21();
+            Eigen::Ref<const RealVect> ydc_22 = structure_data.ydc_22();
+            Eigen::Ref<const RealVect> dc_x_tau_shift = structure_data.dc_x_tau_shift();  // empty for a line
+            // the raw blocks, for a branch this row places itself (see below)
+            Eigen::Ref<const CplxVect> yac_raw_11 = structure_data.yac_11();
+            Eigen::Ref<const CplxVect> yac_raw_12 = structure_data.yac_12();
+            Eigen::Ref<const CplxVect> yac_raw_21 = structure_data.yac_21();
+            Eigen::Ref<const CplxVect> yac_raw_22 = structure_data.yac_22();
+            // this row's own placement of some branches (ScenarioSweep set_topo_actions),
+            // sorted by branch id: walked alongside the elements, as in _flows_of_row
+            const std::vector<BranchBusOverride> * overrides =
+                (static_cast<size_t>(i) < _row_branch_overrides_.size() && !_row_branch_overrides_[static_cast<size_t>(i)].empty())
+                ? &_row_branch_overrides_[static_cast<size_t>(i)] : nullptr;
+            size_t next_override = 0;
+            if(overrides != nullptr){
+                while(next_override < overrides->size() && (*overrides)[next_override].branch_id < static_cast<int>(lag_id)) ++next_override;
+            }
+
+            real_type * out = _branch_results.row(i).data() + 4 * lag_id;
+            const size_t nb_el = structure_data.nb();
+            for(size_t el_id = 0; el_id < nb_el; ++el_id){
+                bool on = el_status[el_id];
+                bool s1 = status1[el_id];
+                bool s2 = status2[el_id];
+                // a half-open branch has _deactivated_bus_id on its open side: never used
+                // to index the voltages, the open end is at 0 V (AC, where yac_eff_* is
+                // Kron-reduced for it) or the branch carries nothing (DC)
+                int from_me = bus_from(el_id).cast_int();
+                int to_me = bus_to(el_id).cast_int();
+                bool own_placement = false;
+                if(overrides != nullptr && next_override < overrides->size() &&
+                   (*overrides)[next_override].branch_id == static_cast<int>(el_id + lag_id)){
+                    const BranchBusOverride & ov = (*overrides)[next_override];
+                    ++next_override;
+                    on = ov.connected;
+                    // a branch the row places has both ends closed on the row's buses:
+                    // its raw block applies (yac_eff_* is 0 for one off in the base grid)
+                    if(on){ s1 = true; s2 = true; from_me = ov.from_me; to_me = ov.to_me; own_placement = true; }
+                }
+                if(!on) continue;
+                real_type * dst = out + 4 * el_id;
+                if(is_ac){
+                    const cplx_type Ef = s1 ? V_row[from_me] : cplx_type(0., 0.);
+                    const cplx_type Et = s2 ? V_row[to_me] : cplx_type(0., 0.);
+                    // the taps this row's outer loops left the transformer at, else the
+                    // container's coefficients (the raw block for a branch the row placed)
+                    const std::array<cplx_type, 4> * block = is_trafo ? _row_trafo_block(i, static_cast<int>(el_id)) : nullptr;
+                    const cplx_type y11 = block != nullptr ? (*block)[0] : (own_placement ? yac_raw_11(el_id) : yac_11(el_id));
+                    const cplx_type y12 = block != nullptr ? (*block)[1] : (own_placement ? yac_raw_12(el_id) : yac_12(el_id));
+                    const cplx_type y21 = block != nullptr ? (*block)[2] : (own_placement ? yac_raw_21(el_id) : yac_21(el_id));
+                    const cplx_type y22 = block != nullptr ? (*block)[3] : (own_placement ? yac_raw_22(el_id) : yac_22(el_id));
+                    const cplx_type S_f = Ef * std::conj(y11 * Ef + y12 * Et);
+                    const cplx_type S_t = Et * std::conj(y22 * Et + y21 * Ef);
+                    dst[0] = std::real(S_f) * sn_mva;
+                    dst[1] = std::imag(S_f) * sn_mva;
+                    dst[2] = std::real(S_t) * sn_mva;
+                    dst[3] = std::imag(S_t) * sn_mva;
+                } else {
+                    if(!(s1 && s2)) continue;
+                    const real_type theta_f = theta_row != nullptr ? theta_row[from_me] : std::arg(V_row[from_me]);
+                    const real_type theta_t = theta_row != nullptr ? theta_row[to_me] : std::arg(V_row[to_me]);
+                    real_type p1, p2;
+                    dc_branch_p_pu(ydc_11(el_id), ydc_12(el_id), ydc_21(el_id), ydc_22(el_id),
+                                   is_trafo ? dc_x_tau_shift(el_id) : real_type(0.),
+                                   theta_f, theta_t, p1, p2);
+                    dst[0] = p1 * sn_mva;
+                    dst[2] = p2 * sn_mva;
+                }
+            }
+        }
 
         // ----- multi-threading helpers (shared by every batch algorithm) ------------
         // Build a solver for one worker thread. Deliberately a FRESH AlgorithmSelector
@@ -579,6 +711,18 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // Only reads shared state (_grid_model, _algo's name / config), so several
         // threads may call it concurrently.
         std::unique_ptr<AlgorithmSelector> make_thread_algo() const;
+
+        // The grid's outer loops and driver parameters, handed to `algo` when it runs them
+        // (NROuter_*): a batch row is then solved with the loops, exactly as LSGrid::ac_pf
+        // solves the grid. Before the first solve of that algorithm, so that what the loops
+        // reserve is part of the one symbolic analysis; the same list again is a no-op
+        // (BaseAlgo::set_outer_loops).
+        void _install_outer_loops(AlgorithmSelector & algo) const {
+            if(!algo.supports_outer_loops()) return;
+            const auto & loops = _grid_model.get_outer_loops();
+            algo.set_outer_loops(std::vector<std::shared_ptr<const BaseOuterLoop> >(loops.begin(), loops.end()),
+                                 _grid_model.get_outer_loop_driver_params());
+        }
 
         // Contiguous split of [0, nb_items) over `nb_thread` threads: the first
         // `nb_items % nb_thread` threads get one extra item. Writes thread `t`'s share
@@ -700,6 +844,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             }
             _amps_flows = RealMat::Zero(0, n_total_);
             _active_power_flows = RealMat::Zero(0, n_total_);
+            _branch_results = RealMat::Zero(0, 4 * n_total_);
         }
 
         // The "n" powerflow: the batch's base case (L2). Besides its own answer --
@@ -737,6 +882,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             // ContingencyAnalysis / ScenarioSweep, feeds _record_n_case_violations --
             // so it must never be lazy, even when the per-row sweep that follows will be.
             _algo.set_lazy_v(false);
+            _install_outer_loops(_algo);
+            _base_row_view_.layout = &active_layout();
+            _algo.set_outer_row_view(&_base_row_view_);
             if(_algo.ac_solver_used()){
                 // ac_cache_.inj is already per-unit (pre_process_solver / fillSbus_me divides by
                 // sn_mva when != 1), same convention as LSGrid::ac_pf's acSbus_ -- so tol
@@ -764,6 +912,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     active_layout().bus_pq.as_eigen());
             }
             if(conv) _base_case_v_solver_ = _algo.get_V();
+            // ... and where its outer loops ended, which the rows seeded from it resume from
+            _base_resume_point_ = conv ? _algo.get_outer_resume_point() : nullptr;
             return conv;
         }
 
@@ -845,14 +995,24 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 scratch = RealVect::Zero(_dc_base_vm_grid_.size());
                 return scratch;
             }
-            if(_dc_gen_v_.rows() == 0) return _dc_base_vm_grid_;
-            CplxVect tmp = _dc_base_vm_solver_.cast<cplx_type>();
-            const RealVect row = _dc_gen_v_.row(i);
-            seed_vm_keeping(tmp, _vm_held_buses(), [this, &row](CplxVect & V){
-                _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, row);
-            });
+            const bool has_reset = static_cast<size_t>(i) < _dc_row_vm_reset_.size() &&
+                                   !_dc_row_vm_reset_[static_cast<size_t>(i)].empty();
+            if(_dc_gen_v_.rows() == 0 && !has_reset) return _dc_base_vm_grid_;
             scratch = _dc_base_vm_grid_;
-            scratch(active_layout().id_solver_to_me.as_eigen()) = tmp.array().abs();
+            if(_dc_gen_v_.rows() != 0){
+                CplxVect tmp = _dc_base_vm_solver_.cast<cplx_type>();
+                const RealVect row = _dc_gen_v_.row(i);
+                seed_vm_keeping(tmp, _vm_held_buses(), [this, &row](CplxVect & V){
+                    _grid_model.get_generators().set_vm(V, active_layout().id_me_to_solver, row);
+                });
+                scratch(active_layout().id_solver_to_me.as_eigen()) = tmp.array().abs();
+            }
+            if(has_reset){
+                const GlobalBusIdVect & solver_to_me = active_layout().id_solver_to_me;
+                for(const std::pair<int, real_type> & bus_vm : _dc_row_vm_reset_[static_cast<size_t>(i)]){
+                    scratch(solver_to_me[static_cast<size_t>(bus_vm.first)].cast_int()) = bus_vm.second;
+                }
+            }
             return scratch;
         }
 
@@ -899,6 +1059,17 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // set_init_from_n_powerflow() batch starts every row from. Part of L2: it is
         // that solve's answer, and it is kept with the factorization that produced it.
         CplxVect _base_case_v_solver_;
+        // where the "n" solve's outer loops ended (null without any): a set_init_from_n_powerflow()
+        // batch starts every row's loops from there -- the buses they froze, the taps, the
+        // sections, the targets DistributedSlack moved -- not from the grid. Part of L2, with it.
+        std::shared_ptr<const OuterResumePoint> _base_resume_point_;
+        /// what a row seeded from the "n" solve resumes its outer loops from (null: the grid)
+        const OuterResumePoint * _seeded_row_resume_point() const {
+            return _init_from_n_powerflow ? _base_resume_point_.get() : nullptr;
+        }
+        // the "n" solve as the outer loops see it: the batch's labelling, its masked buses,
+        // no row override (see OuterRowView). The loops declare what they act on against it.
+        OuterRowView _base_row_view_;
 
         bool _init_from_n_powerflow = false;
         // number of OS threads used to solve the batch (see set_nb_thread)
@@ -933,8 +1104,23 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // trafos) -- `connected` false for a disconnection, else the row's own end
         // buses. Read by _flows_of_row and the current-limit checks; empty otherwise.
         std::vector<std::vector<BranchBusOverride> > _row_branch_overrides_;
+        // with outer loops: per row, the transformers whose taps the loops left elsewhere
+        // than the grid has them, with their pi block there (y11, y12, y21, y22, pu), sorted
+        // by transformer id. Read by the flow kernels in place of the container's
+        // coefficients; empty otherwise (and on a row the loops moved no tap of).
+        std::vector<std::vector<std::pair<int, std::array<cplx_type, 4> > > > _row_trafo_blocks_;
+        // that row's block of that transformer, null where it keeps the container's
+        const std::array<cplx_type, 4> * _row_trafo_block(Eigen::Index i, int trafo_id) const {
+            if(static_cast<size_t>(i) >= _row_trafo_blocks_.size()) return nullptr;
+            const auto & row = _row_trafo_blocks_[static_cast<size_t>(i)];
+            if(row.empty()) return nullptr;
+            auto it = std::lower_bound(row.begin(), row.end(), trafo_id,
+                                       [](const std::pair<int, std::array<cplx_type, 4> > & a, int id){ return a.first < id; });
+            return (it != row.end() && it->first == trafo_id) ? &it->second : nullptr;
+        }
         RealMat _amps_flows;
         RealMat _active_power_flows;
+        RealMat _branch_results;
 
         // ----- DC theta-only fast path (see BaseAlgo::set_lazy_v) -----------------
         // true for the duration of one compute() call using it: DC, and not the
@@ -961,6 +1147,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // ContingencyAnalysis) -- kept here, generic, so the magnitude reconstruction
         // helpers above do not need to know about SbusPolicy at all.
         RealMat _dc_gen_v_;
+        // DC: per row, the buses (solver id) whose magnitude goes back to the caller's
+        // starting value, with that value. A row that disconnects every generator holding
+        // a bus leaves nothing to pin it, so it reads what dc_pf would: the magnitude it
+        // was given, not the setpoint the base case snapped it to. Filled by
+        // BaseBatchSweep, empty in AC (where such a bus is solved as PQ) and wherever no
+        // row releases a bus.
+        std::vector<std::vector<std::pair<int, real_type> > > _dc_row_vm_reset_;
 
 
         // timers

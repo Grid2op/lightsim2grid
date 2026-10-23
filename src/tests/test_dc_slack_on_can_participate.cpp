@@ -111,14 +111,15 @@ TEST_CASE("on: the units flagged to share the slack do, with their weights", "[d
     CHECK(p(1) == Approx(40. + 100. / 6.));
     CHECK(p(2) == Approx(60. + 150. / 6.));
 
-    // new weights reach the next DC solve
+    // new weights reach the next DC solve; the slack generator keeps its flag, with its slack
+    // weight, whatever the call says of it (SlackParticipation::set_can_participate)
     w << 0., 1., 1.;
     grid.set_gen_can_participate_slack({false, true, true}, w);
     REQUIRE(dc(grid).size() == 4);
     const RealVect p2 = gen_p(grid);
-    CHECK(p2(0) == Approx(50.));
-    CHECK(p2(1) == Approx(65.));
-    CHECK(p2(2) == Approx(85.));
+    CHECK(p2(0) == Approx(50. + 50. / 3.));
+    CHECK(p2(1) == Approx(40. + 50. / 3.));
+    CHECK(p2(2) == Approx(60. + 50. / 3.));
 
     // and switching it off brings the grid's own slack back
     grid.set_dc_distribute_slack_on_can_participate(false);

@@ -172,6 +172,56 @@ class TestBatchCPUPowerFlow(unittest.TestCase):
             fd = self._fd("load_p", idx, **inputs)
             self.assertAlmostEqual(load_p.grad[idx].item(), fd, places=6)
 
+    def test_gradient_with_a_load_contingency(self):
+        load_status = np.ones((self.N_SCEN, self.pf.n_load), dtype=bool)
+        load_status[1, 2] = False
+        load_status[3, 0] = False
+        inputs = dict(load_p=self.load_p, load_status=load_status)
+
+        load_p = torch.tensor(self.load_p, requires_grad=True)
+        pf = self._make()
+        V = pf(load_p=load_p, load_status=torch.as_tensor(load_status))
+        self.assertTrue(pf.converged().all())
+        self._loss(V).backward()
+        for idx in ((1, 0), (3, 4)):
+            fd = self._fd("load_p", idx, **inputs)
+            self.assertAlmostEqual(load_p.grad[idx].item(), fd, places=6)
+        # a tripped load's power is out of its row: no gradient, as a finite difference says
+        for idx in ((1, 2), (3, 0)):
+            self.assertEqual(load_p.grad[idx].item(), 0.)
+            self.assertAlmostEqual(self._fd("load_p", idx, **inputs), 0., places=9)
+
+    def test_gradient_with_a_shunt_contingency(self):
+        self.assertGreater(self.pf.n_shunt, 0)
+        shunt_status = np.ones((self.N_SCEN, self.pf.n_shunt), dtype=bool)
+        shunt_status[0, 0] = False
+        inputs = dict(load_p=self.load_p, shunt_status=shunt_status)
+
+        load_p = torch.tensor(self.load_p, requires_grad=True)
+        pf = self._make()
+        V = pf(load_p=load_p, shunt_status=torch.as_tensor(shunt_status))
+        self.assertTrue(pf.converged().all())
+        # the row without its shunt is another state than the others'
+        V_ref = pf(load_p=torch.as_tensor(self.load_p)).detach()
+        self.assertGreater((V[0].detach() - V_ref[0]).abs().max().item(), 1e-5)
+        self.assertLess((V[1].detach() - V_ref[1]).abs().max().item(), 1e-12)
+        pf = self._make()
+        V = pf(load_p=load_p, shunt_status=torch.as_tensor(shunt_status))
+        self._loss(V).backward()
+        for idx in ((0, 0), (0, 3), (2, 1)):
+            fd = self._fd("load_p", idx, **inputs)
+            self.assertAlmostEqual(load_p.grad[idx].item(), fd, places=6)
+
+    def test_a_tripped_generator_has_no_gen_p_gradient(self):
+        gen_status = np.ones((self.N_SCEN, self.pf.n_gen), dtype=bool)
+        gen_status[2, 3] = False
+        gen_p = torch.tensor(self.gen_p, requires_grad=True)
+        pf = self._make()
+        V = pf(gen_p=gen_p, gen_status=torch.as_tensor(gen_status))
+        self._loss(V).backward()
+        self.assertEqual(gen_p.grad[2, 3].item(), 0.)
+        self.assertAlmostEqual(self._fd("gen_p", (2, 3), gen_p=self.gen_p, gen_status=gen_status), 0., places=9)
+
     def test_a_call_does_not_depend_on_the_previous_one(self):
         """A mask set by one call must not leak into the next: the same arguments
         always give the same answer, whatever ran before."""

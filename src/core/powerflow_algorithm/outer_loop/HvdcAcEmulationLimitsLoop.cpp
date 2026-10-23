@@ -21,7 +21,7 @@ RealVect angles(const CplxVect & V)
 
 const SolverBusIdVect & solver_map(const OuterContext & ctx)
 {
-    return ctx.id_me_to_solver != nullptr ? *ctx.id_me_to_solver : ctx.grid->id_me_to_ac_solver();
+    return ctx.view().id_me_to_solver();
 }
 
 }  // namespace
@@ -36,6 +36,17 @@ hvdc_p_check::HvdcPPlan HvdcAcEmulationLimitsLoop::_ac_emulation_lines(const Out
     return res;
 }
 
+void HvdcAcEmulationLimitsLoop::_declare(const OuterContext & ctx) const
+{
+    // every line in AC emulation may saturate -- and so may a line the caller holds at a
+    // limit now: putting it back in AC emulation (set_status_droop) changes values only, and
+    // does not reach this reservation again
+    const HvdcLineContainer & hvdcs = ctx.grid->get_dclines();
+    for(int hvdc_id = 0; hvdc_id < hvdcs.nb(); ++hvdc_id){
+        if(hvdcs.is_droop_active(hvdc_id)) ctx.controls->reserve_hvdc_regime(hvdc_id);
+    }
+}
+
 bool HvdcAcEmulationLimitsLoop::_is_needed(const OuterContext & ctx) const
 {
     return !_ac_emulation_lines(ctx).empty();
@@ -43,8 +54,21 @@ bool HvdcAcEmulationLimitsLoop::_is_needed(const OuterContext & ctx) const
 
 void HvdcAcEmulationLimitsLoop::_initialize(OuterContext & ctx)
 {
-    // every line starts in its linear regime (frozen_dir 0), as in OpenLoadFlow
+    // every line starts in its linear regime (frozen_dir 0), as in OpenLoadFlow -- resuming,
+    // in the regime the previous solve left it in
+    hvdc_p_check::HvdcPPlan previous;
+    if(ctx.resume) previous = plan_;
     plan_ = _ac_emulation_lines(ctx);
+    for(auto & line : plan_.lines){
+        for(const auto & before : previous.lines){
+            if(before.hvdc_id != line.hvdc_id || before.frozen_dir == 0) continue;
+            HvdcRegimeControl * control = ctx.controls != nullptr ? ctx.controls->hvdc_regime(line.hvdc_id) : nullptr;
+            if(control == nullptr) break;
+            line.frozen_dir = before.frozen_dir;
+            control->set(before.frozen_dir);
+            break;
+        }
+    }
 }
 
 void HvdcAcEmulationLimitsLoop::_detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const
@@ -55,10 +79,10 @@ void HvdcAcEmulationLimitsLoop::_detect(const OuterContext & ctx, std::vector<Li
         // the grid's own lines and regimes, in the labelling of the solve that was checked
         hvdc_p_check::HvdcPPlan plan;
         hvdc_p_check::build_hvdc_p_plan(*ctx.grid, solver_map(ctx), plan);
-        hvdc_p_check::check_hvdc_p_violations(plan, Va, ctx.tol_mw, ctx.masked, out);
+        hvdc_p_check::check_hvdc_p_violations(plan, Va, ctx.tol_mw, ctx.view().masked(), out);
         return;
     }
-    hvdc_p_check::check_hvdc_p_violations(plan_, Va, ctx.tol_mw, ctx.masked, out);
+    hvdc_p_check::check_hvdc_p_violations(plan_, Va, ctx.tol_mw, ctx.view().masked(), out);
 }
 
 OuterLoopStatus HvdcAcEmulationLimitsLoop::_check(OuterContext & ctx)
@@ -67,9 +91,6 @@ OuterLoopStatus HvdcAcEmulationLimitsLoop::_check(OuterContext & ctx)
     _detect(ctx, trigger);
     if(trigger.empty()) return OuterLoopStatus::STABLE;
 
-    OuterState & state = *ctx.state;
-    const int nb_hvdc = ctx.grid->get_dclines().nb();
-    if(state.hvdc_status.empty()) state.hvdc_status.assign(nb_hvdc, OuterState::HVDC_KEEP);
     bool changed = false;
     for(const LimitViolation & v : trigger){
         if(v.element_type != ViolationElementType::HVDC) continue;
@@ -80,8 +101,10 @@ OuterLoopStatus HvdcAcEmulationLimitsLoop::_check(OuterContext & ctx)
         bool acted = false;
         for(auto & line : plan_.lines){
             if(line.hvdc_id != v.element_id || line.frozen_dir == regime) continue;
+            HvdcRegimeControl * control = ctx.controls->hvdc_regime(line.hvdc_id);
+            if(control == nullptr) continue;
             line.frozen_dir = regime;
-            state.hvdc_status[static_cast<std::size_t>(line.hvdc_id)] = regime;
+            control->set(regime);
             changed = true;
             acted = true;
         }

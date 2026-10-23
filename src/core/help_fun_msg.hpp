@@ -85,6 +85,7 @@ struct LS2G_API DocSolver
     static const std::string set_iw_mu_max;
     static const std::string get_refactor_every_n;
     static const std::string set_refactor_every_n;
+    static const std::string constrained_ordering;
     static const std::string get_config;
     static const std::string set_config;
     static const std::string get_theta_to_J_col;
@@ -104,8 +105,10 @@ struct LS2G_API DocSolver
     static const std::string FDPF_XB_KLU;
     static const std::string FDPF_BX_KLU;
     static const std::string NRRefactorRetry_KLU;
+    static const std::string NR_KLUStaticPivot;
     static const std::string NROuter;
     static const std::string OuterLoopStats;
+    static const std::string OuterLoopDriverParams;
     static const std::string OuterDecision;
     static const std::string BaseOuterLoop;
     static const std::string OuterLoopStatus;
@@ -527,6 +530,7 @@ struct LS2G_API DocLSGrid
     static const std::string consider_only_main_component;
     static const std::string redistribute_active_power;
     static const std::string get_physical_violations;
+    static const std::string cap_slack_at_active_limits;
     static const std::string get_violations;
     static const std::string get_ignore_status_global;
     static const std::string get_synch_status_both_side;
@@ -605,8 +609,7 @@ struct LS2G_API DocLSGrid
     static const std::string set_init_vm_pu;
     static const std::string get_init_vm_pu;
     static const std::string set_keep_vinit_at_group_controlled_buses;
-    static const std::string set_remote_voltage_control_vm_range;
-    static const std::string get_remote_voltage_control_vm_range;
+    static const std::string set_outer_loop_driver_params;
     static const std::string get_keep_vinit_at_group_controlled_buses;
     static const std::string set_hold_frozen_regulators;
     static const std::string get_hold_frozen_regulators;
@@ -839,12 +842,18 @@ struct LS2G_API DocContingencyAnalysis
     static const std::string add_n1;
     static const std::string add_nk;
     static const std::string add_multiple_n1;
+    static const std::string add_contingency;
+    static const std::string add_contingency_shunt;
+    static const std::string add_contingency_load;
+    static const std::string add_contingency_gen;
     static const std::string clear;
     static const std::string remove_n1;
     static const std::string remove_nk;
     static const std::string remove_multiple_n1;
+    static const std::string remove_contingency;
 
     static const std::string my_defaults_vect;
+    static const std::string my_contingencies;
 
     static const std::string compute;
     static const std::string compute_flows;

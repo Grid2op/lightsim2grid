@@ -30,7 +30,7 @@ class LSGrid;
  * Such an SVC is idle in the grid (off, flagged standby with its set-points, see
  * LSGrid::set_svc_standby). With this loop in the grid's list, the voltage-control plan
  * holds it in a group of its own (VoltageControlPlan::build_controllers' `hold_monitors`),
- * so switching it on is a value edit (OuterState::svc_target_vm, then
+ * so switching it on is a value edit (a StandbySvcControl, then
  * NRSystem::release_held_svcs): one symbolic analysis for the whole solve.
  *
  * Trigger (detect): svc_standby_check (SvcStandbyCheck.hpp) on the monitors still idle,
@@ -43,9 +43,15 @@ class LSGrid;
  */
 class LS2G_API VoltageMonitoringLoop final : public BaseOuterLoop
 {
+    public:
+        /// what the last solve switched on, (svc id, set-point pu): read by an external batch
+        /// solver resuming rows from this loop's state (gpusim2grid's outer loops)
+        const std::vector<std::pair<int, real_type> > & switched_on() const { return switched_on_; }
+
     protected:
         std::string _name() const override { return "VoltageMonitoring"; }
         bool _holds_svc_monitors() const override { return true; }
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;
@@ -56,10 +62,13 @@ class LS2G_API VoltageMonitoringLoop final : public BaseOuterLoop
 
     private:
         /// the SVCs the voltage-control plan of `grid` holds (its monitors), by SVC id
-        static std::vector<int> _held_svcs(const LSGrid & grid);
+        static std::vector<int> _held_svcs(const OuterGridView & view);
 
         // per solve (see _initialize): the monitors, as svc_standby_check entries
         svc_standby_check::SvcStandbyPlan monitors_;
+        // the SVCs this loop switched on, at their set-point, pu: what a resumed solve starts
+        // with (see OuterContext::resume)
+        std::vector<std::pair<int, real_type> > switched_on_;
 };
 
 }  // namespace ls2g

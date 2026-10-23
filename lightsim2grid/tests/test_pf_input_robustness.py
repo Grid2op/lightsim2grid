@@ -176,7 +176,8 @@ class TestSolverComputePfInputs(unittest.TestCase):
         grid = _make_grid()
         n_bus = grid.total_bus()
         grid.ac_pf(np.ones(n_bus, dtype=complex), MAX_IT, TOL)
-        cls.Ybus = grid.get_Ybus_solver()  # scipy sparse, n x n
+        # scipy sparse, n x n; a copy, as compute_pf cannot take the read-only view itself
+        cls.Ybus = grid.get_Ybus_solver().copy()
         cls.Sbus = 1.0 * grid.get_Sbus_solver()
         cls.V0 = np.ones(cls.Ybus.shape[0], dtype=complex)
         cls.slack_ids = np.array(grid.get_slack_ids_solver(), dtype=np.int32)
@@ -288,6 +289,20 @@ class TestSolverComputePfInputs(unittest.TestCase):
         for bad_tol in (0., -1e-8, float("nan"), float("inf")):
             self._assert_all_solvers_raise(
                 RuntimeError, f"tol={bad_tol}", tol=bad_tol)
+
+    def test_keyword_arguments(self):
+        # the tolerance is named `tol_pu`: a solver compares the per-unit mismatch with
+        # it, unlike the `tol` (in MVA) of LSGrid.ac_pf
+        kwargs = dict(Ybus=self.Ybus, Sbus=self.Sbus, slack_ids=self.slack_ids,
+                      slack_weights=self.slack_weights, pv=self.pv, pq=self.pq,
+                      max_iter=MAX_IT)
+        for meth in ("compute_pf", "solve"):
+            with self.subTest(meth):
+                solver = lightsim2grid_cpp.NR_SparseLU()
+                conv = getattr(solver, meth)(V=1.0 * self.V0, tol_pu=TOL, **kwargs)
+                assert conv, f"{meth} did not converge when called by keyword"
+                with self.assertRaises(TypeError):
+                    getattr(solver, meth)(V=1.0 * self.V0, tol=TOL, **kwargs)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,9 @@ class BaseDCAlgo final: public BaseAlgo
 
         static constexpr bool IS_DC = true;
         bool is_dc() const noexcept override { return IS_DC; }
+        // the imbalance is shared on the participating slack buses by slack_weights
+        static constexpr bool DISTRIBUTES_SLACK = true;
+        bool distributes_slack() const noexcept override { return DISTRIBUTES_SLACK; }
 
         void reset() override;
         void reset_timer() override{
@@ -116,8 +119,12 @@ class BaseDCAlgo final: public BaseAlgo
             real_type val = add ? std::real(coeff.value) : - std::real(coeff.value);
             dcYbus_noslack_.coeffRef(row_res, col_res) += val;
 
-            // need to refactor the linear solver (Ybus changed)
-            if(!add) need_refactor_ = true;
+            // need to refactor the linear solver (Ybus changed), and on a re-add just as
+            // much as on a removal: a batch row removes its branches, solves, and adds
+            // them back. The next row may edit no admittance at all (it only changes an
+            // injection); without this it would be solved with the factorization of the
+            // matrix the PREVIOUS row had, branches still out.
+            need_refactor_ = true;
         }
 
         // ----- bus masking ("handle disconnected grid" mode) -----------------------

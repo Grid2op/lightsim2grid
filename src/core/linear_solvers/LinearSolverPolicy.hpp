@@ -9,9 +9,12 @@
 #ifndef LINEAR_SOLVER_POLICY_H
 #define LINEAR_SOLVER_POLICY_H
 
+#include <utility>
+
 #include "Utils.hpp"
 #include "CustTimer.hpp"
 #include "LinearSolverStats.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 
 namespace ls2g {
 
@@ -120,6 +123,19 @@ class LinearSolverPolicy
             detail::set_rgrowth_threshold_impl(inner_, val ? RGROWTH_THRESHOLD : 0., 0);
         }
         bool refactor_fallback() const noexcept { return refactor_fallback_; }
+
+        // the inner solver's (see detail::orders_with_constraints_by_default)
+        static constexpr bool ORDERS_WITH_CONSTRAINTS_BY_DEFAULT =
+            detail::orders_with_constraints_by_default<LinearSolver>::value;
+
+        // Forwarded to a solver that orders with constraints (see OrderingConstraints), and
+        // only declared for one, so that detail::set_ordering_constraints_impl leaves the
+        // others alone without building any constraint.
+        template<class LS = LinearSolver>
+        auto set_ordering_constraints(OrderingConstraints constraints)
+            -> decltype(std::declval<LS &>().set_ordering_constraints(std::move(constraints)), void()) {
+            inner_.set_ordering_constraints(std::move(constraints));
+        }
 
         ErrorType solve(Eigen::Ref<RealVect> b) {
             ++stats_.nb_solve;

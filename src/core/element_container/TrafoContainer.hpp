@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <utility>
+#include <vector>
 
 namespace ls2g {
 
@@ -225,6 +226,21 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
         }
         /// the same with its ratio changer at `ratio_position` (ignored without one)
         std::array<cplx_type, 4> pi_block_at(int el, int ratio_position, int phase_position, real_type shift_rad) const;
+        /**
+         * The taps an outer loop left off the grid's positions: (transformer, position) from
+         * one position per transformer (INT_MIN where nothing handled it), its phase changers'
+         * (`phase` true) or its ratio changers'.
+         */
+        std::vector<std::pair<int, int> > moved_taps(bool phase, const std::vector<int> & positions) const;
+        /**
+         * The pi block (as pi_block_at) of each transformer in `ratio_taps` or `phase_taps`
+         * (as moved_taps gives them), at those positions -- the grid's for the changer it does
+         * not list -- and the shift of its phase position (its own without a phase changer);
+         * by increasing transformer id.
+         */
+        std::vector<std::pair<int, std::array<cplx_type, 4> > > moved_tap_blocks(
+            const std::vector<std::pair<int, int> > & ratio_taps,
+            const std::vector<std::pair<int, int> > & phase_taps) const;
         /// its ratio (as ratio_) with its changers at those positions (each ignored without one)
         real_type ratio_at(int el, int ratio_position, int phase_position) const {
             return base_ratio_(el) * ratio_taps_.rho_at(el, ratio_taps_.has(el) ? ratio_position : 0)

@@ -89,7 +89,7 @@ void ContinuationSweep::_build_direction(int nb_buses_solver,
 }
 
 bool ContinuationSweep::_restore_at(const Eigen::Ref<const CplxVect> & V_last, real_type lam_last,
-                                    int max_iter, real_type tol)
+                                    int max_iter, real_type tol_pu)
 {
     CplxVect V = V_last;
     const CplxVect Sbus = ac_cache_.inj + lam_last * _direction;
@@ -97,7 +97,7 @@ bool ContinuationSweep::_restore_at(const Eigen::Ref<const CplxVect> & V_last, r
         ac_cache_.mat, V, Sbus,
         active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
         active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
-        max_iter, tol);
+        max_iter, tol_pu);
     if(!conv) return false;
     // V_last is already a solution, so the solve above converged on its very first
     // convergence check and never entered the NR loop -- which means it never
@@ -164,6 +164,18 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
              << "the NR algorithms (eg NR_KLU / NR_SparseLU).";
         throw std::runtime_error(exc_.str());
     }
+    if(_algo.supports_outer_loops() && !_grid_model.get_outer_loops().empty()){
+        // the corrector solves at a fixed lambda, on one system: the outer loops change it
+        // between two correctors (and the tangent is taken from whatever they left), so the
+        // points would not be those of the lambda-parametrised curve
+        std::ostringstream exc_;
+        exc_ << "ContinuationSweep::compute: the algorithm '" << _algo.get_name() << "' runs the grid's "
+             << "outer loops, which a continuation does not support: between two correctors they "
+             << "change the system it continues (DistributedSlack moves the units' targets off the "
+             << "curve's injection, ReactiveLimits switches buses between PV and PQ). Pick a plain "
+             << "Newton-Raphson algorithm (eg NR_KLU / NR_SparseLU).";
+        throw std::runtime_error(exc_.str());
+    }
     if(_step_min > _step_max){
         std::ostringstream exc_;
         exc_ << "ContinuationSweep::compute: step_min (" << _step_min << ") is larger than "
@@ -213,6 +225,10 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
         _timer_total = timer.duration();
         return;
     }
+
+    // `tol` is in MVA, as for LSGrid::ac_pf: _finish_preprocessing converts it for the
+    // base case, the correctors below call the solver directly and need it in per unit.
+    const real_type tol_pu = tol / _grid_model.get_sn_mva();
 
     // ---- point 0: the base case ------------------------------------------------
     CplxVect V_last = _algo.get_V();
@@ -307,7 +323,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
             ac_cache_.mat, V_corr, Sbus,
             active_layout().slack_bus_id_solver.as_eigen(), active_layout().slack_weights,
             active_layout().bus_pv.as_eigen(), active_layout().bus_pq.as_eigen(),
-            max_iter, tol);
+            max_iter, tol_pu);
 
         if(!conv){
             // Not a failed row: a step that was too long. Halve it and try the same
@@ -328,7 +344,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
             step = std::max(_step_min, this_step * static_cast<real_type>(0.5));
             // the diverged solve left (Va, Vm) and the standing factorization at some
             // diverged iterate; both feed the next tangent, so put them back.
-            if(!_restore_at(V_last, lam, max_iter, tol)){
+            if(!_restore_at(V_last, lam, max_iter, tol_pu)){
                 _msg = "could not re-establish the last converged point after a corrector failure.";
                 break;
             }

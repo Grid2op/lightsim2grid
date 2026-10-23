@@ -45,10 +45,20 @@ class InjAction
 
         // TODO
         void apply_to_gridmodel(LSGrid & grid) const {
-            update_grid_values(grid, load_p_,  &LSGrid::change_p_load);
-            update_grid_values(grid, load_q_,  &LSGrid::change_q_load);
-            update_grid_values(grid, gen_p_,  &LSGrid::change_p_gen);
-            update_grid_values(grid, gen_v_,  &LSGrid::change_v_gen);
+            apply_to_gridmodel(grid, load_p_, load_q_, gen_p_, gen_v_);
+        }
+
+        // the same, on values read where they are (LightEnv::step: the rows of its time
+        // series) rather than copied into an InjAction
+        static void apply_to_gridmodel(LSGrid & grid,
+                                       const Eigen::Ref<const RealVect> & load_p,
+                                       const Eigen::Ref<const RealVect> & load_q,
+                                       const Eigen::Ref<const RealVect> & gen_p,
+                                       const Eigen::Ref<const RealVect> & gen_v){
+            update_grid_values(grid, load_p,  &LSGrid::change_p_load);
+            update_grid_values(grid, load_q,  &LSGrid::change_q_load);
+            update_grid_values(grid, gen_p,  &LSGrid::change_p_gen);
+            update_grid_values(grid, gen_v,  &LSGrid::change_v_gen);
             // TODO rest !
         }
 
@@ -58,9 +68,9 @@ class InjAction
         }
         
         template<class EigenType, class FunctorType>
-        void update_grid_values(LSGrid & grid,
-                                const EigenType & new_values,
-                                FunctorType fun) const
+        static void update_grid_values(LSGrid & grid,
+                                       const EigenType & new_values,
+                                       FunctorType fun)
         {
             for(int el_id = 0; el_id < new_values.rows(); ++el_id)
             {

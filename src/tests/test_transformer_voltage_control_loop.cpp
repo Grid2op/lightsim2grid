@@ -167,3 +167,24 @@ TEST_CASE("within its deadband nothing moves, and nothing is reported", "[outer]
     CHECK(viols[0].limit == Approx((v1 + 0.02) * 20.).epsilon(1e-12));
     CHECK(viols[0].category() == ls2g::ViolationCategory::CONTROL);
 }
+
+TEST_CASE("nothing is reserved when the inner algorithm solves no ratio", "[outer][transformer_voltage_control]")
+{
+    LSGrid grid = make_grid(21, 1.0, 0.002);
+    grid.change_algorithm("NRSing_SparseLU");
+    REQUIRE(grid.ac_pf(flat(grid), 30, 1e-12).size() == 3);  // builds the bus maps
+
+    // the plain OuterControls hands out no ratio group, as an inner algorithm without
+    // BranchControl would
+    ls2g::OuterControls plain;
+    ls2g::OuterContext ctx;
+    ctx.grid = &grid;
+    ctx.controls = &plain;
+    TransformerVoltageControlLoop loop;
+    REQUIRE(loop.is_needed(ctx));
+    loop.declare(ctx);
+    CHECK(plain.ratio_groups().empty());
+    // ... so neither are the buses and controllers a ratio group would have needed
+    CHECK_FALSE(plain.holds_voltage_controllers());
+    CHECK(plain.switchable_buses().empty());
+}

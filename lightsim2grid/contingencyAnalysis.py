@@ -17,6 +17,7 @@ import numpy as np
 from collections.abc import Iterable
 
 from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid._batch_defaults import use_default_batch_algorithm
 from .lightsim2grid_cpp import (ContingencyAnalysisCPP, LimitViolation,
                                  ViolationElementType, LimitViolationType,
                                  ViolationCategory)
@@ -47,8 +48,11 @@ class PreContingencyResult:
     #: bus needing reactive power its machines do not have (LOW_Q / HIGH_Q), a PQ generator
     #: flagged as pinned at a reactive limit that would regulate again (LOW_VOLTAGE_AT_MIN_Q /
     #: HIGH_VOLTAGE_AT_MAX_Q), an idle SVC flagged as carrying a standby automaton that would
-    #: switch it on (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), an angle-droop
-    #: hvdc line beyond what its converters can transmit (HIGH_P), or a generator the
+    #: switch it on (LOW_VOLTAGE_SVC_STANDBY / HIGH_VOLTAGE_SVC_STANDBY), a generator holding a
+    #: remote bus from an unrealistic voltage on its own bus (LOW_VOLTAGE_REMOTE_CONTROL /
+    #: HIGH_VOLTAGE_REMOTE_CONTROL), an angle-droop hvdc line beyond what its converters can
+    #: transmit (HIGH_P), one flagged as frozen at its limit whose droop would ask for less
+    #: (HVDC_AC_EMULATION_RELEASE), or a generator the
     #: distributed slack pushed outside its active power limits (LOW_P / HIGH_P). Kept apart from
     #: `limit_violations` because it is a different KIND of statement: every entry here has
     #: `category == ViolationCategory.PHYSICAL` -- a state the grid cannot reach -- or
@@ -77,6 +81,10 @@ class ContingencyResult:
     limit_violations: List[LimitViolation]
     #: see `PreContingencyResult.physical_violations`
     physical_violations: List[LimitViolation] = field(default_factory=list)
+    #: the shunts, loads and generators this contingency trips (see `add_contingency`)
+    shunt_ids: List[int] = field(default_factory=list)
+    load_ids: List[int] = field(default_factory=list)
+    gen_ids: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -182,9 +190,8 @@ class ContingencyAnalysis(object):
         self._mws = None
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
-        if AlgorithmType.NR_KLU in self.available_default_algorithms:
-            # use the faster KLU if available
-            self.computer.change_algorithm(AlgorithmType.NR_KLU)
+        # the faster KLU if available, the grid's own algorithm if it runs outer loops
+        use_default_batch_algorithm(self.computer, self._ls_backend._grid)
 
     @property
     def all_contingencies(self):
@@ -199,7 +206,9 @@ class ContingencyAnalysis(object):
     def init_from_n_powerflow(self):
         """Whether to initialize the complex voltages of each contingency with the results
         of a "n" powerflow (a powerflow without any line disconnection) instead of a flat
-        start. Default: ``False``. Must be set before the computation actually runs (eg
+        start. Default: ``False``. With an ``NROuter_*`` algorithm, each contingency's outer
+        loops also start from where the "n" ones ended (frozen buses, taps, sections, the
+        targets ``DistributedSlack`` moved), not from the grid. Must be set before the computation actually runs (eg
         before ``get_flows`` / ``compute_V`` / ``run`` are called); it has no effect on a
         contingency that has already been solved.
         """
@@ -246,7 +255,11 @@ class ContingencyAnalysis(object):
     def handle_disconnected_grid(self, val: bool):
         if bool(val) != val:
             raise ValueError("The `handle_disconnected_grid` attribute must be a boolean.")
-        self.computer.handle_disconnected_grid = bool(val)
+        val = bool(val)
+        if val != self.computer.handle_disconnected_grid:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.handle_disconnected_grid = val
 
     @property
     def redistribute_slack(self):
@@ -259,7 +272,11 @@ class ContingencyAnalysis(object):
         only sharing what is left (the change in the losses) on the units that can still move.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
         clamp anything. Same as ``LSGrid.consider_only_main_component(redistribute_slack=True)``,
-        contingency by contingency.
+        contingency by contingency. Needs an algorithm with a distributed slack: ``compute``
+        refuses it with a single-slack one (``NRSing_*``, Gauss-Seidel). With outer loops
+        (``NROuter_*``), the ``DistributedSlack`` loop shares the loss itself before the
+        contingency's first solve, from the targets in force (those of the "n" solve with
+        :attr:`init_from_n_powerflow`), as OpenLoadFlow's security analysis does.
         """
         return self.computer.redistribute_slack
 
@@ -267,7 +284,11 @@ class ContingencyAnalysis(object):
     def redistribute_slack(self, val: bool):
         if bool(val) != val:
             raise ValueError("The `redistribute_slack` attribute must be a boolean.")
-        self.computer.redistribute_slack = bool(val)
+        val = bool(val)
+        if val != self.computer.redistribute_slack:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.redistribute_slack = val
 
     @property
     def compute_limit_violations(self):
@@ -407,7 +428,7 @@ class ContingencyAnalysis(object):
         does reach and should not sit in). Default: ``False``. See
         :func:`get_physical_violations` and `ContingencyResult.physical_violations`.
 
-        Five checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        Each check is a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
         enforced here (nothing is switched PV -> PQ or back, no droop is clamped, no machine
         leaves the slack distribution, no contingency is re-solved):
 
@@ -432,9 +453,21 @@ class ContingencyAnalysis(object):
           ``MonitoringVoltageOuterLoop``. ``value`` and ``limit`` in kV, compared with
           :attr:`physical_violation_tol_vm_pu`. A grid with no flagged SVC reports nothing
           here.
+        * the **own bus** of every generator regulating a remote bus
+          (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the
+          ``GENERATOR``): does holding the remote target take it outside the realistic range
+          of the ``ReactiveLimits`` loop (the grid's, or one with its default parameters when
+          the grid runs none, as for the reactive capability above)? OpenLoadFlow's
+          ``ReactiveLimits``, in its robust remote voltage control mode. ``value`` and
+          ``limit`` in kV, compared with :attr:`physical_violation_tol_vm_pu`.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? OpenLoadFlow's ``HvdcAcEmulationLimits``.
+        * the **release** of every angle-droop hvdc line flagged as frozen at its active
+          power limit (``HVDC_AC_EMULATION_RELEASE`` on the ``HVDC``, see
+          :func:`lightsim2grid.network.LSGrid.set_hvdc_ac_emulation_frozen`): would its droop
+          ask for less than that limit? The other half of the same ``HvdcAcEmulationLimits``
+          loop. ``side`` the direction it is frozen in, ``value`` and ``limit`` in MW.
         * the **active power** of every generator and every storage unit carrying the
           **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
           ``STORAGE``): the slack is solved inside the
@@ -450,8 +483,8 @@ class ContingencyAnalysis(object):
 
         Independent of `compute_limit_violations`: either can be on without the other (though
         `run` still requires `compute_limit_violations`, and fills `physical_violations` only
-        when this one is on too). The two active-power checks work in DC; the reactive one
-        and the release one need an AC algorithm that publishes its per-bus mismatch (every
+        when this one is on too). The active-power checks (the hvdc ones and the slack one) work
+        in DC; the reactive one and the voltage ones need an AC algorithm that publishes its per-bus mismatch (every
         built-in AC algorithm does) and `run` / `compute_V` raise for one that does not.
         Changing this flag invalidates any computed result but keeps the registered
         contingencies.
@@ -475,7 +508,8 @@ class ContingencyAnalysis(object):
     def physical_violation_tol_mva(self):
         """Absolute slack on every comparison :attr:`compute_physical_violations` makes, so
         that an element resting exactly on its limit is not reported over solver noise: a
-        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q``).
+        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q`` and
+        ``HVDC_AC_EMULATION_RELEASE``).
         Default: ``1e-4``. In MVA -- one noise floor for both halves, MW and MVAr being the
         same scale.
 
@@ -507,7 +541,9 @@ class ContingencyAnalysis(object):
         (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
         flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
         automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
-        ``HIGH_VOLTAGE_SVC_STANDBY``). Default: ``1e-4``. Changing it invalidates any
+        ``HIGH_VOLTAGE_SVC_STANDBY``), and the remote voltage control check a remote
+        controller whose own bus is outside the realistic range by more than this
+        (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``). Default: ``1e-4``. Changing it invalidates any
         previously-computed results.
         """
         return self.computer.physical_violation_tol_vm_pu
@@ -535,6 +571,16 @@ class ContingencyAnalysis(object):
         """Same as :func:`get_physical_violations`, for the pre-contingency ("n") case.
         Requires :attr:`compute_physical_violations` to be ``True`` (raises otherwise)."""
         return self.computer.get_physical_violations_n()
+
+    def get_outer_results(self):
+        """Per row of the last computation, what the outer loops did (a list of
+        ``OuterRowResult``: status, iteration counts, and the targets, hvdc regimes, taps and
+        sections the loops settled on where they differ from the grid). Only when the batch
+        runs outer loops -- the grid's algorithm is an ``NROuter_*`` one, kept by the batch --
+        empty otherwise. A row its loops leave ``UNSTABLE`` or ``FAILED`` did not converge; its
+        ``converged`` is the row's outcome, ``status`` being the loops' own (``STABLE`` too on a
+        row whose Newton diverged, or that was never solved)."""
+        return self.computer.get_outer_results()
 
     @property
     def nb_thread(self):
@@ -646,7 +692,7 @@ class ContingencyAnalysis(object):
             raise RuntimeError("This is closed, you cannot use it.")
         
         li_disc = self._single_cont_to_li_int(args)
-        li_disc_tup = tuple(li_disc)
+        li_disc_tup = self._cont_key(li_disc)
         if li_disc_tup not in self._contingency_order:
             # this is really the first time this contingency is seen
             try:
@@ -739,6 +785,104 @@ class ContingencyAnalysis(object):
             self._contingency_names[li_disc_tup] = None
         self.__computed = False   # see add_single_contingency
 
+    @staticmethod
+    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=()):
+        """internal: the key a contingency is known by on this side. A branch-only one is
+        the flat tuple of its branch ids; one tripping shunts, loads or generators is the
+        nested tuple of its four lists. Each list sorted, every id once: the c++ side keeps
+        sets, and `my_contingencies` must give back the key that was registered. (This class
+        never opens a branch at one end only: the last two lists `my_contingencies` gives
+        are empty.)"""
+        def _ids(stuff):
+            return tuple(sorted({int(el) for el in stuff}))
+        if not shunts and not loads and not gens:
+            return _ids(branches)
+        return (_ids(branches), _ids(shunts), _ids(loads), _ids(gens))
+
+    def _cpp_keys(self):
+        """internal: the key of every contingency of the c++ side, in its row order"""
+        return [self._cont_key(*cont) for cont in self.computer.my_contingencies()]
+
+    def _ids_of(self, stuff, names, kind):
+        """internal: ids of the elements of one kind, given by id or by name"""
+        if isinstance(stuff, (int, np.integer)) or isinstance(stuff, type(self).STR_TYPES):
+            stuff = [stuff]
+        res = []
+        for el in stuff:
+            if isinstance(el, type(self).STR_TYPES):
+                matches = np.where(np.asarray(names) == el)[0]
+                if matches.shape[0] == 0:
+                    raise RuntimeError(f"Impossible to find a {kind} named \"{el}\" in the environment")
+                el = int(matches[0])
+            res.append(int(el))
+        return res
+
+    def add_contingency(self, lines=(), shunts=(), loads=(), gens=(), name=None):
+        """
+        Adds a single contingency tripping, together, powerlines (and transformers, both by
+        `env.name_line` or id), shunts (`env.name_shunt` or id), loads (`env.name_load` or id)
+        and generators (`env.name_gen` or id). Any of the four may be empty, not all of them.
+
+        A shunt leaves the admittance matrix, a load and a generator the injection (a
+        generator that is the last one regulating its bus turns that bus PQ); the
+        distributed slack makes up what the contingency loses. See
+        :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_contingency`.
+
+        `name`: see `add_single_contingency`.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            # a line and the load hanging on its feeder, together
+            contingency_analysis.add_contingency(lines=[env.name_line[2]], loads=[env.name_load[1]])
+        """
+        if self.__is_closed:
+            raise RuntimeError("This is closed, you cannot use it.")
+        if isinstance(lines, (int, np.integer) + type(self).STR_TYPES):
+            lines = [lines]  # one line, by id or by name
+        branch_ids = self._single_cont_to_li_int(list(lines))
+        shunt_ids = self._ids_of(shunts, getattr(type(self._ls_backend), "name_shunt", []), "shunt")
+        load_ids = self._ids_of(loads, type(self._ls_backend).name_load, "load")
+        gen_ids = self._ids_of(gens, type(self._ls_backend).name_gen, "generator")
+        if not branch_ids and not shunt_ids and not load_ids and not gen_ids:
+            # add_single_contingency() would register it (add_nk([])), the c++
+            # add_contingency refuses it
+            raise RuntimeError("Impossible to add the contingency: it trips nothing "
+                               "(lines, shunts, loads and gens are all empty).")
+        if not shunt_ids and not load_ids and not gen_ids:
+            # a branch-only contingency: the same one as add_single_contingency's
+            self.add_single_contingency(*branch_ids, name=name)
+            return
+        key = self._cont_key(branch_ids, shunt_ids, load_ids, gen_ids)
+        if key in self._contingency_order:
+            return
+        try:
+            self.computer.add_contingency(branch_ids, shunt_ids, load_ids, gen_ids)
+        except Exception as exc_:
+            raise RuntimeError(f"Impossible to add the contingency (lines={lines}, shunts={shunts}, "
+                               f"loads={loads}, gens={gens}): {exc_}") from exc_
+        self._contingency_order[key] = len(self._contingency_order)
+        self._all_contingencies.append(key)
+        self._contingency_names[key] = name
+        self.__computed = False   # see add_single_contingency
+
+    def add_contingency_shunt(self, shunts, name=None):
+        """A single contingency tripping these shunts only (one id / name, or several). See
+        `add_contingency`."""
+        self.add_contingency(shunts=shunts, name=name)
+
+    def add_contingency_load(self, loads, name=None):
+        """A single contingency tripping these loads only (one id / name, or several). See
+        `add_contingency`."""
+        self.add_contingency(loads=loads, name=name)
+
+    def add_contingency_gen(self, gens, name=None):
+        """A single contingency tripping these generators only (one id / name, or several). See
+        `add_contingency`."""
+        self.add_contingency(gens=gens, name=name)
+
     def get_flows(self, *args):
         """
         Retrieve the flows after each contingencies has been simulated.
@@ -770,20 +914,18 @@ class ContingencyAnalysis(object):
         if self.__is_closed:
             raise RuntimeError("This is closed, you cannot use it.")
         
-        all_defaults = self.computer.my_defaults()
+        all_defaults = self._cpp_keys()
         if len(args) == 0:
             # default: i consider all contingencies
             orders_ = np.zeros(len(all_defaults), dtype=int)
-            for id_cpp, cont_ in enumerate(all_defaults):
-                tup_ = tuple(cont_)
+            for id_cpp, tup_ in enumerate(all_defaults):
                 orders_[self._contingency_order[tup_]] = id_cpp
         else:
-            # a list of interesting contingencies has been provided
+            # a list of interesting contingencies has been provided (branch-only ones)
             orders_ = np.zeros(len(args), dtype=int)
-            all_defaults = [tuple(cont) for cont in all_defaults]
             for id_me, cont_ in enumerate(args):
                 cont_li = self._single_cont_to_li_int(cont_)
-                tup_ = tuple(cont_li)
+                tup_ = self._cont_key(cont_li)
                 if tup_ not in self._contingency_order:
                     raise RuntimeError(f"Contingency {cont_} is not simulated by this class. Have you called "
                                        f"`add_single_contingency` or `add_multiple_contingencies` ?")
@@ -792,9 +934,12 @@ class ContingencyAnalysis(object):
 
         if not self.__computed:
             self.compute_V()
+        # run() computes the voltages only
+        if self._ampss is None:
             self.compute_A()
+        if self._mws is None:
             self.compute_P()
-        
+
         return self._mws[orders_], self._ampss[orders_], self._vs[orders_]
 
     def run(self) -> SecurityAnalysisResult:
@@ -857,11 +1002,11 @@ class ContingencyAnalysis(object):
         if not self.__computed:
             self.compute_V()
 
-        all_defaults = self.computer.my_defaults()
+        all_conts = self.computer.my_contingencies()
+        all_defaults = [list(cont[0]) for cont in all_conts]
         orders_ = np.zeros(len(all_defaults), dtype=int)
-        for id_cpp, cont_ in enumerate(all_defaults):
-            tup_ = tuple(cont_)
-            orders_[self._contingency_order[tup_]] = id_cpp
+        for id_cpp, cont_ in enumerate(all_conts):
+            orders_[self._contingency_order[self._cont_key(*cont_)]] = id_cpp
 
         converged = self.computer.converged()
         violations = self.computer.get_violations()
@@ -883,6 +1028,9 @@ class ContingencyAnalysis(object):
                 converged=bool(converged[id_cpp]),
                 limit_violations=list(violations[id_cpp]),
                 physical_violations=list(phys[id_cpp]) if phys is not None else [],
+                shunt_ids=list(all_conts[id_cpp][1]),
+                load_ids=list(all_conts[id_cpp][2]),
+                gen_ids=list(all_conts[id_cpp][3]),
             )
             for id_me, id_cpp in enumerate(orders_)
         ]
@@ -938,6 +1086,9 @@ class ContingencyAnalysis(object):
                               self._ls_backend.max_it,
                               self._ls_backend.tol)
         self._vs = self.computer.get_voltages().copy()
+        # the flows of the previous voltages, if any, are not these ones'
+        self._ampss = None
+        self._mws = None
         self.__computed = True
         return self._vs
 

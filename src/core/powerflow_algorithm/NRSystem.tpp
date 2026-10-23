@@ -94,6 +94,7 @@ inline void NRSystem<Base, Rest...>::update_state(
         }
     }
     V_  = V_init;
+    ybus_v_at_V_ = false;  // a new V, and possibly a new Ybus
 
     // now inform the components
     base_.update_state(lsgrid_ptr, Ybus, Sbus, slack_weights);
@@ -339,7 +340,7 @@ inline void NRSystem<Base, Rest...>::update_trailing_feature_values(int count, c
 }
 
 template <typename... Rest>
-inline void NRSystem<Base, Rest...>::fill_internal_variables()
+inline void NRSystem<Base, Rest...>::fill_internal_variables(bool reuse_ybus_v)
 {
     auto timer = CustTimer();
     const Eigen::Index size_dS = V_.size();
@@ -352,7 +353,14 @@ inline void NRSystem<Base, Rest...>::fill_internal_variables()
     // materialised -- each is used once per bus, on the diagonal, so building
     // them there costs the same arithmetic without more nb_bus vectors sitting
     // in cache for the whole solve.
-    Ibus_cache_.noalias() = Ybus_ref_ * V_;      // noalias: no product temporary
+    //
+    // Ybus . V is the product the residual at this V already computed: in the NR loop
+    // the fill always follows the residual it is about to solve (mismatch, or
+    // mismatch_into after the step), so it is taken from there rather than redone --
+    // the same product of the same operands, so the same bits.
+    const CplxVect & ybus_v = (ybus_v_ptr_ != nullptr) ? *ybus_v_ptr_ : ybus_v_own_;
+    const bool reuse = reuse_ybus_v && ybus_v_at_V_ && ybus_v.size() == size_dS;
+    if (!reuse) _ybus_times_into(Ibus_cache_, V_);
     // 1 / |V|, read off Vm_ rather than recomputed from V_. Vm_ IS |V_|: the two
     // writers of V_ keep it so -- update_state sets `Vm_ = |V_init|` next to
     // `V_ = V_init`, and apply_step rebuilds `V_ = Vm_ * exp(i.Va_)` then calls
@@ -376,7 +384,7 @@ inline void NRSystem<Base, Rest...>::fill_internal_variables()
     // prove the writes below do not reach them would reload each base address
     // on every nonzero
     const cplx_type * const v_ptr     = V_.data();
-    const cplx_type * const ibus_ptr  = Ibus_cache_.data();
+    const cplx_type * const ibus_ptr  = reuse ? ybus_v.data() : Ibus_cache_.data();
     const real_type * const invvm_ptr = inv_vm_cache_.data();
 
     // ---- the dS pass -------------------------------------------------------
@@ -560,6 +568,7 @@ inline void NRSystem<Base, Rest...>::cpf_predict_into(CplxVect& V_pred,
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::apply_step(const Eigen::Ref<const RealVect>& dx)
 {
+    ybus_v_at_V_ = false;  // V moves, and a component may patch Ybus (a ratio unknown)
     // generic voltage updates, driven by the ledger's (bus, col) pair lists
     const std::vector<int>& theta_buses = ledger_.theta_buses();
     const std::vector<int>& theta_cols  = ledger_.theta_cols();
@@ -642,6 +651,30 @@ inline void NRSystem<Base, Rest...>::_compute_trial_V_into(CplxVect& V_out, cons
 }
 
 template <typename... Rest>
+inline void NRSystem<Base, Rest...>::_ybus_times_into(CplxVect & out, const Eigen::Ref<const CplxVect>& V) const
+{
+    // Eigen's sparse x dense product, with each complex product written out. Left to
+    // std::complex inside a loop, GCC evaluates the product both inline and through
+    // __muldc3 (its NaN-recovery routine) and then selects the inline result: a
+    // function call per Ybus nonzero, on the hottest product of the solve. The
+    // arithmetic is Eigen's own -- out(row) += Y(row, col) * V(col), column by column,
+    // the real part y_r.v_r - y_i.v_i and the imaginary part y_r.v_i + y_i.v_r -- and
+    // the NaN recovery it skips only differs on infinite operands, which a residual
+    // reports as non finite either way.
+    out.setZero(Ybus_ref_.rows());
+    cplx_type * const out_ptr = out.data();
+    const cplx_type * const v_ptr = V.data();
+    for (Eigen::Index col = 0; col < Ybus_ref_.outerSize(); ++col) {
+        const real_type v_r = std::real(v_ptr[col]), v_i = std::imag(v_ptr[col]);
+        for (EigenRefConstCplxSpMat::InnerIterator it(Ybus_ref_, col); it; ++it) {
+            const real_type y_r = std::real(it.value()), y_i = std::imag(it.value());
+            cplx_type & o = out_ptr[it.row()];
+            o = cplx_type(std::real(o) + (y_r * v_r - y_i * v_i), std::imag(o) + (y_r * v_i + y_i * v_r));
+        }
+    }
+}
+
+template <typename... Rest>
 inline void NRSystem<Base, Rest...>::_residual_into(
     Eigen::Ref<RealVect> res,
     const Eigen::Ref<const CplxVect>& V_t,
@@ -657,7 +690,8 @@ inline void NRSystem<Base, Rest...>::_residual_into(
     // whoever owns them, or our own if nobody claimed them (see mis_own_)
     CplxVect & ybus_v = (ybus_v_ptr_ != nullptr) ? *ybus_v_ptr_ : ybus_v_own_;
     CplxVect & mis    = (mis_ptr_    != nullptr) ? *mis_ptr_    : mis_own_;
-    ybus_v.noalias() = Ybus_ref_ * V_t;
+    _ybus_times_into(ybus_v, V_t);
+    ybus_v_at_V_ = V_t.data() == V_.data();
     mis = V_t.array() * ybus_v.array().conjugate()
                  - _Sbus_view().array();
     // components adjust the complex injection (e.g. + slack_absorbed * slack_weights,

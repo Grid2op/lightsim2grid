@@ -23,9 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          # eigen (transitive include of the core headers) and Catch2
-          submodules: true
+      # eigen (transitive include of the core headers) and Catch2
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - name: Install valgrind
         run: |

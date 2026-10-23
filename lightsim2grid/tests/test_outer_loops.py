@@ -11,6 +11,7 @@ from python. The driver itself is tested in C++ (src/tests/test_outer_loop_drive
 scripted loops; each loop has its own test file."""
 
 import copy
+import pickle
 import os
 import sys
 import unittest
@@ -22,7 +23,7 @@ import pandapower.networks as pn
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lightsim2grid.network import init_from_pandapower
-from lightsim2grid.algorithm import ErrorType, OuterLoopStatus
+from lightsim2grid.algorithm import ErrorType, OuterLoopStatus, DistributedSlack, ReactiveLimits
 
 try:
     from lightsim2grid.algorithm import NROuter_KLU  # noqa: F401
@@ -73,47 +74,167 @@ class TestNROuter(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             grid.add_outer_loop(None)
 
-    def test_driver_parameters_round_trip(self):
+    def test_config_holds_only_the_resume_flag(self):
         grid = _grid(OUTER)
         cfg = grid.get_ac_algo_config()
-        # the Newton's 4 + 6 parameters, then the driver's 2 + 3
+        # the Newton's 5 + 6 parameters, then resume_outer_state: the driver's OpenLoadFlow
+        # parameters are the grid's
         self.assertEqual(len(cfg.int_params), 6)
-        self.assertEqual(len(cfg.real_params), 9)
-        self.assertEqual(cfg.int_params[4], 30)
-        self.assertAlmostEqual(cfg.real_params[6], 0.8)
-        self.assertAlmostEqual(cfg.real_params[7], 1.2)
-        self.assertAlmostEqual(cfg.real_params[8], 180.)
+        self.assertEqual(len(cfg.real_params), 6)
+        self.assertEqual(cfg.int_params[5], 0)
         ip = list(cfg.int_params)
-        ip[4] = 12
+        ip[5] = 1
         cfg.int_params = ip
         grid.set_ac_algo_config(cfg)
-        self.assertEqual(grid.get_ac_algo_config().int_params[4], 12)
+        self.assertEqual(grid.get_ac_algo_config().int_params[5], 1)
         # a copy keeps the algorithm and its configuration
         grid2 = grid.copy()
         self.assertTrue(grid2.get_algo().supports_outer_loops())
-        self.assertEqual(grid2.get_ac_algo_config().int_params[4], 12)
-        self.assertEqual(copy.deepcopy(grid).get_ac_algo_config().int_params[4], 12)
+        self.assertEqual(grid2.get_ac_algo_config().int_params[5], 1)
+        self.assertEqual(copy.deepcopy(grid).get_ac_algo_config().int_params[5], 1)
+
+    def test_driver_parameters(self):
+        from lightsim2grid.algorithm import OuterLoopDriverParams
+        grid = _grid(OUTER)
+        # OpenLoadFlow's own defaults (OpenLoadFlowParameters, v2.3.0) on a grid not read
+        # from pypowsybl
+        self.assertEqual(grid.get_outer_loop_driver_params(),
+                         OuterLoopDriverParams(max_outer_iterations=20, voltage_remote_control_robust_mode=True,
+                                               min_realistic_voltage=0.5, max_realistic_voltage=2.,
+                                               min_nominal_voltage_realistic_check=0.))
+        params = OuterLoopDriverParams(max_outer_iterations=7, min_realistic_voltage=0.7)
+        grid.set_outer_loop_driver_params(params)
+        for other in (grid.copy(), copy.deepcopy(grid), pickle.loads(pickle.dumps(grid))):
+            self.assertEqual(other.get_outer_loop_driver_params(), params)
+        # handed to the algorithm with the loops
+        self.assertGreater(_solve(grid).shape[0], 0)
+        with self.assertRaises(RuntimeError):
+            OuterLoopDriverParams(min_realistic_voltage=2., max_realistic_voltage=1.5)
+        with self.assertRaises(RuntimeError):
+            grid.set_outer_loop_driver_params(OuterLoopDriverParams(max_outer_iterations=-1))
+        # the cap is the grid's: none at all stops after the first solve
+        grid.set_outer_loop_driver_params(OuterLoopDriverParams(max_outer_iterations=0))
+        _solve(grid)
+        self.assertEqual(grid.get_algo().get_outer_loop_stats().nb_outer_iterations, 0)
 
     def test_unrealistic_state(self):
+        from lightsim2grid.algorithm import OuterLoopDriverParams
         grid = _grid(OUTER)
-        cfg = grid.get_ac_algo_config()
-        rp = list(cfg.real_params)
-        rp[6] = 1.2  # nothing is realistic any more ...
-        rp[7] = 1.3
-        rp[8] = 0.   # ... at any nominal voltage
-        cfg.real_params = rp
-        grid.set_ac_algo_config(cfg)
+        # nothing is realistic any more, at any nominal voltage
+        grid.set_outer_loop_driver_params(OuterLoopDriverParams(min_realistic_voltage=1.2, max_realistic_voltage=1.3,
+                                                                min_nominal_voltage_realistic_check=0.))
         self.assertEqual(_solve(grid).shape[0], 0)
         self.assertEqual(grid.get_algo().get_error(), ErrorType.UnrealisticState)
         self.assertTrue(grid.get_algo().get_outer_loop_stats().unrealistic_state)
 
+    def test_saved_loop_list(self):
+        import os
+        import tempfile
+        from lightsim2grid.network import LSGrid
+        grid = _grid(OUTER)
+        # the default list is saved as such, a list of the grid's own loop by loop
+        for other in (pickle.loads(pickle.dumps(grid)), copy.deepcopy(grid)):
+            self.assertEqual([l.name() for l in other.get_outer_loops()], [l.name() for l in grid.get_outer_loops()])
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits(max_pq_pv_switch=5, min_realistic_voltage=0.7))
+        grid.add_outer_loop(DistributedSlack(slack_bus_p_max_mismatch_mw=2.))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "grid.lsb")
+            grid.save_binary(path)
+            from_file = LSGrid.load_binary(path)
+        for other in (pickle.loads(pickle.dumps(grid)), copy.deepcopy(grid), from_file):
+            loops = other.get_outer_loops()
+            self.assertEqual([l.name() for l in loops], ["ReactiveLimits", "DistributedSlack"])
+            self.assertEqual(loops[0].max_pq_pv_switch, 5)
+            self.assertEqual(loops[0].min_realistic_voltage, 0.7)
+            # what the loop leaves to the driver stays so
+            self.assertTrue(np.isnan(loops[0].max_realistic_voltage))
+            self.assertIsNone(loops[0].robust_mode)
+            self.assertEqual(loops[1].slack_bus_p_max_mismatch_mw, 2.)
+        grid.clear_outer_loops()
+        self.assertEqual(pickle.loads(pickle.dumps(grid)).get_outer_loops(), [])
+
+    def test_saved_grid_settings(self):
+        # what the outer loops read off the grid besides the loops themselves: a grid read
+        # back without it solves to another state
+        import tempfile
+        from lightsim2grid.network import LSGrid
+        grid = _grid(OUTER)
+        n_gen = len(grid.get_generators())
+        grid.set_keep_vinit_at_group_controlled_buses(True)
+        grid.set_hold_frozen_regulators(True)
+        grid.set_dc_distribute_slack_on_can_participate(True)
+        grid.set_reactive_dispatch_olf(True)
+        grid.set_reference_slack_bus(3)
+        grid.set_gen_reactive_range_max(np.arange(n_gen, dtype=float))
+        grid.set_gen_raw_target_q(np.full(n_gen, np.nan))
+        grid.set_gen_capability_curves(np.array([0, 0, 2], dtype=np.int32), np.array([50., 0., 10.]),
+                                       np.array([-20., -10., -5.]), np.array([30., 10., 5.]))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "grid.lsb")
+            grid.save_binary(path)
+            from_file = LSGrid.load_binary(path)
+        for other in (pickle.loads(pickle.dumps(grid)), copy.deepcopy(grid), from_file):
+            self.assertTrue(other.get_keep_vinit_at_group_controlled_buses())
+            self.assertTrue(other.get_hold_frozen_regulators())
+            self.assertTrue(other.get_dc_distribute_slack_on_can_participate())
+            self.assertTrue(other.get_reactive_dispatch_olf())
+            self.assertEqual(other.get_reference_slack_bus(), 3)
+            np.testing.assert_array_equal(other.get_gen_reactive_range_max(), np.arange(n_gen, dtype=float))
+            self.assertTrue(np.all(np.isnan(other.get_gen_raw_target_q())))
+            self.assertEqual(other.get_gen_raw_target_q().shape, (n_gen,))
+            self.assertEqual(other.get_station_reactive_range_max(1).shape, (0,))
+            self.assertEqual(other.gen_limits_at(0, 25.), (-15., 20.))
+            self.assertEqual(other.gen_limits_at(1, 25.), (None, None))
+        # the defaults read back as such
+        fresh = pickle.loads(pickle.dumps(_grid(OUTER)))
+        self.assertFalse(fresh.get_keep_vinit_at_group_controlled_buses())
+        self.assertEqual(fresh.get_reference_slack_bus(), -1)
+        self.assertEqual(fresh.get_gen_reactive_range_max().shape, (0,))
+
+    def test_same_results_after_load_binary(self):
+        # a grid built with OpenLoadFlow's loading rules and its outer loops, saved before any
+        # solve: read back, it solves to the very same state
+        try:
+            import pypowsybl as pp
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        import tempfile
+        from lightsim2grid.network import LSGrid
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        net = pp.network.create_ieee300()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, sort_index=False, buses_for_sub=False,
+                                       keep_half_open_lines=True, fuse_zero_impedance_branches=True,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack())
+        grid.add_outer_loop(ReactiveLimits())
+        grid.set_keep_vinit_at_group_controlled_buses(True)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "grid.lsb")
+            grid.save_binary(path)
+            from_file = LSGrid.load_binary(path)
+
+        def solve(model):
+            model.set_dc_distribute_slack_on_can_participate(True)
+            flat = np.full(model.total_bus(), 1.0 + 0j)
+            V0 = np.exp(1j * np.angle(model.dc_pf(flat, 30, 1e-10)))
+            return model.ac_pf(V0, 30, 1e-9)
+        V = solve(grid)
+        self.assertGreater(V.shape[0], 0)
+        self.assertGreater(grid.get_algo().get_outer_loop_stats().nb_outer_iterations, 0)
+        np.testing.assert_array_equal(solve(from_file), V)
+        np.testing.assert_array_equal(from_file.get_gen_res()[1], grid.get_gen_res()[1])
+
     def test_standalone_algorithm(self):
         from lightsim2grid import algorithm
         algo = getattr(algorithm, OUTER)()
-        algo.max_outer_iterations = 7
-        self.assertEqual(algo.max_outer_iterations, 7)
-        with self.assertRaises(RuntimeError):
-            algo.min_realistic_voltage = 2.  # above the max
+        algo.resume_outer_state = True
+        self.assertTrue(algo.resume_outer_state)
+        self.assertEqual(algo.get_outer_loop_driver_params().max_outer_iterations, 20)
         self.assertEqual(algo.get_outer_loop_stats().nb_outer_iterations, 0)
 
 
@@ -144,9 +265,17 @@ class TestDistributedSlack(unittest.TestCase):
         grid = self._grid(gen_slack_id="B1-G")
         self.assertEqual([loop.name() for loop in grid.get_outer_loops()],
                          ["DistributedSlack", "AcHvdcAcEmulationLimits", "VoltageMonitoring", "ReactiveLimits"])
-        loop = DistributedSlack(slack_bus_p_max_mismatch_mw=2., fail_on_residue=False)
+        loop = DistributedSlack(slack_bus_p_max_mismatch_mw=2., fail_on_residue=False,
+                                p_residue_eps_mw=1e-2, moved_fraction=0.5)
         self.assertEqual(loop.slack_bus_p_max_mismatch_mw, 2.)
         self.assertFalse(loop.fail_on_residue)
+        self.assertEqual(loop.p_residue_eps_mw, 1e-2)
+        self.assertEqual(loop.moved_fraction, 0.5)
+        # set at construction only
+        with self.assertRaises(AttributeError):
+            loop.slack_bus_p_max_mismatch_mw = 3.
+        with self.assertRaises(RuntimeError):
+            DistributedSlack(p_residue_eps_mw=-1.)
 
     def test_same_as_the_newton_distributed_slack(self):
         from lightsim2grid.algorithm import DistributedSlack
@@ -171,12 +300,38 @@ class TestDistributedSlack(unittest.TestCase):
         p_ref = np.array([gen.res_p_mw for gen in ref.get_generators()])
         self.assertLess(np.abs(p - p_ref).max(), 2e-3)
 
+    def test_changed_target_shared_as_a_loaded_one(self):
+        """A unit's target changed on the grid (change_p_gen, what the grid2op backend does every
+        step) is shared like the same target loaded from the network: the unit, flagged "can
+        participate in the slack" for the loop, does not become a slack unit of the Newton."""
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
+        grid = self._grid(gen_slack_id="B1-G")
+        grid.change_algorithm(OUTER)
+        gen_id = [gen.name for gen in grid.get_generators()].index("B2-G")
+        new_p = grid.get_gen_target_p()[gen_id] + 5.
+        grid.change_p_gen(gen_id, new_p)
+        V = _solve(grid)
+        self.assertGreater(V.shape[0], 0)
+        self.assertEqual(grid.get_algo().get_outer_loop_stats().status, OuterLoopStatus.STABLE)
+
+        net = self._net()
+        net.update_generators(id="B2-G", target_p=new_p)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            ref = init_from_pypowsybl(net, olf_rules=True, gen_slack_id="B1-G")
+        ref.change_algorithm(OUTER)
+        V_ref = _solve(ref)
+        self.assertGreater(V_ref.shape[0], 0)
+        self.assertLess(np.abs(V - V_ref).max(), 1e-8)
+        self.assertLess(np.abs(np.asarray(grid.get_gen_res()[0]) - np.asarray(ref.get_gen_res()[0])).max(), 1e-6)
+        # every solve after a move iterates: the units the loop moved are not slack buses
+        self.assertNotIn(0, grid.get_algo().get_outer_loop_stats().nr_iterations[1:])
+
     def test_target_q_follows_the_moved_p(self):
         # a unit that does not regulate asks more than it can absorb: OpenLoadFlow clamps its
         # target Q into its limits at its CURRENT target P (forceTargetQInReactiveLimits),
         # which the slack moves
         import pypowsybl.loadflow as lf
-        from lightsim2grid.algorithm import DistributedSlack
         from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
         from _olf_reference import reference_parameters
 
@@ -201,10 +356,10 @@ class TestDistributedSlack(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             grid = init_from_pypowsybl(net_(), gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
-                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True), olf_parameters=params)
+        self.assertEqual([l.name() for l in grid.get_outer_loops()], ["DistributedSlack"])
+        self.assertEqual(grid.get_outer_loops()[0].slack_bus_p_max_mismatch_mw, 1e-4)
         grid.change_algorithm(OUTER)
-        grid.clear_outer_loops()
-        grid.add_outer_loop(DistributedSlack(slack_bus_p_max_mismatch_mw=1e-4))
         V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10)
         self.assertGreater(V.shape[0], 0)
         gen = {g.name: g for g in grid.get_generators()}["B3-G"]
@@ -234,6 +389,32 @@ class TestDistributedSlack(unittest.TestCase):
         self.assertGreater(_solve(grid).shape[0], 0)
         self.assertFalse([v for v in grid.get_physical_violations()
                           if v.violation_type == LimitViolationType.SLACK_MISMATCH])
+
+    def test_detection_slack_unit_alone_past_its_limit(self):
+        """The slack unit, the only one left to share the slack, absorbs enough to leave its
+        active range: sharing the mismatch on itself would change nothing, so it is no
+        SLACK_MISMATCH -- the unit past its limit is a LOW_P of its own."""
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
+        from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationElementType
+        net = self._net()
+        target_p = net.get_generators().loc["B1-G", "target_p"]
+        # the slack absorbs more than 10 MW less than its target here
+        net.update_generators(id=["B1-G"], min_p=[target_p - 10.])
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, olf_rules=True, gen_slack_id="B1-G")
+        grid.change_algorithm(SING)
+        nb_gen = len(list(grid.get_generators()))
+        grid.set_gen_can_participate_slack([False] * nb_gen, np.zeros(nb_gen))
+        grid.set_storage_can_participate_slack([], np.zeros(0))
+        self.assertGreater(_solve(grid).shape[0], 0)
+        violations = grid.get_physical_violations()
+        self.assertFalse([v for v in violations if v.violation_type == LimitViolationType.SLACK_MISMATCH])
+        low_p = [v for v in violations if v.violation_type == LimitViolationType.LOW_P]
+        self.assertEqual(len(low_p), 1)
+        self.assertEqual(low_p[0].element_type, ViolationElementType.GENERATOR)
+        self.assertEqual(low_p[0].element_id, 0)
+        self.assertLess(low_p[0].value, target_p - 10.)
 
 
 class TestHvdcAcEmulationLimits(unittest.TestCase):
@@ -333,30 +514,32 @@ class TestVoltageMonitoring(unittest.TestCase):
         return net
 
     @staticmethod
-    def _olf(net):
-        import pypowsybl.loadflow as lf
-        from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
+    def _params(net):
         from _olf_reference import reference_parameters
-        params = reference_parameters(
+        return reference_parameters(
             provider={"slackBusSelectionMode": "NAME",
                       "slackBusesIds": net.get_generators().loc["B1-G", "bus_id"],
                       "outerLoopNames": "VoltageMonitoring", "svcVoltageMonitoring": "true",
                       "newtonRaphsonConvEpsPerEq": "1e-12", "maxNewtonRaphsonIterations": "50"},
             distributed_slack=False, use_reactive_limits=False, read_slack_bus=False)
-        res = lf.run_ac(net, params)[0]
+
+    @staticmethod
+    def _olf(net):
+        import pypowsybl.loadflow as lf
+        from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
+        res = lf.run_ac(net, TestVoltageMonitoring._params(net))[0]
         return res, iidm_bus_voltages(net)["vm_pu"], net.get_static_var_compensators().loc["SVC9", "q"]
 
     def _ls(self, net):
-        from lightsim2grid.algorithm import VoltageMonitoring
         from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
         from lightsim2grid.network.from_pypowsybl._olf_compare import lightsim_bus_to_iidm
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             grid = init_from_pypowsybl(net, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
-                                       olf_rules=OlfLoadingParameters(reactive_limits=False))
+                                       olf_rules=OlfLoadingParameters(reactive_limits=False),
+                                       olf_parameters=self._params(net))
+        self.assertEqual([l.name() for l in grid.get_outer_loops()], ["VoltageMonitoring"])
         grid.change_algorithm(OUTER)
-        grid.clear_outer_loops()
-        grid.add_outer_loop(VoltageMonitoring())
         V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-12)
         self.assertGreater(V.shape[0], 0)
         self.assertEqual(grid.get_algo().get_linear_solver_stats().nb_analyze, 1)
@@ -420,7 +603,6 @@ class TestReactiveLimits(unittest.TestCase):
 
     def test_same_as_olf(self):
         import pypowsybl.loadflow as lf
-        from lightsim2grid.algorithm import ReactiveLimits
         from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
         from lightsim2grid.network.from_pypowsybl._olf_compare import iidm_bus_voltages
         from lightsim2grid.network.from_pypowsybl._aux_add_slack import _default_distributed_slack
@@ -444,10 +626,11 @@ class TestReactiveLimits(unittest.TestCase):
             warnings.filterwarnings("ignore")
             grid = init_from_pypowsybl(net, gen_slack_id=slack_gen, sort_index=False, buses_for_sub=False,
                                        keep_half_open_lines=True, fuse_zero_impedance_branches=True,
-                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True), olf_parameters=params)
+        self.assertEqual([l.name() for l in grid.get_outer_loops()], ["ReactiveLimits"])
+        # OpenLoadFlow's maxReactivePowerMismatch: its newtonRaphsonConvEpsPerEq
+        self.assertEqual(grid.get_outer_loops()[0].max_reactive_power_mismatch, 1e-9)
         grid.change_algorithm(OUTER)
-        grid.clear_outer_loops()
-        grid.add_outer_loop(ReactiveLimits(max_reactive_power_mismatch=1e-9))
         # OpenLoadFlow's DC_VALUES start: the angles of a DC load flow, 1 pu
         flat = np.full(grid.total_bus(), 1.0 + 0j)
         V0 = np.exp(1j * np.angle(grid.dc_pf(flat, 30, 1e-12)))
@@ -500,7 +683,7 @@ class TestReactiveLimits(unittest.TestCase):
             warnings.filterwarnings("ignore")
             grid = init_from_pypowsybl(net, gen_slack_id=slack_gen, sort_index=False, buses_for_sub=False,
                                        keep_half_open_lines=True, fuse_zero_impedance_branches=True,
-                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True), olf_parameters=params)
         grid.change_algorithm(SING)
         flat = np.full(grid.total_bus(), 1.0 + 0j)
         V0 = np.exp(1j * np.angle(grid.dc_pf(flat, 30, 1e-12)))
@@ -525,11 +708,20 @@ class TestReactiveLimits(unittest.TestCase):
 
     def test_parameters(self):
         from lightsim2grid.algorithm import ReactiveLimits
-        loop = ReactiveLimits(max_pq_pv_switch=5, max_reactive_power_mismatch=1e-6)
+        loop = ReactiveLimits(max_pq_pv_switch=5, max_reactive_power_mismatch=1e-6, mismatch_base_mva=10.,
+                              realistic_voltage_margin=1.05, robust_restart_vm_pu=0.95)
         self.assertEqual(loop.max_pq_pv_switch, 5)
         self.assertAlmostEqual(loop.max_reactive_power_mismatch, 1e-6)
+        self.assertEqual(loop.mismatch_base_mva, 10.)
+        self.assertEqual(loop.realistic_voltage_margin, 1.05)
+        self.assertEqual(loop.robust_restart_vm_pu, 0.95)
+        # set at construction only
+        with self.assertRaises(AttributeError):
+            loop.max_pq_pv_switch = 2
         with self.assertRaises(RuntimeError):
             ReactiveLimits(max_pq_pv_switch=-1)
+        with self.assertRaises(RuntimeError):
+            ReactiveLimits(mismatch_base_mva=0.)
 
 
 class TestReactiveDispatch(unittest.TestCase):

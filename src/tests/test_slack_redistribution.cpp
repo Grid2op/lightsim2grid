@@ -120,6 +120,143 @@ TEST_CASE("distribute: every unit saturated keeps them all in the slack", "[slac
     CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(7., 1e-12));
 }
 
+TEST_CASE("distribute: every slack unit saturated keeps them in the slack, a flagged unit still moving", "[slack_redistribution]"){
+    // unit 0 is the only slack unit and can take 2 MW; unit 1 is only flagged "can
+    // participate": it takes the rest, but the solve cannot distribute on it
+    std::vector<Participant> units = {unit(0, 30., 1., 0., 32.), unit(1, 40., 1., 0., 100.)};
+    units[1].in_slack = false;
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    const Report rep = distribute(units, 10., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.all_saturated);
+    CHECK(sat[0] == 0);  // cleared: the slack is not left empty
+    CHECK(sat[1] == 0);
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(32., 1e-12));
+    CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(48., 1e-12));
+    CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-12));
+    SECTION("a second slack unit with room: the saturated one leaves the slack as usual"){
+        units.push_back(unit(2, 20., 1., 0., 100.));
+        const Report rep2 = distribute(units, 10., default_eps_mw, new_inj, sat);
+        REQUIRE_FALSE(rep2.all_saturated);
+        CHECK(sat[0] == 1);
+        CHECK(sat[2] == 0);
+    }
+}
+
+TEST_CASE("distribute with an overshoot: every slack unit saturated keeps them in the slack", "[slack_redistribution]"){
+    // the same as above, but the flagged unit carries an overshoot (it sat at its min_p,
+    // 5 MW below it): the bisection path has to keep the slack from being emptied too
+    std::vector<Participant> units = {unit(0, 30., 1., 0., 32.), unit(1, 40., 1., 40., 100.)};
+    units[1].in_slack = false;
+    units[1].overshoot_mw = -5.;
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    const Report rep = distribute(units, 10., default_eps_mw, new_inj, sat);
+    REQUIRE(rep.all_saturated);
+    CHECK(sat[0] == 0);  // cleared: the slack is not left empty
+    CHECK(sat[1] == 0);
+    CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(32., 1e-6));
+    CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(48., 1e-6));
+    CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-6));
+    SECTION("a second slack unit with room: the saturated one leaves the slack as usual"){
+        units.push_back(unit(2, 20., 1., 0., 100.));
+        const Report rep2 = distribute(units, 10., default_eps_mw, new_inj, sat);
+        REQUIRE_FALSE(rep2.all_saturated);
+        CHECK(sat[0] == 1);
+        CHECK(sat[2] == 0);
+    }
+}
+
+TEST_CASE("distribute: no weight to share on, the whole mismatch is not distributed", "[slack_redistribution]"){
+    // both paths agree: nothing moved, so nothing was distributed
+    std::vector<Participant> units = {unit(0, 30., 0., 0., 100.), unit(1, 40., 0., 0., 40.)};
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    SECTION("round-based path"){
+        const Report rep = distribute(units, -10., default_eps_mw, new_inj, sat);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(30., 1e-12));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(-10., 1e-12));
+    }
+    SECTION("overshoot path"){
+        units[1].in_slack = false;
+        units[1].overshoot_mw = 5.;
+        const Report rep = distribute(units, -10., default_eps_mw, new_inj, sat);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(30., 1e-12));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(-10., 1e-12));
+    }
+}
+
+TEST_CASE("distribute: the overshoot left is what the shift did not use up", "[slack_redistribution]"){
+    // unit 1 sat 25 MW beyond its max_p in the reference solve: carried into the next
+    // distribution, what is left of it makes sharing d1 then d2 end where sharing d1 + d2 at
+    // once does. A distribution never makes an overshoot of its own.
+    std::vector<real_type> new_inj, left;
+    std::vector<char> sat;
+    std::vector<Participant> units = {unit(0, 30., 1., 0., 500.), unit(1, 40., 1., 0., 40.)};
+    units[1].in_slack = false;
+    units[1].overshoot_mw = 25.;
+    SECTION("used up in part, then in full"){
+        // -20: shift -40, unit 1 stays at 40 with 5 MW left
+        distribute(units, -20., default_eps_mw, new_inj, sat, &left);
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-6));
+        CHECK_THAT(left[1], Catch::Matchers::WithinAbs(5., 1e-6));
+        CHECK_THAT(left[0], Catch::Matchers::WithinAbs(0., 1e-12));
+        // -30: shift -55 > 50, unit 1 leaves its max_p: nothing left
+        distribute(units, -30., default_eps_mw, new_inj, sat, &left);
+        CHECK(new_inj[1] < 40.);
+        CHECK_THAT(left[1], Catch::Matchers::WithinAbs(0., 1e-12));
+    }
+    SECTION("chained then at once, both signs"){
+        for(const real_type d2 : {-10., -25., 5.}){
+            std::vector<Participant> chained = units;
+            distribute(chained, -20., default_eps_mw, new_inj, sat, &left);
+            for(std::size_t k = 0; k < chained.size(); ++k){
+                chained[k].injection_mw = new_inj[k];
+                chained[k].overshoot_mw = left[k];
+            }
+            distribute(chained, d2, default_eps_mw, new_inj, sat, &left);
+            const std::vector<real_type> chained_inj = new_inj;
+            distribute(units, -20. + d2, default_eps_mw, new_inj, sat, &left);
+            CHECK_THAT(chained_inj[0], Catch::Matchers::WithinAbs(new_inj[0], 1e-6));
+            CHECK_THAT(chained_inj[1], Catch::Matchers::WithinAbs(new_inj[1], 1e-6));
+        }
+    }
+    SECTION("a unit a distribution saturates carries nothing"){
+        std::vector<Participant> plain = {unit(0, 30., 1., 0., 500.), unit(1, 30., 1., 0., 40.)};
+        distribute(plain, 30., default_eps_mw, new_inj, sat, &left);
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(40., 1e-12));
+        CHECK_THAT(left[1], Catch::Matchers::WithinAbs(0., 1e-12));
+    }
+}
+
+TEST_CASE("distribute with an overshoot: a drawing unit capped at 0 MW keeps its side", "[slack_redistribution]"){
+    // a charging storage unit (range [-50, 50]) a positive mismatch pushed up to 0 MW, 5 MW
+    // beyond it: the overshoot is above 0 MW (> 0), and 0 MW stays its UPPER bound
+    std::vector<Participant> units = {unit(0, 30., 1., NaN, NaN), unit(1, 0., 1., -50., 50.)};
+    units[1].kind = UnitKind::STORAGE;
+    units[1].in_slack = false;
+    units[1].overshoot_mw = 5.;
+    std::vector<real_type> new_inj;
+    std::vector<char> sat;
+    SECTION("pushed down: it moves once the shift used up its overshoot"){
+        // equal weights, shift -25: the slack unit gives 12.5, the storage unit 5 - 12.5
+        const Report rep = distribute(units, -20., default_eps_mw, new_inj, sat);
+        REQUIRE_FALSE(rep.all_saturated);
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(17.5, 1e-6));
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(-7.5, 1e-6));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-6));
+    }
+    SECTION("pushed up: it stays at 0 MW, never crossing it"){
+        const Report rep = distribute(units, 10., default_eps_mw, new_inj, sat);
+        CHECK(sat[1] == 1);
+        CHECK_THAT(new_inj[1], Catch::Matchers::WithinAbs(0., 1e-6));
+        CHECK_THAT(new_inj[0], Catch::Matchers::WithinAbs(40., 1e-6));
+        CHECK_THAT(rep.not_distributed_mw, Catch::Matchers::WithinAbs(0., 1e-6));
+    }
+}
+
 TEST_CASE("distribute: a unit injecting never crosses 0 MW on the way down", "[slack_redistribution]"){
     // unit 1 has min_p < 0 < max_p: its share (-10) would take it to -8, OLF stops it at 0
     // and the rest goes to unit 0
@@ -267,5 +404,178 @@ TEST_CASE("a unit flagged can_participate_slack takes a pre-pass share away from
         const ls2g::LSGrid other = grid.copy();
         CHECK(other.get_generators().get_can_participate_slack(1));
         CHECK_THAT(other.get_generators().get_can_participate_slack_weight(1), Catch::Matchers::WithinAbs(0.5, 1e-15));
+    }
+}
+
+TEST_CASE("a unit that can participate rejoins the slack when moved off its limit", "[slack_redistribution]"){
+    ls2g::LSGrid grid = make_capped_grid(true);
+    CHECK(grid.get_generators().get_can_participate_slack(0));   // a slack unit carries the flag
+    grid.change_p_gen(1, 40.);                                   // still at its max_p
+    CHECK_FALSE(grid.get_generators().is_slack(1));
+    grid.change_p_gen(1, 35.);
+    REQUIRE(grid.get_generators().is_slack(1));
+    CHECK_THAT(grid.get_generators().get_slack_weight(1), Catch::Matchers::WithinAbs(0.5, 1e-15));
+    SECTION("stranded: it stays in the slack, and takes no share until reconnected"){
+        grid.deactivate_powerline(1);   // bus 2 (gen 1) and bus 3 cut off
+        grid.consider_only_main_component(false);
+        CHECK_FALSE(grid.get_generators().get_status()[1]);
+        CHECK(grid.get_generators().is_slack(1));
+        const ls2g::CplxVect V = grid.ac_pf(ls2g::CplxVect::Constant(5, ls2g::cplx_type(1., 0.)), 20, 1e-8);
+        REQUIRE(V.size() > 0);
+        CHECK(std::get<0>(grid.get_gen_res())(1) == 0.);
+        grid.reactivate_powerline(1);
+        grid.reactivate_gen(1);
+        const ls2g::CplxVect V2 = grid.ac_pf(ls2g::CplxVect::Constant(5, ls2g::cplx_type(1., 0.)), 20, 1e-8);
+        REQUIRE(V2.size() > 0);
+        CHECK(std::abs(std::get<0>(grid.get_gen_res())(1) - 35.) > 1e-3);   // its share again
+    }
+    SECTION("removed by hand: it stays out"){
+        grid.remove_gen_slackbus(1);
+        CHECK_FALSE(grid.get_generators().get_can_participate_slack(1));
+        grid.change_p_gen(1, 30.);
+        CHECK_FALSE(grid.get_generators().is_slack(1));
+    }
+}
+
+namespace {
+
+// the AC then the DC solve of `cached` (which has solved before, and reuses what it
+// built) must be those of `fresh` (which never solved): a slack change the cache missed
+// would have `cached` solve with its former slack
+void check_same_as_fresh(ls2g::LSGrid & cached, ls2g::LSGrid & fresh){
+    const ls2g::CplxVect V0 = ls2g::CplxVect::Constant(5, ls2g::cplx_type(1., 0.));
+    const ls2g::CplxVect Vc = cached.ac_pf(V0, 20, 1e-10);
+    const ls2g::CplxVect Vf = fresh.ac_pf(V0, 20, 1e-10);
+    REQUIRE(Vc.size() > 0);
+    REQUIRE(Vc.size() == Vf.size());
+    CHECK((Vc - Vf).cwiseAbs().maxCoeff() < 1e-12);
+    const ls2g::CplxVect Vc_dc = cached.dc_pf(V0, 20, 1e-10);
+    const ls2g::CplxVect Vf_dc = fresh.dc_pf(V0, 20, 1e-10);
+    REQUIRE(Vc_dc.size() > 0);
+    REQUIRE(Vc_dc.size() == Vf_dc.size());
+    CHECK((Vc_dc - Vf_dc).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+}  // namespace
+
+TEST_CASE("a unit coming back to the slack invalidates the cached slack", "[slack_redistribution][cache_reuse]"){
+    const ls2g::CplxVect V0 = ls2g::CplxVect::Constant(5, ls2g::cplx_type(1., 0.));
+    ls2g::LSGrid grid = make_capped_grid(true);
+    REQUIRE(grid.ac_pf(V0, 20, 1e-10).size() > 0);   // builds and marks the AC cache
+    REQUIRE(grid.dc_pf(V0, 20, 1e-10).size() > 0);   // ... and the DC one
+    REQUIRE_FALSE(grid.get_ac_algo_controler().has_slack_participate_changed());
+    REQUIRE_FALSE(grid.get_dc_algo_controler().has_slack_participate_changed());
+
+    grid.change_p_gen(1, 40.);   // still at its max_p: it stays out, the slack is unchanged
+    CHECK_FALSE(grid.get_generators().is_slack(1));
+    CHECK_FALSE(grid.get_ac_algo_controler().has_slack_participate_changed());
+    CHECK_FALSE(grid.get_dc_algo_controler().has_slack_participate_changed());
+
+    grid.change_p_gen(1, 35.);   // off it: back into the slack
+    REQUIRE(grid.get_generators().is_slack(1));
+    CHECK(grid.get_ac_algo_controler().has_slack_participate_changed());
+    CHECK(grid.get_dc_algo_controler().has_slack_participate_changed());
+    CHECK(grid.get_ac_algo_controler().has_slack_weight_changed());
+    CHECK(grid.get_dc_algo_controler().has_slack_weight_changed());
+    {
+        ls2g::LSGrid fresh = make_capped_grid(true);
+        fresh.change_p_gen(1, 35.);
+        check_same_as_fresh(grid, fresh);
+        grid.ac_pf(V0, 20, 1e-10);
+        CHECK(std::abs(std::get<0>(grid.get_gen_res())(1) - 35.) > 1e-3);   // it takes a share
+    }
+
+    SECTION("stranded, then reconnected"){
+        grid.deactivate_powerline(1);   // bus 2 (gen 1) and bus 3 cut off
+        grid.consider_only_main_component(false);
+        CHECK(grid.get_generators().is_slack(1));
+        CHECK(grid.get_ac_algo_controler().has_slack_participate_changed());
+        CHECK(grid.get_dc_algo_controler().has_slack_participate_changed());
+        ls2g::LSGrid fresh = make_capped_grid(true);
+        fresh.change_p_gen(1, 35.);
+        fresh.deactivate_powerline(1);
+        fresh.consider_only_main_component(false);
+        check_same_as_fresh(grid, fresh);
+
+        grid.reactivate_powerline(1);
+        grid.reactivate_gen(1);
+        CHECK(grid.get_ac_algo_controler().has_slack_participate_changed());
+        CHECK(grid.get_dc_algo_controler().has_slack_participate_changed());
+        ls2g::LSGrid fresh2 = make_capped_grid(true);
+        fresh2.change_p_gen(1, 35.);
+        fresh2.deactivate_powerline(1);
+        fresh2.consider_only_main_component(false);
+        fresh2.reactivate_powerline(1);
+        fresh2.reactivate_gen(1);
+        check_same_as_fresh(grid, fresh2);
+    }
+}
+
+namespace {
+
+// buses 0-1-2-3, bus 0 hanging off bus 1 by line 0 alone, bus 2 tied to bus 1 by two lines (the
+// most connected bus of the rest); 100 MW of load on bus 1. Gen 0 (bus 0, 40 MW) is the only
+// slack unit; gens 1 (bus 2) and 2 (bus 3), 30 MW each, can participate with weights 1 and 3.
+ls2g::LSGrid make_stranded_slack_grid()
+{
+    ls2g::LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(4u, 1, ls2g::RealVect::Constant(4, 138.), 0, 0);
+    Eigen::VectorXi fr(4), to(4);
+    fr << 0, 1, 2, 1;
+    to << 1, 2, 3, 2;
+    grid.init_powerlines(ls2g::RealVect::Constant(4, 0.01), ls2g::RealVect::Constant(4, 0.1),
+                         ls2g::CplxVect::Zero(4), fr, to);
+    ls2g::RealVect load_p(1), load_q(1);
+    load_p << 100.;
+    load_q << 10.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 1;
+    grid.init_loads(load_p, load_q, load_bus);
+    ls2g::RealVect gen_p(3), gen_v(3), gen_q(3), min_q(3), max_q(3), min_p(3), max_p(3);
+    gen_p << 40., 30., 30.;
+    gen_v << 1.02, 1.02, 1.02;
+    gen_q << 0., 0., 0.;
+    min_q << -1e3, -1e3, -1e3;
+    max_q << 1e3, 1e3, 1e3;
+    min_p << 0., 0., 0.;
+    max_p << 500., 500., 500.;
+    Eigen::VectorXi gen_bus(3);
+    gen_bus << 0, 2, 3;
+    grid.init_generators_full(gen_p, gen_v, gen_q, std::vector<bool>{true, true, true}, min_q, max_q, gen_bus);
+    grid.set_gen_p_limits(min_p, max_p);
+    grid.add_gen_slackbus(0, 1.);
+    ls2g::RealVect w(3);
+    w << 0., 1., 3.;
+    grid.set_gen_can_participate_slack(std::vector<bool>{false, true, true}, w);
+    grid.tell_solver_need_reset();
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("every slack unit stranded: the units that can participate keep their flag", "[slack_redistribution]"){
+    ls2g::LSGrid grid = make_stranded_slack_grid();
+    grid.deactivate_powerline(0);   // bus 0, and the only slack unit with it, cut off
+    const Report rep = grid.consider_only_main_component(true);
+    CHECK_THAT(rep.mismatch_mw, Catch::Matchers::WithinAbs(40., 1e-9));
+    REQUIRE(grid.get_generators().is_slack(1));   // the most connected producing bus took the slack
+    CHECK_THAT(grid.get_generators().get_slack_weight(1), Catch::Matchers::WithinAbs(1., 1e-15));
+
+    // gen 2 can still participate, and shares what gen 0 produced with the new slack unit
+    CHECK(grid.get_generators().get_can_participate_slack(2));
+    CHECK_THAT(grid.get_generators().get_can_participate_slack_weight(2), Catch::Matchers::WithinAbs(3., 1e-15));
+    CHECK(rep.nb_participants == 2);
+    CHECK_THAT(grid.get_gen_target_p()(1), Catch::Matchers::WithinAbs(40., 1e-9));
+    CHECK_THAT(grid.get_gen_target_p()(2), Catch::Matchers::WithinAbs(60., 1e-9));
+
+    SECTION("the stranded slack unit goes back into the slack once reconnected"){
+        CHECK_FALSE(grid.get_generators().is_slack(0));
+        CHECK(grid.get_generators().get_can_participate_slack(0));
+        grid.reactivate_powerline(0);
+        grid.reactivate_gen(0);
+        CHECK(grid.get_generators().is_slack(0));
+        CHECK_THAT(grid.get_generators().get_slack_weight(0), Catch::Matchers::WithinAbs(1., 1e-15));
     }
 }

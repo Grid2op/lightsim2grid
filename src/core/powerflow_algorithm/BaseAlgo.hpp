@@ -27,6 +27,8 @@
 #include "AlgoConfig.hpp"
 #include "linear_solvers/LinearSolverStats.hpp"
 #include "outer_loop/BaseOuterLoop.hpp"
+#include "outer_loop/OuterLoopDriver.hpp"
+#include "outer_loop/OuterControlLayout.hpp"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -58,6 +60,12 @@ using TimerPTDFLODFType = std::tuple<double, double, double>;
 This class represents a algorithm to compute powerflow.
 
 It can be derived for different usecase, for example for DC powerflow, AC powerflow using Newton Raphson method etc.
+
+It is also the interface of the algorithm plugins (docs/solver_plugin.rst). Adding,
+removing or re-signing a virtual method here breaks every plugin built against the
+previous headers: update the example plugins in examples/ (external_algorithm,
+lm_algorithm, dist_slack_algorithm) in the same change, and the changelog with a
+[BREAKING] (C++ / plugins) entry.
 **/
 class LS2G_API BaseAlgo : public BaseConstants
 {
@@ -272,6 +280,7 @@ class LS2G_API BaseAlgo : public BaseConstants
         static constexpr bool IS_FDPF = false;
         static constexpr bool SUPPORTS_REMOTE_VOLTAGE_CONTROL = false;
         static constexpr bool FILLS_BUS_MISMATCH = false;
+        static constexpr bool DISTRIBUTES_SLACK = false;
 
         virtual bool is_dc() const noexcept { return IS_DC; }
         // Only the Newton-Raphson algorithms implement the hvdc angle-droop
@@ -303,6 +312,15 @@ class LS2G_API BaseAlgo : public BaseConstants
          * behaviour it has today: LSGrid falls back to deriving the mismatch itself.
          */
         virtual bool fills_bus_mismatch() const noexcept { return FILLS_BUS_MISMATCH; }
+        /**
+         * Does this algorithm share the imbalance on the slack buses by the
+         * `slack_weights` it is handed (a distributed slack)? A single-slack one
+         * (NRSing_*, Gauss-Seidel) leaves it all on the reference bus whatever the
+         * weights say, so a caller that moves set-points by those weights -- the batch
+         * algorithms' `redistribute_slack` -- would describe a state it did not solve.
+         * Defaults to false, the conservative answer for a plugin that does not say.
+         */
+        virtual bool distributes_slack() const noexcept { return DISTRIBUTES_SLACK; }
 
         Eigen::Ref<const RealVect> get_Va() const{
             return Va_;
@@ -592,18 +610,24 @@ class LS2G_API BaseAlgo : public BaseConstants
 
         // ---- OpenLoadFlow-style outer loops (NROuter_* only) --------------------------
         //
-        // The loops run around the Newton-Raphson are the grid's (LSGrid::add_outer_loop):
-        // the grid hands its list over before each solve and the algorithm keeps a clone of
-        // each, so that a loop's per-solve state is the algorithm's own. Only the NROuter_*
-        // family runs them (see supports_outer_loops); the others reject a list.
+        // The loops run around the Newton-Raphson are the grid's (LSGrid::add_outer_loop),
+        // and so are the driver's parameters (LSGrid::set_outer_loop_driver_params): the grid
+        // hands both over before each solve and the algorithm keeps a clone of each loop, so
+        // that a loop's per-solve state is the algorithm's own. Only the NROuter_* family runs
+        // them (see supports_outer_loops); the others reject a list.
         virtual bool supports_outer_loops() const noexcept { return false; }
-        virtual void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops){
+        virtual void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops,
+                                     const OuterLoopDriverParams & /*driver*/){
             if(!loops.empty()){
                 throw std::runtime_error("BaseAlgo::set_outer_loops: this algorithm does not run "
                                          "outer loops, use an NROuter_* algorithm (see "
                                          "supports_outer_loops).");
             }
         }
+        // what the solved row changes compared with the grid (a batch's: its overrides, its
+        // labelling, its stranded buses), for the loops to read; null: the grid as it is.
+        // The caller keeps it alive until the next call. Ignored without outer loops.
+        virtual void set_outer_row_view(const OuterRowView * /*row*/) {}
         // what the last solve's outer loops did; empty for an algorithm without them
         virtual OuterLoopStats get_outer_loop_stats() const { return OuterLoopStats{}; }
         // the active power targets (MW) the last solve's outer loops set, per generator and
@@ -613,8 +637,8 @@ class LS2G_API BaseAlgo : public BaseConstants
             gen_p_mw.clear();
             storage_p_mw.clear();
         }
-        // the droop regime the last solve's outer loops set per hvdc line (OuterState::
-        // hvdc_status), empty when none did
+        // the droop regime the last solve's outer loops set per hvdc line (grid id,
+        // HvdcRegimeControl::KEEP where they kept the grid's), empty when none did
         virtual void get_outer_hvdc_status(std::vector<int> & status) const { status.clear(); }
         /// the phase tap position the outer loops left each transformer at (grid id,
         /// INT_MIN where they kept the grid's; empty: none)
@@ -624,6 +648,13 @@ class LS2G_API BaseAlgo : public BaseConstants
         /// the section count the outer loops left each shunt at (grid id, INT_MIN where they kept
         /// the grid's; empty: none)
         virtual void get_outer_shunt_sections(std::vector<int> & counts) const { counts.clear(); }
+        /// where the last solve's outer loops ended, for other solves to resume from (see
+        /// OuterRowView::resume_from); null when it did not converge, or without outer loops
+        virtual std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const { return nullptr; }
+        /// where the outer loops' continuous controls (phase shifters, ratio groups, shunt
+        /// controllers) sit in the system the last rebuild built, see OuterControlLayout;
+        /// empty without outer loops, or with none of those controls
+        virtual OuterControlLayout get_outer_control_layout() const { return OuterControlLayout(); }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

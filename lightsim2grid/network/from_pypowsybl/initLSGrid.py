@@ -29,6 +29,7 @@ from ._aux_add_buses import _aux_add_buses
 from ._aux_add_generators import _aux_add_generators
 from . import _olf_rules
 from ._olf_rules import OlfLoadingParameters
+from ._olf_outer_loops import set_olf_outer_loops
 from ._aux_add_slack import _aux_olf_slack_participation
 from ._aux_add_loads import _aux_add_loads
 from ._aux_add_lines import _aux_add_lines
@@ -38,11 +39,7 @@ from ._aux_add_svc import _aux_add_svc
 from ._aux_add_hvdc import _aux_add_hvdc
 from ._aux_add_storage import _aux_add_storage
 from ._aux_add_slack import _aux_add_slack
-from ._olf_const import (
-    _OLF_MIN_REALISTIC_VOLTAGE_PU,
-    _OLF_MAX_REALISTIC_VOLTAGE_PU,
-    _OLF_REALISTIC_VOLTAGE_MARGIN,
-)
+from lightsim2grid.network._default_algorithms import use_fastest_default_algorithms
 
 
 def init(net : pypo.network.Network,
@@ -66,8 +63,8 @@ def init(net : pypo.network.Network,
          can_participate_slack=None,
          can_participate_slack_overshoot=None,
          hvdc_ac_emulation_frozen=None,
-         remote_voltage_control_vm_range="olf",
          olf_rules=False,
+         olf_parameters=None,
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -261,7 +258,8 @@ def init(net : pypo.network.Network,
     :type can_participate_slack: None or Iterable[str]
 
     :param can_participate_slack_overshoot: For the units of ``can_participate_slack``: how
-        far beyond the limit it sits at each one was in the reference distribution, in MW --
+        far beyond the limit it sits at each one was in the reference distribution, in MW (> 0
+        above its upper limit, < 0 below its lower one) --
         what ``bake_outer_loops(..., return_details=True).can_participate_slack_overshoot``
         returns. OpenLoadFlow shares the slack from the raw set-points, so a unit it capped
         well beyond its limit stays capped until the shift of a later imbalance has used that
@@ -278,16 +276,6 @@ def init(net : pypo.network.Network,
         (default) flags nothing. An unknown id raises.
     :type hvdc_ac_emulation_frozen: None or Iterable[str]
 
-    :param remote_voltage_control_vm_range: The range of voltage (pu of its own bus' nominal
-        voltage) a generator regulating a REMOTE bus may sit at, for the physical checks
-        (``LSGrid.set_remote_voltage_control_vm_range``): a remote controller outside it is
-        reported as ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``, as
-        OpenLoadFlow's robust remote voltage control would switch it to PQ. ``"olf"``
-        (default) uses OpenLoadFlow's default ``minRealisticVoltage`` / ``maxRealisticVoltage``
-        with its margin, a ``(min_vm_pu, max_vm_pu)`` pair is used as is (``NaN`` switching a
-        side off), ``None`` checks nothing. Never read by a powerflow.
-    :type remote_voltage_control_vm_range: str, None or tuple(float, float)
-
     :param olf_rules: Apply OpenLoadFlow's network-loading rules (``_olf_rules``): a
         generator OpenLoadFlow would not let regulate a voltage (not started, too small a
         reactive range, an unreachable regulated bus, an implausible target, inconsistent
@@ -301,6 +289,13 @@ def init(net : pypo.network.Network,
         ``OlfLoadingParameters`` is used as is. ``False`` (default) reads the network as it
         is written.
     :type olf_rules: bool or OlfLoadingParameters
+
+    :param olf_parameters: The OpenLoadFlow parameters whose outer loops the ``NROuter_*``
+        algorithms run on this grid: the grid's list of outer loops, their order and their
+        parameters, and the driver's, are OpenLoadFlow's for them (see
+        :func:`lightsim2grid.network.olf_outer_loops`). ``None`` (default) uses the defaults
+        of the installed pypowsybl, which differ between its builds.
+    :type olf_parameters: None or pypowsybl.loadflow.Parameters
 
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
@@ -319,14 +314,6 @@ def init(net : pypo.network.Network,
         sn_mva_used = float(sn_mva)
     model.set_sn_mva(sn_mva_used)
     model.set_init_vm_pu(float(init_vm_pu))
-    if isinstance(remote_voltage_control_vm_range, str):
-        if remote_voltage_control_vm_range != "olf":
-            raise ValueError(f"remote_voltage_control_vm_range: unknown value "
-                             f"{remote_voltage_control_vm_range!r}, expected \"olf\", None or a pair")
-        remote_voltage_control_vm_range = (_OLF_MIN_REALISTIC_VOLTAGE_PU * _OLF_REALISTIC_VOLTAGE_MARGIN,
-                                           _OLF_MAX_REALISTIC_VOLTAGE_PU / _OLF_REALISTIC_VOLTAGE_MARGIN)
-    if remote_voltage_control_vm_range is not None:
-        model.set_remote_voltage_control_vm_range(*(float(el) for el in remote_voltage_control_vm_range))
     if keep_half_open_lines:
         # allow branches connected on a single terminal (the open end is Kron-reduced
         # in the C++ model); a one-sided disconnection is no longer mirrored to the
@@ -450,6 +437,9 @@ def init(net : pypo.network.Network,
     # make sure the grid we just built is internally consistent (bus / substation
     # / topology-vector indices in range, no NaN/Inf in the physical inputs)
     model.check_grid()
+    # KLU where this build has it (see use_fastest_default_algorithms)
+    use_fastest_default_algorithms(model)
+    set_olf_outer_loops(model, olf_parameters)
 
     if not return_sub_id:
         return model

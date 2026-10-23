@@ -172,6 +172,53 @@ class TestPhysicalViolationsCpp(unittest.TestCase):
         assert len(ca.get_physical_violations()) == 2
 
 
+class TestBusQWithoutReactiveLimitsLoop(unittest.TestCase):
+    """The bus reactive-capability check is the ReactiveLimits loop's own test. A grid whose
+    loop list has no such loop (cleared, or OpenLoadFlow's parameters with reactive limits
+    off) still has buses out of their range -- nothing enforced them -- and reports them."""
+
+    @staticmethod
+    def _bus_q(viols):
+        return sorted((v.element_id, int(v.violation_type)) for v in viols
+                      if v.element_type == ViolationElementType.BUS
+                      and v.violation_type in (LimitViolationType.LOW_Q, LimitViolationType.HIGH_Q))
+
+    def _grid(self, with_loops):
+        grid = _case14_tight_q()
+        self.assertIn("ReactiveLimits", [l.name() for l in grid.get_outer_loops()])
+        if not with_loops:
+            grid.clear_outer_loops()
+        return grid
+
+    def test_the_grid_reports_them(self):
+        res = []
+        for with_loops in (True, False):
+            grid = self._grid(with_loops)
+            grid.ac_pf(np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j), 20, 1e-11)
+            res.append(self._bus_q(grid.get_physical_violations(True, 0., 0.)))
+        self.assertGreater(len(res[0]), 1)
+        self.assertEqual(res[1], res[0])
+
+    def test_the_batches_report_them(self):
+        res = []
+        for with_loops in (True, False):
+            grid = self._grid(with_loops)
+            v_init = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
+            ts = _one_row_time_series(grid)
+            ts.compute(v_init, 20, 1e-11)
+            ca = ContingencyAnalysisCPP(grid)
+            ca.compute_physical_violations = True
+            ca.physical_violation_tol_mva = 0.
+            ca.add_n1(0)
+            ca.add_n1(5)
+            ca.compute(v_init, 20, 1e-11)
+            res.append((self._bus_q(ts.get_physical_violations()[0]), self._bus_q(ts.get_physical_violations_n()),
+                        [self._bus_q(row) for row in ca.get_physical_violations()],
+                        self._bus_q(ca.get_physical_violations_n())))
+        self.assertGreater(len(res[0][0]), 1)
+        self.assertEqual(res[1], res[0])
+
+
 class TestSvcCapabilityFromPython(unittest.TestCase):
     """the one family whose capability is not already in MVAr: an SVC's `b_min` / `b_max` are
     a susceptance range, and the reported `limit` is that range at the solved voltage. A user

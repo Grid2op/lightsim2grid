@@ -56,11 +56,11 @@ class LS2G_API ShuntVoltageControlLoop final : public BaseOuterLoop
         };
         /// the shunt voltage controls of `grid`, `transformer_buses` the buses (solver ids)
         /// transformers regulate, see the class comment
-        static std::vector<Group> groups(const LSGrid & grid, const std::set<int> & transformer_buses);
+        static std::vector<Group> groups(const OuterGridView & view, const std::set<int> & transformer_buses);
 
     protected:
         std::string _name() const override { return "ShuntVoltageControl"; }
-        void _declare(const OuterContext & ctx, OuterDeclaration & decl) const override;
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;
@@ -73,7 +73,7 @@ class LS2G_API ShuntVoltageControlLoop final : public BaseOuterLoop
         // the counts LfShuntImpl.dispatchB gives the shunts of one controller for `b` (pu)
         std::vector<int> _dispatch(const LSGrid & grid, const std::vector<int> & shunts, real_type b) const;
 
-        // the buses the transformer voltage control declared before this loop (see _declare)
+        // the buses of the ratio groups reserved before this loop (see _declare)
         mutable std::set<int> transformer_buses_;
         std::vector<Group> groups_;  // per solve, see _initialize
 };

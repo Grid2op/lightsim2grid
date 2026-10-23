@@ -202,7 +202,7 @@ powerflow -- no input file, no python:
         // Newton-Raphson with Eigen SparseLU (the default, KLU not needed)
         const ls2g::CplxVect Vinit =
             ls2g::CplxVect::Constant(grid.total_bus(), ls2g::cplx_type(1., 0.));
-        const ls2g::CplxVect V = grid.ac_pf(Vinit, 20, 1e-8);
+        const ls2g::CplxVect V = grid.ac_pf(Vinit, 20, 1e-8);  // tol in MVA
 
         if (V.size() == 0) {  // diverged: the result vector is empty
             std::cerr << "powerflow diverged" << std::endl;

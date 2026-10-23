@@ -280,7 +280,7 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         // droop API
         /**
          * The droop regime the next compute_results publishes each line's flows in, by line
-         * id: what an outer loop decided (OuterState::hvdc_status) rather than the line's own
+         * id: what an outer loop decided (HvdcRegimeControl) rather than the line's own
          * status_droop, which is not modified. A value other than -1, 0 or +1 keeps the
          * line's own; an empty vector (the default) keeps every line's.
          */
@@ -450,7 +450,8 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
          * limit, droop off, as OpenLoadFlow's AcHvdcAcEmulationLimits loop saturated them.
          * Their droop parameters (p0, slope) are kept. Never read by a powerflow: it only opens
          * them to the physical check of their release (HvdcPCheck.hpp), the flow their droop
-         * would ask for falling back below that limit.
+         * would ask for falling back below that limit. `change_p` moving a flagged line's
+         * set-point clears its flag: it no longer sits at the limit it was frozen at.
          */
         void set_ac_emulation_frozen(const std::vector<bool> & frozen){
             check_size(frozen, nb(), "HvdcLineContainer::set_ac_emulation_frozen");
@@ -462,6 +463,9 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
 
         /// see ConverterStationContainer::set_can_be_pv (LSGrid::set_hvdc_can_be_pv)
         void set_stations_can_be_pv(const std::vector<bool> & side_1, const std::vector<bool> & side_2){
+            // both sizes first: a wrong side 2 must not leave side 1 already written
+            check_size(side_1, nb(), "HvdcLineContainer::set_stations_can_be_pv (side 1)");
+            check_size(side_2, nb(), "HvdcLineContainer::set_stations_can_be_pv (side 2)");
             side_1_.set_can_be_pv(side_1);
             side_2_.set_can_be_pv(side_2);
         }

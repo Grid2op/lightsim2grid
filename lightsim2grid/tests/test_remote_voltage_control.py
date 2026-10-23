@@ -6,9 +6,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-"""The physical check of the generators regulating a remote bus
-(``LSGrid.set_remote_voltage_control_vm_range``): a remote controller whose own bus leaves the
-realistic range -- which OpenLoadFlow's robust remote voltage control switches to PQ -- is
+"""The trigger of ReactiveLimits' robust remote voltage control, in detection mode: a remote
+controller whose own bus leaves the loop's realistic range -- which OpenLoadFlow's robust
+remote voltage control switches to PQ -- is
 reported as ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the generator,
 in kV, by a single solve and by the batches alike, exactly where OpenLoadFlow switches it."""
 
@@ -17,7 +17,6 @@ import unittest
 import numpy as np
 
 from lightsim2grid.lightsim2grid_cpp import (
-    LSGrid,
     LimitViolationType,
     ViolationCategory,
     ViolationElementType,
@@ -29,6 +28,7 @@ try:
     import pypowsybl.loadflow as lf
     import pypowsybl.report as rp
     from lightsim2grid.network import init_from_pypowsybl
+    from lightsim2grid.network import olf_outer_loops
     HAS_PYPOWSYBL = True
 except ImportError:
     HAS_PYPOWSYBL = False
@@ -55,18 +55,20 @@ def _ieee14_remote(target_v_kv):
 def _olf_switches(n):
     """whether OpenLoadFlow's robust remote voltage control switched a controller to PQ.
 
-    Its realistic voltage range is passed explicitly, the one lightsim2grid checks against
-    by default: pypowsybl builds ship different defaults for it (the public one a range so
-    wide the robust mode never triggers here)."""
-    from lightsim2grid.network.from_pypowsybl._olf_const import (
-        _OLF_MIN_REALISTIC_VOLTAGE_PU, _OLF_MAX_REALISTIC_VOLTAGE_PU)
+    Its realistic voltage range is the one of the installed pypowsybl, which is also the one
+    given to lightsim2grid's ReactiveLimits loop (see ``_installed_range``): the defaults differ
+    between pypowsybl builds."""
     params = lf.Parameters()
-    params.provider_parameters = {"voltageRemoteControlRobustMode": "true",
-                                  "minRealisticVoltage": str(_OLF_MIN_REALISTIC_VOLTAGE_PU),
-                                  "maxRealisticVoltage": str(_OLF_MAX_REALISTIC_VOLTAGE_PU)}
+    params.provider_parameters = {"voltageRemoteControlRobustMode": "true"}
     report = rp.ReportNode()
     lf.run_ac(n, params, report_node=report)
     return any("remote voltage target is maintained" in line for line in str(report).splitlines())
+
+
+def _installed_range():
+    """the realistic voltage range (pu) OpenLoadFlow runs with in the installed pypowsybl"""
+    _, driver = olf_outer_loops()
+    return driver.min_realistic_voltage, driver.max_realistic_voltage
 
 
 def _ls(n, **kwargs):
@@ -77,26 +79,15 @@ def _ls(n, **kwargs):
     return grid
 
 
-class TestRemoteVoltageControlRange(unittest.TestCase):
-    def test_default_and_set(self):
-        grid = LSGrid()
-        self.assertTrue(np.isnan(grid.get_remote_voltage_control_min_vm_pu()))
-        self.assertTrue(np.isnan(grid.get_remote_voltage_control_max_vm_pu()))
-        grid.set_remote_voltage_control_vm_range(0.8, 1.2)
-        self.assertEqual(grid.get_remote_voltage_control_min_vm_pu(), 0.8)
-        self.assertEqual(grid.get_remote_voltage_control_max_vm_pu(), 1.2)
-        grid.set_remote_voltage_control_vm_range(np.nan, 1.2)  # one side only
-        self.assertTrue(np.isnan(grid.get_remote_voltage_control_min_vm_pu()))
-        # copied with the grid (a batch built from it inherits it), like
-        # keep_vinit_at_group_controlled_buses not part of the state a pickle carries
-        self.assertEqual(grid.copy().get_remote_voltage_control_max_vm_pu(), 1.2)
+def _with_range(grid, vmin, vmax):
+    """the grid, its only loop a ReactiveLimits with that realistic range"""
+    from lightsim2grid.algorithm import ReactiveLimits
+    grid.clear_outer_loops()
+    grid.add_outer_loop(ReactiveLimits(min_realistic_voltage=vmin, max_realistic_voltage=vmax))
+    return grid
 
-    def test_refused(self):
-        grid = LSGrid()
-        for bad in [(1.2, 0.8), (1., 1.), (-0.1, 1.2), (0.8, np.inf)]:
-            with self.assertRaises(RuntimeError):
-                grid.set_remote_voltage_control_vm_range(*bad)
 
+class TestRemoteVoltageControlTypes(unittest.TestCase):
     def test_violation_types(self):
         for vt in REMOTE_TYPES:
             self.assertEqual(int(vt) in (13, 14), True)
@@ -108,7 +99,8 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
         # around the high bound, and far below the low one: reported iff OpenLoadFlow switches
         for target_v_kv in [9.5, 13.85, 13.8975, 13.9, 14.2]:
             olf = _olf_switches(_ieee14_remote(target_v_kv))
-            viols = _remote(_ls(_ieee14_remote(target_v_kv)).get_physical_violations(True, 0., 0.))
+            grid = _with_range(_ls(_ieee14_remote(target_v_kv)), *_installed_range())
+            viols = _remote(grid.get_physical_violations(True, 0., 0.))
             self.assertEqual(len(viols) == 1, olf, f"target {target_v_kv} kV")
             for el in viols:
                 self.assertEqual(el.element_type, ViolationElementType.GENERATOR)
@@ -116,19 +108,56 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
                 self.assertEqual(el.category, ViolationCategory.PHYSICAL)
 
     def test_value_and_limit(self):
-        grid = _ls(_ieee14_remote(14.2))
+        # an explicit range (OpenLoadFlow's default differs from one build to the next)
+        grid = _with_range(_ls(_ieee14_remote(14.2)), 0.8, 1.2)
         viols = _remote(grid.get_physical_violations(True, 0., 0.))
         self.assertEqual(len(viols), 1)
         self.assertEqual(viols[0].violation_type, LimitViolationType.HIGH_VOLTAGE_REMOTE_CONTROL)
-        # the bound in kV of its own (12 kV) bus, OpenLoadFlow's default maxRealisticVoltage
-        # with its margin
+        # the bound in kV of its own (12 kV) bus
         self.assertAlmostEqual(viols[0].limit, 12. * 1.2 / 1.02, places=9)
         self.assertGreater(viols[0].value, viols[0].limit)
 
     def test_switched_off(self):
-        grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=None)
+        # the trigger is ReactiveLimits' robust mode: without it no loop would switch the
+        # controller, and nothing is reported; with a range wide enough, neither
+        from lightsim2grid.algorithm import ReactiveLimits
+        grid = _ls(_ieee14_remote(14.2))
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits(robust_mode=False))
         self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
-        grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=(0.5, 1.5))
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits(min_realistic_voltage=0.5, max_realistic_voltage=1.5))
+        self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
+
+    def test_range_and_mode_follow_the_driver(self):
+        # one parameter each in OpenLoadFlow: a ReactiveLimits given none of its own reads the
+        # driver's, in a single solve and in a batch alike; one given its own keeps it
+        from lightsim2grid.algorithm import OuterLoopDriverParams, ReactiveLimits
+        grid = _ls(_ieee14_remote(14.2))
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits())
+        grid.set_outer_loop_driver_params(OuterLoopDriverParams(min_realistic_voltage=0.5, max_realistic_voltage=2.))
+        self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
+        grid.set_outer_loop_driver_params(OuterLoopDriverParams(min_realistic_voltage=0.8, max_realistic_voltage=1.2))
+        viols = _remote(grid.get_physical_violations(True, 0., 0.))
+        self.assertEqual(len(viols), 1)
+        self.assertAlmostEqual(viols[0].limit, 12. * 1.2 / 1.02, places=9)
+        ca = ContingencyAnalysisCPP(grid)
+        ca.compute_physical_violations = True
+        ca.physical_violation_tol_mva = 0.
+        ca.physical_violation_tol_vm_pu = 0.
+        ca.add_n1(0)
+        ca.compute(np.ones(grid.total_bus(), dtype=complex), 30, 1e-10)
+        self.assertEqual(len(_remote(ca.get_physical_violations_n())), 1)
+        grid.set_outer_loop_driver_params(OuterLoopDriverParams(voltage_remote_control_robust_mode=False,
+                                                                min_realistic_voltage=0.8, max_realistic_voltage=1.2))
+        self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
+        # the loop's own values win over the driver's
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits(robust_mode=True))
+        self.assertEqual(len(_remote(grid.get_physical_violations(True, 0., 0.))), 1)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits(robust_mode=True, min_realistic_voltage=0.5, max_realistic_voltage=1.5))
         self.assertEqual(_remote(grid.get_physical_violations(True, 0., 0.)), [])
 
     def test_local_controller_not_checked(self):
@@ -138,7 +167,7 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
         self.assertEqual(_remote(_ls(n).get_physical_violations(True, 0., 0.)), [])
 
     def test_contingency_analysis_matches_the_single_solve(self):
-        grid = _ls(_ieee14_remote(14.2))
+        grid = _with_range(_ls(_ieee14_remote(14.2)), 0.8, 1.2)
         ref = _remote(grid.get_physical_violations(True, 0., 0.))
         self.assertEqual(len(ref), 1)
         ca = ContingencyAnalysisCPP(grid)

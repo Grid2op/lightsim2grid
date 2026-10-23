@@ -106,6 +106,16 @@ struct LS2G_API SbusPolicy
         // BaseBatchSweep drives through the algorithm's set_pv_pinned_buses.
         BoolMat gen_off;
 
+        // per-step load contingency mask, one row per step, one column per load: true
+        // means "this load is disconnected for this step" (ScenarioSweep only, see
+        // BaseBatchSweep::set_contingency_loads). Empty (0 rows) means "never set". An
+        // injection only: fill_row gives the row's p and q back, nothing to relabel.
+        BoolMat load_off;
+        // whether row i disconnects load l through the mask
+        bool load_off_in(Eigen::Index i, Eigen::Index l) const {
+            return load_off.rows() > 0 && i < load_off.rows() && l < load_off.cols() && load_off(i, l);
+        }
+
         // ---- what a row's topological action disconnects (ScenarioSweep
         // set_topo_actions; filled once per compute() by
         // BaseBatchSweep::_maybe_resolve_topology, empty otherwise) ----------------
@@ -155,6 +165,7 @@ struct LS2G_API SbusPolicy
             gen_p = RealMat(); sgen_p = RealMat(); load_p = RealMat(); load_q = RealMat();
             gen_v = RealMat();
             gen_off = BoolMat();
+            load_off = BoolMat();
             clear_topo();
             storage_pu_ = CplxVect();
             sbuses = CplxMat();

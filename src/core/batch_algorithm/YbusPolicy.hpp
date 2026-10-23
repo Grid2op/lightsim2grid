@@ -12,9 +12,50 @@
 #include "LSGrid.hpp"
 
 #include <set>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace ls2g {
+
+/** What one contingency of a ContingencyAnalysis trips: branches (lines then
+    transformers, the gridmodel numbering every batch class uses), shunts, loads and
+    generators, by their own ids. Ordered field by field, branches first, so a set of
+    branch-only contingencies keeps the order a set of branch sets had.
+
+    `branches_side1` / `branches_side2`: the branches the contingency opens at that end
+    only, the other end staying connected (half-open, as OpenLoadFlow keeps a branch
+    whose breaker opens at one end: it still carries its charging current from the
+    other end). A branch is in one of the three branch sets at most. **/
+struct LS2G_API ContingencyElements {
+    std::set<int> branches;
+    std::set<int> shunts;
+    std::set<int> loads;
+    std::set<int> gens;
+    std::set<int> branches_side1;
+    std::set<int> branches_side2;
+
+    bool operator<(const ContingencyElements & other) const {
+        return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2) <
+               std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2);
+    }
+    bool operator==(const ContingencyElements & other) const {
+        return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2) ==
+               std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2);
+    }
+    bool empty() const {
+        return branches.empty() && shunts.empty() && loads.empty() && gens.empty() &&
+               branches_side1.empty() && branches_side2.empty();
+    }
+    /** every branch the contingency opens, at both ends or at one (sorted): what carries
+        no flow worth reporting, and what the outer loops see as open **/
+    std::vector<int> branches_out() const {
+        std::set<int> res(branches);
+        res.insert(branches_side1.begin(), branches_side1.end());
+        res.insert(branches_side2.begin(), branches_side2.end());
+        return std::vector<int>(res.begin(), res.end());
+    }
+};
 
 /**
 Policy controlling how (if at all) a `BaseBatchSweep` instantiation's admittance matrix
@@ -55,21 +96,38 @@ struct LS2G_API YbusPolicy
     struct LS2G_API Contingency {
         static constexpr bool supports_contingency = true;
 
-        // registered contingencies, gridmodel branch ids (lines then trafos). A
-        // std::set<std::set<int>>, NOT unordered: callers (my_defaults_vect(),
-        // clean_flows()) rely on the ordering. Moved verbatim from
-        // ContingencyAnalysis::_li_defaults. Mutated directly by BaseBatchSweep's
-        // add_n1/add_nk/remove_n1/... (those stay on BaseBatchSweep: they need
-        // n_total_ from BaseBatchSolverSynch for bounds-checking, which this policy
-        // deliberately does not know about).
-        std::set<std::set<int> > li_defaults;
+        // registered contingencies (ContingencyAnalysis): what each one trips, see
+        // ContingencyElements. A std::set, NOT unordered: callers (my_defaults_vect(),
+        // clean_flows()) rely on the ordering, which is the row order. Mutated directly
+        // by BaseBatchSweep's add_n1/add_nk/add_contingency/remove_*/... (those stay on
+        // BaseBatchSweep: they need the element counts for bounds-checking, which this
+        // policy deliberately does not know about).
+        std::set<ContingencyElements> li_defaults;
+        // li_defaults in row order (ContingencyAnalysis), refreshed with the
+        // coefficients by init_li_coeffs: what row i trips, without walking the set
+        std::vector<ContingencyElements> li_rows;
         // for each entry of li_defaults (ContingencyAnalysis) -- or each row of
         // line_mask/trafo_mask (ScenarioSweep) -- the Ybus coefficients to remove/
         // re-add to emulate it, in the same order. Moved verbatim (as a container)
         // from ContingencyAnalysis::_li_coeffs; ScenarioSweep reuses the same field
         // via init_li_coeffs_from_masks below instead of init_li_coeffs, li_defaults
-        // staying empty/unused on that path.
+        // staying empty/unused on that path. A shunt the entry trips is one diagonal
+        // coefficient (AC: it is an admittance; nothing in DC, see li_sbus_dp).
         std::vector<std::vector<Coeff> > li_coeffs;
+        // aligned with li_coeffs: what to ADD to the entry's injection (solver bus id,
+        // per unit), what the matrix edit does not carry:
+        //  - DC, a phase shifter the entry disconnects: it is not in the matrix, its
+        //    shift is a pair of injections at its two buses
+        //    (TrafoContainer::hack_Sbus_for_dc_phase_shifter), so taking its
+        //    coefficients out of Bbus leaves them behind -- the opposite pair, here;
+        //  - DC, a shunt the entry trips: its active part, which DC puts in Pbus;
+        //  - a load or a generator the entry trips (ContingencyAnalysis, whose
+        //    injection is fixed; ScenarioSweep takes them out of its own per-row
+        //    injection, see SbusPolicy::Vary): the opposite of what it stamps, its
+        //    active power and, in AC, its reactive power (a generator's only when it
+        //    does not regulate voltage, as GeneratorContainer stamps it).
+        // Empty for an entry that needs none of that.
+        std::vector<std::vector<std::pair<int, cplx_type> > > li_sbus_dp;
 
         // dense row-aligned contingency masks (ScenarioSweep only): row i, column j
         // True means "deactivate this branch for step i". Empty (0 rows) means "never
@@ -78,6 +136,9 @@ struct LS2G_API YbusPolicy
         // convention as everywhere else in this file.
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> line_mask;
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> trafo_mask;
+        // same, one column per shunt (ScenarioSweep set_contingency_shunts): a shunt is
+        // an admittance, so it lives with the branches, as a diagonal coefficient
+        Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> shunt_mask;
 
         // per row, the branches (gridmodel numbering, lines then trafos, sorted) that
         // the row's topological action disconnects on top of the masks (ScenarioSweep
@@ -129,6 +190,27 @@ struct LS2G_API YbusPolicy
         // instead of a precomputed cache, merged with topo_branches_off[row]. Empty
         // if neither mask was ever set and no action disconnects a branch on that row.
         std::vector<int> branch_ids_for_row(Eigen::Index row, size_t n_line) const;
+        // per-row shunt ids implied by shunt_mask row `row` (sorted, empty if never set)
+        std::vector<int> shunt_ids_for_row(Eigen::Index row) const;
+        // whether row `row` trips that shunt / load / generator: its contingency
+        // (ContingencyAnalysis, li_rows) or its shunt mask (ScenarioSweep; its loads and
+        // generators are SbusPolicy::Vary's)
+        bool shunt_off_in_row(size_t row, int shunt_id) const {
+            if(row < li_rows.size()) return li_rows[row].shunts.count(shunt_id) > 0;
+            return shunt_mask.rows() > 0 && static_cast<Eigen::Index>(row) < shunt_mask.rows() &&
+                   shunt_id < shunt_mask.cols() && shunt_mask(static_cast<Eigen::Index>(row), shunt_id);
+        }
+        bool load_off_in_row(size_t row, int load_id) const {
+            return row < li_rows.size() && li_rows[row].loads.count(load_id) > 0;
+        }
+        bool gen_off_in_row(size_t row, int gen_id) const {
+            return row < li_rows.size() && li_rows[row].gens.count(gen_id) > 0;
+        }
+        // whether any contingency trips a generator (ContingencyAnalysis)
+        bool has_gen_off() const {
+            for(const ContingencyElements & el : li_defaults) if(!el.gens.empty()) return true;
+            return false;
+        }
 
         // remove / re-add one contingency's coefficients from/to Ybus (AC) or the
         // algo's own internal Ybus (DC). Whether the grid stays connected after the
@@ -155,14 +237,51 @@ struct LS2G_API YbusPolicy
                                                  bool ac_solver_used,
                                                  size_t n_line,
                                                  std::vector<Coeff> & out);
+            // what tripping these shunts / loads / generators adds to an entry: a
+            // diagonal coefficient per shunt (AC) into `coeffs`, and into `sbus_dp`
+            // the injection terms li_sbus_dp describes. An element off in the base grid
+            // is not in the matrix nor in the injection: nothing to take out.
+            static void _append_shunt_trips(const std::vector<int> & shunt_ids,
+                                            const LSGrid & grid_model,
+                                            bool ac_solver_used,
+                                            const SolverBusIdVect & id_me_to_solver,
+                                            std::vector<Coeff> & coeffs,
+                                            std::vector<std::pair<int, cplx_type> > & sbus_dp);
+            static void _append_load_trips(const std::vector<int> & load_ids,
+                                           const LSGrid & grid_model,
+                                           bool ac_solver_used,
+                                           const SolverBusIdVect & id_me_to_solver,
+                                           std::vector<std::pair<int, cplx_type> > & sbus_dp);
+            static void _append_gen_trips(const std::vector<int> & gen_ids,
+                                          const LSGrid & grid_model,
+                                          bool ac_solver_used,
+                                          const SolverBusIdVect & id_me_to_solver,
+                                          std::vector<std::pair<int, cplx_type> > & sbus_dp);
             // shared by init_li_coeffs and init_li_coeffs_from_masks: the Ybus
             // coefficients (up to 4 per branch) that emulate disconnecting exactly
-            // `branch_ids` (gridmodel numbering, lines then trafos).
+            // `branch_ids` (gridmodel numbering, lines then trafos), and -- in DC -- the
+            // phase-shift injections that go with them (see li_sbus_dp), into
+            // `dc_shift_dp` (overwritten).
             static std::vector<Coeff> _coeffs_for_branch_ids(const std::vector<int> & branch_ids,
                                                               const LSGrid & grid_model,
                                                               bool ac_solver_used,
                                                               const SolverBusIdVect & id_me_to_solver,
-                                                              size_t n_line);
+                                                              size_t n_line,
+                                                              std::vector<std::pair<int, cplx_type> > & dc_shift_dp);
+            // the coefficients (and DC injections, appended to `dc_shift_dp`) that open
+            // `branch_ids` at side `open_side` (1 or 2) only, appended to `coeffs`. AC: the
+            // branch's block goes, and the Kron-reduced end it keeps comes back (what
+            // BranchContainer stamps for a branch open at one end). DC: one open end is
+            // the whole branch out, as fillBdc has it. A branch already open at that end
+            // in the grid changes nothing; one open at its other end goes entirely.
+            static void _append_one_side_trips(const std::set<int> & branch_ids,
+                                               int open_side,
+                                               const LSGrid & grid_model,
+                                               bool ac_solver_used,
+                                               const SolverBusIdVect & id_me_to_solver,
+                                               size_t n_line,
+                                               std::vector<Coeff> & coeffs,
+                                               std::vector<std::pair<int, cplx_type> > & dc_shift_dp);
     };
 };
 

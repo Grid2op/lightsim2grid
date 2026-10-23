@@ -247,7 +247,7 @@ TEST_CASE("a controller frozen at its limit stays frozen while its group holds t
     const CplxVect mismatch = grid.get_algo().get_bus_mismatch();
     const RealVect ctrl_q = grid.get_controller_q_solver();
     CplxVect Sbus = CplxVect::Zero(V.size());
-    ls2g::OuterState state;
+    ls2g::OuterInjections state;
     state.Sbus = &Sbus;
     state.Sbus_init = &Sbus;
     state.Sbus_target = &Sbus;
@@ -257,7 +257,9 @@ TEST_CASE("a controller frozen at its limit stays frozen while its group holds t
     ctx.Vm = &Vm;
     ctx.bus_mismatch = &mismatch;
     ctx.controller_q = &ctrl_q;
-    ctx.state = &state;
+    ctx.injections = &state;
+    ls2g::OuterControls controls;
+    ctx.controls = &controls;
 
     const ls2g::VoltageControlSolverData & ctrl = grid.get_ac_voltage_control_plan().controllers();
     REQUIRE(ctrl.n_groups() == 1);
@@ -267,23 +269,26 @@ TEST_CASE("a controller frozen at its limit stays frozen while its group holds t
     const real_type v_set = ctrl.v_set(0);
 
     ReactiveLimitsLoop loop;
+    loop.declare(ctx);
+    REQUIRE(controls.controller_hold(c1) != nullptr);
+    REQUIRE(controls.controller_hold(c3) != nullptr);
     REQUIRE(loop.is_needed(ctx));
     loop.initialize(ctx);
     CHECK(loop.check(ctx) == OuterLoopStatus::UNSTABLE);  // gen 1 frozen at its max
-    REQUIRE(std::isfinite(state.controller_hold_q[static_cast<std::size_t>(c1)]));
+    REQUIRE(controls.is_held(c1));
 
     // gen 3 holds bus 2 at its set-point: a magnitude an ulp above it is that set-point,
     // not a voltage gen 1's limit was keeping down
     Vm(reg) = std::nextafter(v_set, static_cast<real_type>(2.));
     CHECK(loop.check(ctx) == OuterLoopStatus::STABLE);
-    CHECK(std::isfinite(state.controller_hold_q[static_cast<std::size_t>(c1)]));
+    CHECK(controls.is_held(c1));
 
     // nobody holds it any more: the magnitude is the Newton's (Vm, not |V|), and above the
     // set-point it releases gen 1
-    state.controller_hold_q[static_cast<std::size_t>(c3)] = 0.;
+    controls.controller_hold(c3)->hold(0.);
     V(reg) = std::polar(v_set - static_cast<real_type>(1e-3), std::arg(V(reg)));
     CHECK(loop.check(ctx) == OuterLoopStatus::UNSTABLE);
-    CHECK(std::isnan(state.controller_hold_q[static_cast<std::size_t>(c1)]));
+    CHECK(!controls.is_held(c1));
 }
 
 namespace {

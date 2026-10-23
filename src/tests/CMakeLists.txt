@@ -83,6 +83,7 @@ add_executable(lightsim2grid_unit_tests
     test_continuation_sweep.cpp
     test_scenario_sweep_violations.cpp
     test_scenario_sweep_topology.cpp
+    test_contingency_injections.cpp
     test_light_env_copy_move.cpp
     test_batch_physical_violations.cpp
     test_gen_v_gradient.cpp
@@ -90,6 +91,7 @@ add_executable(lightsim2grid_unit_tests
     test_distributed_slack_loop.cpp
     test_hvdc_ac_emulation_limits_loop.cpp
     test_klu_rgrowth.cpp
+    test_klu_static_pivot.cpp
     test_voltage_monitoring_loop.cpp
     test_reactive_limits_loop.cpp
     test_tap_changers.cpp
@@ -103,6 +105,7 @@ add_executable(lightsim2grid_unit_tests
     test_batch_adjoint.cpp
     test_base_case_reuse.cpp
     test_slack_redistribution.cpp
+    test_outer_row_view.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

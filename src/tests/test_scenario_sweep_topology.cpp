@@ -13,6 +13,7 @@
 
 #include <complex>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -344,11 +345,10 @@ TEST_CASE("elements moved between busbars: a bus created or merged, at constant 
         actions[4].add_element(ElementType::load, 0, 2);          // a split and a disconnection together
         actions[4].add_element(ElementType::line_ex, 3, 2);       // (line 1 off would island 2-3: the
         actions[4].add_element(ElementType::gen, 1, -1);          // generator goes instead)
-        actions[5].add_element(ElementType::load, 0, 2);          // a load alone: an island of one, masked
+        actions[5].add_element(ElementType::load, 0, 2);          // a load alone: an island of one
         ScenarioSweep sweep(grid);
         sweep.set_topo_actions(actions);
         sweep.compute(flat_start(grid), 30, 1e-10);
-        REQUIRE(sweep.get_status() == 1);
         for(int row = 0; row < 5; ++row) require_row_matches(sweep, row, grid, actions[static_cast<size_t>(row)]);
         REQUIRE(sweep.get_linear_solver_stats().nb_analyze == 1);
         const auto & Vs = sweep.get_voltages();
@@ -356,12 +356,9 @@ TEST_CASE("elements moved between busbars: a bus created or merged, at constant 
         REQUIRE(std::abs(Vs(1, bus_2b)) == 0.);
         REQUIRE(std::abs(Vs(3, bus_2b)) == Approx(1.02).margin(1e-8));
         REQUIRE(std::abs(Vs(3, 2)) != Approx(1.02).margin(1e-4));
-        // the island of one: masked, the row solved without the load
-        REQUIRE(sweep.converged_mask()[5]);
-        REQUIRE(std::abs(Vs(5, bus_2b)) == 0.);
-        TopoAction load_off;
-        load_off.add_element(ElementType::load, 0, -1);
-        require_row_matches(sweep, 5, grid, load_off);
+        // the island of one strands the load: not simulated, as a contingency stranding
+        // a bus ...
+        REQUIRE_FALSE(sweep.converged_mask()[5]);
         // the flows of a moved line are read with the row's buses: the reference agrees
         {
             LSGrid ref(grid);
@@ -376,6 +373,15 @@ TEST_CASE("elements moved between busbars: a bus created or merged, at constant 
                 REQUIRE(amps(0, l) == Approx(std::get<3>(res)(l)).margin(1e-8));
             }
         }
+        // ... and solved without the load, its bus masked, in the disconnected-grid mode
+        sweep.set_handle_disconnected_grid(true);
+        sweep.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(sweep.get_status() == 1);
+        REQUIRE(sweep.converged_mask()[5]);
+        REQUIRE(std::abs(sweep.get_voltages()(5, bus_2b)) == 0.);
+        TopoAction load_off;
+        load_off.add_element(ElementType::load, 0, -1);
+        require_row_matches(sweep, 5, grid, load_off);
     }
     SECTION("a branch disconnected in the base grid, reconnected: where it was, or on a new busbar") {
         LSGrid off = make_grid();
@@ -512,5 +518,64 @@ TEST_CASE("the reactive-capability check follows a generator the row moves or re
         bool at_bus_2 = false;
         for(const LimitViolation & v : sweep.get_physical_violations()[0]) if(v.element_id == 2) at_bus_2 = true;
         REQUIRE(at_bus_2);
+    }
+}
+
+namespace {
+
+// buses 0-1-2 in a row, a 60 MW load on bus 2. Gen 0 (bus 0) is the slack; gens 1 (bus 2, a
+// reactive range of 100 MVAr) and 2 (bus 1, a range of 300 MVAr) hold their own bus' voltage.
+LSGrid make_q_share_grid()
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(3, 1, RealVect::Constant(3, 138.), 0, 0);
+    Eigen::VectorXi from_id(2), to_id(2);
+    from_id << 0, 1;
+    to_id << 1, 2;
+    grid.init_powerlines(RealVect::Constant(2, 0.01), RealVect::Constant(2, 0.1), CplxVect::Zero(2), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 60.;
+    load_q << 10.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 2;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p(3), gen_v(3), min_q(3), max_q(3);
+    gen_p << 20., 20., 20.;
+    gen_v << 1.02, 1.01, 1.01;
+    min_q << -500., -50., -150.;
+    max_q << 500., 50., 150.;
+    Eigen::VectorXi gen_bus(3);
+    gen_bus << 0, 2, 1;
+    grid.init_generators(gen_p, gen_v, min_q, max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("a generator a row moves onto a regulated bus shares its reactive power by range",
+          "[batch][scenario_sweep][topo]")
+{
+    // OpenLoadFlow's dispatch reads each unit's reactive limits: the moved generator has to
+    // carry its own, as the others do (with no reactive key, both dispatches split by range)
+    for (const bool olf_dispatch : {false, true}) {
+        CAPTURE(olf_dispatch);
+        LSGrid grid = make_q_share_grid();
+        grid.set_reactive_dispatch_olf(olf_dispatch);
+        REQUIRE(grid.ac_pf(CplxVect::Constant(3, cplx_type(1., 0.)), 20, 1e-10).size() == 3);
+        const ls2g::SolverBusIdVect & to_solver = grid.id_me_to_ac_solver();
+        REQUIRE(to_solver.size() == 3);
+        RealVect active = RealVect::Zero(3);
+        RealVect reactive = RealVect::Zero(3);
+        reactive(to_solver[2].cast_int()) = 40.;  // what the units of bus 2 produce, MVAr
+        RealVect p_mw, q_mvar;
+        // the row moves gen 2 from bus 1 to bus 2
+        grid.generator_results(true, grid.get_gen_target_p(), {}, {}, {}, to_solver, active, reactive,
+                               RealVect(), ls2g::IntVect(), ls2g::IntVect(), p_mw, q_mvar,
+                               {std::make_pair(2, 2)});
+        CHECK(q_mvar(1) == Approx(10.));
+        CHECK(q_mvar(2) == Approx(30.));
     }
 }

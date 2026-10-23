@@ -9,15 +9,11 @@
 #include "OuterLoopDriver.hpp"
 
 #include <cmath>
+#include <stdexcept>
 
 #include "LSGrid.hpp"
 
 namespace ls2g {
-
-// out-of-class definitions: the C++14 build odr-uses these (vector::assign takes a const reference),
-// and a static constexpr member is only implicitly inline from C++17 on
-constexpr int OuterState::HVDC_KEEP;
-constexpr int OuterState::TAP_KEEP;
 
 void OuterContext::record_bus(const char * action, bool taken, int solver_bus, LimitViolationType reason,
                               real_type value, real_type limit) const
@@ -27,6 +23,22 @@ void OuterContext::record_bus(const char * action, bool taken, int solver_bus, L
     const int me = solver_bus >= 0 && solver_bus < static_cast<int>(solver_to_me.size())
                    ? solver_to_me[solver_bus].cast_int() : -1;
     record(action, taken, ViolationElementType::BUS, me, reason, value, limit);
+}
+
+const OuterLoopDriverParams & OuterContext::driver_params() const
+{
+    return driver != nullptr ? *driver : grid->get_outer_loop_driver_params();
+}
+
+void check_driver_params(const OuterLoopDriverParams & params)
+{
+    if(params.max_outer_iterations < 0){
+        throw std::runtime_error("OuterLoopDriverParams: max_outer_iterations must be >= 0.");
+    }
+    if(!(params.min_realistic_voltage < params.max_realistic_voltage)){
+        throw std::runtime_error("OuterLoopDriverParams: min_realistic_voltage must be lower than "
+                                 "max_realistic_voltage.");
+    }
 }
 
 bool is_state_unrealistic(const LSGrid & grid,

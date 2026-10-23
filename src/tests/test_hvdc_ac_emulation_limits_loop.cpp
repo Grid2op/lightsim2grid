@@ -29,7 +29,7 @@ using ls2g::HvdcAcEmulationLimitsLoop;
 using ls2g::LSGrid;
 using ls2g::OuterContext;
 using ls2g::OuterLoopStatus;
-using ls2g::OuterState;
+using ls2g::OuterInjections;
 using ls2g::RealVect;
 using ls2g::real_type;
 
@@ -99,7 +99,8 @@ struct Driver
     LSGrid grid;
     HvdcAcEmulationLimitsLoop loop;
     CplxVect Sbus;
-    OuterState state;
+    OuterInjections state;
+    ls2g::OuterControls controls;
     RealVect Va;
     int b1, b2;
 
@@ -114,6 +115,7 @@ struct Driver
         state.Sbus_init = &Sbus;
         Va = RealVect::Zero(4);
         OuterContext ctx = context();
+        loop.declare(ctx);  // reserves the line's regime
         REQUIRE(loop.is_needed(ctx));
         loop.initialize(ctx);
     }
@@ -123,9 +125,13 @@ struct Driver
         OuterContext ctx;
         ctx.grid = &grid;
         ctx.Va = &Va;
-        ctx.state = &state;
+        ctx.injections = &state;
+        ctx.controls = &controls;
         return ctx;
     }
+
+    // the regime the loop set for the line
+    int regime() const { return controls.hvdc_regime(0)->regime(); }
 
     // the loop's check with a droop flow of `p_mw` (side 1 -> side 2)
     OuterLoopStatus check(real_type p_mw)
@@ -143,22 +149,21 @@ TEST_CASE("the regime follows OpenLoadFlow's rules", "[outer][hvdc]")
 {
     Driver d(/*pmax12=*/50., /*pmax21=*/40.);
     CHECK(d.check(45.) == OuterLoopStatus::STABLE);  // inside: nothing to do
-    CHECK(d.state.hvdc_status.empty());
+    CHECK(d.regime() == ls2g::HvdcRegimeControl::KEEP);
 
     CHECK(d.check(70.) == OuterLoopStatus::UNSTABLE);  // above pmax12: saturated 1 -> 2
-    REQUIRE(d.state.hvdc_status.size() == 1);
-    CHECK(d.state.hvdc_status[0] == 1);
+    CHECK(d.regime() == 1);
     CHECK(d.check(70.) == OuterLoopStatus::STABLE);    // still beyond it: kept
 
     CHECK(d.check(45.) == OuterLoopStatus::UNSTABLE);  // back strictly inside: released
-    CHECK(d.state.hvdc_status[0] == 0);
+    CHECK(d.regime() == 0);
 
     CHECK(d.check(70.) == OuterLoopStatus::UNSTABLE);
     CHECK(d.check(-60.) == OuterLoopStatus::UNSTABLE);  // reversed beyond pmax21
-    CHECK(d.state.hvdc_status[0] == -1);
+    CHECK(d.regime() == -1);
     CHECK(d.check(-60.) == OuterLoopStatus::STABLE);
     CHECK(d.check(-30.) == OuterLoopStatus::UNSTABLE);  // back inside the reverse limit
-    CHECK(d.state.hvdc_status[0] == 0);
+    CHECK(d.regime() == 0);
 
     // the grid's own regime is never written
     CHECK(d.grid.get_status_droop_hvdc(0) == 0);
@@ -213,4 +218,27 @@ TEST_CASE("not needed without a line in AC emulation", "[outer][hvdc]")
     REQUIRE(frozen.ac_pf(flat_start(frozen), 30, 1e-10).size() == 4);
     ctx.grid = &frozen;
     CHECK_FALSE(loop.is_needed(ctx));
+}
+
+TEST_CASE("a line put back in AC emulation between two solves can still saturate", "[outer][hvdc]")
+{
+    // the caller holds the line at its limit: not in AC emulation when the solver input is
+    // built ...
+    LSGrid grid = make_grid(/*pmax12=*/5., /*pmax21=*/500.);
+    grid.set_status_droop_hvdc(0, 1);
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<HvdcAcEmulationLimitsLoop>());
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 4);
+    CHECK(grid.get_algo().get_outer_loop_stats().loop_iterations.empty());
+
+    // ... then releases it, a change of values only: the loop saturates it all the same
+    grid.set_status_droop_hvdc(0, 0);
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 4);
+    const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    REQUIRE(stats.loop_iterations.size() == 1);
+    CHECK(stats.loop_iterations[0].second == 1);
+    CHECK(std::get<0>(grid.get_dclines().get_res_side_1())(0) == Approx(-5.));
+    CHECK(std::get<0>(grid.get_dclines().get_res_side_2())(0) == Approx(5.));
 }

@@ -21,12 +21,16 @@
 #include "TaggedIdVec.hpp"
 #include "AlgoConfig.hpp"
 #include "batch_algorithm/LimitViolation.hpp"
+#include "batch_algorithm/BusQPlan.hpp"
+#include "OuterControls.hpp"
+#include "OuterRowView.hpp"
 
 #include "Eigen/Core"
 
 namespace ls2g {
 
 class LSGrid;
+struct OuterLoopDriverParams;
 
 /**
  * What an outer loop's check() concluded, as OpenLoadFlow's OuterLoopStatus:
@@ -38,84 +42,16 @@ class LSGrid;
 enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
 
 /**
- * Collects what the outer loops reserve in the Newton-Raphson's Jacobian, before its
- * sparsity is built. A loop asks for every slot ANY of its states may need -- that union
- * is what lets the whole solve run on one symbolic analysis; afterwards a loop only
- * rewrites values. Solver bus ids throughout.
- */
-class LS2G_API OuterDeclaration final
-{
-    public:
-        /// a bus that is PV in the labelling but may become PQ (or back) during the solve:
-        /// it gets a Vm unknown and a Q equation, see Base::set_switchable_vm_buses
-        void add_switchable_vm_bus(int solver_bus_id) { switchable_vm_buses_.push_back(solver_bus_id); }
-        /// any voltage controller may be held at a reactive output by value
-        /// (OuterState::controller_hold_q): see VoltageControl::set_may_hold_controllers
-        void hold_voltage_controllers() { hold_voltage_controllers_ = true; }
-        bool holds_voltage_controllers() const { return hold_voltage_controllers_; }
-        /// a transformer (grid id) whose phase tap may move during the solve and, with
-        /// `solves_shift`, whose shift the Newton solves for: see BranchControl
-        void add_phase_shifter(int trafo_id, bool solves_shift) {
-            phase_shifters_.push_back(trafo_id);
-            phase_shifter_column_.push_back(solves_shift ? 1 : 0);
-        }
-
-        const std::vector<int> & switchable_vm_buses() const { return switchable_vm_buses_; }
-        const std::vector<int> & phase_shifters() const { return phase_shifters_; }
-        const std::vector<char> & phase_shifter_column() const { return phase_shifter_column_; }
-        /// transformers (grid ids, in order) regulating the voltage of `bus_solver` at
-        /// `target_vm` pu: with `solved`, the Newton solves for their ratios (BranchControl),
-        /// otherwise only their taps may move
-        void add_ratio_group(int bus_solver, real_type target_vm, const std::vector<int> & trafo_ids, bool solved) {
-            ratio_groups_.push_back(RatioGroup{bus_solver, target_vm, trafo_ids, solved});
-        }
-        struct RatioGroup {
-            int bus_solver;
-            real_type target_vm;
-            std::vector<int> trafos;
-            bool solved;
-        };
-        const std::vector<RatioGroup> & ratio_groups() const { return ratio_groups_; }
-        /// shunts regulating the voltage of `bus_solver` at `target_vm` pu, from the controller
-        /// buses `controller_buses` (solver ids), each with its regulating shunts (grid ids):
-        /// with `solved`, the Newton solves for their susceptances (ShuntControl), otherwise
-        /// only their sections may move
-        void add_shunt_group(int bus_solver, real_type target_vm, const std::vector<int> & controller_buses,
-                             const std::vector<std::vector<int> > & shunts, bool solved) {
-            shunt_groups_.push_back(ShuntGroup{bus_solver, target_vm, controller_buses, shunts, solved});
-        }
-        struct ShuntGroup {
-            int bus_solver;
-            real_type target_vm;
-            std::vector<int> controller_buses;
-            std::vector<std::vector<int> > shunts;
-            bool solved;
-        };
-        const std::vector<ShuntGroup> & shunt_groups() const { return shunt_groups_; }
-        void clear() {
-            switchable_vm_buses_.clear(); phase_shifters_.clear(); phase_shifter_column_.clear(); ratio_groups_.clear();
-            shunt_groups_.clear();
-        }
-
-    private:
-        std::vector<int> switchable_vm_buses_;
-        bool hold_voltage_controllers_ = false;
-        std::vector<int> phase_shifters_;
-        std::vector<char> phase_shifter_column_;
-        std::vector<RatioGroup> ratio_groups_;
-        std::vector<ShuntGroup> shunt_groups_;
-};
-
-/**
- * What the outer-loop algorithm lets a loop edit between two Newton solves, all of it
- * private to the algorithm (the grid is never modified). Absent in detection mode.
+ * The injections the outer loops edit between two solves, all of it private to the algorithm
+ * (the grid is never modified), whatever the inner algorithm. What a loop switches in the solve
+ * itself goes through its controls (OuterControls). Absent in detection mode.
  *
  * `Sbus` is the injection the next Newton solve reads (solver numbering, pu, generation
  * positive); `Sbus_init` the one the grid handed in, untouched by any loop; `Sbus_target`
  * that one with the units' targets a loop moved (DistributedSlack's target P, and the target
  * Q that follows it, see LSGrid::set_gen_raw_target_q): a unit's own output, not a residual.
  */
-struct OuterState
+struct LS2G_API OuterInjections
 {
     CplxVect * Sbus = nullptr;
     const CplxVect * Sbus_init = nullptr;
@@ -125,44 +61,24 @@ struct OuterState
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
-    /// the droop regime (0 linear, +1 saturated 1 -> 2, -1 saturated 2 -> 1) a loop set for
-    /// each hvdc line (grid id), HVDC_KEEP where it kept the grid's; empty until a loop sizes it
-    std::vector<int> hvdc_status;
-    /// the set-point (pu) a loop switched each idle standby SVC on at (grid id), NaN where it
-    /// is still held at Q = 0; empty until a loop sizes it
-    std::vector<real_type> svc_target_vm;
-    /// the buses a loop declared switchable (OuterDeclaration::add_switchable_vm_bus) it
-    /// made PQ, solver ids: every other declared one stays PV (its Q row pinned)
-    std::set<int> pq_buses;
-    /// magnitudes (solver bus id, pu) to set before the next Newton solve, then forgotten
-    std::vector<std::pair<int, real_type> > vm_set;
-    /// the reactive output (pu) a loop holds each voltage controller at, in the plan's
-    /// controller order, NaN where it regulates; empty until a loop sizes it
-    std::vector<real_type> controller_hold_q;
-    /// the position a loop moved each transformer's phase tap to (grid id), TAP_KEEP where it
-    /// kept the solve's; empty until a loop sizes it
-    std::vector<int> phase_tap;
-    /// whether the Newton solves each declared transformer's shift for its active power
-    /// (grid id): 1 on, 0 off, -1 kept as it is; empty until a loop sizes it
-    std::vector<int> phase_control;
-    /// the same for the ratio tap changers (moved, TAP_KEEP) and their voltage control
-    /// (1 on, 0 off, -1 kept); the moves are applied by the next solve, then forgotten
-    std::vector<int> ratio_tap;
-    std::vector<int> ratio_control;
-    /// controller buses (solver ids) whose generators' voltage control a loop suspended for a
-    /// while (TransformerVoltageControl): the other loops leave them alone meanwhile
-    std::set<int> suspended_buses;
-    /// the shunt controllers (by controller bus, solver id): their voltage control (1 on, 0 off,
-    /// -1 kept; empty until a loop sizes it), and the section counts a loop switched their shunts
-    /// to (applied by the next solve, then forgotten)
-    std::vector<int> shunt_control;
-    std::vector<std::pair<int, std::vector<int> > > shunt_sections;
-    static constexpr int HVDC_KEEP = 2;
-    static constexpr int TAP_KEEP = std::numeric_limits<int>::min();
+
+    /// the unit's active target in force, MW: the one a loop set, the row's or the grid's
+    /// otherwise (storage units in the load convention)
+    real_type gen_target_p_in_force(const OuterGridView & view, int gen_id) const;
+    real_type storage_target_p_in_force(const OuterGridView & view, int storage_id) const;
+
+    /// move the unit's active target to `mw`, and its injection at solver bus `bus_solver`
+    /// with it -- for a generator that does not regulate, its reactive target too, which
+    /// follows its limits at the new P (forceTargetQInReactiveLimits, see
+    /// LSGrid::gen_target_q_at_outer_target). Returns how much its injection moved, MW
+    /// (generator convention for both).
+    real_type move_gen_target_p(const OuterGridView & view, int gen_id, int bus_solver, real_type mw);
+    real_type move_storage_target_p(const OuterGridView & view, int storage_id, int bus_solver, real_type mw);
+
+    private:
+        void _add_injection(int bus_solver, const cplx_type & ds);
 };
 
-class BranchControl;
-class ShuntControl;
 
 /**
  * One decision of an outer loop in a check: what it acted on, or a test it ran and did not act
@@ -174,7 +90,9 @@ class ShuntControl;
  * (see LimitViolation), except where an action says otherwise. The actions:
  *
  * - DistributedSlack: DISTRIBUTE (every check: the slack mismatch, MW, against the threshold),
- *   UNITS_MOVED (how much the units moved, MW, against what counts as a move), FAIL_RESIDUE.
+ *   UNITS_MOVED (how much the units moved, MW, against what counts as a move), FAIL_RESIDUE;
+ *   SHARE_LOST_P (at initialize, outer iteration 0: the row's loss shared before the first
+ *   solve, MW, see OuterRowView::lost_p_mw).
  * - ReactiveLimits, on a controller bus: PV_TO_PQ (PV_TO_PQ_UNREALISTIC, the robust mode's),
  *   KEPT_PV_STRONGEST; PQ_TO_PV, KEPT_PQ_MAX_SWITCH, and, every check for every frozen bus,
  *   KEPT_PQ / KEPT_PQ_GROUP_HOLDS (the release test that did not trigger: the regulated voltage
@@ -200,6 +118,19 @@ struct LS2G_API OuterDecision
 };
 
 /**
+ * What several loops of one solve read alike, built on the first loop's use and shared
+ * from there (see OuterContext::solve_cache). Each depends on the solve's view only (the
+ * grid, the row): the driver empties it at the start of every solve.
+ */
+struct OuterSolveCache
+{
+    bool has_bus_q_plan = false;
+    bus_q_check::BusQPlan bus_q_plan;  ///< see bus_q_check::solve_bus_q_plan
+
+    void reset() { has_bus_q_plan = false; }
+};
+
+/**
  * Everything a loop sees, after a Newton solve. Built by the outer-loop algorithm between
  * two solves (with `state`), or by the grid after any AC solve for detection (`state` is
  * then null: a loop reports what it WOULD do, from the grid and the solve alone).
@@ -210,6 +141,10 @@ struct LS2G_API OuterDecision
 struct OuterContext
 {
     const LSGrid * grid = nullptr;
+    /// the outer-loop driver's parameters of the solve (null: the grid's,
+    /// LSGrid::get_outer_loop_driver_params, as in a detection); read through driver_params()
+    const OuterLoopDriverParams * driver = nullptr;
+    const OuterLoopDriverParams & driver_params() const;
     const CplxVect * V = nullptr;              ///< complex voltages, pu
     const RealVect * Va = nullptr;             ///< the angles, rad (a DC solve's are only here)
     /// the magnitudes, pu, as the Newton holds them (its own unknowns): read through vm(),
@@ -231,24 +166,33 @@ struct OuterContext
     /// whether the voltage magnitudes are the solve's: false after a DC solve, or in a
     /// batch whose algorithm cannot feed the reactive checks
     bool vm_checks = true;
-    /// the solver buses this solve left out (a batch row's stranded buses), sorted; may be null
-    const std::vector<int> * masked = nullptr;
-    /// the grid -> solver bus map of the solve (null: the grid's AC one); a DC solve, a
-    /// batch's own labelling, have theirs
-    const SolverBusIdVect * id_me_to_solver = nullptr;
+    /// what the solved row changes compared with the grid -- a batch row's overrides, its
+    /// labelling, its stranded buses -- (null: the grid as it is, solved in its AC labelling).
+    /// Read the per-row element state through view(), never off `grid` directly.
+    const OuterRowView * row = nullptr;
+    /// initialize() only: start from the state the previous solve left this loop in (see
+    /// OuterLoopDriverParams::resume_outer_state) -- re-apply its switches to the new solve --
+    /// rather than from the grid's. V / Va / Vm are then the previous solve's.
+    bool resume = false;
     /// how many times THIS loop was unstable so far in the solve (OpenLoadFlow's
     /// `context.getIteration()`: 0 means it has not changed anything yet)
     int iteration = 0;
-    OuterState * state = nullptr;
-    /// the transformers whose phase the solve handles (their shift, tap, current), null
-    /// when there are none or in detection
-    const BranchControl * branch_control = nullptr;
-    /// the shunts whose susceptance the solve handles, null when there are none or in detection
-    const ShuntControl * shunt_control = nullptr;
+    /// the injections the loops edit (null in detection)
+    OuterInjections * injections = nullptr;
+    /// what the loops reserve and act through (null in detection)
+    OuterControls * controls = nullptr;
     /// where a check records its decisions (null: not recorded, eg in detection)
     std::vector<OuterDecision> * trace = nullptr;
+    /// what the loops of this solve share (null: each builds its own, eg in detection)
+    OuterSolveCache * solve_cache = nullptr;
+    /// detection only: the buses (solver ids) the transformer voltage controls of the loops
+    /// listed before regulate, what OuterControls::ratio_group_buses gives a solve (see
+    /// outer_detect; null: none)
+    const std::set<int> * detect_ratio_group_buses = nullptr;
 
-    bool is_detection() const { return state == nullptr; }
+    bool is_detection() const { return injections == nullptr; }
+    /// the grid as this solve sees it (see OuterGridView)
+    OuterGridView view() const { return OuterGridView(*grid, row); }
     /// the voltage magnitude of solver bus `bus`, pu: Vm's, |V| when there is none
     real_type vm(int bus) const { return Vm != nullptr ? (*Vm)(bus) : std::abs((*V)(bus)); }
 
@@ -323,9 +267,10 @@ class LS2G_API BaseOuterLoop
         /// the OpenLoadFlow name of the loop
         std::string name() const { return _name(); }
 
-        /// reserve, in the Jacobian, every slot any state of this loop may use. Called
-        /// when the solver input is (re)built, with the grid data known.
-        void declare(const OuterContext & ctx, OuterDeclaration & decl) const { _declare(ctx, decl); }
+        /// reserve, in ctx.controls, every control any state of this loop may use (and so
+        /// every slot of the solve it needs). Called when the solver input is (re)built, with
+        /// the grid data known; the controls live until the next call.
+        void declare(const OuterContext & ctx) const { _declare(ctx); }
 
         /// OpenLoadFlow's isNeeded: whether the loop has anything to do on this grid
         bool is_needed(const OuterContext & ctx) const { return _is_needed(ctx); }
@@ -353,13 +298,13 @@ class LS2G_API BaseOuterLoop
 
         std::unique_ptr<BaseOuterLoop> clone() const { return _clone(); }
 
-        /// the loop's parameters, flattened like an AlgoConfig (persistence, copies)
+        /// the loop's parameters, flattened like an AlgoConfig (what tells two loop lists
+        /// apart). A loop's parameters are set at construction and never change afterwards.
         AlgoConfig get_params() const { return _get_params(); }
-        void set_params(const AlgoConfig & params) { _set_params(params); }
 
     protected:
         virtual std::string _name() const = 0;
-        virtual void _declare(const OuterContext & /*ctx*/, OuterDeclaration & /*decl*/) const {}
+        virtual void _declare(const OuterContext & /*ctx*/) const {}
         virtual bool _is_needed(const OuterContext & /*ctx*/) const { return true; }
         virtual void _initialize(OuterContext & /*ctx*/) {}
         virtual void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const = 0;
@@ -369,7 +314,6 @@ class LS2G_API BaseOuterLoop
         virtual bool _holds_svc_monitors() const { return false; }
         virtual std::unique_ptr<BaseOuterLoop> _clone() const = 0;
         virtual AlgoConfig _get_params() const { return AlgoConfig(); }
-        virtual void _set_params(const AlgoConfig & /*params*/) {}
 };
 
 }  // namespace ls2g

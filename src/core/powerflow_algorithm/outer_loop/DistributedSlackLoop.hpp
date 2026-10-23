@@ -29,29 +29,59 @@ class LSGrid;
  * set_gen_p_limits, OpenLoadFlow's target range) and never pushed across 0 MW. The sharing
  * is OpenLoadFlow's: not incremental, every pass starts again from the units' initial
  * targets with the cumulative mismatch (slack_redistribution::distribute). The new targets
- * go into the algorithm's injection (OuterState::Sbus) and are published as the units' P.
+ * go into the algorithm's injection (OuterInjections::Sbus) and are published as the units' P.
  *
- * Trigger (detect): the mismatch above `slack_bus_p_max_mismatch_mw` (SLACK_MISMATCH).
+ * Trigger (detect): the mismatch above `Params::slack_bus_p_max_mismatch_mw` (SLACK_MISMATCH).
  *
- * Only on a grid with some unit flagged "can participate in the slack" (is_needed, and the
- * same rule in detection mode): a grid where no unit is flagged has no distributed slack set
- * up at all -- OpenLoadFlow with distributedSlack off, where the loop does not exist -- and
- * its single slack is kept on purpose.
+ * Only on a grid with some unit OFF the slack bus flagged "can participate in the slack"
+ * (is_needed, and the same rule in detection mode): a grid where no unit is flagged has no
+ * distributed slack set up at all -- OpenLoadFlow with distributedSlack off, where the loop
+ * does not exist -- and its single slack is kept on purpose. Units on the slack bus alone (a
+ * slack unit keeps its flag, see SlackParticipation::set_can_participate) are the same case:
+ * they would only take what that bus already absorbs, the same solution, so the loop neither
+ * runs nor fails on their limits -- such a unit past its active range is GenPCheck's LOW_P /
+ * HIGH_P.
+ * A batch row whose contingency loses active power (OuterRowView::lost_p_mw, a batch's
+ * `redistribute_slack`) has it shared on the participants before its first solve, the same
+ * way, and those targets are the initial ones the loop then starts from: OpenLoadFlow's
+ * security analysis (its Default ContingencyActivePowerLossDistribution) before its
+ * post-contingency load flow. Without it, the first solve puts the whole loss on the slack bus.
+ *
  * UNSTABLE when the targets moved, FAILED when some of the mismatch could not be shared
- * (every unit at a bound) and `fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its
+ * (every unit at a bound) and `Params::fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its
  * LEAVE_ON_SLACK_BUS: the slack bus keeps it).
  */
 class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
 {
     public:
-        /// OpenLoadFlow's slackBusPMaxMismatch, MW
-        real_type slack_bus_p_max_mismatch_mw = 1.;
-        /// OpenLoadFlow's slackDistributionFailureBehavior: FAIL (true) or LEAVE_ON_SLACK_BUS
-        bool fail_on_residue = true;
+        /// The loop's parameters, OpenLoadFlow's values by default; fixed at construction.
+        struct Params {
+            /// OpenLoadFlow's slackBusPMaxMismatch, MW
+            real_type slack_bus_p_max_mismatch_mw = 1.;
+            /// OpenLoadFlow's slackDistributionFailureBehavior: FAIL (true) or LEAVE_ON_SLACK_BUS
+            bool fail_on_residue = true;
+            /// OpenLoadFlow's P_RESIDUE_EPS (1e-5 pu of its 100 MVA base), MW: what is left to
+            /// share below it is nothing
+            real_type p_residue_eps_mw = 1e-3;
+            /// OpenLoadFlow's PreviousStateInfo.moved: the units moved when they moved by more
+            /// than this fraction of p_residue_eps_mw (its margin against rounding)
+            real_type moved_fraction = 0.9;
+        };
 
-        /// OpenLoadFlow's P_RESIDUE_EPS (1e-5 pu of its 100 MVA base), MW: what is left to
-        /// share below it is nothing
-        static constexpr real_type P_RESIDUE_EPS_MW = 1e-3;
+        DistributedSlackLoop();
+        explicit DistributedSlackLoop(const Params & params);
+        const Params & params() const { return params_; }
+
+        /// What a row's DistributedSlack shares before its first solve (MW, generator
+        /// convention), NaN when nothing is to be shared: the row's OuterRowView::lost_p_mw,
+        /// counted at the units' row or grid targets, moved to the targets in force OpenLoadFlow
+        /// counts the lost units at -- the ones `resumed_gen_p` / `resumed_sto_p` (a resumed
+        /// solve's moved targets, MW, NaN untouched, storage units in the load convention; empty:
+        /// none) give the generators and storage units the row disconnects or strands, unless
+        /// the row sets their target itself.
+        static real_type lost_p_to_share_mw(const OuterGridView & view,
+                                            const std::vector<real_type> & resumed_gen_p,
+                                            const std::vector<real_type> & resumed_sto_p);
 
     protected:
         std::string _name() const override { return "DistributedSlack"; }
@@ -63,7 +93,6 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
             return std::unique_ptr<BaseOuterLoop>(new DistributedSlackLoop(*this));
         }
         AlgoConfig _get_params() const override;
-        void _set_params(const AlgoConfig & params) override;
 
     private:
         /// the mismatch of the slack bus (MW, > 0: the units must inject more), NaN without
@@ -71,14 +100,20 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         real_type _mismatch_mw(const OuterContext & ctx) const;
         /// OpenLoadFlow's trigger: the mismatch (written in `mismatch_mw`) above the threshold
         bool _triggered(const OuterContext & ctx, real_type & mismatch_mw) const;
-        /// whether some unit of `grid` takes part in the slack
-        static bool _has_participant(const LSGrid & grid, const SolverBusIdVect & id_me_to_solver);
+        /// whether some unit of the grid `view` shows takes part in the slack, on another
+        /// solver bus than `skip_solver_bus` (-1: anywhere)
+        static bool _has_participant(const OuterGridView & view, int skip_solver_bus = -1);
+        /// the row's loss shared on the participants (see lost_p_to_share_mw), their targets
+        /// moved and taken as the initial ones; nothing without a loss to share
+        void _share_lost_p(OuterContext & ctx);
 
         // per solve (see _initialize): the participants, with their initial injection
         // (generator convention, MW), and where each one is now
         std::vector<slack_redistribution::Participant> units_;
         std::vector<int> unit_solver_bus_;
         std::vector<real_type> current_mw_;
+
+        const Params params_;
 };
 
 }  // namespace ls2g

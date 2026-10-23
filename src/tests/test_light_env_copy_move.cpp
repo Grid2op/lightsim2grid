@@ -119,6 +119,10 @@ void require_moved_from(LightEnv & env)
     REQUIRE_THROWS_AS(env.get_grid(), std::logic_error);
     REQUIRE_THROWS_AS(env.get_obs().get_load_p(), std::logic_error);
     REQUIRE_THROWS_AS(env.get_obs().get_gen_p(), std::logic_error);
+    // the actions and the initial grid went with the move as well
+    REQUIRE_THROWS_AS(env.nb_actions(), std::logic_error);
+    REQUIRE_THROWS_AS(env.get_actions(), std::logic_error);
+    REQUIRE_THROWS_AS(env.init_actions(std::vector<ls2g::TopoAction>()), std::logic_error);
 }
 
 }  // namespace

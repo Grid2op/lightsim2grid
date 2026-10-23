@@ -9,6 +9,7 @@
 #include "binding_declarations.hpp"
 #include "pickle_helpers.hpp"
 #include "binary_helpers.hpp"
+#include "sparse_helpers.hpp"
 #include "LSGrid.hpp"
 #include "help_fun_msg.hpp"
 
@@ -19,7 +20,7 @@ void bind_gridmodel(py::module_& m) {
         "What LSGrid.redistribute_active_power / consider_only_main_component(redistribute_slack=True) did: "
         "the imbalance shared (MW, > 0: the units inject more), how many units took part, how many reached "
         "a bound (and left the distributed slack), how many rounds it took, what could not be placed, and "
-        "whether EVERY unit saturated (in which case none left the slack).")
+        "whether every unit of the distributed slack saturated (in which case none left it).")
         .def_readonly("mismatch_mw", &slack_redistribution::Report::mismatch_mw)
         .def_readonly("nb_participants", &slack_redistribution::Report::nb_participants)
         .def_readonly("nb_saturated", &slack_redistribution::Report::nb_saturated)
@@ -119,6 +120,10 @@ void bind_gridmodel(py::module_& m) {
              "Back to OpenLoadFlow's default list of outer loops")
         .def("get_outer_loops", &LSGrid::get_outer_loops,
              "The outer loops an NROuter_* algorithm runs, in order")
+        .def("set_outer_loop_driver_params", &LSGrid::set_outer_loop_driver_params, py::arg("params"),
+             DocLSGrid::set_outer_loop_driver_params.c_str())
+        .def("get_outer_loop_driver_params", &LSGrid::get_outer_loop_driver_params,
+             "The parameters of the outer-loop driver, see set_outer_loop_driver_params")
         // deprecated method
         .def("change_solver", py::overload_cast<const AlgorithmType&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
         .def("change_solver", py::overload_cast<const std::string&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
@@ -131,6 +136,9 @@ void bind_gridmodel(py::module_& m) {
         .def("get_physical_violations", &LSGrid::get_physical_violations,
              py::arg("ac") = true, py::arg("tol_mva") = 1e-4, py::arg("tol_vm_pu") = 1e-4,
              DocLSGrid::get_physical_violations.c_str())
+        .def("cap_slack_at_active_limits", &LSGrid::cap_slack_at_active_limits,
+             py::arg("max_iter") = 10, py::arg("tol") = 1e-8, py::arg("tol_mw") = 1e-6,
+             py::arg("max_rounds") = 10, DocLSGrid::cap_slack_at_active_limits.c_str())
         .def("get_violations", &LSGrid::get_violations,
              py::arg("threshold") = 1., py::arg("ac") = true,
              py::arg("rel_tol") = DEFAULT_VIOLATION_REL_TOL, DocLSGrid::get_violations.c_str())
@@ -144,12 +152,15 @@ void bind_gridmodel(py::module_& m) {
              py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
         .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
              DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
-        .def("set_remote_voltage_control_vm_range", &LSGrid::set_remote_voltage_control_vm_range,
-             py::arg("min_vm_pu"), py::arg("max_vm_pu"), DocLSGrid::set_remote_voltage_control_vm_range.c_str())
-        .def("get_remote_voltage_control_min_vm_pu", &LSGrid::get_remote_voltage_control_min_vm_pu,
-             DocLSGrid::get_remote_voltage_control_vm_range.c_str())
-        .def("get_remote_voltage_control_max_vm_pu", &LSGrid::get_remote_voltage_control_max_vm_pu,
-             DocLSGrid::get_remote_voltage_control_vm_range.c_str())
+        .def("get_group_controlled_buses",
+             [](const LSGrid & self){
+                 const std::set<int> buses = self.get_group_controlled_buses();
+                 return std::vector<int>(buses.begin(), buses.end());
+             },
+             "The buses (gridmodel ids, sorted) whose voltage a control group holds: a generator "
+             "regulating a remote bus, a voltage-mode SVC or an HVDC converter station regulates "
+             "them. A generator standing on one cannot be tripped by a batch contingency yet "
+             "(ContingencyAnalysisCPP.add_contingency_gen, ScenarioSweepCPP.set_contingency_gens).")
         .def("set_hold_frozen_regulators", &LSGrid::set_hold_frozen_regulators,
              py::arg("hold"), DocLSGrid::set_hold_frozen_regulators.c_str())
         .def("get_hold_frozen_regulators", &LSGrid::get_hold_frozen_regulators,
@@ -261,11 +272,14 @@ void bind_gridmodel(py::module_& m) {
              "max_p when the mismatch it distributes is positive, at min_p when negative), with "
              "the weight each would have as a participant, on the same scale as the slack "
              "weights (ignored where not flagged; `GenInfo.can_participate_slack` / "
-             "`can_participate_slack_weight`). Never read by the Newton solve, whose distributed "
-             "slack has no bounds: only the bounded redistribution pre-pass "
-             "(`consider_only_main_component(True)`, the batch algorithms' `redistribute_slack`) "
-             "counts them, within their [min_p, max_p], so they only move away from the limit "
-             "they sit at. `init_from_pypowsybl(can_participate_slack=...)` fills it from what "
+             "`can_participate_slack_weight`). The slack participants carry the flag on their own "
+             "and keep it whatever `flags` says. While out of the slack, a flagged unit is not "
+             "read by the Newton solve, whose distributed slack has no bounds: only the bounded "
+             "redistribution pre-pass (`consider_only_main_component(True)`, the batch algorithms' "
+             "`redistribute_slack`) counts it, within its [min_p, max_p], so it only moves away "
+             "from the limit it sits at. It goes back into the slack, with this weight, when it "
+             "is reconnected or its set-point is moved off its limits (`change_p_gen`). "
+             "`init_from_pypowsybl(can_participate_slack=...)` fills it from what "
              "`bake_outer_loops(..., return_details=True)` capped.")
         .def("set_storage_can_participate_slack", &LSGrid::set_storage_can_participate_slack,
              py::arg("flags"), py::arg("weights"),
@@ -273,12 +287,13 @@ void bind_gridmodel(py::module_& m) {
         .def("set_gen_can_participate_slack_overshoot", &LSGrid::set_gen_can_participate_slack_overshoot,
              py::arg("overshoot_mw"),
              "For the generators flagged with `set_gen_can_participate_slack`: how far BEYOND the "
-             "limit it sits at each one was in the reference solve, in MW (>= 0, one value per "
-             "generator, 0 by default; `GenInfo.can_participate_slack_overshoot_mw`). OpenLoadFlow "
+             "limit it sits at each one was in the reference solve, in MW (> 0 above its upper "
+             "limit, < 0 below its lower one, one value per generator, 0 by default; "
+             "`GenInfo.can_participate_slack_overshoot_mw`). OpenLoadFlow "
              "shares the slack from the raw set-points, so a unit it capped at max_p had "
              "raw + lambda * weight above max_p by that much, and an imbalance of the other sign "
              "only moves it once the common shift of the distribution has used that up. Only the "
-             "bounded redistribution pre-pass reads it. `init_from_pypowsybl(can_participate_slack=...)` "
+             "bounded redistribution pre-pass reads it. `init_from_pypowsybl(can_participate_slack_overshoot=...)` "
              "fills it when given what `bake_outer_loops(..., return_details=True)` computed.")
         .def("set_storage_can_participate_slack_overshoot", &LSGrid::set_storage_can_participate_slack_overshoot,
              py::arg("overshoot_mw"),
@@ -341,24 +356,24 @@ void bind_gridmodel(py::module_& m) {
              "widest reactive range (`set_gen_reactive_range_max`) when every one is plausible, "
              "else equally; a unit pushed past a limit stays there and the excess is shared again, "
              "and nothing is shared below 1e-5 pu. Results only, off by default "
-             "(`init_from_pypowsybl(olf_rules=...)` turns it on); copied with the grid, not "
+             "(`init_from_pypowsybl(olf_rules=...)` turns it on); copied with the grid and "
              "serialized.")
         .def("get_reactive_dispatch_olf", &LSGrid::get_reactive_dispatch_olf)
         .def("set_gen_reactive_range_max", &LSGrid::set_gen_reactive_range_max, py::arg("range_mvar"),
              "The widest reactive range of each generator, MVar (over its whole capability curve), "
              "what `set_reactive_dispatch_olf` shares by; NaN for its range at its target P. Copied "
-             "with the grid, not serialized.")
+             "with the grid and serialized.")
         .def("get_gen_reactive_range_max", &LSGrid::get_gen_reactive_range_max)
         .def("set_station_reactive_range_max", &LSGrid::set_station_reactive_range_max,
              py::arg("range1_mvar"), py::arg("range2_mvar"),
              "The same as `set_gen_reactive_range_max` for the converter stations, one value per hvdc "
-             "line on each side (NaN for the range at its active power). Copied with the grid, not serialized.")
+             "line on each side (NaN for the range at its active power). Copied with the grid and serialized.")
         .def("get_station_reactive_range_max", &LSGrid::get_station_reactive_range_max, py::arg("side"))
         .def("set_gen_raw_target_q", &LSGrid::set_gen_raw_target_q, py::arg("q_mvar"),
              "OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target Q "
              "(MVar) before it was clamped into its limits at its target P (NaN: none). A non-regulating "
              "generator whose target P an outer loop moved injects it clamped into its limits at the new "
-             "P. Copied with the grid, not serialized.")
+             "P. Copied with the grid and serialized.")
         .def("get_gen_raw_target_q", &LSGrid::get_gen_raw_target_q)
         .def("set_gen_capability_curves", &LSGrid::set_gen_capability_curves,
              py::arg("gen_id"), py::arg("p_mw"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
@@ -366,7 +381,7 @@ void bind_gridmodel(py::module_& m) {
              "P in MW, min and max Q in MVar), read where a generator's limits must follow a target "
              "P an outer loop moved (the ReactiveLimits loop, the results), as OpenLoadFlow reads "
              "them: interpolated, extrapolated past the ends, crossed limits being their mean. "
-             "Copied with the grid, not serialized.")
+             "Copied with the grid and serialized.")
         .def("gen_limits_at", [](const LSGrid & self, int gen_id, real_type p_mw) -> py::tuple {
                  real_type lo, hi;
                  if(!self.gen_limits_at(gen_id, p_mw, lo, hi)) return py::make_tuple(py::none(), py::none());
@@ -557,6 +572,12 @@ void bind_gridmodel(py::module_& m) {
         .def("get_slack_ids", &LSGrid::get_slack_ids_numpy, DocLSGrid::get_slack_ids.c_str(), py::return_value_policy::reference)
         .def("get_slack_ids_dc", &LSGrid::get_slack_ids_dc_numpy, DocLSGrid::get_slack_ids_dc.c_str(), py::return_value_policy::reference)
         .def("get_slack_weights", &LSGrid::get_slack_weights, DocLSGrid::get_slack_weights.c_str(), py::return_value_policy::reference)
+        .def("get_gen_slack_shares", &LSGrid::get_gen_slack_shares,
+             "Each generator's share of the distributed slack: its weight over the total weight "
+             "of every connected participant (storage units included), so that "
+             "P = target_p + share * (slack absorbed). 0 for a generator that does not take part. "
+             "Read off the current weights, which change_p_gen does not update (see "
+             "update_slack_weights).")
         .def("get_pv_solver", &LSGrid::get_pv_solver_numpy, DocLSGrid::get_pv_solver.c_str(), py::return_value_policy::reference)
         .def("get_pq_solver", &LSGrid::get_pq_solver_numpy, DocLSGrid::get_pq_solver.c_str(), py::return_value_policy::reference)
         // per-family variants: the AC and the DC solver each keep their own split
@@ -587,12 +608,18 @@ void bind_gridmodel(py::module_& m) {
         .def("get_vm_cols_solver", &LSGrid::get_vm_cols_solver, py::return_value_policy::reference, DocLSGrid::get_vm_cols_solver.c_str())
         .def("get_hvdc_droop_data_solver", &LSGrid::get_hvdc_droop_data_solver, DocLSGrid::get_hvdc_droop_data_solver.c_str())
 
-        .def("get_Ybus", &LSGrid::get_Ybus, DocLSGrid::get_Ybus.c_str())
-        .def("get_dcYbus", &LSGrid::get_dcYbus, DocLSGrid::get_dcYbus.c_str())
+        // the grid-numbered matrices are built by the call: handed over, not copied
+        .def("get_Ybus", [](const LSGrid & self){ return sparse_to_scipy(self.get_Ybus()); }, DocLSGrid::get_Ybus.c_str())
+        .def("get_dcYbus", [](const LSGrid & self){ return sparse_to_scipy(self.get_dcYbus()); }, DocLSGrid::get_dcYbus.c_str())
         .def("get_Sbus", &LSGrid::get_Sbus, DocLSGrid::get_Sbus.c_str())
         .def("get_dcSbus", &LSGrid::get_dcSbus, DocLSGrid::get_dcSbus.c_str())
-        .def("get_Ybus_solver", &LSGrid::get_Ybus_solver, DocLSGrid::get_Ybus_solver.c_str(), py::return_value_policy::reference)
-        .def("get_dcYbus_solver", &LSGrid::get_dcYbus_solver, DocLSGrid::get_dcYbus_solver.c_str(), py::return_value_policy::reference)
+        // a read only view of the matrix the grid holds, valid until a powerflow rebuilds it
+        .def("get_Ybus_solver", [](const py::object & self){
+                return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_Ybus_solver(), self);
+            }, DocLSGrid::get_Ybus_solver.c_str())
+        .def("get_dcYbus_solver", [](const py::object & self){
+                return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_dcYbus_solver(), self);
+            }, DocLSGrid::get_dcYbus_solver.c_str())
         .def("get_Sbus_solver", &LSGrid::get_Sbus_solver, DocLSGrid::get_Sbus_solver.c_str(), py::return_value_policy::reference)
         .def("get_dcSbus_solver", &LSGrid::get_dcSbus_solver, DocLSGrid::get_dcSbus_solver.c_str(), py::return_value_policy::reference)
 
@@ -677,12 +704,13 @@ void bind_gridmodel(py::module_& m) {
         // array around the returned temporary's memory, which is freed as soon as
         // this call returns (dangling on the Python side). The default policy
         // (copy/move into a Python-owned array) is the only safe choice for a
-        // by-value return.
+        // by-value return. The sparse ones (Bf) are handed over to python instead,
+        // which is as safe and does not copy.
         .def("get_ptdf", &LSGrid::get_ptdf, DocLSGrid::get_ptdf.c_str())
         .def("get_ptdf_solver", &LSGrid::get_ptdf_solver, DocLSGrid::get_ptdf_solver.c_str())
         .def("get_lodf", &LSGrid::get_lodf, DocLSGrid::get_lodf.c_str())
-        .def("get_Bf", &LSGrid::get_Bf, DocLSGrid::get_Bf.c_str())
-        .def("get_Bf_solver", &LSGrid::get_Bf_solver, DocLSGrid::get_Bf_solver.c_str())
+        .def("get_Bf", [](LSGrid & self){ return sparse_to_scipy(self.get_Bf()); }, DocLSGrid::get_Bf.c_str())
+        .def("get_Bf_solver", [](LSGrid & self){ return sparse_to_scipy(self.get_Bf_solver()); }, DocLSGrid::get_Bf_solver.c_str())
 
         // apply action faster (optimized for grid2op representation)
         .def("update_gens_p", &LSGrid::update_gens_p, DocLSGrid::update_gens_p.c_str())

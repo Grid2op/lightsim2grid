@@ -399,6 +399,21 @@ class TestSvcStandbyB0Range(unittest.TestCase):
             if switched:
                 self.assertAlmostEqual(viols[0].limit, 15. + b0_mvar, places=3)
 
+    def test_b0_only_shifts_a_voltage_controller(self):
+        # OLF reads b0 in LfStaticVarCompensatorImpl.setupVoltageControl only: an SVC in
+        # REACTIVE_POWER mode, or not regulating, keeps its own [b_min, b_max]
+        for mode, regulating, shifted in [("VOLTAGE", True, True),
+                                          ("REACTIVE_POWER", True, False),
+                                          ("VOLTAGE", False, False)]:
+            n = self._net(-5.)
+            n.update_static_var_compensators(id="SVC", target_q=0.)
+            n.update_static_var_compensators(id="SVC", regulation_mode=mode, regulating=regulating)
+            grid = init_from_pypowsybl(n, sort_index=True)
+            svc = grid.get_svcs()[0]
+            # b in S at 400 kV -> pu: b_max (S) * V^2 / sn_mva is the range in MVAr / sn_mva
+            expected = (10. if shifted else 15.) / grid.get_sn_mva()
+            self.assertAlmostEqual(svc.b_max, expected, places=6, msg=f"{mode} regulating={regulating}")
+
     def test_bake_freezes_the_svc_at_its_shifted_limit(self):
         # OLF switched it at the shifted limit: the bake must see it there and freeze it
         n = self._net(-5.)

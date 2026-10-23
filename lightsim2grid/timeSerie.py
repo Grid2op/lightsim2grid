@@ -24,6 +24,7 @@ except ImportError as exc_:  # noqa: F841
     GRID2OP_INSTALLED = False
 
 from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid._batch_defaults import use_default_batch_algorithm
 from .lightsim2grid_cpp import TimeSeriesCPP
 
 # deprecated
@@ -111,15 +112,16 @@ class TimeSerie:
         self.__computed = False
         
         self.available_default_algorithms = self.computer.available_default_algorithms()
-        if AlgorithmType.NR_KLU in self.available_default_algorithms:
-            # use the faster KLU if available
-            self.computer.change_algorithm(AlgorithmType.NR_KLU)
+        # the faster KLU if available, the grid's own algorithm if it runs outer loops
+        use_default_batch_algorithm(self.computer, self.grid2op_env.backend._grid)
     
     @property
     def init_from_n_powerflow(self):
         """Whether to initialize the complex voltages of the first step of the batch with
         the results of a "n" powerflow (a powerflow at the current state of the grid)
-        instead of a flat start. Default: ``False``. Must be set before the computation
+        instead of a flat start. Default: ``False``. With an ``NROuter_*`` algorithm, the
+        first step's outer loops also start from where the "n" ones ended, as every later step
+        starts from the step before it. Must be set before the computation
         actually runs (eg before ``compute_V`` is called); it has no effect on a powerflow
         that has already been solved.
         """
@@ -156,7 +158,7 @@ class TimeSerie:
         (``ViolationCategory.PHYSICAL``). Default: ``False``. See
         :func:`get_physical_violations`.
 
-        Five checks, each a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
+        Each check is a condition a PowSyBl OpenLoadFlow outer loop acts on, and none
         enforced here (nothing is switched PV -> PQ or back, nothing is clamped, no machine
         leaves the slack distribution, no step is re-solved):
 
@@ -184,11 +186,22 @@ class TimeSerie:
           ``MonitoringVoltageOuterLoop``. ``value`` and ``limit`` in kV, compared with
           :attr:`physical_violation_tol_vm_pu`. A grid with no flagged SVC reports nothing
           here.
+        * the **own bus** of every generator regulating a remote bus
+          (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on the
+          ``GENERATOR``): does holding the remote target take it outside the realistic range
+          of the ``ReactiveLimits`` loop? OpenLoadFlow's
+          ``ReactiveLimits``, in its robust remote voltage control mode. ``value`` and
+          ``limit`` in kV, compared with :attr:`physical_violation_tol_vm_pu`.
         * the **active power** of every angle-droop ("AC emulation") hvdc line still in the
           linear regime (``HIGH_P`` on the ``HVDC``): did ``p0 + k.(theta1 - theta2)`` leave
           ``pmax_1to2_mw`` / ``pmax_2to1_mw``? ``status_droop`` is an *input* of the solve,
           so nothing saturates the droop on its own. OpenLoadFlow's
           ``HvdcAcEmulationLimits``.
+        * the **release** of every angle-droop hvdc line flagged as frozen at its active
+          power limit (``HVDC_AC_EMULATION_RELEASE`` on the ``HVDC``, see
+          :func:`lightsim2grid.network.LSGrid.set_hvdc_ac_emulation_frozen`): would its droop
+          ask for less than that limit? The other half of the same ``HvdcAcEmulationLimits``
+          loop. ``side`` the direction it is frozen in, ``value`` and ``limit`` in MW.
         * the **active power** of every generator and every storage unit carrying the
           **distributed slack** (``LOW_P`` / ``HIGH_P`` on the ``GENERATOR`` /
           ``STORAGE``): the slack is solved inside the
@@ -203,11 +216,11 @@ class TimeSerie:
           ``DistributedSlack``.
 
         The hvdc and active-power checks need only the bus angles and the slack the step
-        distributed, so they work in DC too; the reactive one and the release one need an AC
+        distributed, so they work in DC too; the reactive one and the voltage ones need an AC
         algorithm that publishes its per-bus mismatch (every built-in AC algorithm does) and
-        ``compute`` raises for one that does not. A DC batch reports the two active-power
-        checks alone -- a DC powerflow has no reactive power at all, and no voltage magnitude
-        for the release check, so nothing is hidden by that.
+        ``compute`` raises for one that does not. A DC batch reports the active-power checks
+        alone -- a DC powerflow has no reactive power at all, and no voltage magnitude for the
+        release, standby SVC and remote voltage control checks, so nothing is hidden by that.
 
         Changing this flag invalidates any previously-computed results, but not the
         injections already given to ``modify_*``.
@@ -230,7 +243,8 @@ class TimeSerie:
     def physical_violation_tol_mva(self):
         """Absolute slack on every comparison :attr:`compute_physical_violations` makes, so
         that an element resting exactly on its limit is not reported over solver noise: a
-        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q``).
+        violation needs ``value > limit + tol`` (or ``value < limit - tol`` for ``LOW_Q`` and
+        ``HVDC_AC_EMULATION_RELEASE``).
         Default: ``1e-4``. In MVA -- one noise floor for both halves, MW and MVAr being the
         same scale. Changing it invalidates any previously-computed results.
         """
@@ -256,7 +270,9 @@ class TimeSerie:
         (``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``), and the standby SVC check a
         flagged idle SVC (``LSGrid.set_svc_standby``) whose regulated bus is outside its
         automaton's thresholds by more than this (``LOW_VOLTAGE_SVC_STANDBY`` /
-        ``HIGH_VOLTAGE_SVC_STANDBY``). Default: ``1e-4``. Changing it invalidates any
+        ``HIGH_VOLTAGE_SVC_STANDBY``), and the remote voltage control check a remote
+        controller whose own bus is outside the realistic range by more than this
+        (``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``). Default: ``1e-4``. Changing it invalidates any
         previously-computed results.
         """
         return self.computer.physical_violation_tol_vm_pu
@@ -276,7 +292,7 @@ class TimeSerie:
         """Per step (same order as the ``modify_*`` inputs): the list of ``LimitViolation``
         of the physical limits that step's solution leaves. Every entry has ``category ==
         ViolationCategory.PHYSICAL`` (or ``ViolationCategory.CONTROL`` for a control the
-        solution does not apply: the flagged unit and the standby SVC) and one of five shapes:
+        solution does not apply: the flagged unit and the standby SVC) and one of these shapes:
 
         * ``element_type`` ``BUS``, ``violation_type`` ``LOW_Q`` / ``HIGH_Q``,
           ``element_id`` the grid bus id, ``value`` the reactive power the machines holding
@@ -288,9 +304,16 @@ class TimeSerie:
           ``HIGH_VOLTAGE_SVC_STANDBY``, ``element_id`` the svc id, ``value`` the voltage of
           the bus that flagged idle standby SVC regulates and ``limit`` the automaton's
           threshold, in kV;
+        * ``element_type`` ``GENERATOR``, ``violation_type`` ``LOW_VOLTAGE_REMOTE_CONTROL`` /
+          ``HIGH_VOLTAGE_REMOTE_CONTROL``, ``element_id`` the generator id, ``value`` the
+          voltage of that remote controller's own bus and ``limit`` the realistic bound, in kV;
         * ``element_type`` ``HVDC``, ``violation_type`` ``HIGH_P``, ``element_id`` the hvdc
           line id, ``side`` the direction (1 for 1 -> 2), ``value`` the active power leaving
           that side (MW, positive) and ``limit`` that direction's ``pmax``;
+        * ``element_type`` ``HVDC``, ``violation_type`` ``HVDC_AC_EMULATION_RELEASE``,
+          ``element_id`` the hvdc line id, ``side`` the direction it is frozen in, ``value``
+          the flow its droop asks for in that direction and ``limit`` the limit it is frozen
+          at, in MW;
         * ``element_type`` ``GENERATOR`` / ``STORAGE``, ``violation_type`` ``LOW_P`` /
           ``HIGH_P``, ``value`` the machine's converged active power (MW, generator
           convention) and ``limit`` its ``min_p_mw`` / ``max_p_mw``.
@@ -306,6 +329,16 @@ class TimeSerie:
         solved from (the grid's own state, no injection change). Empty if that solve did not
         converge. Requires :attr:`compute_physical_violations` to be ``True``."""
         return self.computer.get_physical_violations_n()
+
+    def get_outer_results(self):
+        """Per row of the last computation, what the outer loops did (a list of
+        ``OuterRowResult``: status, iteration counts, and the targets, hvdc regimes, taps and
+        sections the loops settled on where they differ from the grid). Only when the batch
+        runs outer loops -- the grid's algorithm is an ``NROuter_*`` one, kept by the batch --
+        empty otherwise. A row its loops leave ``UNSTABLE`` or ``FAILED`` did not converge; its
+        ``converged`` is the row's outcome, ``status`` being the loops' own (``STABLE`` too on a
+        row whose Newton diverged, or that was never solved)."""
+        return self.computer.get_outer_results()
 
     def get_injections(self, scenario_id=None, seed=None):
         """
@@ -450,7 +483,8 @@ class TimeSerie:
         Run the batch using whatever was set by :func:`modify_gen_p` / :func:`modify_sgen_p`
         / :func:`modify_load_p` / :func:`modify_load_q` (the new setter-based API -- an
         alternative to the single bundled :func:`compute_V_from_inj` call). ``max_iter`` /
-        ``tol`` default to the backend's own values when not given.
+        ``tol`` default to the backend's own values when not given. ``tol`` is in MVA (not
+        in per unit), as for :attr:`lightsim2grid.lightSimBackend.LightSimBackend.tol`.
         """
         if v_init is None:
             v_init_comp = self.grid2op_env.backend.V

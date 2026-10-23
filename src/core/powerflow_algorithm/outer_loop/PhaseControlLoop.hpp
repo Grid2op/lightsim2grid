@@ -33,8 +33,9 @@ class LSGrid;
  *    regulate (fixPhaseShifterNecessaryForConnectivity);
  *  - CURRENT_LIMITER (LIMITER): from the second check on, a current above the limit moves
  *    the tap one position, the way that lowers it (the sign of dI/da).
- * Every one of them is declared up front (BranchControl: a column and a row per controller,
- * the block of every one patched by value), so the whole solve is one symbolic analysis.
+ * Every one of them is reserved up front (a PhaseShifterControl; BranchControl: a column and a
+ * row per controller, the block of every one patched by value), so the whole solve is one
+ * symbolic analysis.
  *
  * One known difference with OpenLoadFlow's current limiter. Its one-tap move
  * (PiModelArray.shiftOneTapPositionToChangeA1) steps to the next position, then compares
@@ -52,7 +53,7 @@ class LS2G_API PhaseControlLoop final : public BaseOuterLoop
 {
     protected:
         std::string _name() const override { return "PhaseControl"; }
-        void _declare(const OuterContext & ctx, OuterDeclaration & decl) const override;
+        void _declare(const OuterContext & ctx) const override;
         bool _is_needed(const OuterContext & ctx) const override;
         void _initialize(OuterContext & ctx) override;
         void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const override;
@@ -68,8 +69,8 @@ class LS2G_API PhaseControlLoop final : public BaseOuterLoop
             int side;             // the regulated side
             bool regulates;       // false: an active power one needed for the connectivity
         };
-        /// the phase shifters of `grid`, see the class comment
-        static std::vector<Shifter> shifters(const LSGrid & grid);
+        /// the phase shifters of the grid `view` shows, see the class comment
+        static std::vector<Shifter> shifters(const OuterGridView & view);
 
     private:
         std::vector<Shifter> shifters_;  // per solve, see _initialize
