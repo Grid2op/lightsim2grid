@@ -18,11 +18,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "batch_algorithm/BaseBatchSweep.hpp"
 #include "powerflow_algorithm/outer_loop/PhaseControlLoop.hpp"
 
 using Catch::Approx;
 using ls2g::CplxVect;
 using ls2g::LSGrid;
+using ls2g::LimitViolation;
 using ls2g::LimitViolationType;
 using ls2g::OuterLoopStatus;
 using ls2g::PhaseControlLoop;
@@ -222,5 +224,84 @@ TEST_CASE("a phase regulation set between two solves is the one the next solve h
         REQUIRE(V.size() == 3);
         CHECK(grid.get_trafos()[0].res_phase_tap_position == pos_expected);
         CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
+}
+
+namespace {
+
+int nb_phase_reports(const std::vector<LimitViolation> & out)
+{
+    int nb = 0;
+    for (const LimitViolation & v : out) {
+        if (v.violation_type != LimitViolationType::PHASE_CONTROL_P &&
+            v.violation_type != LimitViolationType::PHASE_LIMITER_CURRENT) continue;
+        INFO("reported: " << v.value << " against " << v.limit);
+        ++nb;
+    }
+    return nb;
+}
+
+}  // namespace
+
+TEST_CASE("the report after a solve reads the flow at the tap the loop moved to", "[outer][phase_control]")
+{
+    LSGrid ref = make_grid(2001, 0.);
+    ref.change_algorithm("NRSing_SparseLU");
+    REQUIRE(ref.ac_pf(flat(ref), 30, 1e-12).size() == 3);
+    const real_type p0 = std::get<0>(ref.get_trafo_res1())(0);
+
+    // the loop meets its target to within a tap's worth: a solve that did that has nothing
+    // to report, at the tap it ends on (the grid's own tap is 5 MW away)
+    LSGrid grid = make_grid(2001, 0.);
+    grid.set_trafo_phase_tap_regulation(0, RegulationMode::ACTIVE_POWER, true, p0 + 5., 0., 1);
+    use_phase_control(grid);
+    REQUIRE(grid.ac_pf(flat(grid), 30, 1e-12).size() == 3);
+    REQUIRE(grid.get_trafos()[0].res_phase_tap_position != 1000);
+    REQUIRE(grid.get_trafos()[0].res_p1_mw == Approx(p0 + 5.).margin(0.05));
+
+    SECTION("the grid's report") {
+        CHECK(nb_phase_reports(grid.get_physical_violations(true, 0.1, 1e-4)) == 0);
+    }
+    SECTION("a batch row's, and its \"n\" report") {
+        ls2g::ContingencyAnalysis ca(grid);
+        ca.set_compute_physical_violations(true);
+        ca.set_physical_violation_tol_mva(0.1);
+        ca.add_nk(std::vector<int>());
+        ca.compute(flat(grid), 30, 1e-12);
+        REQUIRE(ca.converged_mask()[0]);
+        CHECK(nb_phase_reports(ca.get_physical_violations()[0]) == 0);
+        CHECK(nb_phase_reports(ca.get_physical_violations_n()) == 0);
+    }
+}
+
+TEST_CASE("after a DC solve, a phase shifter's flow is the DC one", "[outer][phase_control]")
+{
+    // the DC flow through the phase shifter at its tap
+    LSGrid ref = make_grid(21);
+    REQUIRE(ref.dc_pf(flat(ref), 1, 1e-12).size() == 3);
+    const real_type p_dc = std::get<0>(ref.get_trafo_res1())(0);
+
+    LSGrid grid = make_grid(21);
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<PhaseControlLoop>());
+    SECTION("at its target: nothing") {
+        grid.set_trafo_phase_tap_regulation(0, RegulationMode::ACTIVE_POWER, true, p_dc, 0., 1);
+        REQUIRE(grid.dc_pf(flat(grid), 1, 1e-12).size() == 3);
+        CHECK(nb_phase_reports(grid.get_physical_violations(false, 1e-3, 1e-4)) == 0);
+    }
+    SECTION("away from it: the DC flow") {
+        grid.set_trafo_phase_tap_regulation(0, RegulationMode::ACTIVE_POWER, true, p_dc + 5., 0., 1);
+        REQUIRE(grid.dc_pf(flat(grid), 1, 1e-12).size() == 3);
+        const std::vector<LimitViolation> out = grid.get_physical_violations(false, 1e-3, 1e-4);
+        REQUIRE(nb_phase_reports(out) == 1);
+        for (const LimitViolation & v : out) {
+            if (v.violation_type != LimitViolationType::PHASE_CONTROL_P) continue;
+            CHECK(v.value == Approx(p_dc).margin(1e-9));
+        }
+    }
+    SECTION("a current limiter: no current in DC") {
+        grid.set_trafo_phase_tap_regulation(0, RegulationMode::CURRENT_LIMITER, true, 1., 0., 1);
+        REQUIRE(grid.dc_pf(flat(grid), 1, 1e-12).size() == 3);
+        CHECK(nb_phase_reports(grid.get_physical_violations(false, 1e-3, 1e-4)) == 0);
     }
 }

@@ -183,6 +183,18 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
     return moved ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
 }
 
+void PhaseControlLoop::_detect_p(const OuterContext & ctx, const Shifter & s, real_type p_mw,
+                                 const std::string & name, std::vector<LimitViolation> & out) const
+{
+    const TapChangers & ptc = ctx.grid->get_trafos().get_tap_changers(true);
+    const real_type target = ptc.target(s.trafo);
+    const real_type threshold = std::max(ptc.deadband(s.trafo), ctx.tol_mw);
+    if (std::abs(p_mw - target) > threshold) {
+        out.push_back(LimitViolation{ViolationElementType::TRAFO, s.trafo, s.side,
+                                     LimitViolationType::PHASE_CONTROL_P, p_mw, target, name});
+    }
+}
+
 void PhaseControlLoop::_detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const
 {
     if (ctx.V == nullptr) return;
@@ -197,19 +209,27 @@ void PhaseControlLoop::_detect(const OuterContext & ctx, std::vector<LimitViolat
         int b1, b2;
         if (!view.trafo_closed(s.trafo, b1, b2) || b1 >= ctx.V->size() || b2 >= ctx.V->size()) continue;
         const TrafoInfo info = trafos[s.trafo];
+        if (!ctx.ac) {
+            // a DC solve: the flow is the DC model's (what dc_pf publishes), at its angles; a
+            // current limiter has nothing to act on there (OpenLoadFlow's DC loop controls
+            // the active power only)
+            if (s.mode != RegulationMode::ACTIVE_POWER || ctx.Va == nullptr ||
+                b1 >= ctx.Va->size() || b2 >= ctx.Va->size()) continue;
+            real_type p1, p2;
+            dc_branch_p_pu(trafos.ydc_11()(s.trafo), trafos.ydc_12()(s.trafo),
+                           trafos.ydc_21()(s.trafo), trafos.ydc_22()(s.trafo),
+                           trafos.dc_x_tau_shift()(s.trafo), (*ctx.Va)(b1), (*ctx.Va)(b2), p1, p2);
+            _detect_p(ctx, s, (s.side == 1 ? p1 : p2) * sn, info.name, out);
+            continue;
+        }
         const cplx_type V1 = (*ctx.V)(b1);
         const cplx_type V2 = (*ctx.V)(b2);
-        const cplx_type I = s.side == 1 ? info.yac_eff_11 * V1 + info.yac_eff_12 * V2
-                                        : info.yac_eff_21 * V1 + info.yac_eff_22 * V2;
+        // at the tap the solve's loops left it at
+        const std::array<cplx_type, 4> y = view.trafo_block(s.trafo);
+        const cplx_type I = s.side == 1 ? y[0] * V1 + y[1] * V2 : y[2] * V1 + y[3] * V2;
         const cplx_type V = s.side == 1 ? V1 : V2;
         if (s.mode == RegulationMode::ACTIVE_POWER) {
-            const real_type p_mw = std::real(V * std::conj(I)) * sn;
-            const real_type target = ptc.target(s.trafo);
-            const real_type threshold = std::max(ptc.deadband(s.trafo), ctx.tol_mw);
-            if (std::abs(p_mw - target) > threshold) {
-                out.push_back(LimitViolation{ViolationElementType::TRAFO, s.trafo, s.side,
-                                             LimitViolationType::PHASE_CONTROL_P, p_mw, target, info.name});
-            }
+            _detect_p(ctx, s, std::real(V * std::conj(I)) * sn, info.name, out);
         } else {
             const int bus = (s.side == 1 ? trafos.get_bus_side_1(s.trafo) : trafos.get_bus_side_2(s.trafo)).cast_int();
             const real_type i_a = to_amps(std::abs(I), sn, vn_kv(bus));

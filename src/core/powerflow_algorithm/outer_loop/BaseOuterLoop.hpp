@@ -166,6 +166,9 @@ struct OuterContext
     /// whether the voltage magnitudes are the solve's: false after a DC solve, or in a
     /// batch whose algorithm cannot feed the reactive checks
     bool vm_checks = true;
+    /// whether the solve is an AC one: false after a DC solve, whose state is its angles
+    /// (Va) and whose flows are the DC model's
+    bool ac = true;
     /// what the solved row changes compared with the grid -- a batch row's overrides, its
     /// labelling, its stranded buses -- (null: the grid as it is, solved in its AC labelling).
     /// Read the per-row element state through view(), never off `grid` directly.

@@ -257,6 +257,19 @@ bool OuterGridView::line_closed(int line_id, int & bus1_solver, int & bus2_solve
                          id_me_to_solver(), bus1_solver, bus2_solver);
 }
 
+std::array<cplx_type, 4> OuterGridView::trafo_block(int trafo_id) const
+{
+    const auto * moved = row_ != nullptr ? row_->moved_trafo_blocks : nullptr;
+    if (moved != nullptr) {
+        const auto it = std::lower_bound(moved->begin(), moved->end(), trafo_id,
+            [](const std::pair<int, std::array<cplx_type, 4> > & e, int t) { return e.first < t; });
+        if (it != moved->end() && it->first == trafo_id) return it->second;
+    }
+    const TrafoContainer & trafos = grid_.get_trafos();
+    return {trafos.yac_eff_11()(trafo_id), trafos.yac_eff_12()(trafo_id),
+            trafos.yac_eff_21()(trafo_id), trafos.yac_eff_22()(trafo_id)};
+}
+
 bool OuterGridView::trafo_closed(int trafo_id, int & bus1_solver, int & bus2_solver) const
 {
     return branch_closed(grid_.get_trafos(), row_ != nullptr ? &row_->trafos : nullptr, trafo_id,

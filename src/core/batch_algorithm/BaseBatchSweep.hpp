@@ -2380,6 +2380,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             v.masked = (masked != nullptr && !masked->empty()) ? masked : nullptr;
             v.resume = false;
             v.resume_from = nullptr;
+            v.moved_trafo_blocks = nullptr;
             v.lost_p_mw = i < _row_lost_p_mw_.size() ? _row_lost_p_mw_[i] : std::numeric_limits<real_type>::quiet_NaN();
             v.clear_overrides();
             _fill_outer_row_injections(i, v);
@@ -2993,6 +2994,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             OuterRowView row;
             _fill_outer_row_view(i, masked, row);
             _take_moved_targets(algo, row);
+            // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks)
+            if(i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty()) row.moved_trafo_blocks = &_row_trafo_blocks_[i];
             _record_outer_detect(algo, V_solver, row, _physical_violations_[i]);
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
                 // the row's converged voltage, against the target this row gives the machine
@@ -3164,6 +3167,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ctx.tol_mw = _physical_tol_mva_;
             ctx.tol_vm_pu = _physical_tol_vm_pu_;
             ctx.vm_checks = ac && _gen_pv_release_check_on_;
+            ctx.ac = ac;
             ctx.row = &row;
             outer_detect(_outer_detect_loops_, ctx, out);
         }
@@ -3180,6 +3184,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // the base case is the grid's own: its targets, no contingency
             OuterRowView n_view = _base_row_view_;
             _take_moved_targets(_algo, n_view);
+            std::vector<std::pair<int, std::array<cplx_type, 4> > > n_blocks;
+            if(_algo.supports_outer_loops()){
+                const TrafoContainer & trafos = _grid_model.get_trafos();
+                std::vector<int> phase_tap, ratio_tap;
+                _algo.get_outer_phase_tap(phase_tap);
+                _algo.get_outer_ratio_tap(ratio_tap);
+                n_blocks = trafos.moved_tap_blocks(trafos.moved_taps(false, ratio_tap), trafos.moved_taps(true, phase_tap));
+                if(!n_blocks.empty()) n_view.moved_trafo_blocks = &n_blocks;
+            }
             _record_outer_detect(_algo, _algo.get_V(), n_view, _physical_violations_n_);
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
                 gen_pv_release_check::check_gen_pv_release_violations(

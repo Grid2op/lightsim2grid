@@ -3597,15 +3597,23 @@ std::vector<LimitViolation> LSGrid::get_physical_violations(bool ac, real_type t
         ctx.tol_mw = tol_mva;
         ctx.tol_vm_pu = tol_vm_pu;
         ctx.vm_checks = ac;
+        ctx.ac = ac;
         OuterRowView as_solved;
         as_solved.layout = &layout;
         as_solved.masked = no_mask;
         // at the targets the solve's own loops moved (DistributedSlack): a unit's reactive
-        // limits follow its target P, and the solve held it within the ones at that P
+        // limits follow its target P, and the solve held it within the ones at that P; and
+        // the transformers at the taps they left them at
+        std::vector<std::pair<int, std::array<cplx_type, 4> > > trafo_blocks;
         if(ac){
             std::vector<real_type> gen_target_p, storage_target_p;
             algo.get_outer_target_p(gen_target_p, storage_target_p);
             as_solved.take_moved_targets(gen_target_p, storage_target_p);
+            std::vector<int> phase_tap, ratio_tap;
+            algo.get_outer_phase_tap(phase_tap);
+            algo.get_outer_ratio_tap(ratio_tap);
+            trafo_blocks = trafos_.moved_tap_blocks(trafos_.moved_taps(false, ratio_tap), trafos_.moved_taps(true, phase_tap));
+            if(!trafo_blocks.empty()) as_solved.moved_trafo_blocks = &trafo_blocks;
         }
         ctx.row = &as_solved;
         outer_detect(detection_loops(get_outer_loops()), ctx, out);

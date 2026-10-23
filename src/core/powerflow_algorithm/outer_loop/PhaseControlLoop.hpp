@@ -74,6 +74,9 @@ class LS2G_API PhaseControlLoop final : public BaseOuterLoop
 
     private:
         std::vector<Shifter> shifters_;  // per solve, see _initialize
+        /// detection: an active power phase shifter carrying `p_mw` on its regulated side
+        void _detect_p(const OuterContext & ctx, const Shifter & s, real_type p_mw,
+                       const std::string & name, std::vector<LimitViolation> & out) const;
 };
 
 }  // namespace ls2g
