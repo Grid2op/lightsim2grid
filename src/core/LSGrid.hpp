@@ -1747,7 +1747,8 @@ class LS2G_API LSGrid final
         /**
          * What the ratio tap changer of transformer `trafo_id` regulates: the voltage of
          * `regulated_bus` (a grid bus id, -1 for none) at `target_vm_pu` within
-         * `deadband_pu`, both in pu of that bus' nominal voltage. Data only for now.
+         * `deadband_pu`, both in pu of that bus' nominal voltage. Read by the
+         * TransformerVoltageControl outer loop.
          */
         void set_trafo_ratio_tap_regulation(int trafo_id, bool regulating, real_type target_vm_pu,
                                             real_type deadband_pu, int regulated_bus){
@@ -1756,11 +1757,12 @@ class LS2G_API LSGrid final
             }
             trafos_.set_tap_regulation(false, trafo_id, RegulationMode::VOLTAGE, regulating, target_vm_pu,
                                        deadband_pu, regulated_bus);
+            _tell_outer_regulation_changed();
         }
         /**
          * What the phase tap changer of transformer `trafo_id` regulates: `mode` FIXED,
          * ACTIVE_POWER (`target` and `deadband` in MW) or CURRENT_LIMITER (in A), through
-         * `regulated_side` (1 or 2) of the transformer. Data only for now.
+         * `regulated_side` (1 or 2) of the transformer. Read by the PhaseControl outer loop.
          */
         void set_trafo_phase_tap_regulation(int trafo_id, RegulationMode mode, bool regulating,
                                             real_type target, real_type deadband, int regulated_side){
@@ -1773,6 +1775,7 @@ class LS2G_API LSGrid final
                 throw std::runtime_error("LSGrid::set_trafo_phase_tap_regulation: the regulated side is 1 or 2.");
             }
             trafos_.set_tap_regulation(true, trafo_id, mode, regulating, target, deadband, regulated_side);
+            _tell_outer_regulation_changed();
         }
         /// move the ratio tap changer of transformer `trafo_id` to `position`
         void change_trafo_ratio_tap(int trafo_id, int position){
@@ -1878,13 +1881,15 @@ class LS2G_API LSGrid final
                                 const std::vector<real_type> & q_mvar){
             shunts_.set_sections(shunt_id, section_count, p_mw, q_mvar, algo_controler_);
         }
-        /// the voltage they regulate, see ShuntContainer::set_section_regulation. Data only for now.
+        /// the voltage they regulate, see ShuntContainer::set_section_regulation. Read by the
+        /// ShuntVoltageControl outer loop.
         void set_shunt_section_regulation(int shunt_id, bool regulating, real_type target_vm_pu,
                                           real_type deadband_pu, int regulated_bus){
             if(regulated_bus < -1 || regulated_bus >= static_cast<int>(total_bus())){
                 throw std::out_of_range("LSGrid::set_shunt_section_regulation: no bus with that id.");
             }
             shunts_.set_section_regulation(shunt_id, regulating, target_vm_pu, deadband_pu, regulated_bus);
+            _tell_outer_regulation_changed();
         }
         /// switch `section_count` sections of shunt `shunt_id` on
         void change_shunt_section_count(int shunt_id, int section_count){
@@ -3368,6 +3373,13 @@ class LS2G_API LSGrid final
         // it marked the MEMBER control, and the only caller -- process_results -- must
         // now mark the powerflow's working copy instead. Bringing it back would be the
         // easy way to reintroduce the bug the working-copy protocol removes.)
+
+        // A tap changer's or a shunt's regulation changed: the outer loops reserve their
+        // controls in the Newton (BaseOuterLoop::declare) only when it rebuilds, so the
+        // next AC solve must rebuild, as for a set_svc_standby. Nothing in DC reads it.
+        void _tell_outer_regulation_changed() noexcept {
+            algo_controler_.ac_algo_controler().tell_pv_changed();
+        }
 
         /**
          * One family's half of `unset_changes()`: record the claim if the cache can

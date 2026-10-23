@@ -465,12 +465,14 @@ void bind_gridmodel(py::module_& m) {
              py::arg("trafo_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
              py::arg("regulated_bus"),
              "What the ratio tap changer regulates: the voltage of `regulated_bus` (grid bus id, -1 for "
-             "none), target and deadband in pu of its nominal voltage. Data only for now.")
+             "none), target and deadband in pu of its nominal voltage. Read by the TransformerVoltageControl "
+             "outer loop.")
         .def("set_trafo_phase_tap_regulation", &LSGrid::set_trafo_phase_tap_regulation,
              py::arg("trafo_id"), py::arg("mode"), py::arg("regulating"), py::arg("target"), py::arg("deadband"),
              py::arg("regulated_side"),
              "What the phase tap changer regulates: RegulationMode FIXED, ACTIVE_POWER (MW) or "
-             "CURRENT_LIMITER (A), through `regulated_side` (1 or 2) of the transformer. Data only for now.")
+             "CURRENT_LIMITER (A), through `regulated_side` (1 or 2) of the transformer. Read by the "
+             "PhaseControl outer loop.")
         .def("change_trafo_ratio_tap", &LSGrid::change_trafo_ratio_tap, py::arg("trafo_id"), py::arg("position"),
              "Move the ratio tap changer of a transformer: its pi model, ratio included, follows.")
         .def("change_trafo_phase_tap", &LSGrid::change_trafo_phase_tap, py::arg("trafo_id"), py::arg("position"),
@@ -516,7 +518,7 @@ void bind_gridmodel(py::module_& m) {
              py::arg("shunt_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
              py::arg("regulated_bus"),
              "The voltage its sections regulate: `regulated_bus` (grid bus id, -1 for none), target and "
-             "deadband in pu of its nominal voltage. Data only for now.")
+             "deadband in pu of its nominal voltage. Read by the ShuntVoltageControl outer loop.")
         .def("change_shunt_section_count", &LSGrid::change_shunt_section_count,
              py::arg("shunt_id"), py::arg("section_count"),
              "Switch that many sections of a shunt on: its p and q follow.")

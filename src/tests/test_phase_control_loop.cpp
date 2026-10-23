@@ -184,3 +184,43 @@ TEST_CASE("a phase shifter is reported where the loop would act", "[outer][phase
     }
     CHECK(found.empty());
 }
+
+TEST_CASE("a phase regulation set between two solves is the one the next solve holds", "[outer][phase_control]")
+{
+    // what the outer loops reserve in the Newton is built from the regulation data: a phase
+    // shifter that starts regulating, or a new target, must reach the next solve
+    LSGrid ref = make_grid(2001, 0.);
+    ref.change_algorithm("NRSing_SparseLU");
+    REQUIRE(ref.ac_pf(flat(ref), 30, 1e-12).size() == 3);
+    const real_type p0 = std::get<0>(ref.get_trafo_res1())(0);
+
+    LSGrid expected = make_grid(2001, 0.);
+    expected.set_trafo_phase_tap_regulation(0, RegulationMode::ACTIVE_POWER, true, p0 + 5., 0., 1);
+    use_phase_control(expected);
+    const CplxVect V_expected = expected.ac_pf(flat(expected), 30, 1e-12);
+    REQUIRE(V_expected.size() == 3);
+    const int pos_expected = expected.get_trafos()[0].res_phase_tap_position;
+    REQUIRE(pos_expected != 1000);
+
+    SECTION("a phase shifter that starts regulating") {
+        LSGrid grid = make_grid(2001, 0.);
+        use_phase_control(grid);
+        REQUIRE(grid.ac_pf(flat(grid), 30, 1e-12).size() == 3);
+        grid.set_trafo_phase_tap_regulation(0, RegulationMode::ACTIVE_POWER, true, p0 + 5., 0., 1);
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_trafos()[0].res_phase_tap_position == pos_expected);
+        CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
+    SECTION("a new target") {
+        LSGrid grid = make_grid(2001, 0.);
+        grid.set_trafo_phase_tap_regulation(0, RegulationMode::ACTIVE_POWER, true, p0 - 5., 0., 1);
+        use_phase_control(grid);
+        REQUIRE(grid.ac_pf(flat(grid), 30, 1e-12).size() == 3);
+        grid.set_trafo_phase_tap_regulation(0, RegulationMode::ACTIVE_POWER, true, p0 + 5., 0., 1);
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_trafos()[0].res_phase_tap_position == pos_expected);
+        CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
+}

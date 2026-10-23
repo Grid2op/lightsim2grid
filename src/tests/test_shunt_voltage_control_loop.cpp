@@ -224,3 +224,41 @@ TEST_CASE("detection: a transformer voltage control listed first hides the shunt
         CHECK(count_of(grid.get_physical_violations(), ls2g::LimitViolationType::SHUNT_VOLTAGE_CONTROL) == 1);
     }
 }
+
+TEST_CASE("a section regulation set between two solves is the one the next solve holds", "[outer][shunt_voltage_control]")
+{
+    // what the outer loops reserve in the Newton is built from the regulation data: a new
+    // target, or a shunt that starts regulating, must reach the next solve
+    const auto solve = [](LSGrid & grid) {
+        grid.change_algorithm("NROuter_SparseLU");
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<ShuntVoltageControlLoop>());
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+        return V;
+    };
+    LSGrid expected = make_grid(40, 0, 0.99);
+    const CplxVect V_expected = solve(expected);
+    const int count_expected = expected.get_shunts()[0].res_section_count;
+    REQUIRE(count_expected > 0);
+
+    SECTION("a new target") {
+        LSGrid grid = make_grid(40, 0, 0.97);
+        solve(grid);
+        grid.set_shunt_section_regulation(0, true, 0.99, 0., 2);
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_shunts()[0].res_section_count == count_expected);
+        CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
+    SECTION("a shunt that starts regulating") {
+        LSGrid grid = make_grid(40, 0, 0.99, false);
+        solve(grid);
+        grid.set_shunt_section_regulation(0, true, 0.99, 0., 2);
+        const CplxVect V = grid.ac_pf(flat(grid), 30, 1e-12);
+        REQUIRE(V.size() == 3);
+        CHECK(grid.get_shunts()[0].res_section_count == count_expected);
+        CHECK((V - V_expected).cwiseAbs().maxCoeff() < 1e-9);
+    }
+}
