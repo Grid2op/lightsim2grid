@@ -2832,12 +2832,17 @@ class LS2G_API LSGrid final
          *    the caller's labelling, or remote voltage control is silently dropped.
          *    See the publication step at the end of `_build_foreign_cache`.
          *
+         * `runs_outer_loops`: whether the CALLER's algorithm runs outer loops
+         * (BaseAlgo::supports_outer_loops), for who the plan holds for them (see
+         * _holds_svc_monitors): this grid's own algorithm says nothing about it.
+         *
          * Throws if handed this grid's own cache -- that is `pre_process_solver`.
          */
         CplxVect build_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
                                     AcSolverCache & out,
                                     const AlgoControl & solver_control,
-                                    const std::vector<int> * extra_buses_me = nullptr);
+                                    const std::vector<int> * extra_buses_me = nullptr,
+                                    bool runs_outer_loops = false);
 
         /// DC counterpart of `build_solver_input`: real Bbus / Pbus into `out`.
         CplxVect build_dc_solver_input(const Eigen::Ref<const CplxVect> & Vinit,
@@ -3082,6 +3087,8 @@ class LS2G_API LSGrid final
         /// `supports_voltage_control`: may the voltage-control layers be built at all
         /// (BaseAlgo::supports_remote_voltage_control of the algorithm that will solve
         /// this cache)? False leaves the plan empty and gives the classical pv/pq split.
+        /// `holds_svc_monitors`: does that plan hold the idle standby SVCs (see
+        /// _holds_svc_monitors)?
         template<class MatScalar>
         CplxVect _build_into_cache(const Eigen::Ref<const CplxVect> & Vinit,
                                    SolverSideCache<MatScalar> & cache,
@@ -3089,6 +3096,7 @@ class LS2G_API LSGrid final
                                    bool force_full_rebuild,
                                    bool init_pv_vm_targets,
                                    bool supports_voltage_control,
+                                   bool holds_svc_monitors,
                                    const std::vector<int> * extra_buses_me = nullptr);
 
         /**
@@ -3141,7 +3149,8 @@ class LS2G_API LSGrid final
         CplxVect _build_foreign_cache(const Eigen::Ref<const CplxVect> & Vinit,
                                       SolverSideCache<MatScalar> & out,
                                       const AlgoControl & solver_control,
-                                      const std::vector<int> * extra_buses_me = nullptr);
+                                      const std::vector<int> * extra_buses_me,
+                                      bool runs_outer_loops);
 
         // Is `cache` this grid's own cache for its family, or someone else's?
         // No longer a dispatch -- which entry point you called is what decides that
@@ -3543,8 +3552,9 @@ class LS2G_API LSGrid final
             algo_controler_.dc_algo_controler().tell_slack_weight_changed();
         }
         // whether the voltage-control plan holds the idle standby SVCs: the AC algorithm
-        // runs outer loops and one of them asks for it (BaseOuterLoop::holds_svc_monitors)
-        bool _holds_svc_monitors() const;
+        // that solves it runs outer loops (`runs_outer_loops`: ours, or a batch's own) and
+        // one of them asks for it (BaseOuterLoop::holds_svc_monitors)
+        bool _holds_svc_monitors(bool runs_outer_loops) const;
         // a loop list may change who that plan holds
         void _tell_outer_loops_changed() {
             algo_controler_.tell_pv_changed();

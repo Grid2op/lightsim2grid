@@ -132,9 +132,9 @@ void LSGrid::add_outer_loop(const std::shared_ptr<BaseOuterLoop> & loop)
     _tell_outer_loops_changed();
 }
 
-bool LSGrid::_holds_svc_monitors() const
+bool LSGrid::_holds_svc_monitors(bool runs_outer_loops) const
 {
-    if (!_algo.supports_outer_loops()) return false;
+    if (!runs_outer_loops) return false;
     for (const auto & loop : get_outer_loops()) {
         if (loop->holds_svc_monitors()) return true;
     }
@@ -1126,7 +1126,7 @@ void LSGrid::fill_voltage_control_solver_data(VoltageControlSolverData & data, b
     plan.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                            ac_cache_.id_me_to_solver, ac_cache_.id_solver_to_me,
                            ac_cache_.slack_bus_id_solver, ac_cache_.bus_pq,
-                           sn_mva_, hold_frozen_regulators_, _holds_svc_monitors());
+                           sn_mva_, hold_frozen_regulators_, _holds_svc_monitors(_algo.supports_outer_loops()));
     data = plan.controllers();
 }
 
@@ -1430,6 +1430,7 @@ CplxVect LSGrid::_build_into_cache(
     bool force_full_rebuild,
     bool init_pv_vm_targets,
     bool supports_voltage_control,
+    bool holds_svc_monitors,
     const std::vector<int> * extra_buses_me)
 {
     bool redo_all =
@@ -1562,7 +1563,7 @@ CplxVect LSGrid::_build_into_cache(
         cache.voltage_control.build_solver_side(generators_, storages_, svcs_, hvdc_lines_,
                                                 cache.id_me_to_solver, cache.id_solver_to_me,
                                                 cache.slack_bus_id_solver, cache.bus_pq,
-                                                sn_mva_, hold_frozen, _holds_svc_monitors());
+                                                sn_mva_, hold_frozen, holds_svc_monitors);
     }
 
     // type-specific injection assembly (complex Sbus for AC, real Pbus for DC)
@@ -1722,7 +1723,8 @@ CplxVect LSGrid::_pre_process_own_cache(
     // the DC family's use of layer 1 is deliberately left alone (see _build_into_cache).
     const bool supports_voltage_control = _algo.supports_remote_voltage_control();
     CplxVect V = _build_into_cache(Vinit, cache, solver_control, cache_unusable,
-                                   init_pv_vm_targets, supports_voltage_control);
+                                   init_pv_vm_targets, supports_voltage_control,
+                                   _holds_svc_monitors(_algo.supports_outer_loops()));
 
     // `cache.algo_needs_rebuild` is set when this family's previous powerflow
     // diverged (see process_results): the algorithm is NOT reset there, its last
@@ -1809,9 +1811,10 @@ CplxVect LSGrid::build_solver_input(
     const Eigen::Ref<const CplxVect> & Vinit,
     AcSolverCache & out,
     const AlgoControl & solver_control,
-    const std::vector<int> * extra_buses_me)
+    const std::vector<int> * extra_buses_me,
+    bool runs_outer_loops)
 {
-    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control, extra_buses_me);
+    return _build_foreign_cache<cplx_type>(Vinit, out, solver_control, extra_buses_me, runs_outer_loops);
 }
 
 CplxVect LSGrid::build_dc_solver_input(
@@ -1820,7 +1823,8 @@ CplxVect LSGrid::build_dc_solver_input(
     const AlgoControl & solver_control,
     const std::vector<int> * extra_buses_me)
 {
-    return _build_foreign_cache<real_type>(Vinit, out, solver_control, extra_buses_me);
+    // the plan's controllers are AC only
+    return _build_foreign_cache<real_type>(Vinit, out, solver_control, extra_buses_me, false);
 }
 
 template<class MatScalar>
@@ -1828,7 +1832,8 @@ CplxVect LSGrid::_build_foreign_cache(
     const Eigen::Ref<const CplxVect> & Vinit,
     SolverSideCache<MatScalar> & out,
     const AlgoControl & solver_control,
-    const std::vector<int> * extra_buses_me)
+    const std::vector<int> * extra_buses_me,
+    bool runs_outer_loops)
 {
     // Our own cache is not a foreign one: taking this path with it would rebuild
     // it while telling our algorithm nothing, then retire what was just built.
@@ -1848,11 +1853,13 @@ CplxVect LSGrid::_build_foreign_cache(
     // read off `_algo`: the caller solves `out` with an algorithm of its OWN, which
     // this grid knows nothing about. Building the plan is what preserves the batch
     // path exactly as it was; a caller whose algorithm cannot consume it simply does
-    // not read it.
+    // not read it. Whether it holds the idle standby SVCs is the caller's algorithm's
+    // call too (`runs_outer_loops`), not `_algo`'s.
     CplxVect V = _build_into_cache(Vinit, out, solver_control,
                                    /*force_full_rebuild=*/true,
                                    /*init_pv_vm_targets=*/true,
                                    /*supports_voltage_control=*/true,
+                                   _holds_svc_monitors(runs_outer_loops),
                                    extra_buses_me);
 
     // `_algo` / `_dc_algo` are deliberately untouched: they are THIS grid's, they

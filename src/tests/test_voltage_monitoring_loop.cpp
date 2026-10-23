@@ -21,6 +21,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "batch_algorithm/BaseBatchSweep.hpp"
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 #include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
 
@@ -264,5 +265,49 @@ TEST_CASE("a switch-on is recorded as taken only when the SVC is switched on", "
         // without its control the loop cannot switch the SVC on: the trace must not say it did
         CHECK(trace[0].taken == reserved);
         CHECK(status == (reserved ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE));
+    }
+}
+
+TEST_CASE("which monitors a batch holds is its own algorithm's call", "[outer][svc][batch]")
+{
+    // the idle standby SVCs a voltage-control plan holds for the VoltageMonitoring loop: a
+    // batch whose algorithm is not its grid's (change_algorithm) decides it from its own
+    const auto grid_with_loop = [](const char * algo) {
+        LSGrid grid = make_grid();
+        set_monitor(grid, 0.99, 1.10);
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<VoltageMonitoringLoop>());
+        grid.change_algorithm(algo);
+        return grid;
+    };
+    const auto base_case = [](LSGrid & grid, const char * algo) {
+        ls2g::ContingencyAnalysis ca(grid);
+        ca.change_algorithm(algo);
+        ca.add_nk(std::vector<int>());
+        ca.compute(flat_start(grid), 30, 1e-10);
+        REQUIRE(ca.get_voltages().rows() == 1);
+        REQUIRE(ca.converged_mask()[0]);
+        return CplxVect(ca.get_voltages().row(0).transpose());
+    };
+
+    SECTION("a grid on a plain Newton, the batch on NROuter_*") {
+        // the monitor is switched on at its low set-point, as in a single solve
+        LSGrid ref = grid_with_loop("NROuter_SparseLU");
+        const CplxVect V_ref = ref.ac_pf(flat_start(ref), 30, 1e-10);
+        REQUIRE(V_ref.size() == 4);
+        REQUIRE(std::abs(V_ref(2)) == Approx(0.97).margin(1e-9));
+        LSGrid grid = grid_with_loop("NRSing_SparseLU");
+        const CplxVect V = base_case(grid, "NROuter_SparseLU");
+        CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-8);
+    }
+    SECTION("a grid on NROuter_*, the batch on a plain Newton") {
+        // no loop runs: nothing to hold for one, the plan has no controller
+        LSGrid ref = grid_with_loop("NRSing_SparseLU");
+        const CplxVect V_ref = ref.ac_pf(flat_start(ref), 30, 1e-10);
+        REQUIRE(V_ref.size() == 4);
+        REQUIRE(ref.get_ac_voltage_control_plan().controllers().n_controllers() == 0);
+        LSGrid grid = grid_with_loop("NROuter_SparseLU");
+        const CplxVect V = base_case(grid, "NRSing_SparseLU");
+        CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-8);
     }
 }
