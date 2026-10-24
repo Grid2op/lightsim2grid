@@ -91,6 +91,7 @@ public:
                Declare                          && declare)
     {
         algo_.system().set_branch_mutable_ybus(&Ybus);
+        const bool same_input = has_built_ && _same_input(V.size(), slack_ids, pv, pq, Ybus.nonZeros());
         nb_bus_ = V.size();
         ref_bus_ = slack_ids.size() > 0 ? slack_ids(0) : -1;
         // what a rebuild in the middle of the solve sets up again: Sbus is the driver's
@@ -113,9 +114,21 @@ public:
         IntVect pv_s, pq_s;
         _split(s, pv_s, pq_s);
         // what NROuterInner rebuilds on (the first solve, the driver's request, a change the
-        // caller told): the loops reserve their controls again, as they do there
+        // caller told): the loops reserve their controls again, as they do there. Not on a
+        // rebuild of this class's own still pending (the Newton converged on it in zero
+        // iterations, so analyzed nothing): it is a batch row's, and the loops declaring for
+        // the next row's view would take out what that row opens for every row after it.
+        const bool redeclare = !own_rebuild_pending_ || redeclare_asked_ || !same_input;
         bool ok = algo_.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv_s, pq_s, need_init,
-                              [&](){ controls_.clear_reservations(); declare(); _reserve(s); });
+                              [&](){
+                                  if (redeclare) {
+                                      controls_.clear_reservations();
+                                      declare();
+                                      redeclare_asked_ = false;
+                                      own_rebuild_pending_ = false;
+                                  }
+                                  _reserve(s);
+                              });
         // other masked buses alone (a batch row's islands): J is rebuilt for them on the
         // reservations kept, as _restructure does. The loops declare for the row's view, so
         // declaring again here would take out what this row opens for every row after it.
@@ -123,6 +136,7 @@ public:
             algo_.request_rebuild();
             ok = algo_.setup(Ybus, V, Sbus, slack_ids, slack_weights, pv_s, pq_s, need_init,
                              [&](){ _reserve(s); });
+            own_rebuild_pending_ = true;
         }
         if (!ok) return false;
         built_ = s;
@@ -143,7 +157,10 @@ public:
     bool newton(int max_iter, real_type tol, bool need_init) {
         const bool res = algo_.newton(max_iter, tol, need_init || analyze_pending_);
         // a solve that converged in zero iterations factorized nothing
-        if (algo_.get_nb_iter() > 0) analyze_pending_ = false;
+        if (algo_.get_nb_iter() > 0) {
+            analyze_pending_ = false;
+            own_rebuild_pending_ = false;
+        }
         return res;
     }
 
@@ -152,7 +169,11 @@ public:
     real_type published_slack_absorbed() const { return 0.; }
     int reference_bus() const { return ref_bus_; }
     void finalize() { algo_.finalize(); }
-    void request_rebuild() { algo_.request_rebuild(); }
+    // the driver's: the loops reserve their controls again
+    void request_rebuild() {
+        redeclare_asked_ = true;
+        algo_.request_rebuild();
+    }
 
     // Before each solve: rebuild the Newton if the active equations changed, then push what
     // the loops asked of their controls, as NROuterInner does (no pinning: a PQ bus is one).
@@ -228,6 +249,17 @@ private:
     // the Newton set up again for `s`, its state carried over
     bool _restructure(const Structure & s);
 
+    // the last setup's buses, slack, pv / pq and Ybus pattern size
+    bool _same_input(Eigen::Index nb_bus, const Eigen::Ref<const IntVect> & slack_ids,
+                     const Eigen::Ref<const IntVect> & pv, const Eigen::Ref<const IntVect> & pq,
+                     Eigen::Index ybus_nnz) const {
+        auto same = [](const IntVect & a, const Eigen::Ref<const IntVect> & b) {
+            return a.size() == b.size() && (a.size() == 0 || a == b);
+        };
+        return nb_bus == nb_bus_ && static_cast<std::size_t>(ybus_nnz) == ybus_values_.size() &&
+               same(slack_ids_, slack_ids) && same(pv_, pv) && same(pq_, pq);
+    }
+
     static bool _contains(const std::vector<int> & sorted, int v) {
         return std::binary_search(sorted.begin(), sorted.end(), v);
     }
@@ -250,6 +282,8 @@ private:
     Structure built_;            // what J was last built for
     bool has_built_ = false;
     bool analyze_pending_ = false;
+    bool own_rebuild_pending_ = false;  // a rebuild of this class's, not yet analyzed
+    bool redeclare_asked_ = false;      // the driver asked for a rebuild
     std::vector<int> hvdc_applied_;  // the regimes the last solve ran with
     int nb_restructure_ = 0;
 };
@@ -385,6 +419,7 @@ bool RebuildOuterInner<LinearSolver>::_restructure(const Structure & s)
     }
     built_ = s;
     analyze_pending_ = true;
+    own_rebuild_pending_ = true;
     ++nb_restructure_;
     return true;
 }

@@ -16,6 +16,7 @@ import unittest
 import warnings
 
 import numpy as np
+import pandapower
 import pandapower.networks as pn
 
 import lightsim2grid
@@ -410,6 +411,45 @@ class TestRowAfterATrippedRatioControl(unittest.TestCase):
                 self.assertTrue(res_f[i].converged)
                 self.assertTrue(res_r[i].converged)
                 self.assertEqual(sorted(res_r[i].ratio_tap), sorted(res_f[i].ratio_tap))
+                np.testing.assert_allclose(V_rebuilt[i], V_fixed[i], rtol=0., atol=ATOL_V)
+
+
+class TestRowAfterAnUnsolvedRebuild(unittest.TestCase):
+    """a batch row reaches what the fixed-pattern batch does whatever the rows before it: case14
+    with an empty bus hanging off bus 3 and the condenser at bus 7 above its minimum reactive
+    output. The first row islands the empty bus: J is rebuilt for it, and the row converges in
+    zero Newton iterations. The second islands the condenser (trafo 6-7), the third opens trafo
+    6-8, which sends the condenser to its minimum."""
+
+    def _batch(self, algo):
+        net = pn.case14()
+        empty = pandapower.create_bus(net, vn_kv=net.bus.vn_kv[3])
+        pandapower.create_line_from_parameters(net, 3, empty, 1., r_ohm_per_km=1., x_ohm_per_km=5., c_nf_per_km=0.,
+                                               max_i_ka=1.)
+        net.gen.loc[net.gen.bus == 7, "min_q_mvar"] = 15.
+        grid = _loops(_pandapower(net, algo), ReactiveLimits())
+        nb_line = len(grid.get_lines())
+        trafos = {(el.bus1_id, el.bus2_id): el.id for el in grid.get_trafos()}
+        rows = [nb_line - 1, nb_line + trafos[(6, 7)], nb_line + trafos[(6, 8)]]
+        batch = ContingencyAnalysisCPP(grid)
+        batch.handle_disconnected_grid = True
+        batch.init_from_n_powerflow = True
+        batch.add_multiple_n1(rows)
+        self.assertEqual([int(c[0]) for c in batch.my_defaults()], rows)
+        batch.compute(np.full(grid.total_bus(), 1.04 + 0j), MAX_IT, TOL)
+        return batch
+
+    def test_rows_equal_the_fixed_pattern_ones(self):
+        fixed, rebuilt = self._batch(FIXED), self._batch(REBUILD)
+        V_fixed, V_rebuilt = fixed.get_voltages(), rebuilt.get_voltages()
+        res_f, res_r = fixed.get_outer_results(), rebuilt.get_outer_results()
+        # what the rows are built for
+        self.assertEqual(res_r[0].nb_nr_iterations, 0)
+        self.assertEqual(dict(res_f[2].decisions_taken), {"ReactiveLimits/PV_TO_PQ": 1})
+        for i in range(3):
+            with self.subTest(row=i):
+                self.assertTrue(res_f[i].converged)
+                self.assertTrue(res_r[i].converged)
                 np.testing.assert_allclose(V_rebuilt[i], V_fixed[i], rtol=0., atol=ATOL_V)
 
 
