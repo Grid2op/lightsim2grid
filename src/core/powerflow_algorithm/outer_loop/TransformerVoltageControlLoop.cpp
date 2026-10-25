@@ -90,6 +90,9 @@ std::vector<TransformerVoltageControlLoop::Group> TransformerVoltageControlLoop:
         if (reg < 0 || reg >= static_cast<int>(to_solver.size()) || !view.trafo_closed(t, b1, b2)) continue;
         const int bus = to_solver[reg].cast_int();
         if (bus < 0 || b1 == b2) continue;
+        // a row's island is not solved (handle_disconnected_grid): a transformer on it, or
+        // regulating a bus on it, controls nothing
+        if (view.is_masked(bus) || view.is_masked(b1) || view.is_masked(b2)) continue;
         auto it = group_of_bus.find(bus);
         if (it == group_of_bus.end()) {
             Group g;
