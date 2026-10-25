@@ -10,6 +10,9 @@
 #include "KLUStaticPivotSolver.hpp"  // constrained_amd_order
 
 #include <iostream>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace ls2g {
 
@@ -34,7 +37,8 @@ ErrorType KLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     klu_defaults(&common_);
     auto * Ap = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr());
     auto * Ai = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr());
-    if(ordering_constraints_.empty()){
+    const char * force_given = std::getenv("LS2G_KLU_FORCE_GIVEN");  // BENCH: AMD, BTF off, no constraint
+    if(ordering_constraints_.empty() && !(force_given && force_given[0] == '1')){
         symbolic_.reset(klu_analyze(n, Ap, Ai, &common_));
     } else {
         // the order is the one given: BTF's strongly connected components would reorder it
@@ -55,6 +59,14 @@ ErrorType KLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
                               const_cast<real_type*>(J.valuePtr()),
                               symbolic_.get(), &common_));
     if(common_.status != KLU_OK) return ErrorType::SolverFactor;
+    if(const char * log = std::getenv("LS2G_KLU_FILL_LOG")){  // BENCH
+        if(FILE * f = std::fopen(log, "a")){
+            std::fprintf(f, "%d,%d,%d,%d,%d,%d,%zu\n", static_cast<int>(J.cols()),
+                         static_cast<int>(J.nonZeros()), numeric_->lnz, numeric_->unz,
+                         numeric_->nzoff, symbolic_->nblocks, ordering_constraints_.size());
+            std::fclose(f);
+        }
+    }
     if(guard_pivot_growth_){
         // the reference a later refactorization is judged against
         rcond_ref_ = 0.;
