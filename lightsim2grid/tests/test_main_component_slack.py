@@ -421,6 +421,47 @@ class TestMainComponentSlack(unittest.TestCase):
         self.assertGreater(V.shape[0], 0)
 
 
+class TestMainComponentWithoutUnit(unittest.TestCase):
+    """The main component is the largest one, slack or not. When it holds no generator nor
+    storage unit, nothing in it can take the slack and consider_only_main_component refuses:
+    it must do so before cutting anything off, so the grid is still the caller's."""
+
+    def setUp(self):
+        # buses 0-1 (the slack, a load) and 2-3-4-5 (loads only), joined by the line 1-2
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            net = pp.create_empty_network()
+            buses = [pp.create_bus(net, vn_kv=138.) for _ in range(6)]
+            pp.create_ext_grid(net, buses[0], vm_pu=1.02)
+            for b, p in zip(buses[1:], (20., 15., 10., 8., 5.)):
+                pp.create_load(net, b, p_mw=p, q_mvar=0.2 * p)
+            for b1, b2 in ((0, 1), (2, 3), (3, 4), (4, 5), (1, 2)):
+                pp.create_line_from_parameters(net, buses[b1], buses[b2], length_km=1.,
+                                               r_ohm_per_km=1., x_ohm_per_km=10.,
+                                               c_nf_per_km=0., max_i_ka=1.)
+            self.net = net
+            self.model = init_from_pandapower(net)
+        self.tie = [line.id for line in self.model.get_lines()
+                    if {line.bus1_id, line.bus2_id} == {1, 2}]
+        assert len(self.tie) == 1
+
+    def _snapshot(self):
+        m = self.model
+        return ([g.connected for g in m.get_generators()], [g.is_slack for g in m.get_generators()],
+                [ld.connected for ld in m.get_loads()], [(li.connected1, li.connected2) for li in m.get_lines()],
+                m.get_reference_slack_bus())
+
+    def test_refused_before_anything_is_cut_off(self):
+        self.model.deactivate_powerline(self.tie[0])
+        before = self._snapshot()
+        with self.assertRaises(RuntimeError):
+            self.model.consider_only_main_component(False)
+        self.assertEqual(self._snapshot(), before, "the grid changed although the call was refused")
+        # still usable: reconnect the tie line and solve
+        self.model.reactivate_powerline(self.tie[0])
+        V = self.model.ac_pf(np.ones(self.net.bus.shape[0], dtype=np.complex128), 30, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+
 
 class TestSlackRejoin(unittest.TestCase):
     """The slack a grid solves with must not drift away from the one it was given. A slack

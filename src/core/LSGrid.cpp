@@ -3498,6 +3498,16 @@ std::tuple<int, int> LSGrid::_assign_slack_most_connected(bool island_fallback){
     return res;
 }
 
+bool LSGrid::_main_component_has_unit(const std::vector<bool> & bus_in_main_cc) const{
+    for(int gen_id = 0; gen_id < generators_.nb(); ++gen_id){
+        if(generators_.get_status(gen_id) && bus_in_main_cc[static_cast<std::size_t>(generators_.get_bus(gen_id).cast_int())]) return true;
+    }
+    for(int storage_id = 0; storage_id < storages_.nb(); ++storage_id){
+        if(storages_.get_status(storage_id) && bus_in_main_cc[static_cast<std::size_t>(storages_.get_bus(storage_id).cast_int())]) return true;
+    }
+    return false;
+}
+
 real_type LSGrid::_lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const{
     // what leaves the solved grid with the islanded buses, in generator convention and
     // from the SETPOINTS (the last results may be stale, or never computed): what a
@@ -3910,6 +3920,13 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
     // end, and the stranded units leave the slack, still able to rejoin it.
     bool slack_in_main = false;
     for(const auto & el : slack_buses_id) slack_in_main = slack_in_main || bus_in_main_cc[el.cast_int()];
+    // a slack needs a unit: a main component holding none cannot be given one. Refused here,
+    // before anything is cut off, so the caller still has the grid it passed
+    if(!slack_in_main && !_main_component_has_unit(bus_in_main_cc)){
+        throw std::runtime_error("LSGrid::consider_only_main_component: the main component (the "
+                                 "largest one) holds no connected generator nor storage unit to "
+                                 "take the slack. The grid was left unchanged.");
+    }
     if((_forced_ref_slack_bus_id >= 0) && !bus_in_main_cc[_forced_ref_slack_bus_id]){
         // the forced angle reference is now in an island: back to the natural order
         set_reference_slack_bus(-1);

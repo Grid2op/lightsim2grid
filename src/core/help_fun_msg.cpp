@@ -4391,7 +4391,9 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
     ``redistribute_slack`` is ``False``), the other fields say what was done with it.
 
     Requires at least one slack bus to already be defined (see
-    :func:`assign_slack_to_most_connected`); raises otherwise.
+    :func:`assign_slack_to_most_connected`); raises otherwise. Also raises, leaving the grid
+    unchanged, when no slack is left in the main component and no connected generator nor storage
+    unit is in it to take one.
 
 )mydelimiter";
 
