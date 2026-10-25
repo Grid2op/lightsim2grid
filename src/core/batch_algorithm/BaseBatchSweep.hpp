@@ -2972,10 +2972,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
             }
 
+            // the targets this row's loops moved: a unit's reactive limits and a non-regulating
+            // unit's target Q follow them, as LSGrid::compute_results reads them after a solve
+            std::vector<real_type> outer_gen_target_p, outer_storage_target_p;
+            if(ac && algo.supports_outer_loops()) algo.get_outer_target_p(outer_gen_target_p, outer_storage_target_p);
+
             RealVect p_mw, q_mvar;
             _grid_model.generator_results(ac, target_p, gen_off, no_share, storage_no_share, me_to_solver,
                                           active_mismatch, reactive_mismatch, ctrl_q, ctrl_kind, ctrl_elem,
-                                          p_mw, q_mvar, gen_placed_me);
+                                          p_mw, q_mvar, gen_placed_me, outer_gen_target_p);
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
                 _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id) = p_mw(gen_id);
                 _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id + 1) = q_mvar(gen_id);

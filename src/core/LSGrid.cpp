@@ -2325,7 +2325,8 @@ void LSGrid::compute_results(bool ac){
         _mark_q_solved_by_algo(ctrl_kind, ctrl_elem, gen_solved, hvdc1_solved, hvdc2_solved);
 
         if(reactive_mismatch.size() > 0){
-            _split_q_residual_per_bus(_collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved),
+            _split_q_residual_per_bus(_collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved,
+                                                                 results_gen_target_p_),
                                       reactive_mismatch);
         }
         _write_back_controller_q(ctrl_q, ctrl_kind, ctrl_elem);
@@ -2370,7 +2371,8 @@ void LSGrid::generator_results(bool ac,
                                const IntVect & ctrl_elem,
                                RealVect & p_mw,
                                RealVect & q_mvar,
-                               const std::vector<std::pair<int, int> > & gen_placed) const
+                               const std::vector<std::pair<int, int> > & gen_placed,
+                               const std::vector<real_type> & outer_gen_target_p) const
 {
     const int nb_gen = static_cast<int>(generators_.nb());
     const auto check_size = [nb_gen](std::size_t size, const char * what){
@@ -2421,10 +2423,16 @@ void LSGrid::generator_results(bool ac,
     // ---- Q: what needs no powerflow, the residual shares, the write-back -------------
     q_mvar = RealVect::Zero(nb_gen);
     if(!ac) return;
+    // a non-regulating unit whose target P the outer loops moved: its target Q followed (as
+    // compute_results publishes it)
+    const auto target_q = [this, &outer_gen_target_p](int gen_id){
+        return gen_target_q_at_outer_target(gen_id, outer_gen_target_p);
+    };
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         real_type q;
         if(is_off(gen_id) || placed[gen_id]) continue;  // 0, or below
-        if(generators_.q_without_powerflow(gen_id, q)) q_mvar(gen_id) = q;
+        if(status[gen_id] && !generators_.get_voltage_regulator_on(gen_id)) q_mvar(gen_id) = target_q(gen_id);
+        else if(generators_.q_without_powerflow(gen_id, q)) q_mvar(gen_id) = q;
     }
     std::vector<bool> gen_solved(static_cast<std::size_t>(nb_gen), false);
     std::vector<bool> hvdc1_solved(hvdc_lines_.nb(), false);
@@ -2439,7 +2447,8 @@ void LSGrid::generator_results(bool ac,
         }
         const std::vector<bool> * share_off_ptr = !share_off.empty() ? &share_off :
                                                   (gen_off.empty() ? nullptr : &gen_off);
-        std::vector<QShare> shares = _collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved, share_off_ptr);
+        std::vector<QShare> shares = _collect_q_residual_shares(gen_solved, hvdc1_solved, hvdc2_solved,
+                                                                outer_gen_target_p, share_off_ptr);
         // ... and, when it pins the bus it is placed on, takes a share of that one. The
         // others publish what needs no powerflow: their setpoint, or 0 for one treated
         // as off (q_without_powerflow, without its base-status test).
@@ -2447,9 +2456,9 @@ void LSGrid::generator_results(bool ac,
             const int gen_id = gen_bus.first;
             if(is_off(gen_id)) continue;
             if(generators_.would_be_local_voltage_controller(gen_id)){
-                shares.push_back(_gen_q_share(gen_id, gen_bus.second));
+                shares.push_back(_gen_q_share(gen_id, gen_bus.second, outer_gen_target_p));
             } else if(!generators_.get_voltage_regulator_on(gen_id)){
-                q_mvar(gen_id) = generators_.get_target_q_mvar(gen_id);
+                q_mvar(gen_id) = target_q(gen_id);
             }
         }
         const std::vector<real_type> q_values = _q_residual_values(shares, reactive_mismatch_mvar, id_me_to_solver);
@@ -2578,11 +2587,11 @@ void LSGrid::_mark_q_solved_by_algo(const IntVect & ctrl_kind,
     }
 }
 
-LSGrid::QShare LSGrid::_gen_q_share(int gen_id, int bus_id) const
+LSGrid::QShare LSGrid::_gen_q_share(int gen_id, int bus_id, const std::vector<real_type> & outer_target_p) const
 {
     QShare sh{bus_id, generators_.get_max_q(gen_id) - generators_.get_min_q(gen_id),
               VoltageControlSolverData::GEN, gen_id};
-    gen_limits_at_outer_target(gen_id, results_gen_target_p_, sh.min_q, sh.max_q);
+    gen_limits_at_outer_target(gen_id, outer_target_p, sh.min_q, sh.max_q);
     const real_type key = generators_.get_reactive_key(gen_id);
     if(std::isfinite(key) && key > 0.) sh.key = key;
     sh.range_max = (gen_reactive_range_max_.size() > gen_id && std::isfinite(gen_reactive_range_max_(gen_id)))
@@ -2593,6 +2602,7 @@ LSGrid::QShare LSGrid::_gen_q_share(int gen_id, int bus_id) const
 std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector<bool> & gen_solved,
                                                                const std::vector<bool> & hvdc1_solved,
                                                                const std::vector<bool> & hvdc2_solved,
+                                                               const std::vector<real_type> & outer_target_p,
                                                                const std::vector<bool> * gen_off) const
 {
     // Everything else has already been published: set_q wrote the ones whose value
@@ -2610,7 +2620,7 @@ std::vector<LSGrid::QShare> LSGrid::_collect_q_residual_shares(const std::vector
     for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
         if(gen_off != nullptr && static_cast<std::size_t>(gen_id) < gen_off->size() && (*gen_off)[gen_id]) continue;
         if(!generators_.takes_q_residual_share(gen_id, gen_solved)) continue;
-        shares.push_back(_gen_q_share(gen_id, gen_buses(gen_id).cast_int()));
+        shares.push_back(_gen_q_share(gen_id, gen_buses(gen_id).cast_int(), outer_target_p));
     }
     const int nb_hvdc = static_cast<int>(hvdc_lines_.nb());
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
