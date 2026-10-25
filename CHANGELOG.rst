@@ -27,14 +27,16 @@ Change Log
 - ``PhaseControl``: OpenLoadFlow's current-limiter one-tap move can undo itself depending on how its
   Newton rounds the shift it writes back (see ``PhaseControlLoop.hpp``); not reproduced, so a limiter
   can end one tap apart. Follow-up: decide whether to mirror it or leave it documented.
-- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack``,
-  ``HvdcAcEmulationLimits``, ``VoltageMonitoring`` and ``ReactiveLimits`` are there, the others
-  are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
-- Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
-  distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
-  reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
-  converges to the state the check then flags. ``docs/dev_notes/nr_control_limits.md`` is a
-  design note for the enforcement side, companion to
+- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``FreezingHvdcACEmulation``,
+  ``AreaInterchangeControl``, ``SecondaryVoltageControl``, ``TransformerReactivePowerControl`` and
+  ``AutomationSystem`` are not there yet, and ``PhaseControl``, ``TransformerVoltageControl`` and
+  ``ShuntVoltageControl`` have one mode each, not the incremental ones (plan in
+  ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
+- Control limits are **enforced** by the outer loops of the ``NROuter_*`` algorithms only
+  (``DistributedSlack``, ``ReactiveLimits``): the other algorithms still converge to a state
+  ``compute_physical_violations`` then flags (``GenPCheck``, ``BusQCheck``).
+  ``docs/dev_notes/nr_control_limits.md`` is a design note for enforcing them inside the Newton
+  itself, companion to
   ``docs/dev_notes/outer_loop_checks_missing_data.md``: it argues that reactive limits, slack
   active limits, tap-ratio control, area interchange and secondary voltage control are one
   mathematical object -- a bounded control resource complementary to a regulated quantity --
@@ -42,8 +44,7 @@ Change Log
   fixed-sparsity / value-level-masking contract, with only tap *discreteness* left needing
   iteration around the solve. It also covers state-dependent slack weights (OLF's
   ``balanceType``) and the hydro produce / absorb mode question. Nothing of it is implemented
-  and none of its cost claims is benchmarked; the smallest useful first step is
-  clamp-and-renormalise on the slack, where ``GenPCheck`` already provides the oracle.
+  and none of its cost claims is benchmarked.
 - The Newton-Raphson conflates two different things under one flag. "Participates in the
   DISTRIBUTED SLACK" is a purely active statement -- this element takes a share of the
   power imbalance, by a participation factor -- and says nothing about voltage. "Is the
