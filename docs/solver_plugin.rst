@@ -469,6 +469,32 @@ source-tree build adds the ``SuiteSparse`` submodule's include directories itsel
 as ``examples/lm_algorithm/CMakeLists.txt`` does. Without CMake, the directory is
 ``os.path.join(lightsim2grid.get_include(), "suitesparse")``.
 
+.. _plugin-suitesparse-headers:
+
+.. rubric:: What is shipped of SuiteSparse, in the wheel and in the source distribution
+
+- **Wheel (and any installed package).** Six SuiteSparse headers: ``klu.h``, ``amd.h``, ``colamd.h``, ``btf.h``,
+  ``cs.h`` and ``SuiteSparse_config.h``, in ``lightsim2grid/include/suitesparse/``
+  (``include/lightsim2grid/suitesparse/`` for a standalone CMake install of the C++ library, see :doc:`cpp_library`).
+  They are the *configured* headers KLU was built with, and they are in their own directory because ``cs.h`` is too
+  generic a name to sit next to lightsim2grid's headers. Only the **headers** are shipped: the compiled KLU is embedded in
+  ``liblightsim2grid_core`` / the python extension, so a plugin never links KLU itself and must not compile its own copy.
+  The licenses of the bundled code (KLU, BTF and CXSparse are LGPL-2.1+, AMD and COLAMD are BSD-3, ``SuiteSparse_config`` is
+  BSD-3) are installed under ``include/licenses/SuiteSparse/`` and listed in the wheel's license files.
+- **Only when KLU came from the SuiteSparse submodule.** If the build used a system KLU (for example
+  ``libsuitesparse-dev``), nothing of SuiteSparse is installed: the plugin then finds the system headers, and the
+  build machine of the plugin needs them. A build without KLU defines no ``KLU_SOLVER_AVAILABLE``, and
+  ``KLUSolver.hpp`` needs none of this.
+- **Source distribution (``tar.gz``).** It does not contain these installed headers. It contains the sources of the
+  SuiteSparse components lightsim2grid builds KLU from (``SuiteSparse_config``, ``AMD``, ``BTF``, ``COLAMD``, ``CXSparse``
+  and ``KLU``: their ``Source``, ``Include`` and ``Config`` directories and ``CMakeLists.txt``), trimmed of
+  documentation, demos, MATLAB interfaces, build output and the SuiteSparse components it does not use. The license
+  files of the kept components are the only files of their ``Doc/`` directories that remain. Installing the sdist (``pip install``)
+  builds KLU from these sources (this needs CMake >= 3.22, otherwise the build falls back to the Eigen ``SparseLU`` algorithms alone), and the installed result then has the ``include/suitesparse/`` directory above. A plugin
+  should be built against that **installed** package, not against the ``SuiteSparse/`` tree of the sdist (whose
+  headers have not been through SuiteSparse's configure step); only a source-tree build of this repository, with the submodule fetched, adds the
+  submodule's include directories itself (``examples/lm_algorithm/CMakeLists.txt``).
+
 .. code-block:: cmake
 
     cmake_minimum_required(VERSION 3.15)
