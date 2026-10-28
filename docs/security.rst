@@ -70,6 +70,10 @@ the file, and it is validated at two levels:
   *before* allocating (so a corrupted size cannot trigger a huge allocation),
   and requires the file to be fully consumed. Malformed, truncated or corrupted
   bytes raise ``RuntimeError``.
+* **Table level.** The step tables of the tap changers and the section tables of
+  the shunts are read by position, so each must hold the position (and, for a
+  shunt, the fewest sections a control may leave) it is restored at; one that
+  does not raises ``RuntimeError``.
 * **Semantic level.** After the bytes are read back into a grid, ``check_grid()``
   runs automatically (see below): a file that is byte-wise well-formed but
   *inconsistent* — for example one with an out-of-range bus id — raises a clean
@@ -82,8 +86,9 @@ the file, and it is validated at two levels:
 :py:meth:`lightsim2grid.network.LSGrid.check_grid` verifies that a grid
 is internally consistent and safe to run a powerflow on. It checks that every
 index the grid carries is in range — the bus id of every element, the substation
-id and the position in the topology vector (both optional), and the generator and
-SVC slack / remote-regulated bus references. The topology-vector positions are
+id and the position in the topology vector (both optional), the generator and
+SVC slack / remote-regulated bus references, and the bus a transformer's ratio tap
+changer or a shunt's sections regulate. The topology-vector positions are
 additionally required to form a permutation of ``[0, dim_topo)`` over exactly the
 elements :py:meth:`lightsim2grid.network.LSGrid.update_topo` drives (loads, generators, storage units,
 powerlines and transformers): that is what makes them safe to index the

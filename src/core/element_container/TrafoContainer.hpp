@@ -464,6 +464,12 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
         }
 
         FDPFCoeffs _fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
+
+        // the branch checks plus the bus a ratio tap changer regulates
+        void _check_valid(int nb_bus,
+                          int nb_sub,
+                          const SubstationContainer & substations,
+                          std::vector<int> & all_pos_topo_vect) const override;
 };
 
 inline TrafoInfo::TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noexcept:

@@ -235,6 +235,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [FIXED] Loading a pickle or binary file whose tap changer or shunt section tables are inconsistent
+  raises instead of crashing; ``check_grid`` checks the bus they regulate.
+- [FIXED] ``get_violations`` after a transformer's tap table was shortened raises instead of reading
+  past it.
 - [FIXED] ``set_config`` of the ``NR*`` algorithms: a config refused for one value no longer leaves
   the values checked before it applied.
 - [FIXED] ``ContingencyAnalysis``: a contingency naming its lines out of order or twice

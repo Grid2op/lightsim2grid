@@ -37,9 +37,13 @@ void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
     GenericContainer::check_size(std::get<StateResIdx::TARGET_DEADBAND>(my_state), size, "target_deadband_pu");
     GenericContainer::check_size(std::get<StateResIdx::REGULATED_BUS>(my_state), size, "regulated_bus");
     GenericContainer::check_size(std::get<StateResIdx::MIN_SECTION_COUNT>(my_state), size, "min_section_count");
-    // the tables are read by count: each must be complete and the count in it
+    // the tables are read by count: each must be complete and the counts in it (the
+    // ShuntVoltageControl loop walks them from the fewest a control may leave)
+    const auto & min_count = std::get<StateResIdx::MIN_SECTION_COUNT>(my_state);
     for(std::size_t el = 0; el < p.size(); ++el){
-        if(p[el].size() != q[el].size() || count[el] < 0 || count[el] > static_cast<int>(q[el].size())){
+        const int max_count = static_cast<int>(q[el].size());
+        if(p[el].size() != q[el].size() || count[el] < 0 || count[el] > max_count ||
+           min_count[el] < 0 || min_count[el] > max_count){
             std::ostringstream exc_;
             exc_ << "ShuntContainer::set_state: the sections of shunt " << el << " are inconsistent (tables of "
                  << "different lengths, or a section count outside them).";
@@ -55,6 +59,23 @@ void ShuntContainer::set_state(ShuntContainer::StateRes & my_state )
     regulated_bus_ = std::get<StateResIdx::REGULATED_BUS>(my_state);
     min_section_count_ = std::get<StateResIdx::MIN_SECTION_COUNT>(my_state);
     reset_results();
+}
+
+void ShuntContainer::_check_valid(int nb_bus,
+                                  int nb_sub,
+                                  const SubstationContainer & substations,
+                                  std::vector<int> & all_pos_topo_vect) const
+{
+    OneSideContainer_PQ::_check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
+    // a grid bus id, -1 for none: the ShuntVoltageControl loop maps it to the solver's
+    for(std::size_t el = 0; el < regulated_bus_.size(); ++el){
+        if(regulated_bus_[el] < -1 || regulated_bus_[el] >= nb_bus){
+            std::ostringstream exc_;
+            exc_ << "ShuntContainer::check_valid: shunt " << el << " regulates bus " << regulated_bus_[el]
+                 << ", there are " << nb_bus << " buses (-1 for none).";
+            throw std::out_of_range(exc_.str());
+        }
+    }
 }
 
 void ShuntContainer::_check_section_count(int el, int section_count, const char * where) const

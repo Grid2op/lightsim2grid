@@ -438,6 +438,26 @@ void TrafoContainer::_restore_results_tap_override(const std::vector<int> & move
     results_saved_positions_.clear();
 }
 
+void TrafoContainer::_check_valid(int nb_bus,
+                                  int nb_sub,
+                                  const SubstationContainer & substations,
+                                  std::vector<int> & all_pos_topo_vect) const
+{
+    BranchContainer::_check_valid(nb_bus, nb_sub, substations, all_pos_topo_vect);
+    // a ratio tap changer regulates a grid bus id (-1 for none), which the
+    // TransformerVoltageControl loop maps to the solver's
+    const TapChangers & rtc = ratio_taps_;
+    for(int el = 0; el < rtc.nb(); ++el){
+        const int reg = rtc.regulated(el);
+        if(reg < -1 || reg >= nb_bus){
+            std::ostringstream exc_;
+            exc_ << "TrafoContainer::check_valid: the ratio tap changer of transformer " << el
+                 << " regulates bus " << reg << ", there are " << nb_bus << " buses (-1 for none).";
+            throw std::out_of_range(exc_.str());
+        }
+    }
+}
+
 void TrafoContainer::set_tap_changer(bool phase, int el, int low_tap, int position,
                                      const std::vector<real_type> & rho,
                                      const std::vector<real_type> & alpha_deg,

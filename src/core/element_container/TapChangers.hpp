@@ -9,7 +9,9 @@
 #ifndef TAP_CHANGERS_H
 #define TAP_CHANGERS_H
 
+#include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -129,10 +131,16 @@ class LS2G_API TapChangers
                 throw std::runtime_error(exc_.str());
             }
             // checked before anything is written: a call that throws leaves the changer as it was
-            if (position < low_tap || position > low_tap + static_cast<int>(n) - 1) {
+            if (!_table_fits(low_tap, n)) {
+                std::ostringstream exc_;
+                exc_ << where << ": the table given for transformer " << el << " (" << n << " positions from "
+                     << low_tap << ") runs past the largest tap position (INT_MAX - 1).";
+                throw std::runtime_error(exc_.str());
+            }
+            if (position < low_tap || position > low_tap + (static_cast<int>(n) - 1)) {
                 std::ostringstream exc_;
                 exc_ << where << ": position " << position << " is not one of the table given for transformer "
-                     << el << " (from " << low_tap << " to " << low_tap + static_cast<int>(n) - 1 << ")";
+                     << el << " (from " << low_tap << " to " << low_tap + (static_cast<int>(n) - 1) << ")";
                 throw std::runtime_error(exc_.str());
             }
             const std::size_t k = static_cast<std::size_t>(el);
@@ -160,7 +168,7 @@ class LS2G_API TapChangers
         }
 
         int low_tap(int el) const { return low_tap_[static_cast<std::size_t>(el)]; }
-        int high_tap(int el) const { return low_tap(el) + static_cast<int>(rho_[static_cast<std::size_t>(el)].size()) - 1; }
+        int high_tap(int el) const { return low_tap(el) + (static_cast<int>(rho_[static_cast<std::size_t>(el)].size()) - 1); }
         int position(int el) const { return position_[static_cast<std::size_t>(el)]; }
         void set_position(int el, int position, const std::string & where)
         {
@@ -227,8 +235,10 @@ class LS2G_API TapChangers
                 const std::size_t steps = rho[k].size();
                 const bool consistent = alpha[k].size() == steps && r[k].size() == steps && x[k].size() == steps &&
                                         g[k].size() == steps && b[k].size() == steps;
+                // in 64 bits: `pos - low` and `low + steps - 1` overflow an int on a crafted file
                 const bool in_range = steps == 0 ||
-                    (pos[k] >= low[k] && pos[k] - low[k] < static_cast<int>(steps));
+                    (_table_fits(low[k], steps) && pos[k] >= low[k] &&
+                     static_cast<long long>(pos[k]) - low[k] < static_cast<long long>(steps));
                 if (!consistent || !in_range) {
                     std::ostringstream exc_;
                     exc_ << where << ": the tap changer of transformer " << k << " is inconsistent (columns of "
@@ -264,7 +274,24 @@ class LS2G_API TapChangers
         {
             const std::vector<real_type> & steps = column[static_cast<std::size_t>(el)];
             if (steps.empty()) return neutral;
-            return steps[static_cast<std::size_t>(position - low_tap(el))];
+            // a position can come from elsewhere than this table: an algorithm's results, a
+            // solve carried over, both of which may predate a set() that shortened it
+            const long long index = static_cast<long long>(position) - low_tap(el);
+            if (index < 0 || index >= static_cast<long long>(steps.size())) {
+                std::ostringstream exc_;
+                exc_ << "TapChangers: position " << position << " is not one of transformer " << el
+                     << "'s (from " << low_tap(el) << " to " << high_tap(el) << "); was its table "
+                     << "replaced since the solve that gave it?";
+                throw std::out_of_range(exc_.str());
+            }
+            return steps[static_cast<std::size_t>(index)];
+        }
+        /// whether positions `low_tap` .. `low_tap + n - 1` are ints below INT_MAX: the loops
+        /// over a table (`for(pos = low; pos <= high; ++pos)`) step one past its highest
+        static bool _table_fits(int low_tap, std::size_t n)
+        {
+            return static_cast<long long>(low_tap) + static_cast<long long>(n) - 1 <
+                   static_cast<long long>(std::numeric_limits<int>::max());
         }
 
         std::vector<int> low_tap_;
