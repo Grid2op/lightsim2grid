@@ -360,19 +360,46 @@ the same (see the ``lm_algorithm`` and ``dist_slack_algorithm`` examples): witho
 it, a row's ``modify_gen_v`` on a generator that holds a bus remotely is solved at
 the grid's own set-point.
 
-Nothing to do: a batch row's view for the outer loops
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Nothing to do: the outer-loop hooks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-A batch hands every algorithm what its row changes compared with the grid, through
-``set_outer_row_view(const OuterRowView * row)``, before each row's solve. Only an
-algorithm that runs outer loops (``supports_outer_loops()``) reads it; the default does
-nothing, and a plugin keeps it. The virtual is part of the interface all the same, so a
-plugin built against an earlier version must be rebuilt. The same goes for
-``set_outer_loops``, which takes the grid's ``OuterLoopDriverParams`` next to its loops,
-for ``get_outer_resume_point``, where a batch reads how the "n" solve's loops ended
-(the default returns none), and for ``get_outer_control_layout``, where the J rows and
-columns of the controls the loops act through are read (the default returns an empty
-layout): only an algorithm that runs outer loops overrides them.
+``BaseAlgo`` carries the hooks of the ``NROuter_*`` algorithms (see :ref:`outer_loops`). A plugin that does
+not run OpenLoadFlow's outer loops **keeps every default and writes nothing**; but the virtuals are part of the
+interface, so a plugin built against an earlier version **must be rebuilt**.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Hook (default)
+     - Role
+   * - ``bool supports_outer_loops() const noexcept`` (``false``)
+     - Whether the algorithm runs the grid's outer loops. ``LSGrid`` and the batch classes only hand loops to
+       an algorithm that says yes; the other ones reject a non-empty list.
+   * - ``void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops, const OuterLoopDriverParams & driver)``
+       (throws on a non-empty list)
+     - The grid's loops, in order, and its driver parameters, handed over before each solve. The algorithm keeps
+       a clone of each loop.
+   * - ``void set_outer_row_view(const OuterRowView * row)`` (no-op)
+     - What a batch row changes compared with the grid (its labelling, stranded buses, the units it disconnects
+       or moves, the branches it opens), before each row's solve. ``nullptr``: the grid as it is. The caller keeps
+       it alive until the next call. Only an algorithm with loops reads it.
+   * - ``OuterLoopStats get_outer_loop_stats() const`` (empty)
+     - What the last solve's loops did.
+   * - ``get_outer_target_p(std::vector<real_type> & gen_p_mw, std::vector<real_type> & storage_p_mw)``,
+       ``get_outer_hvdc_status(std::vector<int> &)``, ``get_outer_phase_tap(std::vector<int> &)``,
+       ``get_outer_ratio_tap(std::vector<int> &)``, ``get_outer_shunt_sections(std::vector<int> &)`` (clear the vectors)
+     - Read-backs of what the loops settled on, published in the results: the moved active power targets (MW, NaN where
+       unchanged; storage in load convention), the droop regime of each hvdc line, the phase and ratio tap and the section
+       count of each element (grid id; ``INT_MIN`` where the grid's own is kept).
+   * - ``std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const`` (``nullptr``)
+     - Where the last solve's loops ended, for a batch to start other rows from ("n" solve of ``init_from_n_powerflow``,
+       the previous row of a ``TimeSeries``). ``nullptr`` when it did not converge.
+   * - ``OuterControlLayout get_outer_control_layout() const`` (empty layout)
+     - The J rows and columns of the continuous controls (phase shifters, ratio groups, shunt controllers) in the
+       system the last rebuild built, for a solver that poses the same system (see the ``OuterControlLayout`` class in Python).
+
+Only an algorithm that runs outer loops overrides them.
 
 
 Writing a solver plugin

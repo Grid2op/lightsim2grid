@@ -113,13 +113,20 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dc_distribute_slack_on_can_participate", &LSGrid::get_dc_distribute_slack_on_can_participate,
              "See set_dc_distribute_slack_on_can_participate.")
         .def("clear_outer_loops", &LSGrid::clear_outer_loops,
-             "Empty the list of outer loops an NROuter_* algorithm runs (then add_outer_loop the ones wanted, in order)")
+             "Empty the list of outer loops an NROuter_* algorithm runs (then add_outer_loop the ones wanted, in the "
+             "order wanted: the loops are checked in the order of the list). With an empty list an NROuter_* "
+             "algorithm is the single-slack Newton-Raphson alone.")
         .def("add_outer_loop", &LSGrid::add_outer_loop, py::arg("loop"),
-             "Append an outer loop to the list an NROuter_* algorithm runs (starting from OpenLoadFlow's default list if it was never edited)")
+             "Append an outer loop to the list an NROuter_* algorithm runs (starting from OpenLoadFlow's default list if it "
+             "was never edited). The order of the list is the order the loops are checked in, and it changes the "
+             "result: to reorder, clear_outer_loops() then add the loops in the order wanted (OpenLoadFlow's order is "
+             "DistributedSlack, HvdcAcEmulationLimits, VoltageMonitoring, ReactiveLimits, PhaseControl, "
+             "TransformerVoltageControl, ShuntVoltageControl). A list cannot hold the same loop twice: raises a "
+             "RuntimeError, as it does for None. See the 'OpenLoadFlow's outer loops' page of the documentation.")
         .def("reset_outer_loops", &LSGrid::reset_outer_loops,
              "Back to OpenLoadFlow's default list of outer loops")
         .def("get_outer_loops", &LSGrid::get_outer_loops,
-             "The outer loops an NROuter_* algorithm runs, in order")
+             "The outer loops an NROuter_* algorithm runs, in the order they are checked in")
         .def("set_outer_loop_driver_params", &LSGrid::set_outer_loop_driver_params, py::arg("params"),
              DocLSGrid::set_outer_loop_driver_params.c_str())
         .def("get_outer_loop_driver_params", &LSGrid::get_outer_loop_driver_params,

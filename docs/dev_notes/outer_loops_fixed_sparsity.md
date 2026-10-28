@@ -3,7 +3,10 @@
 **Design note, not documentation.** It describes how lightsim2grid runs OpenLoadFlow's
 AC outer loops itself, around a Newton-Raphson that keeps **one symbolic analysis and one
 numeric factorization per solve**. It is the reference for the `dev_outerloops` work and is
-updated as each phase lands. It is not part of the built documentation (`docs/*.rst`).
+updated as each phase lands. It is not part of the built documentation (`docs/*.rst`). The user
+documentation of the same feature is `docs/outer_loops.rst` (how to choose the loops and their
+order, what each does, what it reads on the grid), and `docs/physical_violations.rst` for the
+detection mode.
 
 Companion notes in this folder:
 
@@ -40,9 +43,10 @@ Constraints:
   reserved; a regulating transformer gets its ratio column and every row its control may use.
   This union pattern is what guarantees the single analysis; afterwards a loop only rewrites
   values. What no registered loop reserved is not in the solve at all.
-- **The loops can be registered from Python, in any order** (`algo.clear_outer()`,
-  `algo.add_outer(ReactiveLimits())`, ...). Without any call, the list is OpenLoadFlow's
-  default list, in its order.
+- **The loops can be registered from Python, in any order**, on the grid
+  (`grid.clear_outer_loops()`, `grid.add_outer_loop(ReactiveLimits())`, ...,
+  `grid.reset_outer_loops()`, `grid.get_outer_loops()`). Without any call, the list is
+  OpenLoadFlow's default list, in its order. A list never holds the same loop twice.
 - **Detection is never re-coded.** The trigger of each loop is computed in one place, reused by
   both modes, and built on the existing check headers (see "Reuse" below).
 
@@ -407,12 +411,15 @@ even when no loop runs.
 
 ### Registration and persistence
 
-`algo.clear_outer()`, `algo.add_outer(loop)` and `algo.get_outer()` act on the `NROuter_*`
-algorithm through a non-const accessor (the existing `get_algo()` binding is const by
-convention). Each loop's parameters carry OLF's parameter names and the defaults of the table
-above. A grid copy, a pickle or a batch thread only carries the algorithm name and its
-`AlgoConfig`, so the loop list is kept as descriptors (type + parameters) next to it and
-rebuilt with `clone()`.
+The loops are the **grid's** (`LSGrid::clear_outer_loops`, `add_outer_loop`, `reset_outer_loops`,
+`get_outer_loops`; the first edit of a never-edited list starts from the default one), and so are
+the driver's parameters (`set_outer_loop_driver_params`). The grid hands both to the `NROuter_*`
+algorithm before each solve (`BaseAlgo::set_outer_loops`), which keeps a clone of each loop, so
+that a loop's per-solve state is the algorithm's own. Each loop's parameters carry OLF's parameter
+names and the defaults of the table above. A grid copy, a pickle or a batch thread carries the
+algorithm name and its `AlgoConfig` and, next to them, the loop list as descriptors (name + integer
+and real parameters) rebuilt with `make_outer_loop` / `clone()`; the binary format carries them too
+(format 22).
 
 ## In the batches
 
@@ -446,7 +453,8 @@ top), never off the containers directly.
   generator results and its P checks; a moved tap is the row's transformer block in its flows.
   A row its loops leave UNSTABLE or FAILED does not converge.
 - **Not yet:** `keep_jacobian` (which inner Jacobian the adjoint should read is not settled);
-  `redistribute_slack` is refused anyway (the inner Newton is single-slack).
+  it is refused with an algorithm that runs outer loops. `redistribute_slack` works: the batch
+  shares the row's imbalance before the solve and `DistributedSlack` takes over from there.
 
 Detection is the loops' first check, without the action (`outer_detect`): each loop is
 initialized on a clone and detects, on the row as its view shows it, for `LSGrid` and every

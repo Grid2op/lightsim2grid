@@ -497,6 +497,34 @@ starts cold and rebuilds on its first powerflow. Unlike the serialization case t
 requirement -- a copy is the same grid, in the same process, so its cache would be perfectly valid
 -- and it may change in a future version. The ``allow_*_cache_reuse`` settings *are* copied.
 
+.. _network-outer-loop-data:
+
+Data read by the outer loops
+------------------------------
+
+The ``NROuter_*`` algorithms (:ref:`outer_loops`) decide on data that the other algorithms ignore. It belongs to the
+grid, is copied with it, and is kept by a pickle and by ``save_binary`` (binary format 22):
+
+- **tap changers** of the transformers: the steps (ratio, shift, corrections in % of r, x, g, b) and the current position
+  (:func:`~lightsim2grid.network.LSGrid.set_trafo_ratio_tap_changer`,
+  :func:`~lightsim2grid.network.LSGrid.set_trafo_phase_tap_changer`), and what they regulate
+  (:func:`~lightsim2grid.network.LSGrid.set_trafo_ratio_tap_regulation`,
+  :func:`~lightsim2grid.network.LSGrid.set_trafo_phase_tap_regulation`). The pi model is taken at the current tap, as OpenLoadFlow
+  takes it. The position a loop settles on is a result (``res_ratio_tap_position`` / ``res_phase_tap_position`` of
+  ``TrafoInfo``), never written back in the inputs;
+- **shunt sections**: the cumulative p and q at 1 pu for each section count, the current count
+  (:func:`~lightsim2grid.network.LSGrid.set_shunt_sections`) and the regulation
+  (:func:`~lightsim2grid.network.LSGrid.set_shunt_section_regulation`); the count a loop settles on is
+  ``res_section_count`` of ``ShuntInfo``;
+- **reactive capability curves** of the generators (:func:`~lightsim2grid.network.LSGrid.set_gen_capability_curves`), read at the
+  active power target a loop moved, and the raw target Q of a non-regulating unit;
+- **standby automata of the SVCs** (:func:`~lightsim2grid.network.LSGrid.set_svc_standby`, ``set_svc_b0``);
+- **the list of outer loops and the driver parameters**.
+
+:func:`~lightsim2grid.network.init_from_pypowsybl` reads all of it from the pypowsybl network, and can take the list of loops
+and their parameters from a ``pypowsybl.loadflow.Parameters`` (``olf_parameters``) and apply OpenLoadFlow's network-loading rules
+(``olf_rules``): see :ref:`outer-loops-pypowsybl`.
+
 Propagating contingencies (pypowsybl)
 --------------------------------------
 

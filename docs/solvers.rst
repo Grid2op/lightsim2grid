@@ -48,6 +48,11 @@ LightSim2Grid supports five families of powerflow algorithms:
   - :class:`lightsim2grid.algorithm.NR_NICSLU`
   - :class:`lightsim2grid.algorithm.NR_CKTSO`
 
+- **Newton-Raphson with OpenLoadFlow's outer loops**: a single-slack Newton-Raphson wrapped in the outer
+  loops of OpenLoadFlow (reactive limits, distributed slack within the units' limits, tap and shunt
+  control, ...). Opt-in, registered by name only (see :ref:`algorithm_names`), and described in :ref:`outer_loops`:
+  ``NROuter_SparseLU``, ``NROuter_KLU``, ``NROuter_KLUStaticPivot``, ``NROuter_NICSLU``, ``NROuter_CKTSO``.
+
 - **Fast-Decoupled Powerflow (FDPF)**: the XB and BX variants of the fast-decoupled
   Newton-Raphson method.  Available with four linear-solver backends each:
 
