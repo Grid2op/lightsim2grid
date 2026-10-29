@@ -594,6 +594,36 @@ class TestLightEnvActions(unittest.TestCase):
         self.assertEqual(cpy.max_step, nb_ts)
         self.assertEqual(self.light_env.max_step, data.load_p.shape[0])
 
+    # --- time series ---
+
+    def test_time_series_none_is_unchanged(self):
+        """a time series left to None is a matrix of NaN: same episode as passing the NaN"""
+        env = self.env
+        data = env.chronics_handler.real_data.data
+        nb_ts = 5
+        ts = dict(load_p=data.load_p[:nb_ts], load_q=data.load_q[:nb_ts], gen_p=data.prod_p[:nb_ts])
+        envs = []
+        for gen_v in (None, np.full((nb_ts, env.n_gen), np.nan)):
+            light_env = self.make_light_env(nb_ts=nb_ts)
+            light_env.assign_time_series(gen_v=gen_v, **ts)  # everything else left to None
+            light_env.reset()
+            envs.append(light_env)
+        self.assertEqual(envs[0].max_step, nb_ts)
+        for _ in range(nb_ts - 1):
+            obs_none = envs[0].step(0)[0]
+            obs_nan = envs[1].step(0)[0]
+            np.testing.assert_array_equal(obs_none.a_or, obs_nan.a_or)
+            np.testing.assert_array_equal(obs_none.gen_p, obs_nan.gen_p)
+
+    def test_time_series_none_errors(self):
+        nb_ts = 3
+        light_env = self.make_light_env(nb_ts=nb_ts)
+        with self.assertRaises(ValueError):
+            light_env.assign_time_series()  # no number of steps
+        data = self.env.chronics_handler.real_data.data
+        with self.assertRaises(ValueError):
+            light_env.assign_time_series(load_p=data.load_p[:nb_ts], gen_p=data.prod_p[:nb_ts + 1])
+
     # --- reward and end of episode ---
 
     def test_reward_is_fraction_survived(self):

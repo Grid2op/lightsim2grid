@@ -235,6 +235,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [IMPROVED] light environment: ``LightEnv.assign_time_series`` takes keywords, ``None`` keeping a
+  quantity unchanged (eg ``gen_v`` for an environment without ``prod_v``, which crashed the benchmark).
 - [FIXED] Loading a pickle or binary file whose tap changer or shunt section tables are inconsistent
   raises instead of crashing; ``check_grid`` checks the bus they regulate.
 - [FIXED] ``get_violations`` after a transformer's tap table was shortened raises instead of reading

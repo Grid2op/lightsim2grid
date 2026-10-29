@@ -48,18 +48,13 @@ parameters. This is the setup used by the benchmark (``benchmarks/light_env.py``
     light_env = LightEnv(env.backend._grid)
 
     # the injections: one row per step, one column per element, NaN meaning "unchanged"
+    # (a quantity left out, or None, keeps the value of the initial grid)
     data = env.chronics_handler.real_data.data
-    nb_row = data.load_p.shape[0]
     light_env.assign_time_series(
-        data.load_p.astype(float),
-        data.load_q.astype(float),
-        data.prod_p.astype(float),
-        (data.prod_v / env.backend.prod_pu_to_kv).astype(float),  # in pu, not kV
-        np.full((nb_row, env.n_storage), np.nan),
-        np.full((nb_row, env.n_shunt), np.nan),
-        np.full((nb_row, env.n_shunt), np.nan),
-        np.full((nb_row, 0), np.nan),
-        np.full((nb_row, 0), np.nan),
+        load_p=data.load_p,
+        load_q=data.load_q,
+        gen_p=data.prod_p,
+        gen_v=data.prod_v / env.backend.prod_pu_to_kv,  # in pu, not kV
     )
 
     # the protections: thermal limits in kA (grid2op uses A), on both sides of each line
@@ -97,8 +92,10 @@ grid2op's topology vector, which ``obs.topo_vect`` needs; a grid loaded directly
 
 **The time series** (``assign_time_series``). Nine matrices, one row per step, one column per
 element: ``load_p``, ``load_q``, ``gen_p`` (MW / MVAr), ``gen_v`` (**pu**), ``storage_p``,
-``shunt_p``, ``shunt_q``, ``sgen_p``, ``sgen_q``. A NaN leaves the value of the grid unchanged.
-They must all have the same number of rows, which becomes ``max_step``; the sizes are checked
+``shunt_p``, ``shunt_q``, ``sgen_p``, ``sgen_q``. A NaN leaves the value of the grid unchanged,
+and a matrix left out (``None``, the default) is all NaN: that quantity keeps the value of the
+initial grid, eg ``gen_v=None`` for an environment without a ``prod_v`` time series. At least
+one matrix is needed. They must all have the same number of rows, which becomes ``max_step``; the sizes are checked
 at the next ``reset``. For now only ``load_p``, ``load_q``, ``gen_p`` and ``gen_v`` are
 applied, the other five are only checked.
 

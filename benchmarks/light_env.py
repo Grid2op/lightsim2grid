@@ -79,16 +79,15 @@ def assign_chronic(light_env, env, max_ts):
     """give the light env the injections of the chronic `env` is currently playing"""
     data = env.chronics_handler.real_data.data
     nb_row = min(data.load_p.shape[0], max_ts + 1)
+    # some environments (eg l2rpn_idf_2023) have no prod_v: None keeps the set-points of the grid
+    gen_v = None
+    if data.prod_v is not None:
+        gen_v = data.prod_v[:nb_row] / env.backend.prod_pu_to_kv  # the light env wants pu
     light_env.assign_time_series(
-        data.load_p[:nb_row].astype(float),
-        data.load_q[:nb_row].astype(float),
-        data.prod_p[:nb_row].astype(float),
-        (data.prod_v[:nb_row] / env.backend.prod_pu_to_kv).astype(float),  # the light env wants pu
-        np.full((nb_row, env.n_storage), np.nan),
-        np.full((nb_row, env.n_shunt), np.nan),
-        np.full((nb_row, env.n_shunt), np.nan),
-        np.full((nb_row, 0), np.nan),
-        np.full((nb_row, 0), np.nan),
+        load_p=data.load_p[:nb_row],
+        load_q=data.load_q[:nb_row],
+        gen_p=data.prod_p[:nb_row],
+        gen_v=gen_v,
     )
 
 
