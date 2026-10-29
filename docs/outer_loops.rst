@@ -35,8 +35,11 @@ They are what you use to
 
 The loops work **on a fixed Jacobian pattern**: whatever they switch (a bus from PV to PQ, a
 transformer tap, a shunt section) is done by rewriting *values* in a sparsity pattern
-reserved before the first solve. A solve therefore keeps a single symbolic analysis of the
-Jacobian, and so does every row of the batch classes (see :ref:`batch_outer_loops`).
+reserved before the first solve. That pattern is computed **by the loops themselves, from the data of the
+grid**: each loop of the list declares the rows, columns and switchable buses it may need in any state it can
+reach, from the units that can switch, participate in the slack or regulate. A solve therefore keeps a single
+symbolic analysis of the Jacobian, and so does every row of the batch classes (see :ref:`batch_outer_loops`).
+The same text, in the list of algorithms, is in :ref:`available-powerflow-solvers`.
 
 Quick start
 -----------
