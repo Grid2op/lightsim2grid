@@ -6,8 +6,9 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-"""A/B of the return value policy of LSGrid's result getters: ``reference`` (today) against
-``reference_internal`` (each array keeps the grid alive), ``copy`` for scale. See README.md.
+"""A/B of the return value policy of LSGrid's result getters: ``reference`` (before 1.3.0)
+against ``reference_internal`` (each array keeps the grid alive, since), ``copy`` for scale. See
+README.md.
 
     AB_VIEWS_DIR=build_ab python run_ab.py time   # wall time per call, interleaved rounds
     AB_VIEWS_DIR=build_ab python run_ab.py ir     # instructions per call, under callgrind
@@ -50,7 +51,7 @@ def _check_lifetimes(grid):
 
 def _lightsim2grid_grid():
     """a solved grid of lightsim2grid's own binding (LTO, as shipped), None without it: its
-    get_gen_res is the `reference` row as users call it"""
+    get_gen_res is the row of the policy the installed version ships, as users call it"""
     try:
         import numpy as np
         from lightsim2grid.lightsim2grid_cpp import LSGrid
@@ -95,7 +96,7 @@ def time_mode(sizes=(20, 2000), number=200_000, rounds=15, seed=0):
         print(f"  {'nop (dispatch only)':<28}{nop:9.1f} [{min(samples['nop']):7.1f}]")
         if "shipped" in samples:
             print(f"  {'lightsim2grid get_gen_res':<28}{statistics.median(samples['shipped']):9.1f} "
-                  f"[{min(samples['shipped']):7.1f}]   (the shipped binding, reference)")
+                  f"[{min(samples['shipped']):7.1f}]   (the installed binding)")
         for getter in GETTERS:
             med = {p: statistics.median(samples[f"{getter}_{p}"]) for p in POLICIES}
             mins = {p: min(samples[f"{getter}_{p}"]) for p in POLICIES}

@@ -5503,15 +5503,11 @@ const std::string DocLSGrid::get_Ybus_solver = R"mydelimiter(
     bus of the grid, the row of the grid bus ``k`` being ``id_me_to_ac_solver()[k]``.
 
     .. versionchanged:: 1.2.0
-        This is now a read only view of the matrix the grid holds, and no longer a copy of it.
+        A read only view of the matrix the grid holds, valid until a powerflow rebuilt it.
 
-    .. warning::
-        The arrays of the returned matrix are the ones the grid uses, not a copy: it is only
-        valid until a powerflow of this grid rebuilds that matrix (after a change of topology
-        or of an admittance, or a reset of the solver). Reading it after that is undefined:
-        it can show the new values, the old ones, or crash. Call `.copy()` on it to keep it,
-        and to pass it to a function of lightsim2grid taking a sparse matrix (for example
-        the `compute_pf` of an algorithm), which needs writeable arrays.
+    .. versionchanged:: 1.3.0
+        A copy of that matrix again, as before 1.2.0: a powerflow rebuilds it after a change of
+        topology or of an admittance, or a reset of the solver, which no view of it survives.
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 
@@ -5551,15 +5547,11 @@ const std::string DocLSGrid::get_dcYbus_solver = R"mydelimiter(
     bus of the grid, the row of the grid bus ``k`` being ``id_me_to_dc_solver()[k]``.
 
     .. versionchanged:: 1.2.0
-        This is now a read only view of the matrix the grid holds, and no longer a copy of it.
+        A read only view of the matrix the grid holds, valid until a powerflow rebuilt it.
 
-    .. warning::
-        The arrays of the returned matrix are the ones the grid uses, not a copy: it is only
-        valid until a powerflow of this grid rebuilds that matrix (after a change of topology
-        or of an admittance, or a reset of the solver). Reading it after that is undefined:
-        it can show the new values, the old ones, or crash. Call `.copy()` on it to keep it,
-        and to pass it to a function of lightsim2grid taking a sparse matrix (for example
-        the `compute_pf` of an algorithm), which needs writeable arrays.
+    .. versionchanged:: 1.3.0
+        A copy of that matrix again, as before 1.2.0: a powerflow rebuilds it after a change of
+        topology or of an admittance, or a reset of the solver, which no view of it survives.
 
     .. seealso::
         If you want to retrieve the Ybus adopting the "gridmodel" bus labelling, you can use 

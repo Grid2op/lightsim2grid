@@ -5,9 +5,10 @@ The A/B behind `docs/dev_notes/result_view_lifetime.md`: what binding the result
 instead of `reference` costs per call.
 
 `ab_views.cpp` binds the very same C++ getters three times -- `reference` (what
-`binding_lsgrid.cpp` does), `reference_internal` (each array's `.base` is the grid, which it then
-keeps alive) and `copy` (each array owns a copy, for scale) -- on a synthetic meshed grid of any
-size. Nothing else differs: same pybind11, same casters, same object, same process.
+`binding_lsgrid.cpp` did before 1.3.0), `reference_internal` (each array's `.base` is the grid,
+which it then keeps alive: what it does since) and `copy` (each array owns a copy, for scale) --
+on a synthetic meshed grid of any size. Nothing else differs: same pybind11, same casters, same
+object, same process.
 
 ```
 python -m pip install pybind11 numpy

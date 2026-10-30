@@ -30,9 +30,11 @@ using namespace ls2g;
 template<typename Solver>
 void bind_algo_methods(py::class_<Solver>& cls) {
     cls
-        .def("get_Va",      &Solver::get_Va,      DocSolver::get_Va.c_str())
-        .def("get_Vm",      &Solver::get_Vm,      DocSolver::get_Vm.c_str())
-        .def("get_V",       &Solver::get_V,       DocSolver::get_V.c_str())
+        // copies: the algorithm frees its voltages on a reset or another solve's size, and
+        // an algorithm is often made for one call (pandapower_compat) -- a view of either dangles
+        .def("get_Va",      &Solver::get_Va,      DocSolver::get_Va.c_str(), py::return_value_policy::copy)
+        .def("get_Vm",      &Solver::get_Vm,      DocSolver::get_Vm.c_str(), py::return_value_policy::copy)
+        .def("get_V",       &Solver::get_V,       DocSolver::get_V.c_str(), py::return_value_policy::copy)
         .def("get_error",   &Solver::get_error,   DocSolver::get_error.c_str())
         .def("get_nb_iter", &Solver::get_nb_iter, DocSolver::get_nb_iter.c_str())
         .def("reset",       &Solver::reset,       DocSolver::reset.c_str())
@@ -735,9 +737,10 @@ void bind_solvers(py::module_& m) {
     py::class_<AlgorithmSelector>(m, "AlgorithmSelector", DocSolver::AlgorithmSelector.c_str())
         .def(py::init<>())
         .def("get_type",             &AlgorithmSelector::get_type,             DocSolver::get_type.c_str())
-        .def("get_Va",               &AlgorithmSelector::get_Va,               DocSolver::get_Va.c_str())
-        .def("get_Vm",               &AlgorithmSelector::get_Vm,               DocSolver::get_Vm.c_str())
-        .def("get_V",                &AlgorithmSelector::get_V,                DocSolver::get_V.c_str())
+        // copies, as for the algorithms themselves (bind_algo_methods)
+        .def("get_Va",               &AlgorithmSelector::get_Va,               DocSolver::get_Va.c_str(), py::return_value_policy::copy)
+        .def("get_Vm",               &AlgorithmSelector::get_Vm,               DocSolver::get_Vm.c_str(), py::return_value_policy::copy)
+        .def("get_V",                &AlgorithmSelector::get_V,                DocSolver::get_V.c_str(), py::return_value_policy::copy)
         .def("get_J",                &AlgorithmSelector::get_J_python,         DocSolver::chooseSolver_get_J_python.c_str())
         .def("get_theta_to_J_col",   &AlgorithmSelector::get_theta_to_J_col_python, "bus_id -> Jacobian column of its voltage-angle (theta) unknown, -1 if none")
         .def("get_vm_to_J_col",      &AlgorithmSelector::get_vm_to_J_col_python,    "bus_id -> Jacobian column of its voltage-magnitude (vm) unknown, -1 if none")

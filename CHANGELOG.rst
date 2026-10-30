@@ -11,9 +11,6 @@ Change Log
   every outer loop and builds the bus reactive plan once per loop reading it. Reusing the view the row
   was solved with and sharing one plan did not change the timing measurably on the default loop list.
   Follow-up: profile the per-row checks before optimising them.
-- ``LSGrid``'s result getters (``get_gen_res``...) return views that do not keep the grid alive:
-  read after the grid is gone, they show freed memory. ``reference_internal`` would fix it; to
-  benchmark and weigh first (``docs/dev_notes/result_view_lifetime.md``).
 - ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
   element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
   slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
@@ -245,8 +242,13 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   past it.
 - [FIXED] ``get_violations`` / ``get_physical_violations`` after ``init_trafo`` replaced the transformers
   of an ``NROuter_*`` solve raise instead of reading their freed tap tables.
+- [FIXED] The arrays of ``LSGrid``'s result getters (``get_gen_res``...) and of the hvdc lines'
+  ``get_bus_id_side_1`` / ``_2`` keep the grid alive: once the grid was gone, they read freed memory.
 - [FIXED] A diverged powerflow resets the element results to NaN in place; it freed the buffers
   the result arrays read.
+- [BREAKING] The ``*_solver`` getters of ``LSGrid`` and an algorithm's ``get_V`` / ``get_Va`` /
+  ``get_Vm`` return copies (``get_Ybus_solver`` as before 1.2.0): later powerflows rebuild what
+  they viewed.
 - [FIXED] ``set_config`` of the ``NR*`` algorithms: a config refused for one value no longer leaves
   the values checked before it applied.
 - [FIXED] ``ContingencyAnalysis``: a contingency naming its lines out of order or twice

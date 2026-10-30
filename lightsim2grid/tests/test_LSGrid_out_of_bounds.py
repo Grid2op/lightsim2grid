@@ -21,18 +21,25 @@ exception instead:
   * ``RuntimeError`` for array shape / length mismatches (``check_size``,
     ``update_continuous_values`` and ``TimeSeries::compute_Vs`` throw
     ``std::runtime_error``).
+
+The classes at the end check the arrays read back from a grid or an algorithm instead: none
+may read memory its owner has freed.
 """
 
 import gc
 import os
+import re
 import sys
 import unittest
 import warnings
+import weakref
 import numpy as np
+import scipy.sparse as sp
 
+import pandapower as pp
 import pandapower.networks as pn
 from lightsim2grid.network import init_from_pandapower
-from lightsim2grid.lightsim2grid_cpp import LSGrid, RegulationMode
+from lightsim2grid.lightsim2grid_cpp import LSGrid, RegulationMode, NR_SparseLU
 from lightsim2grid.algorithm import PhaseControl
 
 try:
@@ -365,6 +372,315 @@ class TestOuterTapsOfReplacedTransformers(unittest.TestCase):
             grid.get_violations()
         with self.assertRaisesRegex(IndexError, "were the transformers replaced"):
             grid.get_physical_violations()
+
+
+def _solve(grid, ac=True):
+    V0 = np.ones(grid.total_bus(), dtype=complex)
+    V = grid.ac_pf(V0, 10, 1e-8) if ac else grid.dc_pf(V0, 10, 1e-8)
+    if V.size == 0:
+        raise AssertionError(f"the {'AC' if ac else 'DC'} powerflow did not converge")
+
+
+def _solved_grid():
+    """case14 with one of each element it lacks (a static generator, a storage unit, an hvdc
+    line), solved in AC, in DC, then in AC again: every result getter has something to show,
+    and the AC and the DC solver both have their caches filled"""
+    net = pn.case14()
+    pp.create_sgen(net, 4, p_mw=5., q_mvar=1.)
+    pp.create_storage(net, 5, p_mw=3., max_e_mwh=10.)
+    pp.create_dcline(net, 3, 9, p_mw=20., loss_percent=1., loss_mw=.5, vm_from_pu=1.01, vm_to_pu=1.01)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        grid = init_from_pandapower(net)
+    _solve(grid, ac=True)
+    _solve(grid, ac=False)
+    _solve(grid, ac=True)
+    return grid
+
+
+def _arrays_of(res):
+    """the numpy arrays in what a getter returned: the array itself, those of a tuple, or those
+    of a scipy sparse matrix"""
+    if isinstance(res, np.ndarray):
+        return [res]
+    if isinstance(res, tuple):
+        return [arr for arr in res if isinstance(arr, np.ndarray)]
+    if sp.issparse(res):
+        return [res.data, res.indices, res.indptr]
+    return []
+
+
+def _memory_holder(arr):
+    """What keeps the memory of `arr` alive: the array itself when it owns its data, else the
+    object its `.base` chain ends on (a capsule, the grid...). None for a view whose chain ends
+    on nothing: memory that nothing keeps alive."""
+    while isinstance(arr, np.ndarray):
+        if arr.flags.owndata:
+            return arr
+        if arr.base is None:
+            return None
+        arr = arr.base
+    return arr
+
+
+def _is_snapshot(arr):
+    """memory of its own: held by the array, or by the capsule pybind11 hands a result over in"""
+    holder = _memory_holder(arr)
+    return isinstance(holder, np.ndarray) or type(holder).__name__ == "PyCapsule"
+
+
+def _array_getters(obj):
+    """{name: what it returned} for the get_* / id_* methods of `obj` that take no argument and
+    return arrays"""
+    res = {}
+    for name in dir(obj):
+        if not name.startswith(("get_", "id_")):
+            continue
+        try:
+            got = getattr(obj, name)()
+        except Exception:  # takes arguments, or does not apply to this grid or algorithm
+            continue
+        if _arrays_of(got):
+            res[name] = got
+    return res
+
+
+_CONTAINERS = ("get_generators", "get_loads", "get_static_generators", "get_storages", "get_shunts",
+               "get_lines", "get_trafos", "get_dclines")
+
+
+def _grid_array_getters(grid):
+    """_array_getters of the grid and of its element containers (as ``get_lines().get_bus_id_side_1``)"""
+    res = _array_getters(grid)
+    for cont in _CONTAINERS:
+        for name, got in _array_getters(getattr(grid, cont)()).items():
+            res[f"{cont}().{name}"] = got
+    return res
+
+
+def _data_ptr(arr):
+    return arr.__array_interface__["data"][0]
+
+
+def _reuse_freed_memory():
+    """allocate blocks of every small size and fill them: freed memory read afterwards no longer
+    shows what it held"""
+    junk = [np.full(n, -1.2345e300) for n in range(1, 2000)]
+    del junk
+
+
+def _standalone_solver(grid):
+    """an algorithm solving the grid's AC problem on its own, as pandapower_compat uses one"""
+    solver = NR_SparseLU()
+    conv = solver.compute_pf(grid.get_Ybus_solver().copy(),
+                             np.abs(grid.get_V_solver()).astype(complex),
+                             1.0 * grid.get_Sbus_solver(),
+                             np.array(grid.get_slack_ids_solver(), dtype=np.int32),
+                             1.0 * grid.get_slack_weights_solver(),
+                             np.array(grid.get_pv_solver(), dtype=np.int32),
+                             np.array(grid.get_pq_solver(), dtype=np.int32),
+                             10, 1e-8)
+    if not conv:
+        raise AssertionError("the algorithm alone did not converge")
+    return solver
+
+
+class TestResultViewsKeepTheirGrid(unittest.TestCase):
+    """LSGrid's result getters (get_gen_res, get_line_res1_full, get_load_theta,
+    get_gen_target_p...) return views of the grid's own buffers, which show its next powerflow.
+    A view must keep its grid alive, and the grid must keep the buffers it handed out: the views
+    did not keep the grid, and a diverged powerflow replaced every result buffer. Either way an
+    array read freed memory afterwards (a heap-use-after-free under ASan, sanitizers.yml)."""
+
+    maxDiff = None  # the lists of getters at fault, in full
+
+    def test_every_view_keeps_its_grid_alive(self):
+        """through `.base`, where numpy (and the reader) can see what holds the memory"""
+        grid = _solved_grid()
+        got = {nm: res for nm, res in _grid_array_getters(grid).items() if not nm.endswith("_solver")}
+        # the sweep found the result getters, each with something to show
+        for nm in ("get_gen_res", "get_line_res1_full", "get_trafo_res2", "get_sgens_res",
+                   "get_storages_res_full", "get_dcline_res1_full", "get_load_theta",
+                   "get_gen_target_p", "get_all_shunt_buses", "get_lines().get_yac_eff_11",
+                   "get_dclines().get_bus_id_side_1"):
+            self.assertIn(nm, got)
+            self.assertTrue(all(arr.size > 0 for arr in _arrays_of(got[nm])), nm)
+        dangling = sorted(nm for nm, res in got.items()
+                          if any(_memory_holder(arr) is None for arr in _arrays_of(res)))
+        self.assertEqual(dangling, [], "these views do not keep their grid alive")
+
+    def test_a_view_outlives_the_function_that_made_its_grid(self):
+        """the pattern of the helper that made test_outer_redistribute_slack.py fail on one CI
+        runner only: the grid is local, the array is returned"""
+        def gen_p():
+            grid = _solved_grid()
+            p = grid.get_gen_res()[0]
+            return p, p.copy(), weakref.ref(grid)
+
+        p, expected, grid_alive = gen_p()
+        gc.collect()
+        self.assertIsNotNone(grid_alive(), "the array does not keep its grid alive")
+        _reuse_freed_memory()
+        np.testing.assert_array_equal(p, expected)
+        # and only the array keeps it: the grid goes with it
+        del p
+        gc.collect()
+        self.assertIsNone(grid_alive())
+
+    def test_a_control_keeps_its_grid_alive(self):
+        grid = _solved_grid()
+        controls = [grid.get_ac_algo_controler(), grid.get_dc_algo_controler()]
+        grid_alive = weakref.ref(grid)
+        del grid
+        gc.collect()
+        self.assertIsNotNone(grid_alive(), "a control does not keep its grid alive")
+        for ctrl in controls:
+            self.assertIn(ctrl.need_reset_solver(), (True, False))
+        del controls, ctrl
+        gc.collect()
+        self.assertIsNone(grid_alive())
+
+    def test_views_stay_the_grid_buffers(self):
+        """After any ordinary call -- powerflows, a change of injection, of topology, one bus
+        less, a divergence, a reset, another algorithm -- what a view shows is still a buffer
+        the grid holds, of the same size. Only pointers are compared: nothing reads a buffer
+        that may be gone."""
+        grid = _solved_grid()
+        held = {}
+        for nm, res in _grid_array_getters(grid).items():
+            for idx, arr in enumerate(_arrays_of(res)):
+                if not _is_snapshot(arr):
+                    held[nm, idx] = (_data_ptr(arr), arr.shape)
+        self.assertIn(("get_gen_res", 0), held)
+        self.assertIn(("get_trafos().get_yac_eff_22", 0), held)
+
+        V0 = np.ones(grid.total_bus(), dtype=complex)
+        load_p = grid.get_loads()[0].target_p_mw
+        trafo_7 = [tr.id for tr in grid.get_trafos() if {tr.bus1_id, tr.bus2_id} == {6, 7}]
+        gen_7 = [gen.id for gen in grid.get_generators() if gen.bus_id == 7]
+        gen_2 = [gen.id for gen in grid.get_generators() if gen.bus_id == 2]
+        self.assertEqual((len(trafo_7), len(gen_7), len(gen_2)), (1, 1, 1))
+        nb_bus = grid.nb_connected_bus()
+
+        def one_bus_less():
+            # bus 7 hangs on one transformer and holds one generator: both off, it is gone
+            grid.deactivate_trafo(trafo_7[0])
+            grid.deactivate_gen(gen_7[0])
+
+        def divergence():
+            grid.change_p_load(0, 1e5)
+            self.assertEqual(grid.ac_pf(V0, 10, 1e-8).size, 0)
+            grid.change_p_load(0, load_p)
+
+        steps = [("powerflows", lambda: None),
+                 ("a change of load", lambda: grid.change_p_load(0, 1.1 * load_p)),
+                 ("a line disconnected", lambda: grid.deactivate_powerline(5)),
+                 ("a generator disconnected", lambda: grid.deactivate_gen(gen_2[0])),
+                 ("one bus less", one_bus_less),
+                 ("a divergence", divergence),
+                 ("a reset", grid.tell_solver_need_reset),
+                 ("another algorithm", lambda: grid.change_algorithm("NR_SparseLU"))]
+        moved = {}
+        for label, step in steps:
+            step()
+            _solve(grid, ac=True)
+            _solve(grid, ac=False)
+            fresh = _grid_array_getters(grid)
+            for (nm, idx), (ptr, shape) in held.items():
+                arr = _arrays_of(fresh[nm])[idx] if nm in fresh else None
+                if arr is None or _data_ptr(arr) != ptr or arr.shape != shape:
+                    moved.setdefault(label, []).append(nm)
+                    if arr is not None:
+                        held[nm, idx] = (_data_ptr(arr), arr.shape)  # report each step's own
+        self.assertEqual(grid.nb_connected_bus(), nb_bus - 1)
+        self.assertEqual({label: sorted(set(nms)) for label, nms in moved.items()}, {},
+                         "buffers the grid replaced while a view of them was out")
+
+    def test_a_divergence_resets_the_views_in_place(self):
+        """a diverged powerflow leaves no result: NaN, rather than the previous solve's values"""
+        grid = _solved_grid()
+        V0 = np.ones(grid.total_bus(), dtype=complex)
+        results = {nm: _arrays_of(res) for nm, res in _array_getters(grid).items()
+                   if re.search(r"_res\d?(_full)?$|_theta\d?$", nm)}
+        for nm in ("get_gen_res", "get_line_res1_full", "get_dcline_res2_full", "get_trafo_theta1"):
+            self.assertIn(nm, results)
+        load_p = grid.get_loads()[0].target_p_mw
+        grid.change_p_load(0, 1e5)
+        self.assertEqual(grid.ac_pf(V0, 10, 1e-8).size, 0)
+        not_reset = sorted(nm for nm, arrs in results.items()
+                           if not all(np.isnan(arr).all() for arr in arrs))
+        self.assertEqual(not_reset, [])
+        # the next powerflow writes into the same arrays
+        grid.change_p_load(0, load_p)
+        _solve(grid)
+        for nm, arrs in results.items():
+            for arr, fresh in zip(arrs, _arrays_of(getattr(grid, nm)())):
+                np.testing.assert_array_equal(arr, fresh)
+                self.assertTrue(np.isfinite(arr).all(), nm)
+
+
+class TestSolverGettersAreSnapshots(unittest.TestCase):
+    """What the solver side holds -- its bus labelling, pv / pq split, slack, Sbus, Ybus,
+    voltages -- is rebuilt by later powerflows (a change of topology, a reset, another
+    algorithm), which free the buffers it was in: a view of them would read freed memory,
+    whatever keeps the grid alive. The `*_solver` getters of LSGrid and the voltages of an
+    algorithm are copies, taken when called."""
+
+    maxDiff = None  # the lists of getters at fault, in full
+
+    def test_solver_getters_own_their_data(self):
+        grid = _solved_grid()
+        got = {nm: res for nm, res in _array_getters(grid).items() if nm.endswith("_solver")}
+        for nm in ("get_V_solver", "get_Va_solver", "get_Vm_solver", "get_Sbus_solver",
+                   "get_dcSbus_solver", "get_pv_solver", "get_pq_solver", "get_slack_ids_solver",
+                   "get_slack_weights_solver", "get_Ybus_solver", "get_dcYbus_solver"):
+            self.assertIn(nm, got)
+        views = sorted(nm for nm, res in got.items()
+                       if not all(_is_snapshot(arr) for arr in _arrays_of(res)))
+        self.assertEqual(views, [], "these solver getters return views")
+
+    def test_solver_snapshots_keep_their_values(self):
+        grid = _solved_grid()
+        got = {nm: _arrays_of(res) for nm, res in _array_getters(grid).items() if nm.endswith("_solver")}
+        expected = {nm: [arr.copy() for arr in arrs] for nm, arrs in got.items()}
+        grid.deactivate_powerline(5)
+        grid.deactivate_gen([gen.id for gen in grid.get_generators() if gen.bus_id == 2][0])
+        grid.change_p_load(0, 1.1 * grid.get_loads()[0].target_p_mw)
+        grid.tell_solver_need_reset()
+        _solve(grid, ac=True)
+        _solve(grid, ac=False)
+        # the solver side did change
+        self.assertFalse(np.array_equal(grid.get_Sbus_solver(), expected["get_Sbus_solver"][0]))
+        changed = sorted(nm for nm, arrs in got.items()
+                         if not all(np.array_equal(arr, exp, equal_nan=True)
+                                    for arr, exp in zip(arrs, expected[nm])))
+        self.assertEqual(changed, [], "these solver getters follow the grid")
+
+    def test_algorithm_getters_own_their_data(self):
+        grid = _solved_grid()
+        for label, algo in (("get_algo()", grid.get_algo()), ("get_dc_algo()", grid.get_dc_algo()),
+                            ("NR_SparseLU", _standalone_solver(grid))):
+            got = _array_getters(algo)
+            self.assertIn("get_V", got, label)
+            views = sorted(nm for nm, res in got.items()
+                           if not all(_is_snapshot(arr) for arr in _arrays_of(res)))
+            self.assertEqual(views, [], f"{label}: these getters return views")
+
+    def test_voltages_outlive_their_algorithm(self):
+        """the pandapower_compat pattern: an algorithm made for one call, its voltages returned"""
+        grid = _solved_grid()
+
+        def solve_alone():
+            solver = _standalone_solver(grid)
+            got = solver.get_Va(), solver.get_Vm(), solver.get_V()
+            return got, [arr.copy() for arr in got]
+
+        got, expected = solve_alone()
+        gc.collect()
+        self.assertTrue(all(_is_snapshot(arr) for arr in got), "the voltages are a view of the algorithm")
+        _reuse_freed_memory()
+        for arr, exp in zip(got, expected):
+            np.testing.assert_array_equal(arr, exp)
 
 
 if __name__ == "__main__":
