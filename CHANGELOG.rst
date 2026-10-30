@@ -245,6 +245,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   past it.
 - [FIXED] ``get_violations`` / ``get_physical_violations`` after ``init_trafo`` replaced the transformers
   of an ``NROuter_*`` solve raise instead of reading their freed tap tables.
+- [FIXED] A diverged powerflow resets the element results to NaN in place; it freed the buffers
+  the result arrays read.
 - [FIXED] ``set_config`` of the ``NR*`` algorithms: a config refused for one value no longer leaves
   the values checked before it applied.
 - [FIXED] ``ContingencyAnalysis``: a contingency naming its lines out of order or twice
