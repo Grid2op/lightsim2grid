@@ -123,7 +123,25 @@ namespace ls2g {
 //     LSGrid::set_hvdc_ac_emulation_frozen; all false unless set). Appended.
 // v18: LSGrid::StateRes carries the remote voltage control range of the physical checks
 //     (see LSGrid::set_remote_voltage_control_vm_range; NaN unless set). Appended.
-constexpr std::uint32_t BINARY_FORMAT_VERSION = 18;
+// v19: SvcContainer::StateRes carries the standby automaton's set-points (see
+//     LSGrid::set_svc_standby; NaN unless set) and its fixed susceptance b0 (see
+//     LSGrid::set_svc_b0; 0 unless set). Appended.
+// v20: TrafoContainer::StateRes carries its ratio and phase tap changers (step tables,
+//     positions, regulation) and the neutral ratio and h they apply to; ShuntContainer::StateRes
+//     its sections (cumulative p / q per count, the count on, the fewest a control may leave)
+//     and their voltage regulation.
+//     Appended (see LSGrid::set_trafo_ratio_tap_changer, LSGrid::set_shunt_sections).
+// v21: LSGrid::StateRes no longer carries the remote voltage control range of v18: the
+//     physical checks read ReactiveLimits' own realistic range instead. It carries the
+//     grid's outer loops (a flag for the default list, else each loop's name and
+//     parameters) and the outer-loop driver's parameters (see LSGrid::get_outer_loops,
+//     LSGrid::set_outer_loop_driver_params). Appended.
+// v22: LSGrid::StateRes carries the grid-level settings copy() keeps and a grid read back
+//     needs to solve the same: four flags (see set_keep_vinit_at_group_controlled_buses,
+//     set_hold_frozen_regulators, set_dc_distribute_slack_on_can_participate,
+//     set_reactive_dispatch_olf), the reference slack bus, OpenLoadFlow's reactive ranges and
+//     raw target Q, and the generators' capability curves. Appended.
+constexpr std::uint32_t BINARY_FORMAT_VERSION = 22;
 
 class LS2G_API BinaryArchive
 {

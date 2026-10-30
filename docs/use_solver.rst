@@ -149,7 +149,8 @@ All algorithms can be accessed with the same API (if you want to use the raw pyt
 (``RuntimeError`` or ``IndexError``) instead of crashing when they are not met. lightsim2grid
 expects:
 
-- `tol_pu` to be a finite, strictly positive number (raises otherwise). It is **in per unit**,
+- `tol_pu` to be a finite, strictly positive number (raises otherwise). The solver has
+  converged when the infinity norm of the mismatch vector is below it. It is **in per unit**,
   not in MVA: a solver only sees per-unit inputs and has no notion of `sn_mva`. This differs
   from the `tol` of :func:`lightsim2grid.network.LSGrid.ac_pf`, of the batch algorithms and of
   :class:`lightsim2grid.lightSimBackend.LightSimBackend`, which is in MVA; pass `tol / sn_mva` to reproduce it.

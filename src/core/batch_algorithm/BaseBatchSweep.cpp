@@ -23,7 +23,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
     CplxVect & sbus_scratch, RealVect & sw_scratch,
     bool ac_solver_used, int max_iter, real_type tol_solver,
     int & nb_solved, int & nb_converged, double & timer_solver, double & timer_modif_ybus,
-    bool & conv, bool & invertible)
+    bool & conv, bool & invertible, OuterRowView * row_view)
 {
     // re-seed |V| at every voltage-regulating generator's regulated bus with this
     // row's own target (modify_gen_v; a no-op if it was never set, or on a
@@ -57,6 +57,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
         timer_modif_ybus += t1.duration();
     } else {
         invertible = true;
+    }
+
+    // the row as the outer loops see it (an algorithm that runs them only)
+    if(row_view != nullptr){
+        _fill_outer_row_view(i, nullptr, *row_view);
+        _set_outer_row_resume(i, *row_view);
+        algo.set_outer_row_view(row_view);
     }
 
     if(invertible){
@@ -132,6 +139,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
     int & first_diverging_step, std::exception_ptr & err,
     bool needs_solver_init)
 {
+    // the row as the outer loops see it, for an algorithm that runs them
+    OuterRowView row_view;
+    OuterRowView * outer_view = algo.supports_outer_loops() ? &row_view : nullptr;
     try {
         CplxVect V = Vinit_solver;
         CplxVect sbus_scratch;   // this row's injection, where it varies
@@ -152,7 +162,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
             bool conv = false;
             bool invertible = true;
             _run_one_step(i, algo, control, Ybus, V, sbus_scratch, sw_scratch, ac_solver_used, max_iter, tol_solver,
-                          nb_solved, nb_converged, timer_solver, timer_modif_ybus, conv, invertible);
+                          nb_solved, nb_converged, timer_solver, timer_modif_ybus, conv, invertible, outer_view);
 
             control.tell_none_changed();
             if(!ac_solver_used) control.tell_recompute_sbus();
@@ -207,6 +217,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
     } catch(...) {
         err = std::current_exception();
     }
+    // the view dies here: the algorithm must not keep pointing at it
+    if(outer_view != nullptr) algo.set_outer_row_view(&_base_row_view_);
 }
 
 template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
@@ -412,6 +424,19 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
             algos[t]->set_pv_pinned_buses(_switchable_buses_);
         }
         ybus_copies[t] = ac_cache_.mat;
+        // An algorithm running outer loops reserves its controls (the buses ReactiveLimits
+        // may switch, the transformers a loop moves, ...) on its first solve, for the view
+        // that solve has. The member algorithm's is the "n" solve; a fresh worker's would
+        // be its first row, which leaves out what that row strands or opens -- for every
+        // later row of the worker, whose results would then depend on the thread count.
+        // So a fresh worker solves the base case first too, configured as the member
+        // algorithm was for it (above), and its range does not rebuild after that.
+        if(ac_solver_used && th_needs_init[t] && algos[t]->supports_outer_loops()){
+            if(mask_mode) algos[t]->set_masked_buses(_base_masked_);
+            algos[t]->set_outer_row_view(&_base_row_view_);
+            warmup_solver(*algos[t], controls[t], Vinit_solver, max_iter, tol_, false);
+            th_needs_init[t] = 0;
+        }
     };
 
     auto timer_thread = CustTimer();
@@ -489,13 +514,26 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // the slack pre-pass moves set-points by the slack weights and takes the units it
     // saturates out of them: a single-slack algorithm ignores both, and the physical
-    // checks would read targets the solve never used
-    if(_redistribute_slack_ && !_algo.distributes_slack()){
+    // checks would read targets the solve never used. With outer loops, the
+    // DistributedSlack loop shares what a row loses instead (see _prepare_slack_redistribution)
+    if(_redistribute_slack_ && !_algo.distributes_slack() && !_algo.supports_outer_loops()){
         std::ostringstream exc_;
         exc_ << algo_name() << "::compute: `redistribute_slack` needs an algorithm with a distributed "
-                "slack (a Newton-Raphson NR_*, the DC or the fast-decoupled one): the active one, "
+                "slack (a Newton-Raphson NR_*, the DC or the fast-decoupled one) or outer loops (NROuter_*): "
+                "the active one, "
              << _algo.get_name() << ", puts the whole imbalance on the reference bus. Use "
                 "`change_algorithm`, or turn `redistribute_slack` off.";
+        throw std::runtime_error(exc_.str());
+    }
+
+    // a row solved with outer loops is several Newton solves, the last one on a system the
+    // loops edited (a bus switched PQ, a tap moved): which Jacobian the adjoint should read
+    // there is not settled, so none is kept rather than a misleading one
+    if(_keep_jacobian_ && _algo.supports_outer_loops()){
+        std::ostringstream exc_;
+        exc_ << algo_name() << "::compute: `keep_jacobian` is not available with an algorithm "
+                "running outer loops (" << _algo.get_name() << "). Use `change_algorithm` for a "
+                "plain one (NR_*), or turn `keep_jacobian` off.";
         throw std::runtime_error(exc_.str());
     }
 
@@ -525,6 +563,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _converged_mask_.assign(nb_steps, 0);
     _row_solve_time_.assign(nb_steps, 0.);
     _row_nb_iter_.assign(nb_steps, 0);
+    if(_algo.supports_outer_loops()){
+        _outer_results_.assign(nb_steps, OuterRowResult());
+        _row_trafo_blocks_.assign(nb_steps, std::vector<std::pair<int, std::array<cplx_type, 4> > >());
+    } else {
+        _outer_results_.clear();
+        _row_trafo_blocks_.clear();
+    }
     _gen_results_ = _compute_gen_results_ ?
         RealMat::Zero(static_cast<Eigen::Index>(nb_steps), 2 * static_cast<Eigen::Index>(_grid_model.get_generators().nb())) :
         RealMat();
@@ -576,6 +621,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _maybe_resolve_topology(nb_steps);
         // the per-row Ybus edit lists (a no-op where Ybus does not vary)
         _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
+        // ... a regulating shunt a row trips is refused under the outer loops
+        _check_shunt_trips(nb_steps);
         // ... and settle, once, which contingencies split the grid and what they strand
         // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
         // row skips a contingency that splits the grid, and the masked mode strands the
@@ -587,7 +634,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         // true elsewhere, since no setter exists to set it there)
         _maybe_prepare_masks();
 
-        // generator contingencies (ScenarioSweep only; no-op elsewhere). Must run after
+        // generator contingencies (ScenarioSweep and ContingencyAnalysis; no-op
+        // elsewhere). Must run after
         // prepare_solver_input_base (it reads the solver labelling) and BEFORE
         // _finish_preprocessing, whose "n" solve builds the Jacobian sparsity this has to
         // enlarge. See _maybe_prepare_gen_contingency.
@@ -595,7 +643,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     }
 
     // the injections, on the other hand, are exactly what a second compute() came to
-    // change: always rebuilt (a no-op where Sbus does not vary).
+    // change: always rebuilt (a no-op where Sbus does not vary). A load they trip must
+    // not be one the row's topological action places as well.
+    _check_topo_load_overlap();
     _prepare_sbus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
     // ... and with them the buses several generators regulate at once, which is what a
     // per-row gen_v has to agree on (see _row_gen_v_conflicts)
@@ -624,6 +674,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
     // factorization every row refactorizes into), plus this call's result buffers
+    _base_row_view_.masked = _base_masked_.empty() ? nullptr : &_base_masked_;
     bool n_powerflow_has_conv = _finish_preprocessing(
         nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v
     );
@@ -712,6 +763,11 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // compute the powerflows, possibly split across several threads
     _compute_threaded(nb_steps, Vinit_solver, ac_solver_used, max_iter, tol, sn_mva, _timer_thread_init);
+
+    // each row's outcome next to what its loops did, once every worker is done
+    for(size_t i = 0; i < _outer_results_.size() && i < _converged_mask_.size(); ++i){
+        _outer_results_[i].converged = _converged_mask_[i] != 0;
+    }
 
     _results_stale_ = false;
     _timer_total = timer.duration();

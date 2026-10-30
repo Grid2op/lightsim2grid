@@ -38,6 +38,12 @@ from lightsim2grid import AlgorithmType
 from lightsim2grid.network import init_from_pandapower
 from lightsim2grid.continuationPowerflow import ContinuationPowerFlow, run_cpf
 
+try:
+    from lightsim2grid.algorithm import NROuter_KLU  # noqa: F401
+    OUTER = "NROuter_KLU"
+except ImportError:
+    OUTER = "NROuter_SparseLU"
+
 
 def _case14():
     with warnings.catch_warnings():
@@ -408,6 +414,36 @@ class TestContinuationPowerFlow(unittest.TestCase):
         cpf.run(loading_factor=4.0)
         np.testing.assert_array_equal(first.lam, lam_before)
         np.testing.assert_array_equal(first.V, V_before)
+
+
+class TestContinuationPowerFlowOuterLoops(unittest.TestCase):
+    """A continuation corrects at a fixed lambda on one system; the outer loops (NROuter_*)
+    change that system between two correctors -- DistributedSlack moves the units' targets
+    off the curve's injection, ReactiveLimits switches buses between PV and PQ. The C++ class
+    refuses them; the wrapper, on a grid that runs them, solves with the plain Newton."""
+
+    def _outer_grid(self):
+        grid = _case14()
+        self.assertGreater(len(grid.get_outer_loops()), 0)
+        grid.change_algorithm(OUTER)
+        return grid
+
+    def test_the_cpp_class_refuses_outer_loops(self):
+        cpf = ContinuationPowerFlow(_case14(), algorithm=OUTER)
+        with self.assertRaises(RuntimeError) as ctx:
+            cpf.run(loading_factor=2.0)
+        self.assertIn("outer loops", str(ctx.exception))
+
+    def test_the_wrapper_traces_the_plain_newton_curve(self):
+        k = 2.0
+        cpf = ContinuationPowerFlow(self._outer_grid())
+        res = cpf.run(loading_factor=k)
+        ref = ContinuationPowerFlow(_case14()).run(loading_factor=k)
+        self.assertTrue(ref.success, ref.msg)
+        self.assertEqual(res.msg, ref.msg)
+        np.testing.assert_allclose(res.lam, ref.lam, rtol=0., atol=1e-12)
+        np.testing.assert_allclose(res.V, ref.V, rtol=0., atol=1e-12)
+        self.assertNotIn("Outer", cpf.cpp.get_algo_name())
 
 
 class TestContinuationPowerFlowMultiSlack(unittest.TestCase):

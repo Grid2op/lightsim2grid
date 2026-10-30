@@ -54,7 +54,7 @@ You can customize the way the backend behaves in different ways:
   is not found after this number of iterations, then the backend will "diverge". Default is 10 which is a good value for medium size
   powergrid if you use a Newton Raphson based method (default)
 - `tol`: During its internal iterations, the underlying solver will say the Kirchhoff Current Laws (KCL) are matched if the 
-  maximum value of the difference is lower than this. It is expressed **in MVA** (not in per unit): it is divided by
+  maximum absolute value of the difference (its infinity norm) is lower than this. It is expressed **in MVA** (not in per unit): it is divided by
   the grid's `sn_mva` before reaching the solver. Default is `1e-8`.
 - `algo_type`: which type of powerflow algorithm (combined with which linear solver) you want to use. See
   :ref:`solvers_doc` for more information. By default it uses what it considers the fastest one available, which

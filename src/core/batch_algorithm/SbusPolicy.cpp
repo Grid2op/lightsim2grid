@@ -175,6 +175,18 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
             row(load_bus_[static_cast<size_t>(l)]) += BaseConstants::my_i * cplx_type(q, 0.);
         }
     }
+    // the loads the load contingency mask disconnects: the same, given back (a row
+    // naming a load in both the mask and its action is refused upstream)
+    if(load_off.rows() > 0 && i < load_off.rows()){
+        for(size_t l = 0; l < load_bus_.size(); ++l){
+            const Eigen::Index load_id = static_cast<Eigen::Index>(l);
+            if(load_bus_[l] < 0 || !load_off(i, load_id)) continue;
+            const real_type p = own_load_p ? load_p(i, load_id) : load_target_p_(load_id);
+            const real_type q = own_load_q ? load_q(i, load_id) : load_target_q_(load_id);
+            row(load_bus_[l]) += cplx_type(p, 0.);
+            row(load_bus_[l]) += BaseConstants::my_i * cplx_type(q, 0.);
+        }
+    }
     // ... and the loads it places on a bus (moved, or reconnected): drawn there, as
     // the load passes draw the others
     if(static_cast<size_t>(i) < topo_loads_on.size()){

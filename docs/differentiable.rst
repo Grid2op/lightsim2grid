@@ -45,6 +45,8 @@ input              meaning                               gradient
 ``line_status``    True = connected                      no (discrete)
 ``trafo_status``   True = connected                      no (discrete)
 ``gen_status``     True = connected                      no (discrete)
+``shunt_status``   True = connected                      no (discrete)
+``load_status``    True = connected                      no (discrete)
 ================== ===================================== ==================
 
 .. [#genv] ``gen_v`` can be used as a fixed setpoint; a tensor that requires a
@@ -55,7 +57,9 @@ The statuses follow grid2op's convention (**True means connected**), and a row
 that trips a generator gets the whole treatment the C++ already implements: the
 lost MW go to the slack, the distributed slack is re-weighted without the
 machine, and a bus whose last voltage-regulating generator is gone becomes PQ
-for that row.
+for that row. A tripped shunt leaves the row's admittance matrix, a tripped load
+its injection; an element a row disconnects has no gradient in that row (its
+value there changes nothing).
 
 Why it is not expensive
 -----------------------

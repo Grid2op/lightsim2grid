@@ -96,8 +96,11 @@ always-available Eigen ``SparseLU`` algorithms (which are also the
 disappear. When KLU is found, ``KLU_SOLVER_AVAILABLE`` is defined on the
 target (and propagated to consumers) and the KLU code is baked into the
 shared library. When that KLU came from the submodule, its headers are installed
-to ``include/lightsim2grid/suitesparse/`` and put on the target's include path;
-a system KLU is expected to come with its own.
+to ``include/lightsim2grid/suitesparse/`` (``lightsim2grid/include/suitesparse/`` in the
+python wheel, see above) and put on the target's include path; a system KLU is expected
+to come with its own. Only the headers are installed, not KLU itself, which is in the
+library: see :ref:`plugin-suitesparse-headers` for what the wheel and the source
+distribution ship.
 
 A few environment variables tune the compilation, following the same
 convention as the python build: ``__O3_OPTIM`` (``-O3``, on by default),

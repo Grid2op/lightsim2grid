@@ -119,6 +119,18 @@ class TestStoragePypowsybl(unittest.TestCase):
         self.assertAlmostEqual(sto.min_p_mw, -1000.0, places=4)
         self.assertAlmostEqual(sto.max_p_mw, 1000.0, places=4)
 
+    def test_reactive_limits_from_the_capability_curve(self):
+        # a battery with a capability curve has no fixed box (min_q / max_q are NaN): its
+        # limits are the curve at its target P, not "unbounded"
+        n = _build_net(target_p=50.0, target_q=10.0)
+        n.create_curve_reactive_limits(id=["BATT", "BATT"], p=[0., 100.], min_q=[-20., -40.], max_q=[30., 60.])
+        for olf_rules in (False, True):
+            n.per_unit = False
+            model = init_from_pypowsybl(n, gen_slack_id="G", sort_index=True, olf_rules=olf_rules)
+            sto = model.get_storages()[0]
+            self.assertAlmostEqual(sto.min_q_mvar, -30.0, places=4)
+            self.assertAlmostEqual(sto.max_q_mvar, 45.0, places=4)
+
 
 @unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
 class TestBatteryPhysicalViolations(unittest.TestCase):

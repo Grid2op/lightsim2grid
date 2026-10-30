@@ -61,8 +61,8 @@ The setter-based API
 Unlike `TimeSerie` / `InjectionSweep`'s single bundled `compute_V_from_inj` call,
 `ScenarioSweep` is built up incrementally: call as many of `modify_gen_p` /
 `modify_sgen_p` / `modify_load_p` / `modify_load_q` / `modify_gen_v` /
-`set_contingency_lines` / `set_contingency_trafos` / `set_contingency_gens` as are
-relevant, then `compute()`.
+`set_contingency_lines` / `set_contingency_trafos` / `set_contingency_gens` /
+`set_contingency_shunts` / `set_contingency_loads` as are relevant, then `compute()`.
 
 - **Row-count locking.** The first setter you call fixes the number of simulations for
   the whole object; every later setter is checked against it immediately -- a shape
@@ -70,7 +70,8 @@ relevant, then `compute()`.
 - **Unset axes.** Any injection axis you never call (eg `modify_gen_p`) defaults to the
   grid's own current target value, broadcast across every row -- not zero. Any
   contingency mask you never call (`set_contingency_lines` / `set_contingency_trafos` /
-  `set_contingency_gens`) defaults to all-`False` -- nothing disconnected. `compute()` raises if you never call
+  `set_contingency_gens` / `set_contingency_shunts` / `set_contingency_loads`) defaults to
+  all-`False` -- nothing disconnected. `compute()` raises if you never call
   *any* setter (a degenerate call -- use `ac_pf()` / `dc_pf()` directly for a single
   powerflow).
 - **`modify_gen_v` is different from the other four `modify_*` setters.** It does not
@@ -98,7 +99,9 @@ naming inconsistency:
   `True` = "deactivate this branch for this simulation") is the natural fit instead.
 
 `ScenarioSweep` does not have `add_n1` / `add_nk`; `ContingencyAnalysis` does not have
-`set_contingency_lines` / `set_contingency_trafos`.
+`set_contingency_lines` / `set_contingency_trafos`. The same split holds for the other
+elements: `ContingencyAnalysis.add_contingency` registers one contingency tripping branches,
+shunts, loads and generators together, `ScenarioSweep` takes one mask per kind of element.
 
 .. note::
 
@@ -173,6 +176,27 @@ the change in the losses it causes is left to the powerflow's distributed slack.
     a bus whose voltage a control group holds (a remote generator, an SVC or an HVDC
     converter station). Those go through a different part of the Jacobian, with columns
     and rows of their own that this feature does not yet reserve and mask.
+
+Shunt and load contingencies
+------------------------------------
+
+`set_contingency_shunts(mask)` (shape `(n_simul, n_shunt)`) and `set_contingency_loads(mask)`
+(shape `(n_simul, n_load)`) take the elements out of the rows where the mask is `True`:
+
+- a shunt is an admittance: the row loses its diagonal coefficient of the admittance matrix
+  (in DC, its active part leaves the injection), as a branch mask edits it;
+- a load leaves the row's injection, with the row's own value (`modify_load_p` /
+  `modify_load_q`, or the grid's).
+
+What that changes in the balance is made up by the distributed slack, and with
+`redistribute_slack = True` it is shared OpenLoadFlow-style before the solve, as for a
+generator. A row naming a load in both the mask and its topological action is refused.
+
+.. warning::
+
+    With an algorithm running outer loops among which a ShuntVoltageControl one, `compute()`
+    raises if the mask names a shunt that regulates a voltage: its sections belong to that
+    loop, which does not know of a row taking it out yet.
 
 Topological actions
 ---------------------
@@ -288,6 +312,44 @@ exist on every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAn
 Outside a batch, `LSGrid.get_gen_slack_shares()` gives each generator's share of the
 distributed slack (`P = target_p + share * slack absorbed`). The weights it reads are set
 when the grid is built and by `update_slack_weights`; `change_p_gen` does not update them.
+
+.. _batch_outer_loops:
+
+OpenLoadFlow's outer loops in a batch
+---------------------------------------
+
+With an algorithm that runs OpenLoadFlow's outer loops (``NROuter_KLU``, ``NROuter_SparseLU``,
+..., described in :ref:`outer_loops`: the loops, their order, the data they read), every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP`,
+`ScenarioSweepCPP`) solves each row with the grid's loops (`LSGrid.get_outer_loops`): a row
+gets what `ac_pf` gets on the row's own grid -- the same voltages, flows (at the taps the
+loops settled on) and generator output (at the targets `DistributedSlack` moved them to).
+The loops restart from the grid's own state on every row, as OpenLoadFlow's security
+analysis restarts each contingency -- but in a `TimeSeriesCPP`, whose rows are chained: there a
+row starts from the previous row's voltages and equations (the buses its loops froze PQ, the
+controllers they held, the SVCs they switched on, the hvdc regimes, the taps and sections),
+and the loops undo what the new row does not call for; `DistributedSlack` restarts from the
+row's own targets. (`resume_outer_state` on an ``NROuter_*`` algorithm does the same for a
+sequence of `ac_pf`.) The whole batch still runs one symbolic analysis (one per thread). A batch built from a grid inherits its algorithm, and the Python
+wrappers keep an ``NROuter_*`` one.
+
+.. code-block:: python
+
+    grid.change_algorithm("NROuter_KLU")      # the grid's loops: OpenLoadFlow's default list
+    ca = ContingencyAnalysisCPP(grid)
+    ca.add_all_n1()
+    ca.compute(v_init, max_iter, tol)
+    res = ca.get_outer_results()               # one OuterRowResult per row
+    res[3].status, res[3].nb_outer_iterations, res[3].ratio_tap
+
+`get_outer_results()` gives, per row, whether it converged (``converged``), how the loops
+ended (``status``: a row they leave ``UNSTABLE`` or ``FAILED`` does not converge, but a row
+whose Newton diverged reads ``STABLE`` too) and what they settled on where it differs from
+the grid: the moved targets, the hvdc regimes, the tap positions and the shunt sections.
+`keep_jacobian` is refused with such an algorithm.
+
+`compute_physical_violations` reports, with any algorithm, what each loop would still do on
+the row -- the loop's own trigger, checked on the row as it is (its machines, targets,
+branches). After an outer-loop solve that converged, the loops have nothing left to report.
 
 Many sweeps in a row
 --------------------------
