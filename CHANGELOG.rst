@@ -243,6 +243,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   raises instead of crashing; ``check_grid`` checks the bus they regulate.
 - [FIXED] ``get_violations`` after a transformer's tap table was shortened raises instead of reading
   past it.
+- [FIXED] ``get_violations`` / ``get_physical_violations`` after ``init_trafo`` replaced the transformers
+  of an ``NROuter_*`` solve raise instead of reading their freed tap tables.
 - [FIXED] ``set_config`` of the ``NR*`` algorithms: a config refused for one value no longer leaves
   the values checked before it applied.
 - [FIXED] ``ContingencyAnalysis``: a contingency naming its lines out of order or twice

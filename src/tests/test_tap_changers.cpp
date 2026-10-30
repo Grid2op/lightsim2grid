@@ -397,3 +397,21 @@ TEST_CASE("a tap a solve left outside a table replaced since is refused, not rea
     // the changer it does not have reads neutral, whatever the position
     CHECK_NOTHROW(trafos.pi_block_at(0, 2, 12345, 0.));
 }
+
+TEST_CASE("a tap a solve left on a transformer the grid no longer has is refused, not read", "[tap_changer][outer]")
+{
+    LSGrid grid = make_grid(R0, X0, B0, 1., 0.);
+    add_ratio_taps(grid);
+    const TrafoContainer & trafos = grid.get_trafos();
+    const int none = std::numeric_limits<int>::min();
+    // a solve's positions are one per transformer of that solve: another count is another grid
+    CHECK(trafos.moved_taps(false, {}).empty());
+    CHECK(trafos.moved_taps(false, {1}).empty());  // where the grid has it
+    CHECK(trafos.moved_taps(false, {2}).size() == 1);
+    CHECK_THROWS_AS(trafos.moved_taps(false, {none, 2}), std::out_of_range);
+    CHECK_THROWS_AS(trafos.moved_taps(true, {none, none}), std::out_of_range);
+    // the pi blocks of the moved taps read the transformer's tables: its id is checked first
+    CHECK_NOTHROW(trafos.moved_tap_blocks({{0, 2}}, {}));
+    CHECK_THROWS_AS(trafos.moved_tap_blocks({{1, 0}}, {}), std::out_of_range);
+    CHECK_THROWS_AS(trafos.moved_tap_blocks({}, {{-1, 0}}), std::out_of_range);
+}

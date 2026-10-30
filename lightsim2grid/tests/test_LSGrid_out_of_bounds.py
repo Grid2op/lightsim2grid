@@ -32,6 +32,8 @@ import numpy as np
 
 import pandapower.networks as pn
 from lightsim2grid.network import init_from_pandapower
+from lightsim2grid.lightsim2grid_cpp import LSGrid, RegulationMode
+from lightsim2grid.algorithm import PhaseControl
 
 try:
     from lightsim2grid.lightsim2grid_cpp import TimeSeriesCPP
@@ -314,6 +316,55 @@ class TestConfigGettersOwnTheirData(unittest.TestCase):
         np.testing.assert_array_equal(raw_q, np.full(n_gen, 3.))
         np.testing.assert_array_equal(station1, np.full(n_hvdc, 7.))
         np.testing.assert_array_equal(station2, np.full(n_hvdc, 9.))
+
+
+class TestOuterTapsOfReplacedTransformers(unittest.TestCase):
+    """The checks after an NROuter_* solve read the taps its loops left, one per transformer of
+    that solve. ``init_trafo`` then replaces the transformers: the checks must refuse those taps,
+    not read them in the tap tables it freed (a heap-use-after-free under ASan, then an id check
+    raising after the read: the message shows the taps are refused before any read)."""
+
+    @staticmethod
+    def _grid():
+        """a triangle 0-1-2: lines 0-1 and 1-2, a phase shifter 0-2 (-10 .. 10 degrees, 21 taps)
+        regulating its active power, loads at 1 and 2, the slack generator at 0 -- the grid of
+        src/tests/test_phase_control_loop.cpp"""
+        grid = LSGrid()
+        grid.set_sn_mva(100.)
+        grid.set_init_vm_pu(1.)
+        grid.init_bus(3, 1, np.full(3, 138.), 0, 0)
+        grid.init_powerlines(np.full(2, .01), np.full(2, .08), np.zeros(2, complex), np.array([0, 1]), np.array([1, 2]))
+        grid.init_trafo(np.array([.005]), np.array([.06]), np.zeros(1, complex), np.ones(1), np.zeros(1),
+                        [False], np.array([0]), np.array([2]), False)
+        grid.init_loads(np.array([60., 90.]), np.array([20., 30.]), np.array([1, 2]))
+        grid.init_generators(np.zeros(1), np.full(1, 1.02), np.full(1, -1000.), np.full(1, 1000.), np.array([0]))
+        grid.add_gen_slackbus(0, 1.)
+        alpha = [-10. + k for k in range(21)]
+        zero = [0.] * 21
+        grid.set_trafo_phase_tap_changer(0, 0, 10, [1.] * 21, alpha, zero, zero, zero, zero)
+        return grid
+
+    def test_checks_after_init_trafo_raise(self):
+        ref = self._grid()
+        ref.change_algorithm("NRSing_SparseLU")
+        self.assertEqual(ref.ac_pf(np.ones(3, dtype=complex), 30, 1e-12).size, 3)
+        p0 = ref.get_trafo_res1()[0][0]
+
+        grid = self._grid()
+        grid.set_trafo_phase_tap_regulation(0, RegulationMode.ACTIVE_POWER, True, p0 + 5., 0., 1)
+        grid.change_algorithm("NROuter_SparseLU")
+        grid.clear_outer_loops()
+        grid.add_outer_loop(PhaseControl())
+        self.assertEqual(grid.ac_pf(np.ones(3, dtype=complex), 30, 1e-12).size, 3)
+        grid.get_violations()
+        grid.get_physical_violations()
+
+        grid.init_trafo(np.zeros(0), np.zeros(0), np.zeros(0, complex), np.zeros(0), np.zeros(0),
+                        [], np.zeros(0, dtype=int), np.zeros(0, dtype=int), False)
+        with self.assertRaisesRegex(IndexError, "were the transformers replaced"):
+            grid.get_violations()
+        with self.assertRaisesRegex(IndexError, "were the transformers replaced"):
+            grid.get_physical_violations()
 
 
 if __name__ == "__main__":
