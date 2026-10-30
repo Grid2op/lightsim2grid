@@ -116,3 +116,20 @@ Decide per getter from the numbers: `reference_internal` where the cost is not v
 `copy` where a getter is cold and the view semantics are not needed, `reference` kept only
 with a documented reason. Whatever changes goes with an `[IMPROVED]` (or `[BREAKING]`, if the
 view semantics or the retention are judged user-visible) changelog entry.
+
+## Where it stands
+
+- **Point 1, done** (`benchmarks/view_policy_ab`: the very same getters bound with each policy,
+  timed in interleaved rounds and counted under callgrind). `reference_internal` adds a few
+  instructions per returned array -- the incref of the grid when the base is set, the decref
+  when the array goes -- the same at any grid size, and not distinguishable from noise in wall
+  time. `copy` adds an allocation and a copy per array, growing with the grid.
+- **Point 2: the step loop does not call these getters.** `LightSimBackend._fetch_grid_data`
+  fetches each view once and reads it again after every `runpf`; it fetches again only after
+  `_reset_res_pointers` (a copy, a reset, `close`). The per-call cost is paid once per view, not
+  per step, which leaves the end-to-end benchmark nothing per step to see.
+- **Point 4, the backend:** its cached views go with `_reset_res_pointers`, which every place
+  that replaces or drops `_grid` calls first (`close` included). Under `reference_internal` they
+  keep alive only the grid the backend holds anyway.
+- Left before switching: the memory loop of point 3, the rest of the audit, and the regression
+  test of point 5.
