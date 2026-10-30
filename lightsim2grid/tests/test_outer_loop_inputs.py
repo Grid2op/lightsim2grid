@@ -193,6 +193,12 @@ class TestSettersRejectBadInput(unittest.TestCase):
                 self.grid.change_shunt_section_count(bad, 0)
             with self.assertRaises(IndexError):
                 self.grid.set_shunt_section_regulation(bad, True, 1., 0., 0)
+        # no table yet: no count to change, the shunt kept as it is
+        self.assertFalse(self.grid.get_shunts()[0].has_sections)
+        q_before = self.grid.get_shunts()[0].target_q_mvar
+        with self.assertRaises(RuntimeError):
+            self.grid.change_shunt_section_count(0, 0)
+        self.assertEqual(self.grid.get_shunts()[0].target_q_mvar, q_before)
         with self.assertRaises(RuntimeError):
             self.grid.set_shunt_sections(0, 0, [0., 0.], [1.])
         for count in (-1, 3):

@@ -81,6 +81,12 @@ void ShuntContainer::_check_valid(int nb_bus,
 void ShuntContainer::_check_section_count(int el, int section_count, const char * where) const
 {
     _check_in_range(el, section_count_, where);
+    // without a table, a count of 0 would pass the bound below and zero the shunt's p and q
+    if(!has_sections(el)){
+        std::ostringstream exc_;
+        exc_ << where << ": shunt " << el << " has no sections (set_shunt_sections gives it a table).";
+        throw std::runtime_error(exc_.str());
+    }
     if(section_count < 0 || section_count > get_max_section_count(el)){
         std::ostringstream exc_;
         exc_ << where << ": shunt " << el << " has " << get_max_section_count(el) << " section(s), "

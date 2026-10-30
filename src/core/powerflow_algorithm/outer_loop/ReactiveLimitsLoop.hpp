@@ -122,7 +122,7 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         struct ControllerBus {
             int entry = -1;          ///< its entry in plan_
             int bus_solver = -1;
-            int bus_grid = -1;       ///< the same bus, grid numbering (what a resumed solve keys on)
+            int bus_grid = -1;       ///< the same bus, grid numbering (what a resumed solve keys on, a monitor its SVC)
             bool local = true;       ///< held through the PV path (else: by a group)
             real_type min_q = 0.;    ///< the sum of its storage units' and stations' limits, MVar
             real_type max_q = 0.;

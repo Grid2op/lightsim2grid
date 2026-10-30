@@ -21,6 +21,7 @@
 
 #include "LSGrid.hpp"
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
+#include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
 
 using Catch::Approx;
 using ls2g::CplxVect;
@@ -498,4 +499,50 @@ TEST_CASE("a resumed solve reads the previous voltages at the buses they belong 
     REQUIRE(V_ref.size() == 10);
     CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-4);
     CHECK(std::get<1>(grid.get_svcs().get_res())(0) == Approx(std::get<1>(ref.get_svcs().get_res())(0)).margin(1e-2));
+}
+
+TEST_CASE("a resumed solve leaves an idle voltage monitor at the bus of a frozen controller alone",
+          "[outer][reactive_limits][svc]")
+{
+    // gen 1 at bus 1 regulates bus 2 and cannot reach it: frozen at its max. An idle standby
+    // SVC at bus 1 monitors bus 1, so the loop has two entries at that grid bus. Resumed, gen 1
+    // starts frozen again; the monitor, which nothing switched on, stays at Q = 0
+    LSGrid grid = make_group_grid(/*max_q1=*/5., /*max_q3=*/500., true, 0., /*with_gen3=*/false);
+    RealVect target_vm(1), q_set(1), slope(1), b_min(1), b_max(1);
+    target_vm << 1.;
+    q_set << 0.;
+    slope << 0.;
+    b_min << -0.5;
+    b_max << 0.5;
+    Eigen::VectorXi svc_bus(1);
+    svc_bus << 1;
+    grid.init_svcs({0}, target_vm, q_set, slope, b_min, b_max, svc_bus, svc_bus);
+    RealVect low(1), high(1), low_target(1), high_target(1);
+    low << 0.5;
+    high << 1.5;
+    low_target << 0.97;
+    high_target << 1.03;
+    grid.set_svc_standby({true}, low, high, low_target, high_target);
+
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ls2g::VoltageMonitoringLoop>());
+    grid.add_outer_loop(std::make_shared<ReactiveLimitsLoop>());
+    ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
+    cfg.int_params.back() = 1;  // resume_outer_state
+    grid.set_ac_algo_config(cfg);
+    const auto svc_q = [&grid]() { return std::get<1>(grid.get_svcs().get_res())(0); };
+
+    const CplxVect V0 = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V0.size() == 5);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    REQUIRE(gen_q(grid, 1) == Approx(5.).margin(1e-6));
+    REQUIRE(svc_q() == Approx(0.).margin(1e-9));
+
+    const CplxVect V = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V.size() == 5);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    CHECK(svc_q() == Approx(0.).margin(1e-9));
+    CHECK(gen_q(grid, 1) == Approx(5.).margin(1e-6));
+    CHECK((V - V0).cwiseAbs().maxCoeff() < 1e-8);
 }

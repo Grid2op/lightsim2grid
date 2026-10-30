@@ -532,7 +532,8 @@ void bind_gridmodel(py::module_& m) {
              "deadband in pu of its nominal voltage. Read by the ShuntVoltageControl outer loop.")
         .def("change_shunt_section_count", &LSGrid::change_shunt_section_count,
              py::arg("shunt_id"), py::arg("section_count"),
-             "Switch that many sections of a shunt on: its p and q follow.")
+             "Switch that many sections of a shunt on: its p and q follow. A shunt without sections "
+             "(LSGrid.set_shunt_sections) raises.")
 
         .def("deactivate_sgen", &LSGrid::deactivate_sgen, DocLSGrid::deactivate_sgen.c_str())
         .def("reactivate_sgen", &LSGrid::reactivate_sgen, DocLSGrid::reactivate_sgen.c_str())

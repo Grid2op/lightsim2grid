@@ -227,6 +227,10 @@ TEST_CASE("a shunt's sections give its reactive power", "[tap_changer][shunt]")
     REQUIRE(V.size() == 3);
     CHECK((V - solve(ref)).cwiseAbs().maxCoeff() < 1e-12);
 
+    // a shunt without a table has no count to change: refused, its q kept
+    CHECK_THROWS(ref.change_shunt_section_count(0, 0));
+    CHECK(ref.get_shunts()[0].target_q_mvar == 25.);
+
     grid.change_shunt_section_count(0, 0);
     CHECK(grid.get_shunts()[0].target_q_mvar == 0.);
     grid.change_shunt_section_count(0, 3);

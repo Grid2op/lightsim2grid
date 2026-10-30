@@ -115,13 +115,29 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
     }
     // resuming: the buses the previous solve left frozen, by grid bus (0: none; of two at one
     // bus, the first), frozen again below for this solve. Not by solver bus: a topology change
-    // since that solve gives the buses other solver ids
+    // since that solve gives the buses other solver ids. A voltage monitor by its SVC: it
+    // shares its grid bus with the entry of that bus' own units, whose state is not its own
     std::vector<int> carried_state;
     std::vector<char> carried_realistic;
+    std::vector<int> carried_monitor_state;
+    std::vector<char> carried_monitor_realistic;
     if (ctx.resume) {
         const std::size_t nb_grid_bus = static_cast<std::size_t>(ctx.grid->total_bus());
+        const std::size_t nb_svc = static_cast<std::size_t>(ctx.grid->get_svcs().nb());
         for (const ControllerBus & bus : buses_) {
-            if (bus.state == 0 || bus.bus_grid < 0 || static_cast<std::size_t>(bus.bus_grid) >= nb_grid_bus) continue;
+            if (bus.state == 0) continue;
+            if (bus.monitor_svc >= 0) {
+                const std::size_t s = static_cast<std::size_t>(bus.monitor_svc);
+                if (s >= nb_svc) continue;
+                if (carried_monitor_state.empty()) {
+                    carried_monitor_state.assign(nb_svc, 0);
+                    carried_monitor_realistic.assign(nb_svc, 0);
+                }
+                carried_monitor_state[s] = bus.state;
+                carried_monitor_realistic[s] = bus.realistic ? 1 : 0;
+                continue;
+            }
+            if (bus.bus_grid < 0 || static_cast<std::size_t>(bus.bus_grid) >= nb_grid_bus) continue;
             if (carried_state.empty()) {
                 carried_state.assign(nb_grid_bus, 0);
                 carried_realistic.assign(nb_grid_bus, 0);
@@ -198,13 +214,28 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
         buses_.push_back(bus);
     }
     // ... each at the limit it holds in this solve (its target P may have moved), or at its
-    // target Q for the robust mode's; the release test lets it go when this solve calls for it
-    if (!carried_state.empty() && ctx.injections != nullptr && ctx.controls != nullptr) {
+    // target Q for the robust mode's; the release test lets it go when this solve calls for it.
+    // A monitor only once switched on (VoltageMonitoring, ahead in the list, switches back on
+    // the ones the previous solve did): an idle one is held at Q = 0, and nothing would release it
+    if ((!carried_state.empty() || !carried_monitor_state.empty()) && ctx.injections != nullptr &&
+        ctx.controls != nullptr) {
         for (ControllerBus & bus : buses_) {
-            if (bus.bus_grid < 0 || static_cast<std::size_t>(bus.bus_grid) >= carried_state.size()) continue;
-            const int state = carried_state[static_cast<std::size_t>(bus.bus_grid)];
+            int state = 0;
+            bool realistic = false;
+            if (bus.monitor_svc >= 0) {
+                const std::size_t s = static_cast<std::size_t>(bus.monitor_svc);
+                if (s >= carried_monitor_state.size()) continue;
+                const StandbySvcControl * standby = ctx.controls->standby_svc(bus.monitor_svc);
+                if (standby == nullptr || !standby->is_on()) continue;
+                state = carried_monitor_state[s];
+                realistic = carried_monitor_realistic[s] != 0;
+            } else {
+                if (bus.bus_grid < 0 || static_cast<std::size_t>(bus.bus_grid) >= carried_state.size()) continue;
+                state = carried_state[static_cast<std::size_t>(bus.bus_grid)];
+                realistic = carried_realistic[static_cast<std::size_t>(bus.bus_grid)] != 0;
+            }
             if (state == 0) continue;
-            bus.realistic = carried_realistic[static_cast<std::size_t>(bus.bus_grid)] != 0;
+            bus.realistic = realistic;
             real_type q_min, q_max;
             _limits(ctx, bus, q_min, q_max);
             _freeze(ctx, bus, bus.realistic ? bus.target_q : (state < 0 ? q_min : q_max), state);

@@ -386,7 +386,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 18 -> 22: the transformers serialize their tap changers,
   the shunts their sections, the SVCs their standby set-points and ``b0`` (and see the
   ``save_binary`` fix above). Files of format 18 no longer load.
-- [BREAKING] ``LSGrid.set_remote_voltage_control_vm_range`` is removed: a remote controller at an
+- [BREAKING] ``LSGrid.set_remote_voltage_control_vm_range`` is removed, and ``init_from_pypowsybl``'s
+  ``remote_voltage_control_vm_range`` deprecated (ignored, with a warning): a remote controller at an
   unrealistic voltage is checked against ``ReactiveLimits``' own realistic range.
 
 
