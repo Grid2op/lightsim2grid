@@ -48,18 +48,13 @@ parameters. This is the setup used by the benchmark (``benchmarks/light_env.py``
     light_env = LightEnv(env.backend._grid)
 
     # the injections: one row per step, one column per element, NaN meaning "unchanged"
+    # (a quantity left out, or None, keeps the value of the initial grid)
     data = env.chronics_handler.real_data.data
-    nb_row = data.load_p.shape[0]
     light_env.assign_time_series(
-        data.load_p.astype(float),
-        data.load_q.astype(float),
-        data.prod_p.astype(float),
-        (data.prod_v / env.backend.prod_pu_to_kv).astype(float),  # in pu, not kV
-        np.full((nb_row, env.n_storage), np.nan),
-        np.full((nb_row, env.n_shunt), np.nan),
-        np.full((nb_row, env.n_shunt), np.nan),
-        np.full((nb_row, 0), np.nan),
-        np.full((nb_row, 0), np.nan),
+        load_p=data.load_p,
+        load_q=data.load_q,
+        gen_p=data.prod_p,
+        gen_v=data.prod_v / env.backend.prod_pu_to_kv,  # in pu, not kV
     )
 
     # the protections: thermal limits in kA (grid2op uses A), on both sides of each line
@@ -67,6 +62,7 @@ parameters. This is the setup used by the benchmark (``benchmarks/light_env.py``
     protections = Protections()
     protections.set_thermal_limit_or(th_lim_ka)
     protections.set_thermal_limit_ex(th_lim_ka * env.backend.lines_or_pu_to_kv / env.backend.lines_ex_pu_to_kv)
+    # or, for grid2op's rho (origin side only): protections.set_thermal_limit_ex(np.full(env.n_line, np.nan))
     protections.set_max_line_time_step_overflow(
         np.full(env.n_line, env.parameters.NB_TIMESTEP_OVERFLOW_ALLOWED, dtype=np.int32))
     light_env.protections = protections
@@ -97,15 +93,21 @@ grid2op's topology vector, which ``obs.topo_vect`` needs; a grid loaded directly
 
 **The time series** (``assign_time_series``). Nine matrices, one row per step, one column per
 element: ``load_p``, ``load_q``, ``gen_p`` (MW / MVAr), ``gen_v`` (**pu**), ``storage_p``,
-``shunt_p``, ``shunt_q``, ``sgen_p``, ``sgen_q``. A NaN leaves the value of the grid unchanged.
-They must all have the same number of rows, which becomes ``max_step``; the sizes are checked
+``shunt_p``, ``shunt_q``, ``sgen_p``, ``sgen_q``. A NaN leaves the value of the grid unchanged,
+and a matrix left out (``None``, the default) is all NaN: that quantity keeps the value of the
+initial grid, eg ``gen_v=None`` for an environment without a ``prod_v`` time series. At least
+one matrix is needed. They must all have the same number of rows, which becomes ``max_step``; the sizes are checked
 at the next ``reset``. For now only ``load_p``, ``load_q``, ``gen_p`` and ``gen_v`` are
 applied, the other five are only checked.
 
 **The protections** (:class:`lightsim2grid.lightEnv.Protections`). The thermal limits, in kA,
 on both sides of every line (grid2op numbering: powerlines then transformers, the "or" side
 of a transformer being its hv side), and for each line the number of steps it can stay in
-overflow. A line whose overflow counter exceeds that number is disconnected, the powerflow is
+overflow. ``rho`` is the max over both sides of current / thermal limit; a NaN (or infinite)
+limit leaves its side out, and a line with no limit on either side has a ``rho`` of 0 and never
+trips. grid2op only looks at the origin side (``rho = a_or / limit``): a NaN on every extremity
+side reproduces it, whereas both sides read higher on lines whose current differs a lot from
+one end to the other (high charging), and can trip lines grid2op keeps. A line whose overflow counter exceeds that number is disconnected, the powerflow is
 run again, and so on until no more line trips (a cascade, within one step). This is grid2op's
 "soft" overflow protection (``NB_TIMESTEP_OVERFLOW_ALLOWED``).
 
@@ -167,7 +169,7 @@ the environment. Use ``np.array(obs.p_or)`` to keep a snapshot.
 ======================================== ==================================================================
 attribute                                meaning
 ======================================== ==================================================================
-``rho``                                  max over both sides of current / thermal limit, per line
+``rho``                                  max over both sides of current / limit, per line (see above)
 ``p_or``, ``q_or``, ``a_or``             flows at the origin side (MW, MVAr, **kA**), per line
 ``p_ex``, ``q_ex``, ``a_ex``             flows at the extremity side (MW, MVAr, **kA**), per line
 ``load_p``, ``gen_p``                    active power of the loads / generators (MW)
@@ -242,7 +244,8 @@ Benchmark
 
 ``benchmarks/light_env.py`` plays the same chronics of ``l2rpn_case14_sandbox`` on a grid2op
 environment with :class:`lightsim2grid.LightSimBackend` and on a light environment built as
-in the quick start, with the same thermal limits and protections. grid2op's
+in the quick start, with the same thermal limits and protections. Its thermal limits are on the
+origin side only, as grid2op's ``rho`` (``--rho_both_sides`` limits both sides). grid2op's
 ``HARD_OVERFLOW_THRESHOLD`` is raised out of reach, so both sides model the same thing (see
 above). Three workloads:
 

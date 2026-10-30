@@ -11,6 +11,8 @@
 
 #include "LSGrid.hpp"
 #include "CustTimer.hpp"
+#include <algorithm>
+#include <cmath>
 #include <vector>
 #include <sstream>
 #include <stdexcept>
@@ -195,14 +197,19 @@ class Protections
 
             const auto & th_lim_or = get_thermal_limit_or();
             const auto & th_lim_ex = get_thermal_limit_ex();
-            // std::cout << "\t\t\t after get_thermal_limit\n";
             RealVect vect_or(nb_line_trafo_);
             vect_or << vectl_or, vectt_or;  // TODO maybe an error if not evaluated on the right order...
             RealVect vect_ex(nb_line_trafo_);
             vect_ex << vectl_ex, vectt_ex;
-            // std::cout << "\t\t\t after the << \n";
 
-            rho_.array() = (vect_or.array() / th_lim_or.array()).cwiseMax(vect_ex.array() / th_lim_ex.array());
+            // max over the sides that have a limit: a NaN or infinite limit leaves its side out,
+            // and a line with no limit at all has a rho of 0 (it never trips)
+            for(int br_id = 0; br_id < nb_line_trafo_; ++br_id){
+                real_type res = 0.;
+                if(std::isfinite(th_lim_or(br_id))) res = vect_or(br_id) / th_lim_or(br_id);
+                if(std::isfinite(th_lim_ex(br_id))) res = std::max(res, vect_ex(br_id) / th_lim_ex(br_id));
+                rho_(br_id) = res;
+            }
             // std::cout << "\t\t\t after rho update \n";
             timer_update_rho_ += timer_update_rho.duration();
         }
