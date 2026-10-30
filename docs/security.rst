@@ -63,7 +63,7 @@ The binary format is the least dangerous channel
 
 The fast binary format (:ref:`binary-serialization`) was designed as an
 additive alternative to pickle. Loading a binary file never executes code from
-the file, and it is validated at two levels:
+the file, and it is validated at three levels:
 
 * **Byte level.** The reader checks the file's magic number, format version and
   object type, validates every length field against the actual file size
