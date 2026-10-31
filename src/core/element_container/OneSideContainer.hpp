@@ -591,10 +591,10 @@ class OneSideContainer : public GenericContainer
 
         void reset_osc_results()
         {
-            res_p_ = RealVect(nb());  // in MW
-            res_q_ =  RealVect(nb());  // in MVar
-            res_v_ = RealVect(nb());  // in kV
-            res_theta_ = RealVect(nb());  // in deg
+            _reset_result(res_p_, nb());  // in MW
+            _reset_result(res_q_, nb());  // in MVar
+            _reset_result(res_v_, nb());  // in kV
+            _reset_result(res_theta_, nb());  // in deg
         }
 
     protected:

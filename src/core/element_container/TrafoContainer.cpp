@@ -349,6 +349,17 @@ std::vector<std::pair<int, int> > TrafoContainer::moved_taps(bool phase, const s
 {
     const TapChangers & tc = get_tap_changers(phase);
     std::vector<std::pair<int, int> > res;
+    if(positions.empty()) return res;
+    // one position per transformer of the solve that gave them: another count is another set of
+    // transformers (init_trafo since), and an id past this grid's would be read in the tap
+    // tables freed with them
+    if(positions.size() != static_cast<std::size_t>(nb())){
+        std::ostringstream exc_;
+        exc_ << "TrafoContainer::moved_taps: the solve these tap positions come from had "
+             << positions.size() << " transformer(s), the grid has " << nb()
+             << ": were the transformers replaced since (init_trafo)? Run a powerflow again.";
+        throw std::out_of_range(exc_.str());
+    }
     for(std::size_t t = 0; t < positions.size(); ++t){
         if(positions[t] == std::numeric_limits<int>::min()) continue;
         const int el = static_cast<int>(t);
@@ -362,6 +373,9 @@ std::vector<std::pair<int, std::array<cplx_type, 4> > > TrafoContainer::moved_ta
     const std::vector<std::pair<int, int> > & ratio_taps,
     const std::vector<std::pair<int, int> > & phase_taps) const
 {
+    // every id first: grid_pos reads the transformer's tables
+    for(const auto & tp : ratio_taps) _check_in_range(tp.first, ratio_, "TrafoContainer::moved_tap_blocks");
+    for(const auto & tp : phase_taps) _check_in_range(tp.first, ratio_, "TrafoContainer::moved_tap_blocks");
     std::map<int, std::pair<int, int> > positions;  // transformer -> (ratio, phase)
     auto grid_pos = [this](int t){
         return std::make_pair(ratio_taps_.has(t) ? ratio_taps_.position(t) : 0,
