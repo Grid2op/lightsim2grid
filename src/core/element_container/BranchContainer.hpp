@@ -799,8 +799,8 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
 
         void _reset_results() override {
             TwoSidesContainer<BranchEndContainer>::_reset_results();
-            res_a_side_1_ = RealVect(nb());  // in kA
-            res_a_side_2_ = RealVect(nb());  // in kA
+            _reset_result(res_a_side_1_, nb());  // in kA
+            _reset_result(res_a_side_2_, nb());  // in kA
         }
         // a line's results: the flows, then the amps. A transformer inserts its DC
         // phase-shift correction between the two.

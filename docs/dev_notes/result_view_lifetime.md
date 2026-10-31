@@ -1,10 +1,9 @@
 # Result views that outlive their grid: `reference` vs `reference_internal`
 
-**Design note, not documentation. Nothing here is implemented.** It records a lifetime hole in
-the Python bindings, the policy that closes it, and what has to be measured and weighed before
-switching — so that the change is made deliberately, with a benchmark, and not as a drive-by
-edit. It is not part of the built documentation (`docs/*.rst`). The corresponding entry is in
-`CHANGELOG.rst`'s `[TODO]`.
+**Design note, not documentation. Switched in 1.3.0: see "Where it stands" at the end.** It
+records a lifetime hole in the Python bindings, the policy that closes it, and what was measured
+and weighed before switching. It is not part of the built documentation (`docs/*.rst`); the
+behaviour users see is described in `docs/result_views.rst`.
 
 ## The short version
 
@@ -116,3 +115,56 @@ Decide per getter from the numbers: `reference_internal` where the cost is not v
 `copy` where a getter is cold and the view semantics are not needed, `reference` kept only
 with a documented reason. Whatever changes goes with an `[IMPROVED]` (or `[BREAKING]`, if the
 view semantics or the retention are judged user-visible) changelog entry.
+
+## Where it stands
+
+Switched in 1.3.0.
+
+- **Point 1** (`benchmarks/view_policy_ab`: the very same getters bound with each policy, timed in
+  interleaved rounds and counted under callgrind). `reference_internal` adds a few instructions per
+  returned array -- the incref of the grid when the base is set, the decref when the array goes --
+  the same at any grid size, and not distinguishable from noise in wall time. `copy` adds an
+  allocation and a copy per array, growing with the grid.
+- **Point 2: the step loop does not call these getters.** `LightSimBackend._fetch_grid_data`
+  fetches each view once and reads it again after every `runpf`; it fetches again only after
+  `_reset_res_pointers` (a copy, a reset, `close`, a failed powerflow). The per-call cost is paid
+  once per view, not per step, which leaves the end-to-end benchmark nothing per step to see.
+- **Point 4, the backend:** its cached views go with `_reset_res_pointers`, which every place
+  that replaces or drops `_grid` calls first (`close` included). Under `reference_internal` they
+  keep alive only the grid the backend holds anyway.
+- **What the audit added: keeping the grid alive is not enough.** A view also needs the grid to
+  keep the buffer it shows, and two families did not:
+  - the element results. A diverged powerflow reset them by assigning fresh vectors, which freed
+    the old buffers (an Eigen move assignment takes over the temporary's storage, and the
+    temporary frees the old one). They are now reset in place, to NaN.
+  - the solver side (the `*_solver` getters, an algorithm's `get_V` / `get_Va` / `get_Vm`). Later
+    powerflows rebuild it in new buffers: a change of topology, a reset, another algorithm, a
+    divergence of the DC solver. No policy makes a view of it safe, so these return copies; none
+    is on a hot path. `get_Ybus_solver` / `get_dcYbus_solver` had been views since 1.2.0.
+- **The `_internal` twins.** For code that cannot afford the copy, each solver getter that
+  copies has a twin `<name>_internal` returning the view (`reference_internal`, read only),
+  valid until a later call rebuilds it. Nothing checks that: `docs/security.rst` puts these
+  methods outside the memory-safety invariant, at the caller's risk.
+- **The decision, per getter** (`binding_lsgrid.cpp`, `binding_containers.cpp`,
+  `binding_solvers.cpp`): `reference_internal` for the views of element data (results, setpoints,
+  bus ids, admittances, the hvdc droop status) and for the algorithm controls; `copy` for the
+  solver side; no policy where the getter returns by value, which pybind11 moves whatever the
+  policy says. The containers' `get_bus_id` / `get_yac_eff_*` went from `keep_alive<0, 1>` (safe,
+  but invisible in `.base`) to `reference_internal`, and the hvdc lines' `get_bus_id_side_*`,
+  which had neither, too.
+- **Point 5, the regression tests:** `TestResultViewsKeepTheirGrid` and
+  `TestSolverGettersAreSnapshots` (`lightsim2grid/tests/test_LSGrid_out_of_bounds.py`, run under
+  ASan by `sanitizers.yml`) sweep every getter of the grid, its containers and its algorithms that
+  takes no argument, so that a new getter is checked without being listed; and a C++ test of the
+  in-place reset (`src/tests/test_lsgrid.cpp`).
+- **Point 3, memory:** the retention is the expected one, and only that. A loop building grids
+  and keeping one view of each holds every grid; once the views are dropped no grid is left, and
+  the next rounds reuse that memory instead of growing the RSS. A test checks that the grid goes
+  with the last array taken from it.
+- **Left open:**
+  - a view does not survive the re-initialisation of the elements it shows (`init_*`,
+    `set_state`), which replaces their buffers. Documented in `docs/result_views.rst`.
+  - the batch classes: their views keep the batch alive, but a later `compute` replaces some of
+    their buffers -- the flows every time, the voltages when the number of rows changes -- and
+    `clear` frees them, so a view held across them reads freed memory. Closing it means copies,
+    or result buffers handed over to python at the end of each `compute`; to decide.

@@ -200,12 +200,15 @@ Which convention each "by id" method uses:
      - get
      - Solver
 
-The ``_solver`` getters return views of what the grid holds, not copies. ``get_Ybus_solver``
-and ``get_dcYbus_solver`` give a read-only scipy matrix on the grid's own arrays, valid until
-a powerflow rebuilds that matrix (after a change of topology or of an admittance): call
-``.copy()`` on it to keep it, or to pass it to a lightsim2grid function taking a sparse
-matrix, such as an algorithm's ``compute_pf``. ``get_Ybus`` and ``get_dcYbus`` build a new
-matrix at each call, which is the caller's to keep and modify.
+The ``_solver`` getters return copies of what the grid holds, taken when called: later
+powerflows rebuild it (after a change of topology, a reset of the solver...), which no view
+could survive. ``get_Ybus_solver`` and ``get_dcYbus_solver`` give a scipy matrix of their own,
+writeable, that an algorithm's ``compute_pf`` takes as it is. Each of these getters has an
+``_internal`` twin (``get_Ybus_solver_internal``, ``get_V_solver_internal``...) returning the
+view instead, without the copy, for code that cannot afford it: valid only until the next
+rebuild, which nothing checks, so at your own risk (see :ref:`internal_methods`).
+``get_Ybus`` and ``get_dcYbus`` build a new matrix at each call, which is the caller's to keep
+and modify.
 
 .. _elements-modeled:
 

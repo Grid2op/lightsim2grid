@@ -30,7 +30,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const GeneratorContainer & data)  {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(gen_cls, "GeneratorContainer");
     add_binary_serialization(gen_cls);
 
@@ -119,7 +119,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const SGenContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(sgen_cls, "SGenContainer");
     add_binary_serialization(sgen_cls);
 
@@ -149,7 +149,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const LoadContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(load_cls, "LoadContainer");
     add_binary_serialization(load_cls);
 
@@ -177,7 +177,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const StorageContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &StorageContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &StorageContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(storage_cls, "StorageContainer");
     add_binary_serialization(storage_cls);
 
@@ -215,7 +215,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const ShuntContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(shunt_cls, "ShuntContainer");
     add_binary_serialization(shunt_cls);
 
@@ -271,12 +271,12 @@ void bind_containers(py::module_& m) {
             Whether ignore the tap side is ignored when using the
             'shift' attribute (should be True for pandapower,
             where it is ignored and False otherwise).)mydelimiter")
-        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_11", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_12", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_21", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_22", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_11", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_12", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_21", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_22", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::return_value_policy::reference_internal);
     add_pickle(trafo_cls, "TrafoContainer");
     add_binary_serialization(trafo_cls);
 
@@ -366,12 +366,12 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const LineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_11", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_12", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_21", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_22", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_11", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_12", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_21", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_22", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::return_value_policy::reference_internal);
     add_pickle(line_cls, "LineContainer");
     add_binary_serialization(line_cls);
 
@@ -456,8 +456,8 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const HvdcLineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id_side_1", &HvdcLineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str())
-        .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str());
+        .def("get_bus_id_side_1", &HvdcLineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::return_value_policy::reference_internal);
     add_pickle(dcline_cls, "HvdcLineContainer");
     add_binary_serialization(dcline_cls);
     // exposed (also) so TestSerializedEnumValues can pin the integer values,
