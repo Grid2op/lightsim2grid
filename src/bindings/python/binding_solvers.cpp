@@ -19,6 +19,7 @@
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
+#include "sparse_helpers.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
 #include "powerflow_algorithm/RefactorPolicies.hpp"
 
@@ -116,6 +117,9 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
         .def("get_q_to_J_col",     &Solver::get_q_to_J_col_python, DocSolver::get_q_to_J_col.c_str())
         // the Jacobian, copied
         .def("get_J", [](const Solver & s){ return nr_of(s).get_J_python(); }, DocSolver::get_J_python.c_str())
+        .def("get_J_internal", [](const py::object & self){
+                return sparse_const_view_to_scipy(nr_of(self.cast<const Solver &>()).get_J(), self);
+            }, DocSolver::get_J_internal.c_str())
         ;
 }
 
@@ -749,6 +753,12 @@ void bind_solvers(py::module_& m) {
         .def("get_Vm_internal",      &AlgorithmSelector::get_Vm,               DocSolver::get_Vm_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_V_internal",       &AlgorithmSelector::get_V,                DocSolver::get_V_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_J",                &AlgorithmSelector::get_J_python,         DocSolver::chooseSolver_get_J_python.c_str())
+        .def("get_J_internal", [](const py::object & self){
+                const AlgorithmSelector & algo = self.cast<const AlgorithmSelector &>();
+                // a plugin's get_J may return a Ref holding a copy of its own, gone with it
+                if(!algo.is_builtin_algo()) return sparse_to_scipy(algo.get_J_python());
+                return sparse_const_view_to_scipy(algo.get_J(), self);
+            }, DocSolver::get_J_internal.c_str())
         .def("get_theta_to_J_col",   &AlgorithmSelector::get_theta_to_J_col_python, "bus_id -> Jacobian column of its voltage-angle (theta) unknown, -1 if none")
         .def("get_vm_to_J_col",      &AlgorithmSelector::get_vm_to_J_col_python,    "bus_id -> Jacobian column of its voltage-magnitude (vm) unknown, -1 if none")
         .def("get_q_to_J_col",       &AlgorithmSelector::get_q_to_J_col_python,     "bus_id -> Jacobian column of its reactive (q) unknown, currently always -1")

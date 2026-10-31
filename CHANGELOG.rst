@@ -249,7 +249,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] The ``*_solver`` getters of ``LSGrid`` and an algorithm's ``get_V`` / ``get_Va`` /
   ``get_Vm`` return copies (``get_Ybus_solver`` as before 1.2.0): later powerflows rebuild what
   they viewed.
-- [ADDED] An ``_internal`` twin of each (``get_Ybus_solver_internal``...): the view, without the
+- [ADDED] An ``_internal`` twin of each, and of ``get_J_solver`` / ``get_J``: the view, without the
   copy. At the caller's risk: misused, it can corrupt memory (``docs/security.rst``).
 - [FIXED] ``set_config`` of the ``NR*`` algorithms: a config refused for one value no longer leaves
   the values checked before it applied.

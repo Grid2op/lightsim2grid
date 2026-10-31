@@ -582,6 +582,12 @@ void bind_gridmodel(py::module_& m) {
         .def("get_Vm_solver", &LSGrid::get_Vm_solver, DocLSGrid::get_Vm_solver.c_str(), py::return_value_policy::copy)
         .def("get_Vm_solver_internal", &LSGrid::get_Vm_solver, DocLSGrid::get_Vm_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_J_solver", &LSGrid::get_J_python_solver, DocLSGrid::get_J_python_solver.c_str())
+        .def("get_J_solver_internal", [](const py::object & self){
+                const AlgorithmSelector & algo = self.cast<const LSGrid &>().get_algo();
+                // a plugin's get_J may return a Ref holding a copy of its own, gone with it
+                if(!algo.is_builtin_algo()) return sparse_to_scipy(algo.get_J_python());
+                return sparse_const_view_to_scipy(algo.get_J(), self);
+            }, DocLSGrid::get_J_solver_internal.c_str())
 
         .def("id_me_to_ac_solver", &LSGrid::id_me_to_ac_solver_numpy, DocLSGrid::id_me_to_ac_solver.c_str())
         .def("id_ac_solver_to_me", &LSGrid::id_ac_solver_to_me_numpy, DocLSGrid::id_ac_solver_to_me.c_str())

@@ -17,7 +17,8 @@ namespace {
 // The docstring of an `_internal` twin: what it is a view of, then what that entails, the same
 // for all of them. `twin`: how to name the method that copies; `rebuilt_by`: what can rebuild
 // what the view shows.
-std::string internal_twin_doc(const std::string & twin, const std::string & what, const std::string & rebuilt_by)
+std::string internal_twin_doc(const std::string & twin, const std::string & what, const std::string & rebuilt_by,
+                              const std::string & note = std::string())
 {
     return R"mydelimiter(
     The same as )mydelimiter" + twin + R"mydelimiter(, without the copy:
@@ -34,7 +35,7 @@ std::string internal_twin_doc(const std::string & twin, const std::string & what
         Read it right after the call that produced it, before any other call on its owner, copy
         (``.copy()``) whatever you keep, and never make it writeable. When in doubt, use
         )mydelimiter" + twin + R"mydelimiter(, which copies.
-
+)mydelimiter" + note + R"mydelimiter(
     .. versionadded:: 1.3.0
 
 )mydelimiter";
@@ -43,6 +44,14 @@ std::string internal_twin_doc(const std::string & twin, const std::string & what
 // what can rebuild the buffer an `_internal` view shows
 const char * const grid_rebuilt_by = "a powerflow after a change of topology, a reset of the solver, a change of algorithm";
 const char * const algo_rebuilt_by = "its next ``compute_pf`` or ``solve``, a ``reset``";
+
+// what is particular to the Jacobian's twins
+const char * const jacobian_note = R"mydelimiter(
+    .. note::
+        For a Newton-Raphson only, as the Jacobian it views. An algorithm loaded from a plugin
+        gives a copy instead: lightsim2grid cannot know where such an algorithm keeps its
+        Jacobian, which may not outlive the call.
+)mydelimiter";
 
 }  // namespace
 
@@ -112,6 +121,8 @@ const std::string DocSolver::get_Vm_internal = internal_twin_doc(
     "``get_Vm``", "the voltage magnitudes the algorithm holds", algo_rebuilt_by);
 const std::string DocSolver::get_V_internal = internal_twin_doc(
     "``get_V``", "the complex voltages the algorithm holds", algo_rebuilt_by);
+const std::string DocSolver::get_J_internal = internal_twin_doc(
+    "``get_J``", "the Jacobian the algorithm holds", algo_rebuilt_by, jacobian_note);
 
 const std::string DocSolver::get_error = R"mydelimiter(
     Returns the error encountered by the solver during the last ``compute_pf`` / ``solve`` call,
@@ -5990,6 +6001,9 @@ const std::string DocLSGrid::get_ac_slack_weights_solver_internal = internal_twi
     ":func:`lightsim2grid.network.LSGrid.get_ac_slack_weights_solver`", "the slack weights the solver holds", grid_rebuilt_by);
 const std::string DocLSGrid::get_dc_slack_weights_solver_internal = internal_twin_doc(
     ":func:`lightsim2grid.network.LSGrid.get_dc_slack_weights_solver`", "the slack weights the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_J_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_J_solver`", "the Jacobian the AC algorithm holds", grid_rebuilt_by,
+    jacobian_note);
 
 const std::string DocLSGrid::get_ptdf = R"mydelimiter(
     This function returns the PTDF (Power Transfer Distribution Factor) which tells you

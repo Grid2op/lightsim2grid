@@ -203,8 +203,9 @@ The invariant above has one deliberate exception. A method whose name ends in
 ``_internal`` returns a **view, without any copy, of a buffer the solver owns**:
 ``get_Ybus_solver_internal``, ``get_V_solver_internal``, ``get_pv_solver_internal``
 and the other ``*_solver_internal`` methods of
-:py:class:`~lightsim2grid.network.LSGrid`, and the ``get_V_internal`` /
-``get_Va_internal`` / ``get_Vm_internal`` of an algorithm. Each is the twin of the
+:py:class:`~lightsim2grid.network.LSGrid` (the Jacobian's ``get_J_solver_internal``
+among them), and the ``get_V_internal`` / ``get_Va_internal`` / ``get_Vm_internal`` /
+``get_J_internal`` of an algorithm. Each is the twin of the
 method of the same name without ``_internal``, which returns a copy and is safe.
 The twin exists for code that measured the cost of that copy and cannot afford it.
 

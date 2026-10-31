@@ -696,6 +696,9 @@ _GRID_INTERNAL_TWINS = ("get_V_solver", "get_Va_solver", "get_Vm_solver", "get_S
                         "get_slack_ids_dc_solver", "get_slack_weights_solver",
                         "get_ac_slack_weights_solver", "get_dc_slack_weights_solver")
 _ALGO_INTERNAL_TWINS = ("get_V", "get_Va", "get_Vm")
+# the Jacobian's, on a Newton-Raphson only
+_GRID_JACOBIAN_TWIN = "get_J_solver"
+_ALGO_JACOBIAN_TWIN = "get_J"
 
 
 class TestInternalTwinsAreViews(unittest.TestCase):
@@ -739,12 +742,29 @@ class TestInternalTwinsAreViews(unittest.TestCase):
             with self.subTest(algo=label):
                 self._check_twins(algo, _ALGO_INTERNAL_TWINS)
 
+    def test_jacobian(self):
+        """the Jacobian a Newton-Raphson holds, through the grid, its algorithm, an algorithm
+        alone, and an NROuter_* (which forwards to the Newton-Raphson inside it)"""
+        grid = _solved_grid()
+        self._check_twins(grid, [_GRID_JACOBIAN_TWIN])
+        with self.subTest(algo="get_algo()"):
+            self._check_twins(grid.get_algo(), [_ALGO_JACOBIAN_TWIN])
+        with self.subTest(algo="NR_SparseLU"):
+            self._check_twins(_standalone_solver(grid), [_ALGO_JACOBIAN_TWIN])
+        with self.subTest(algo="NROuter_SparseLU"):
+            outer = _solved_grid()
+            outer.change_algorithm("NROuter_SparseLU")
+            outer.clear_outer_loops()
+            _solve(outer)
+            self._check_twins(outer, [_GRID_JACOBIAN_TWIN])
+            self._check_twins(outer.get_algo(), [_ALGO_JACOBIAN_TWIN])
+
     def test_every_internal_method_has_its_twin(self):
         """no `_internal` name but those: each is the view of a getter that copies"""
         grid = _solved_grid()
-        for label, owner, twins in (("LSGrid", grid, _GRID_INTERNAL_TWINS),
-                                    ("get_algo()", grid.get_algo(), _ALGO_INTERNAL_TWINS),
-                                    ("NR_SparseLU", NR_SparseLU(), _ALGO_INTERNAL_TWINS)):
+        for label, owner, twins in (("LSGrid", grid, _GRID_INTERNAL_TWINS + (_GRID_JACOBIAN_TWIN,)),
+                                    ("get_algo()", grid.get_algo(), _ALGO_INTERNAL_TWINS + (_ALGO_JACOBIAN_TWIN,)),
+                                    ("NR_SparseLU", NR_SparseLU(), _ALGO_INTERNAL_TWINS + (_ALGO_JACOBIAN_TWIN,))):
             with self.subTest(owner=label):
                 internal = sorted(nm for nm in dir(owner) if nm.endswith("_internal") and not nm.startswith("_"))
                 self.assertEqual(internal, sorted(nm + "_internal" for nm in twins))

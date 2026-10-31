@@ -30,6 +30,7 @@ struct LS2G_API DocSolver
     static const std::string get_Va_internal;
     static const std::string get_Vm_internal;
     static const std::string get_V_internal;
+    static const std::string get_J_internal;
     static const std::string get_error;
     static const std::string get_nb_iter;
     static const std::string reset;
@@ -617,6 +618,7 @@ struct LS2G_API DocLSGrid
     static const std::string get_slack_weights_solver_internal;
     static const std::string get_ac_slack_weights_solver_internal;
     static const std::string get_dc_slack_weights_solver_internal;
+    static const std::string get_J_solver_internal;
 
     static const std::string check_solution;
 
