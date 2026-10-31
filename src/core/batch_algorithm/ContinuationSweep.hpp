@@ -190,11 +190,11 @@ class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
         // algorithms' (one row per point, one column per powerline then trafo).
         Eigen::Ref<RealMat> compute_flows() {
             compute_flows_from_Vs();
-            return _amps_flows;
+            return _amps_flows.raw();
         }
         Eigen::Ref<RealMat> compute_power_flows() {
             compute_flows_from_Vs(false);
-            return _active_power_flows;
+            return _active_power_flows.raw();
         }
 
         // timers

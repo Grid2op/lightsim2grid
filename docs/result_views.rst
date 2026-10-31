@@ -21,9 +21,13 @@ What this means
   that converges writes its own there.
 - **A view does not survive the re-initialisation of the elements it shows** (``init_generators`` and the other
   ``init_*``, ``set_state``): the grid replaces their buffers. Call the getter again after that.
-- **The batch classes** (``TimeSeries``, ``InjectionSweep``, ``ContingencyAnalysis``, ``ScenarioSweep``) return views
-  that keep the object they come from alive. Call their getters again after each ``compute`` (and after ``clear``):
-  the next one can replace the buffers an earlier array shows.
+- **The batch classes are different: their arrays are snapshots.** ``get_voltages``, ``get_flows``,
+  ``get_power_flows``, ``compute_flows``, ``compute_power_flows`` and ``get_sbuses`` of ``TimeSeriesCPP``,
+  ``InjectionSweepCPP``, ``ContingencyAnalysisCPP``, ``ScenarioSweepCPP`` and ``ContinuationSweepCPP`` return,
+  without a copy, a read-only array that co-owns its buffer. It keeps the values of the run that produced it, whatever
+  the object does next (another ``compute``, ``clear``, or being deleted), and it does not keep the object alive.
+  Call the getter again for the results of a later run. The next run writes into the same buffer when no array holds it,
+  and allocates a new one when an array does, so holding on to every run's arrays holds every run's memory.
 - **What comes from the solver side is a copy**, taken when the getter is called: the ``*_solver`` getters of
   :class:`~lightsim2grid.network.LSGrid` (``get_V_solver``, ``get_Sbus_solver``, ``get_pv_solver``,
   ``get_Ybus_solver``, ``get_J_solver``, ...) and the voltages and the Jacobian of an algorithm (``get_V``, ``get_Va``,
@@ -56,3 +60,6 @@ Rule of thumb: **copy what must outlive the next powerflow, or must not hold the
     The views of :class:`~lightsim2grid.network.LSGrid` keep the grid alive, a diverged powerflow resets them in place,
     and what comes from the solver side is copied. Before, a view read freed memory once its grid was gone or after a
     diverged powerflow, and a view of the solver side once a later powerflow had rebuilt it.
+    The arrays of the batch classes are snapshots that co-own their buffer. Before, they were views that the next
+    ``compute`` or ``clear`` left on freed memory, and those of ``compute_flows`` / ``compute_power_flows`` did not
+    even keep their object alive.
