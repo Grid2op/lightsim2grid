@@ -234,6 +234,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 --------------------
 - [FIXED] The result arrays of the batch classes read freed memory after the next ``compute`` or ``clear``.
   They are now read-only snapshots that co-own their buffer, still without a copy.
+- [IMPROVED] ``TimeSerie``, ``ScenarioSweep`` and ``ContingencyAnalysis`` no longer copy the voltages
+  and the active power flows they return; those arrays are now read-only.
 - [FIXED] ``pandapower_compat.dcpf`` always raised: it sized the slack weights per slack bus,
   and called the AC entry point. It now calls the new ``compute_pf_dc`` of the DC solvers.
 - [ADDED] ``compute_pf_dc`` on the python solvers: the DC powerflow entry point, with its inputs checked.
