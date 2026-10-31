@@ -572,10 +572,15 @@ void bind_gridmodel(py::module_& m) {
         // What the solver side holds (its voltages, bus labelling, pv / pq split, slack, Sbus,
         // Ybus) is rebuilt by later powerflows -- a change of topology, a reset, another
         // algorithm -- in new buffers: a view of the old ones would read freed memory, whatever
-        // kept the grid alive. Hence a copy, for every getter of this family.
+        // kept the grid alive. Hence a copy, for every getter of this family. Each has an
+        // `_internal` twin returning the view, for code that cannot afford the copy: valid until
+        // the next rebuild, which nothing checks -- at the caller's risk (docs/security.rst).
         .def("get_V_solver", &LSGrid::get_V_solver, DocLSGrid::get_V_solver.c_str(), py::return_value_policy::copy)
+        .def("get_V_solver_internal", &LSGrid::get_V_solver, DocLSGrid::get_V_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_Va_solver", &LSGrid::get_Va_solver, DocLSGrid::get_Va_solver.c_str(), py::return_value_policy::copy)
+        .def("get_Va_solver_internal", &LSGrid::get_Va_solver, DocLSGrid::get_Va_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_Vm_solver", &LSGrid::get_Vm_solver, DocLSGrid::get_Vm_solver.c_str(), py::return_value_policy::copy)
+        .def("get_Vm_solver_internal", &LSGrid::get_Vm_solver, DocLSGrid::get_Vm_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_J_solver", &LSGrid::get_J_python_solver, DocLSGrid::get_J_python_solver.c_str())
 
         .def("id_me_to_ac_solver", &LSGrid::id_me_to_ac_solver_numpy, DocLSGrid::id_me_to_ac_solver.c_str())
@@ -597,17 +602,28 @@ void bind_gridmodel(py::module_& m) {
              "Read off the current weights, which change_p_gen does not update (see "
              "update_slack_weights).")
         .def("get_pv_solver", &LSGrid::get_pv_solver_numpy, DocLSGrid::get_pv_solver.c_str(), py::return_value_policy::copy)
+        .def("get_pv_solver_internal", &LSGrid::get_pv_solver_numpy, DocLSGrid::get_pv_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_pq_solver", &LSGrid::get_pq_solver_numpy, DocLSGrid::get_pq_solver.c_str(), py::return_value_policy::copy)
+        .def("get_pq_solver_internal", &LSGrid::get_pq_solver_numpy, DocLSGrid::get_pq_solver_internal.c_str(), py::return_value_policy::reference_internal)
         // per-family variants: the AC and the DC solver each keep their own split
         .def("get_ac_pv_solver", &LSGrid::get_ac_pv_solver_numpy, DocLSGrid::get_ac_pv_solver.c_str(), py::return_value_policy::copy)
+        .def("get_ac_pv_solver_internal", &LSGrid::get_ac_pv_solver_numpy, DocLSGrid::get_ac_pv_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_dc_pv_solver", &LSGrid::get_dc_pv_solver_numpy, DocLSGrid::get_dc_pv_solver.c_str(), py::return_value_policy::copy)
+        .def("get_dc_pv_solver_internal", &LSGrid::get_dc_pv_solver_numpy, DocLSGrid::get_dc_pv_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_ac_pq_solver", &LSGrid::get_ac_pq_solver_numpy, DocLSGrid::get_ac_pq_solver.c_str(), py::return_value_policy::copy)
+        .def("get_ac_pq_solver_internal", &LSGrid::get_ac_pq_solver_numpy, DocLSGrid::get_ac_pq_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_dc_pq_solver", &LSGrid::get_dc_pq_solver_numpy, DocLSGrid::get_dc_pq_solver.c_str(), py::return_value_policy::copy)
+        .def("get_dc_pq_solver_internal", &LSGrid::get_dc_pq_solver_numpy, DocLSGrid::get_dc_pq_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_slack_ids_solver", &LSGrid::get_slack_ids_solver_numpy, DocLSGrid::get_slack_ids_solver.c_str(), py::return_value_policy::copy)
+        .def("get_slack_ids_solver_internal", &LSGrid::get_slack_ids_solver_numpy, DocLSGrid::get_slack_ids_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_slack_ids_dc_solver", &LSGrid::get_slack_ids_dc_solver_numpy, DocLSGrid::get_slack_ids_dc_solver.c_str(), py::return_value_policy::copy)
+        .def("get_slack_ids_dc_solver_internal", &LSGrid::get_slack_ids_dc_solver_numpy, DocLSGrid::get_slack_ids_dc_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_slack_weights_solver", &LSGrid::get_slack_weights_solver, DocLSGrid::get_slack_weights_solver.c_str(), py::return_value_policy::copy)
+        .def("get_slack_weights_solver_internal", &LSGrid::get_slack_weights_solver, DocLSGrid::get_slack_weights_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_ac_slack_weights_solver", &LSGrid::get_ac_slack_weights_solver, DocLSGrid::get_ac_slack_weights_solver.c_str(), py::return_value_policy::copy)
+        .def("get_ac_slack_weights_solver_internal", &LSGrid::get_ac_slack_weights_solver, DocLSGrid::get_ac_slack_weights_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_dc_slack_weights_solver", &LSGrid::get_dc_slack_weights_solver, DocLSGrid::get_dc_slack_weights_solver.c_str(), py::return_value_policy::copy)
+        .def("get_dc_slack_weights_solver_internal", &LSGrid::get_dc_slack_weights_solver, DocLSGrid::get_dc_slack_weights_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_slack_col_solver", &LSGrid::get_slack_col_solver, DocLSGrid::get_slack_col_solver.c_str())
         .def("get_slack_absorbed_solver", &LSGrid::get_slack_absorbed_solver, DocLSGrid::get_slack_absorbed_solver.c_str())
         .def("get_controller_q_solver", &LSGrid::get_controller_q_solver, DocLSGrid::get_controller_q_solver.c_str())
@@ -631,11 +647,20 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dcYbus", [](const LSGrid & self){ return sparse_to_scipy(self.get_dcYbus()); }, DocLSGrid::get_dcYbus.c_str())
         .def("get_Sbus", &LSGrid::get_Sbus, DocLSGrid::get_Sbus.c_str())
         .def("get_dcSbus", &LSGrid::get_dcSbus, DocLSGrid::get_dcSbus.c_str())
-        // the matrices the grid holds: copied, then handed over (see the solver getters above)
+        // the matrices the grid holds: copied, then handed over (see the solver getters above);
+        // the _internal twins, a read only view of the grid's arrays
         .def("get_Ybus_solver", [](const LSGrid & self){ return sparse_to_scipy(self.get_Ybus_solver()); }, DocLSGrid::get_Ybus_solver.c_str())
+        .def("get_Ybus_solver_internal", [](const py::object & self){
+                return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_Ybus_solver(), self);
+            }, DocLSGrid::get_Ybus_solver_internal.c_str())
         .def("get_dcYbus_solver", [](const LSGrid & self){ return sparse_to_scipy(self.get_dcYbus_solver()); }, DocLSGrid::get_dcYbus_solver.c_str())
+        .def("get_dcYbus_solver_internal", [](const py::object & self){
+                return sparse_const_view_to_scipy(self.cast<const LSGrid &>().get_dcYbus_solver(), self);
+            }, DocLSGrid::get_dcYbus_solver_internal.c_str())
         .def("get_Sbus_solver", &LSGrid::get_Sbus_solver, DocLSGrid::get_Sbus_solver.c_str(), py::return_value_policy::copy)
+        .def("get_Sbus_solver_internal", &LSGrid::get_Sbus_solver, DocLSGrid::get_Sbus_solver_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_dcSbus_solver", &LSGrid::get_dcSbus_solver, DocLSGrid::get_dcSbus_solver.c_str(), py::return_value_policy::copy)
+        .def("get_dcSbus_solver_internal", &LSGrid::get_dcSbus_solver, DocLSGrid::get_dcSbus_solver_internal.c_str(), py::return_value_policy::reference_internal)
 
         .def("check_solution", &LSGrid::check_solution, DocLSGrid::check_solution.c_str())
 

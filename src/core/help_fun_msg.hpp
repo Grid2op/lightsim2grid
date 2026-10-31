@@ -26,6 +26,10 @@ struct LS2G_API DocSolver
     static const std::string get_Va;
     static const std::string get_Vm;
     static const std::string get_V;
+    // their `_internal` twins: the views, without the copy, at the caller's risk
+    static const std::string get_Va_internal;
+    static const std::string get_Vm_internal;
+    static const std::string get_V_internal;
     static const std::string get_error;
     static const std::string get_nb_iter;
     static const std::string reset;
@@ -563,7 +567,7 @@ struct LS2G_API DocLSGrid
     static const std::string total_bus;
     static const std::string nb_connected_bus;
 
-    // TODO doc: make more precise when things are copied and when things are not
+    // copies; the `_internal` twins of the solver ones, declared below, are the views
     static const std::string get_pv;
     static const std::string get_pq;
     static const std::string get_slack_ids;
@@ -593,6 +597,26 @@ struct LS2G_API DocLSGrid
     static const std::string get_lodf;
     static const std::string get_Bf;
     static const std::string get_Bf_solver;
+    // the `_internal` twins of the solver getters that copy: the views, without the copy, at
+    // the caller's risk (docs/security.rst)
+    static const std::string get_V_solver_internal;
+    static const std::string get_Va_solver_internal;
+    static const std::string get_Vm_solver_internal;
+    static const std::string get_Sbus_solver_internal;
+    static const std::string get_dcSbus_solver_internal;
+    static const std::string get_Ybus_solver_internal;
+    static const std::string get_dcYbus_solver_internal;
+    static const std::string get_pv_solver_internal;
+    static const std::string get_pq_solver_internal;
+    static const std::string get_ac_pv_solver_internal;
+    static const std::string get_dc_pv_solver_internal;
+    static const std::string get_ac_pq_solver_internal;
+    static const std::string get_dc_pq_solver_internal;
+    static const std::string get_slack_ids_solver_internal;
+    static const std::string get_slack_ids_dc_solver_internal;
+    static const std::string get_slack_weights_solver_internal;
+    static const std::string get_ac_slack_weights_solver_internal;
+    static const std::string get_dc_slack_weights_solver_internal;
 
     static const std::string check_solution;
 

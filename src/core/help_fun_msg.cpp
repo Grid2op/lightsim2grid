@@ -12,6 +12,40 @@
 
 namespace ls2g {
 
+namespace {
+
+// The docstring of an `_internal` twin: what it is a view of, then what that entails, the same
+// for all of them. `twin`: how to name the method that copies; `rebuilt_by`: what can rebuild
+// what the view shows.
+std::string internal_twin_doc(const std::string & twin, const std::string & what, const std::string & rebuilt_by)
+{
+    return R"mydelimiter(
+    The same as )mydelimiter" + twin + R"mydelimiter(, without the copy:
+    a read only view of )mydelimiter" + what + R"mydelimiter(.
+
+    .. warning::
+        **Using it correctly is your own responsibility, and misused it can corrupt memory**
+        (see :ref:`internal_methods`). The view is valid only until a later call rebuilds what
+        it shows, and nothing checks it: read afterwards, it reads freed memory. That is
+        undefined behaviour: stale values, garbage, a crash, or corrupted memory. The view keeps
+        its owner alive, which prevents none of it. Among the calls that rebuild it:
+        )mydelimiter" + rebuilt_by + R"mydelimiter(.
+
+        Read it right after the call that produced it, before any other call on its owner, copy
+        (``.copy()``) whatever you keep, and never make it writeable. When in doubt, use
+        )mydelimiter" + twin + R"mydelimiter(, which copies.
+
+    .. versionadded:: 1.3.0
+
+)mydelimiter";
+}
+
+// what can rebuild the buffer an `_internal` view shows
+const char * const grid_rebuilt_by = "a powerflow after a change of topology, a reset of the solver, a change of algorithm";
+const char * const algo_rebuilt_by = "its next ``compute_pf`` or ``solve``, a ``reset``";
+
+}  // namespace
+
 const std::string DocSolver::get_J_python = R"mydelimiter(
     Returns the Jacobian matrix used for solving the powerflow as a scipy sparse CSC matrix matrix of real number.
 
@@ -71,6 +105,13 @@ const std::string DocSolver::get_V = R"mydelimiter(
     .. seealso::
         This function should be equal to :func:`lightsim2grid.network.LSGrid.get_V_solver`
 )mydelimiter";
+
+const std::string DocSolver::get_Va_internal = internal_twin_doc(
+    "``get_Va``", "the voltage angles the algorithm holds", algo_rebuilt_by);
+const std::string DocSolver::get_Vm_internal = internal_twin_doc(
+    "``get_Vm``", "the voltage magnitudes the algorithm holds", algo_rebuilt_by);
+const std::string DocSolver::get_V_internal = internal_twin_doc(
+    "``get_V``", "the complex voltages the algorithm holds", algo_rebuilt_by);
 
 const std::string DocSolver::get_error = R"mydelimiter(
     Returns the error encountered by the solver during the last ``compute_pf`` / ``solve`` call,
@@ -5912,6 +5953,43 @@ const std::string DocLSGrid::dc_pf = R"mydelimiter(
     as the :func:`lightsim2grid.network.LSGrid.ac_pf`.
 )mydelimiter";       
 
+
+const std::string DocLSGrid::get_V_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_V_solver`", "the voltages the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_Va_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_Va_solver`", "the voltages the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_Vm_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_Vm_solver`", "the voltages the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_Sbus_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_Sbus_solver`", "the injections the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_dcSbus_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_dcSbus_solver`", "the injections the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_Ybus_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_Ybus_solver`", "the AC admittance matrix the grid holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_dcYbus_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_dcYbus_solver`", "the DC admittance matrix the grid holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_pv_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_pv_solver`", "the pv buses the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_pq_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_pq_solver`", "the pq buses the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_ac_pv_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_ac_pv_solver`", "the pv buses the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_dc_pv_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_dc_pv_solver`", "the pv buses the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_ac_pq_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_ac_pq_solver`", "the pq buses the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_dc_pq_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_dc_pq_solver`", "the pq buses the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_slack_ids_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_slack_ids_solver`", "the slack buses the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_slack_ids_dc_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_slack_ids_dc_solver`", "the slack buses the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_slack_weights_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_slack_weights_solver`", "the slack weights the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_ac_slack_weights_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_ac_slack_weights_solver`", "the slack weights the solver holds", grid_rebuilt_by);
+const std::string DocLSGrid::get_dc_slack_weights_solver_internal = internal_twin_doc(
+    ":func:`lightsim2grid.network.LSGrid.get_dc_slack_weights_solver`", "the slack weights the solver holds", grid_rebuilt_by);
 
 const std::string DocLSGrid::get_ptdf = R"mydelimiter(
     This function returns the PTDF (Power Transfer Distribution Factor) which tells you

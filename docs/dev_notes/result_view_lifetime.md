@@ -141,6 +141,10 @@ Switched in 1.3.0.
     powerflows rebuild it in new buffers: a change of topology, a reset, another algorithm, a
     divergence of the DC solver. No policy makes a view of it safe, so these return copies; none
     is on a hot path. `get_Ybus_solver` / `get_dcYbus_solver` had been views since 1.2.0.
+- **The `_internal` twins.** For code that cannot afford the copy, each solver getter that
+  copies has a twin `<name>_internal` returning the view (`reference_internal`, read only),
+  valid until a later call rebuilds it. Nothing checks that: `docs/security.rst` puts these
+  methods outside the memory-safety invariant, at the caller's risk.
 - **The decision, per getter** (`binding_lsgrid.cpp`, `binding_containers.cpp`,
   `binding_solvers.cpp`): `reference_internal` for the views of element data (results, setpoints,
   bus ids, admittances, the hvdc droop status) and for the algorithm controls; `copy` for the

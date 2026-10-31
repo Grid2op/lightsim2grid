@@ -28,6 +28,10 @@ What this means
   :class:`~lightsim2grid.network.LSGrid` (``get_V_solver``, ``get_Sbus_solver``, ``get_pv_solver``,
   ``get_Ybus_solver``, ...) and the voltages of an algorithm (``get_V``, ``get_Va``, ``get_Vm``). Later powerflows
   rebuild those buffers, which no view could survive. Such a copy does not follow the next solve: call the getter again.
+- **Each of these has an** ``_internal`` **twin** (``get_Ybus_solver_internal``, ``get_V_solver_internal``,
+  ``get_V_internal``, ...) that returns the view instead, without a copy, for code that cannot afford the copy. The view
+  is valid only until a later call rebuilds what it shows, and nothing checks it: using it correctly is your own
+  responsibility, and misused it can corrupt memory (:ref:`internal_methods`).
 - A few other getters return a **copy** as well: the reactive ranges (``get_gen_reactive_range_max``,
   ``get_station_reactive_range_max``) and the raw target Q (``get_gen_raw_target_q``).
 

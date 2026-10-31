@@ -544,10 +544,13 @@ class TestResultViewsKeepTheirGrid(unittest.TestCase):
         """After any ordinary call -- powerflows, a change of injection, of topology, one bus
         less, a divergence, a reset, another algorithm -- what a view shows is still a buffer
         the grid holds, of the same size. Only pointers are compared: nothing reads a buffer
-        that may be gone."""
+        that may be gone. The `_internal` views of the solver side are left out: they promise
+        nothing of the kind (TestInternalTwinsAreViews)."""
         grid = _solved_grid()
         held = {}
         for nm, res in _grid_array_getters(grid).items():
+            if nm.endswith("_internal"):
+                continue
             for idx, arr in enumerate(_arrays_of(res)):
                 if not _is_snapshot(arr):
                     held[nm, idx] = (_data_ptr(arr), arr.shape)
@@ -624,7 +627,8 @@ class TestSolverGettersAreSnapshots(unittest.TestCase):
     voltages -- is rebuilt by later powerflows (a change of topology, a reset, another
     algorithm), which free the buffers it was in: a view of them would read freed memory,
     whatever keeps the grid alive. The `*_solver` getters of LSGrid and the voltages of an
-    algorithm are copies, taken when called."""
+    algorithm are copies, taken when called; their `_internal` twins are the views, at the
+    caller's risk (TestInternalTwinsAreViews)."""
 
     maxDiff = None  # the lists of getters at fault, in full
 
@@ -663,7 +667,8 @@ class TestSolverGettersAreSnapshots(unittest.TestCase):
             got = _array_getters(algo)
             self.assertIn("get_V", got, label)
             views = sorted(nm for nm, res in got.items()
-                           if not all(_is_snapshot(arr) for arr in _arrays_of(res)))
+                           if not nm.endswith("_internal")
+                           and not all(_is_snapshot(arr) for arr in _arrays_of(res)))
             self.assertEqual(views, [], f"{label}: these getters return views")
 
     def test_voltages_outlive_their_algorithm(self):
@@ -681,6 +686,81 @@ class TestSolverGettersAreSnapshots(unittest.TestCase):
         _reuse_freed_memory()
         for arr, exp in zip(got, expected):
             np.testing.assert_array_equal(arr, exp)
+
+
+# the solver getters that copy, each with a twin `<name>_internal` that does not
+_GRID_INTERNAL_TWINS = ("get_V_solver", "get_Va_solver", "get_Vm_solver", "get_Sbus_solver",
+                        "get_dcSbus_solver", "get_Ybus_solver", "get_dcYbus_solver",
+                        "get_pv_solver", "get_pq_solver", "get_ac_pv_solver", "get_dc_pv_solver",
+                        "get_ac_pq_solver", "get_dc_pq_solver", "get_slack_ids_solver",
+                        "get_slack_ids_dc_solver", "get_slack_weights_solver",
+                        "get_ac_slack_weights_solver", "get_dc_slack_weights_solver")
+_ALGO_INTERNAL_TWINS = ("get_V", "get_Va", "get_Vm")
+
+
+class TestInternalTwinsAreViews(unittest.TestCase):
+    """Each solver getter that copies has a twin, `<name>_internal`, that does not: a read only
+    view of the buffer the solver holds, for code that measured the copy. It keeps its owner
+    alive, and is valid only until a later call rebuilds that buffer, which nothing checks: at
+    the caller's risk (docs/security.rst). Hence the sweeps above leave the twins out."""
+
+    maxDiff = None
+
+    def _check_twins(self, owner, names):
+        nb_checked = 0
+        for nm in names:
+            with self.subTest(getter=nm):
+                self.assertTrue(hasattr(owner, nm + "_internal"), f"{nm} has no _internal twin")
+                safe = getattr(owner, nm)()
+                view = getattr(owner, nm + "_internal")()
+                again = getattr(owner, nm + "_internal")()
+                self.assertIs(type(view), type(safe))
+                self.assertEqual(len(_arrays_of(view)), len(_arrays_of(safe)))
+                for arr_safe, arr, arr_again in zip(_arrays_of(safe), _arrays_of(view), _arrays_of(again)):
+                    # what the copy shows...
+                    np.testing.assert_array_equal(arr, arr_safe)
+                    if arr.size == 0:
+                        continue  # numpy gives an empty array a buffer of its own
+                    nb_checked += 1
+                    # ... read in the owner's own buffer, call after call, and read only
+                    self.assertIs(_memory_holder(arr), owner)
+                    self.assertTrue(np.shares_memory(arr, arr_again))
+                    self.assertFalse(arr.flags.writeable)
+        self.assertGreater(nb_checked, len(names) // 2)
+
+    def test_grid_solver_getters(self):
+        grid = _solved_grid()
+        self._check_twins(grid, _GRID_INTERNAL_TWINS)
+
+    def test_algorithm_voltages(self):
+        grid = _solved_grid()
+        for label, algo in (("get_algo()", grid.get_algo()), ("get_dc_algo()", grid.get_dc_algo()),
+                            ("NR_SparseLU", _standalone_solver(grid))):
+            with self.subTest(algo=label):
+                self._check_twins(algo, _ALGO_INTERNAL_TWINS)
+
+    def test_every_internal_method_has_its_twin(self):
+        """no `_internal` name but those: each is the view of a getter that copies"""
+        grid = _solved_grid()
+        for label, owner, twins in (("LSGrid", grid, _GRID_INTERNAL_TWINS),
+                                    ("get_algo()", grid.get_algo(), _ALGO_INTERNAL_TWINS),
+                                    ("NR_SparseLU", NR_SparseLU(), _ALGO_INTERNAL_TWINS)):
+            with self.subTest(owner=label):
+                internal = sorted(nm for nm in dir(owner) if nm.endswith("_internal") and not nm.startswith("_"))
+                self.assertEqual(internal, sorted(nm + "_internal" for nm in twins))
+
+    def test_a_view_keeps_its_grid_alive(self):
+        def view_of_a_local_grid():
+            grid = _solved_grid()
+            return grid.get_V_solver_internal(), grid.get_V_solver(), weakref.ref(grid)
+
+        view, expected, grid_alive = view_of_a_local_grid()
+        gc.collect()
+        self.assertIsNotNone(grid_alive(), "the view does not keep its grid alive")
+        np.testing.assert_array_equal(view, expected)
+        del view
+        gc.collect()
+        self.assertIsNone(grid_alive())
 
 
 if __name__ == "__main__":
