@@ -23,7 +23,7 @@ env:
   #   manylinux x86_64  (cp39–cp314 × 1 container)             →  6
   #   windows   x64     (cp39–cp314 × AMD64)                   →  6
   #   macos     x86_64  (cp39–cp314, native on macos-15-intel) →  6
-  #   macos     arm64   (cp310–cp314, native on macos-14)      →  5
+  #   macos     arm64   (cp310–cp314, native on macos-15)      →  5
   #   exotic    macos arm64  via cibuildwheel (cp39)           →  1
   #   exotic    windows ARM64 via cibuildwheel (cp39–cp314)    →  6
   #                                                total:        30
@@ -395,7 +395,7 @@ jobs:
             arch: x86_64
           }
           - {
-            name: macos-14,
+            name: macos-15,
             arch: arm64
           }
         exclude:
@@ -415,6 +415,11 @@ jobs:
     env:
       RUNNER_OS: ${{ matrix.runner.name }}
       PYTHON_VERSION: ${{ matrix.python.version }}
+      # The oldest macOS the wheels run on, and the one in their platform tag. Without
+      # it the build targets the runner's own macOS, so moving to a newer runner image
+      # would silently drop every older macOS from the wheels. 11.0 is the first macOS
+      # on Apple Silicon, and cibuildwheel's own default. Ignored on Windows.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
 
     steps:
 
@@ -523,7 +528,7 @@ jobs:
       matrix:
         runner:
           - {
-            name: macos-14,  # host on arm64
+            name: macos-15,  # host on arm64
             whl_nm: macos_arm64,
             cibuildwheel: macos
           }
@@ -570,23 +575,23 @@ jobs:
           - python: 
               name: cp310  # because already done natively above
             runner:
-              name: macos-14
+              name: macos-15
           - python: 
               name: cp311  # because already done natively above
             runner:
-              name: macos-14
+              name: macos-15
           - python: 
               name: cp312  # because already done natively above
             runner:
-              name: macos-14
+              name: macos-15
           - python: 
               name: cp313  # because already done natively above
             runner:
-              name: macos-14
+              name: macos-15
           - python: 
               name: cp314  # because already done natively above
             runner:
-              name: macos-14
+              name: macos-15
           - python: 
               name: cp38  # does not work
             runner:
@@ -594,6 +599,11 @@ jobs:
     env:
       RUNNER_OS: ${{ matrix.runner.name }}
       PYTHON_VERSION: ${{ matrix.python.version }}
+      # The oldest macOS the wheels run on, and the one in their platform tag. Without
+      # it the build targets the runner's own macOS, so moving to a newer runner image
+      # would silently drop every older macOS from the wheels. 11.0 is the first macOS
+      # on Apple Silicon, and cibuildwheel's own default. Ignored on Windows.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
 
     steps:
       - name: Checkout sources
@@ -688,7 +698,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-2022, macos-14]
+        os: [ubuntu-latest, windows-2022, macos-15]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Fetch submodules (restored from the cache when possible)
@@ -749,7 +759,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-2022, macos-14]
+        os: [ubuntu-latest, windows-2022, macos-15]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Fetch submodules (restored from the cache when possible)

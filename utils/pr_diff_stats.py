@@ -35,7 +35,7 @@ BUCKETS = [
     ("other", "Build / other"),
 ]
 
-DEFAULT_BASE = "origin/dev_1.0.1"
+DEFAULT_BASE = "origin/dev_1.3.0"
 
 
 def bucket_of(path):

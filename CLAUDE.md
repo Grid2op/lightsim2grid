@@ -58,7 +58,7 @@ have to reason about and how much is tests, docs and changelog:
 place rather than being restated here:
 
 ```
-python3 utils/pr_diff_stats.py                # against origin/dev_1.0.1 (the default)
+python3 utils/pr_diff_stats.py                # against the current dev_x.y.z (the default)
 python3 utils/pr_diff_stats.py origin/main    # against another base branch
 ```
 
@@ -351,10 +351,19 @@ loses its reason to exist. Reserve the slot up front and mask it instead.
 
 `CHANGELOG.rst`, under the current development version at the top — **not** under `[TODO]`,
 which is a list of open problems rather than a release. Entries are prefixed `[ADDED]`,
-`[FIXED]`, `[IMPROVED]`, `[BREAKING]`.
+`[FIXED]`, `[IMPROVED]`, `[BREAKING]`. A released section is sorted by tag, BREAKING >
+DEPRECATED > FIXED > ADDED > IMPROVED > UPDATED; during development just append, and
+`python3 utils/release.py prepare` sorts it at release time.
 
 **Keep them short: one to four lines, roughly twenty words.** Read the `[0.13.x]` and
 earlier blocks for the register to aim at — say what changed and, where it is not obvious,
 why, then stop. The recent entries are far too verbose and are not the model to copy; a
 changelog is an index, and the reasoning belongs in the commit message and the code
 comments, which is where this repository already puts it at length.
+
+## Releases
+
+`RELEASE.md` has the procedure: a pull request from `dev_x.y.z` into `master`, checked by
+`.github/workflows/release_check.yml` (final version, dated and sorted changelog, docs
+building without warnings) and `release_checklist.yml` (a ticked checklist), then the tag, the PyPI release and the next
+`dev_x.y.z` branch (`python3 utils/release.py start-dev`).
