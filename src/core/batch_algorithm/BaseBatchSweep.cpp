@@ -211,7 +211,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
                 // as its (never written, so 0) theta paired with a nonzero base magnitude.
                 if(static_cast<size_t>(i) < _dc_row_solved_.size()) _dc_row_solved_[i] = 1;
             } else {
-                _voltages.row(i)(active_layout().id_solver_to_me.as_eigen()) = V.array();
+                _voltages.raw().row(i)(active_layout().id_solver_to_me.as_eigen()) = V.array();
             }
         }
     } catch(...) {

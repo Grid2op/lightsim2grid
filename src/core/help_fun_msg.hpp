@@ -36,6 +36,7 @@ struct LS2G_API DocSolver
     static const std::string reset;
     static const std::string converged;
     static const std::string compute_pf;
+    static const std::string compute_pf_dc;
     static const std::string get_timers;
 
     // TimerJac: returned by get_timers_jacobian()

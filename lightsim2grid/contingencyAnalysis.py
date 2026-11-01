@@ -1085,7 +1085,7 @@ class ContingencyAnalysis(object):
         self.computer.compute(v_init,
                               self._ls_backend.max_it,
                               self._ls_backend.tol)
-        self._vs = self.computer.get_voltages().copy()
+        self._vs = self.computer.get_voltages()
         # the flows of the previous voltages, if any, are not these ones'
         self._ampss = None
         self._mws = None
@@ -1127,7 +1127,7 @@ class ContingencyAnalysis(object):
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
         self.computer.compute_power_flows()
-        self._mws = self.computer.get_power_flows().copy()
+        self._mws = self.computer.get_power_flows()
         return self._mws
 
     def close(self):

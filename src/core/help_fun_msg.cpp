@@ -201,6 +201,31 @@ const std::string DocSolver::compute_pf = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocSolver::compute_pf_dc = R"mydelimiter(
+    Function used to perform a DC powerflow, with a DC solver (``DC_KLU``, ``DC_SparseLU``, ...).
+    The AC entry point :func:`compute_pf` (or ``solve``) refuses a DC solver.
+
+    Its inputs are validated as those of :func:`compute_pf` are.
+
+    Parameters
+    ------------
+    Bbus: ``scipy.sparse`` matrix of real numbers, CSC format
+        The DC susceptance matrix of the system
+    V: ``numpy.ndarray``, vector of complex numbers
+        The initial guess: the magnitudes are kept, the angles are computed
+    Pbus: ``numpy.ndarray``, vector of real numbers
+        Active power injected at each bus (per unit)
+    slack_ids: ``numpy.ndarray``, vector of integers
+        The ids of the slack buses
+    slack_weights: ``numpy.ndarray``, vector of real numbers
+        One weight per bus (indexed by bus id), 0 for a bus not in the slack
+    pv: ``numpy.ndarray``, vector of integers
+        Index of the pv buses
+    pq: ``numpy.ndarray``, vector of integers
+        Index of the pq buses
+
+)mydelimiter";
+
 const std::string DocSolver::get_timers = R"mydelimiter(
     Returns information about the time taken by some part of the solvers (in seconds)
 

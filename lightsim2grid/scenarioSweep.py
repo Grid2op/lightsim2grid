@@ -597,7 +597,7 @@ class ScenarioSweep:
         """Complex voltage, at each bus, for each simulation. Must be called after ``compute()``."""
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute() has been successfully called")
-        return self.computer.get_voltages().copy()
+        return self.computer.get_voltages()
 
     def compute_A(self):
         """
@@ -618,7 +618,7 @@ class ScenarioSweep:
         """
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute() has been successfully called")
-        mws = 1. * self.computer.compute_power_flows()  # If I don't copy, lazy eval may break stuff...
+        mws = self.computer.compute_power_flows()
         return mws
 
     def get_flows(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):

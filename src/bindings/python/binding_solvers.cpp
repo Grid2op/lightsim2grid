@@ -56,6 +56,9 @@ void bind_algo_methods(py::class_<Solver>& cls) {
         .def("compute_pf",  &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str(),
              py::arg("Ybus"), py::arg("V"), py::arg("Sbus"), py::arg("slack_ids"), py::arg("slack_weights"),
              py::arg("pv"), py::arg("pq"), py::arg("max_iter"), py::arg("tol_pu"))
+        .def("compute_pf_dc", &Solver::compute_pf_dc_with_input_validation, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf_dc.c_str(),
+             py::arg("Bbus"), py::arg("V"), py::arg("Pbus"), py::arg("slack_ids"), py::arg("slack_weights"),
+             py::arg("pv"), py::arg("pq"))
         .def("get_timers",  &Solver::get_timers,  DocSolver::get_timers.c_str())
         .def("solve",       &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str(),
              py::arg("Ybus"), py::arg("V"), py::arg("Sbus"), py::arg("slack_ids"), py::arg("slack_weights"),
