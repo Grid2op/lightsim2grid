@@ -36,7 +36,11 @@ bool constrained_amd_order(int n, const int * Ap, const int * Ai,
     // sort key: twice the AMD position; a follow index that comes before its last lead one
     // gets the odd key right after it. Leads keep their place, so the keys of all the
     // constraints are read off the same AMD order and one pass is enough.
+    // An `in_order` constraint gives all its follow indices the odd key after the last of
+    // its leads and follows, and their rank breaks the tie. Its follows are never another
+    // constraint's leads, so the keys stay read off the AMD order alone.
     std::vector<long> key(n);
+    std::vector<int> rank(n, 0);
     for(int i = 0; i < n; ++i) key[i] = 2L * pos[i];
     for(const OrderingConstraint & c : constraints){
         int last_lead = -1;
@@ -44,11 +48,26 @@ bool constrained_amd_order(int n, const int * Ap, const int * Ai,
             if(i >= 0 && i < n && pos[i] > last_lead) last_lead = pos[i];
         }
         if(last_lead < 0) continue;
+        if(c.in_order){
+            int last = last_lead;
+            for(int i : c.follow){
+                if(i >= 0 && i < n) last = std::max(last, pos[i]);
+            }
+            int r = 0;
+            for(int i : c.follow){
+                if(i < 0 || i >= n) continue;
+                key[i] = 2L * last + 1;
+                rank[i] = r++;
+            }
+            continue;
+        }
         for(int i : c.follow){
             if(i >= 0 && i < n && pos[i] < last_lead) key[i] = std::max(key[i], 2L * last_lead + 1);
         }
     }
-    std::stable_sort(perm.begin(), perm.end(), [&key](int a, int b){ return key[a] < key[b]; });
+    std::stable_sort(perm.begin(), perm.end(), [&key, &rank](int a, int b){
+        return key[a] < key[b] || (key[a] == key[b] && rank[a] < rank[b]);
+    });
     return true;
 }
 

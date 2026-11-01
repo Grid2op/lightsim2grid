@@ -234,6 +234,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [IMPROVED] ``constrained_ordering``: a voltage-control group of several controllers keeps its Q
+  columns in the controllers' order: holding one at a reactive limit forces a fresh factorization
+  far less often.
 - [ADDED] ``load_algorithm_plugin`` takes a plugin's name, found by ``find_algorithm_plugin`` in
   ``LS2G_PLUGIN_PATH`` or in ``examples/*/build`` of an editable install.
 - [ADDED] ``examples/build_plugins.py``: builds all the example plugins at once, on any OS.

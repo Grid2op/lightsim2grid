@@ -204,13 +204,17 @@ column as well, and the pivot chosen there stays valid when the row switches. Ea
 component that owns such a row declares it, with the Vm columns it must follow:
 
 - ``VoltageControl``: a group whose voltage row may be held, after the Vm columns of the
-  regulated bus and of the controllers' buses;
+  regulated bus and of the controllers' buses. A group of several controllers also keeps its
+  Q columns in the controllers' order: holding the first controller rewrites a sharing row
+  into "Q of the first controller = held value", whose pivot is filled in only if that
+  controller's column is eliminated before the others;
 - ``BranchControl`` (transformer voltage control) and ``ShuntControl``: each group's rows,
   after the Vm column of the bus it regulates.
 
 **How it is computed.** The solver runs AMD on the pattern of the Jacobian, as usual, then
-moves each constrained index down to just after the last Vm column it must follow, and
-hands that order to KLU (``klu_analyze_given``). Only the constrained indices move, and
+moves each constrained index down to just after the last Vm column it must follow (the Q
+columns of a multi-controller group together, in order, after the last of the group's
+columns), and hands that order to KLU (``klu_analyze_given``). Only the constrained indices move, and
 only downwards, so the fill this adds stays local. Moving the Vm columns up instead would
 pull large parts of the grid forward with them and cost far more fill. The order is
 symmetric (rows and columns permuted alike), and KLU's block-triangular preordering is

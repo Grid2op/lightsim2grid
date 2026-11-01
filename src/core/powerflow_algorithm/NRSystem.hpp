@@ -1329,7 +1329,10 @@ class LS2G_API VoltageControl
         // target" and a Q form. Its rows sit on the diagonal of its Q columns (allocated
         // together, see register_in): eliminated after the Vm of the regulated bus and of the
         // controller buses, whose pivots on those buses' Q rows fill the rows' Q entries in,
-        // they keep a usable pivot in both forms. A group that cannot switch adds nothing, and
+        // they keep a usable pivot in both forms. With several controllers, their Q columns
+        // go in the controllers' order (`in_order`): holding the first one rewrites a
+        // sharing row onto the first Q column, which must come before that row's own
+        // column for the row to keep its pivot. A group that cannot switch adds nothing, and
         // its ordering is AMD's.
         void declare_ordering_constraints(OrderingConstraints& out) const
         {
@@ -1343,13 +1346,18 @@ class LS2G_API VoltageControl
                 }
                 if (!switchable) continue;
                 OrderingConstraint c;
+                c.in_order = true;
                 for (int off = 0; off < cnt; ++off) {
                     const int j = first + off;
                     if (q_cols_[j] >= 0) c.follow.push_back(q_cols_[j]);
                     if (ctrl_vm_cols_[j] >= 0) c.lead.push_back(ctrl_vm_cols_[j]);
                 }
-                if (v_rows_[g] >= 0) c.follow.push_back(v_rows_[g]);
-                for (int r : share_rows_[g]) if (r >= 0) c.follow.push_back(r);
+                // the rows share their indices with the Q columns: listed once
+                auto add_row = [&c](int r) {
+                    if (r >= 0 && std::find(c.follow.begin(), c.follow.end(), r) == c.follow.end()) c.follow.push_back(r);
+                };
+                add_row(v_rows_[g]);
+                for (int r : share_rows_[g]) add_row(r);
                 if (vm_cols_[g] >= 0) c.lead.push_back(vm_cols_[g]);
                 if (!c.follow.empty() && !c.lead.empty()) out.push_back(std::move(c));
             }

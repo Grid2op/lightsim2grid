@@ -31,11 +31,23 @@ An index is a row and a column at once: the ordering is symmetric, and these row
 diagonal of the column they pivot on. A lead index is never a follow one (the leads are Vm
 columns, the follows controller unknowns and custom rows), so that every constraint can be
 honoured off one AMD order (see constrained_amd_order).
+
+A group of several such rows may also need its follow indices in a given order among
+themselves (`in_order`). A remote voltage control with several controllers is the case:
+its voltage row and its sharing rows sit on the diagonals of the controllers' Q columns,
+and holding the first controller rewrites a sharing row into "Q_first = q", whose only
+entry is then off that row's diagonal. That entry is filled in, hence a valid pivot in
+both forms, only when the first controller's Q column is eliminated before the others,
+which AMD does not know to do.
 **/
 struct OrderingConstraint
 {
     std::vector<int> follow;  // eliminated after...
     std::vector<int> lead;    // ...every one of these
+    // the follow indices eliminated together, in the order given, right after the last of
+    // the leads and of the follow indices themselves; otherwise each one moves only if AMD
+    // placed it before a lead, and keeps AMD's order among the others
+    bool in_order = false;
 };
 
 using OrderingConstraints = std::vector<OrderingConstraint>;

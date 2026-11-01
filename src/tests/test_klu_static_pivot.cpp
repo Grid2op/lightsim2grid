@@ -416,6 +416,113 @@ TEST_CASE("ordered after its leads, a row switched by value keeps a pivot in bot
     CHECK(solver.ordering_constraints().empty());
 }
 
+namespace {
+
+// A ring of n "bus" indices plus a remote voltage control of two controllers, at buses c1
+// and c2, regulating bus `reg`: columns n and n + 1 are their Q unknowns (an entry in their
+// bus' row), row n the voltage row (on the diagonal of Q1), row n + 1 the sharing row (on
+// the diagonal of Q2). The three forms the outer loops write by value, on one pattern:
+// both regulating, the first one held (the sharing row pins Q1), both held (the voltage
+// row pins Q1, the sharing row Q2).
+enum class GroupForm { Regulating, FirstHeld, BothHeld };
+SpMat with_two_controller_group(int n, int c1, int c2, int reg, GroupForm form)
+{
+    const SpMat ring = with_values(n, jacobian_like_pattern(n), 7);
+    std::vector<Eigen::Triplet<real_type> > triplets;
+    for(int col = 0; col < ring.outerSize(); ++col){
+        for(SpMat::InnerIterator it(ring, col); it; ++it) triplets.emplace_back(it.row(), it.col(), it.value());
+    }
+    const real_type w1 = 2., w2 = 3.;  // the sharing keys
+    triplets.emplace_back(c1, n, -1.);
+    triplets.emplace_back(c2, n + 1, -1.);
+    const bool both = form == GroupForm::BothHeld;
+    triplets.emplace_back(n, reg, both ? 0. : 1.);
+    triplets.emplace_back(n, n, both ? 1. : 0.);
+    triplets.emplace_back(n + 1, n, form == GroupForm::Regulating ? -w2 : (form == GroupForm::FirstHeld ? 1. : 0.));
+    triplets.emplace_back(n + 1, n + 1, form == GroupForm::Regulating ? w1 : (form == GroupForm::FirstHeld ? 0. : 1.));
+    SpMat res(n + 2, n + 2);
+    res.setFromTriplets(triplets.begin(), triplets.end());
+    res.makeCompressed();
+    return res;
+}
+
+}  // namespace
+
+TEST_CASE("an in-order constraint places its follow indices together, in the order given, after its leads", "[linear_solver][klu][static_pivot][ordering]")
+{
+    const SpMat A = with_values(N, jacobian_like_pattern(N), 6);
+    std::vector<int> amd_perm;
+    REQUIRE(ls2g::constrained_amd_order(N, A.outerIndexPtr(), A.innerIndexPtr(), OrderingConstraints(), amd_perm));
+
+    // follows on both sides of the lead, given against AMD's order among them
+    OrderingConstraint c;
+    c.in_order = true;
+    c.follow = {amd_perm[N - 3], amd_perm[1], amd_perm[N - 1]};
+    c.lead = {amd_perm[N / 2]};
+    // a plain constraint next to it is unchanged
+    OrderingConstraints constraints = {c, OrderingConstraint{{amd_perm[2]}, {amd_perm[3]}}};
+    std::vector<int> perm;
+    REQUIRE(ls2g::constrained_amd_order(N, A.outerIndexPtr(), A.innerIndexPtr(), constraints, perm));
+    std::vector<int> sorted = perm;
+    std::sort(sorted.begin(), sorted.end());
+    for(int i = 0; i < N; ++i) REQUIRE(sorted[i] == i);
+    const std::vector<int> pos = positions(perm);
+
+    // together, in the order given, right after the last of the leads and the follows: the end
+    CHECK(pos[c.follow[0]] == N - 3);
+    CHECK(pos[c.follow[1]] == N - 2);
+    CHECK(pos[c.follow[2]] == N - 1);
+    CHECK(pos[amd_perm[2]] == pos[amd_perm[3]] + 1);
+    // the rest keeps AMD's relative order
+    const std::set<int> moved = {c.follow[0], c.follow[1], c.follow[2], amd_perm[2]};
+    std::vector<int> rest_amd, rest;
+    for(int i : amd_perm) if(!moved.count(i)) rest_amd.push_back(i);
+    for(int i : perm) if(!moved.count(i)) rest.push_back(i);
+    CHECK(rest == rest_amd);
+}
+
+TEST_CASE("a two-controller group keeps its pivots in all its forms with its Q columns in order", "[linear_solver][klu][static_pivot][ordering]")
+{
+    // the regulated bus next to a controller's, so that the voltage row's fill on Q1 is not
+    // negligible and the factorization pivots that row on its diagonal
+    const int c1 = 5, c2 = 12, reg = 6;
+    const SpMat regulating = with_two_controller_group(N, c1, c2, reg, GroupForm::Regulating);
+    const SpMat first_held = with_two_controller_group(N, c1, c2, reg, GroupForm::FirstHeld);
+    const SpMat both_held = with_two_controller_group(N, c1, c2, reg, GroupForm::BothHeld);
+    REQUIRE(regulating.nonZeros() == first_held.nonZeros());
+    REQUIRE(regulating.nonZeros() == both_held.nonZeros());
+    const RealVect b = rhs(N + 2);
+    auto group = [&](std::vector<int> follow){
+        OrderingConstraint c;
+        c.in_order = true;
+        c.follow = std::move(follow);
+        c.lead = {c1, c2, reg};
+        return OrderingConstraints{c};
+    };
+
+    // Q2 first: the sharing row pivots on its own diagonal, which holding the first
+    // controller zeroes, and nothing fills it in
+    {
+        KLUStaticPivotLinearSolver solver;
+        solver.set_ordering_constraints(group({N + 1, N}));
+        REQUIRE(solver.analyze(regulating) == ErrorType::NoError);
+        REQUIRE(solver.factorize(regulating) == ErrorType::NoError);
+        CHECK(solver.refactorize(first_held) == ErrorType::SolverReFactor);
+    }
+
+    // Q1 first: every form goes through on the pivots of the regulating one
+    KLUStaticPivotLinearSolver solver;
+    solver.set_ordering_constraints(group({N, N + 1}));
+    REQUIRE(solver.analyze(regulating) == ErrorType::NoError);
+    REQUIRE(solver.factorize(regulating) == ErrorType::NoError);
+    for(const SpMat * A : {&first_held, &both_held, &regulating, &both_held, &first_held}){
+        REQUIRE(solver.refactorize(*A) == ErrorType::NoError);
+        RealVect x = b;
+        REQUIRE(solver.solve(x) == ErrorType::NoError);
+        CHECK(residual(*A, x, b) < 1e-10);
+    }
+}
+
 TEST_CASE("KLU given ordering constraints keeps the pivot of a switched row too", "[linear_solver][klu][ordering]")
 {
     const int ctrl = 5;
