@@ -377,7 +377,7 @@ ieee300           4.85e-07          2.73e-07
 
 As we can notice in the tables above, the results match up to the solver precision 
 (set to 1e-06 for lightsim2grid): the largest observed mismatch, across all cases, is 5.11e-04 rad for the voltage angle
- and 1.80e-03 pu for the voltage magnitude. 
+and 1.80e-03 pu for the voltage magnitude. 
 
 On these grids, lightsim2grid and pypowsybl give the same exact results.
 
