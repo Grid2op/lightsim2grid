@@ -319,7 +319,7 @@ OpenLoadFlow's outer loops in a batch
 ---------------------------------------
 
 With an algorithm that runs OpenLoadFlow's outer loops (``NROuter_KLU``, ``NROuter_SparseLU``,
-...), every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP`,
+..., described in :ref:`outer_loops`: the loops, their order, the data they read), every batch class (`TimeSeriesCPP`, `InjectionSweepCPP`, `ContingencyAnalysisCPP`,
 `ScenarioSweepCPP`) solves each row with the grid's loops (`LSGrid.get_outer_loops`): a row
 gets what `ac_pf` gets on the row's own grid -- the same voltages, flows (at the taps the
 loops settled on) and generator output (at the targets `DistributedSlack` moved them to).

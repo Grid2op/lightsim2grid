@@ -11,9 +11,6 @@ Change Log
   every outer loop and builds the bus reactive plan once per loop reading it. Reusing the view the row
   was solved with and sharing one plan did not change the timing measurably on the default loop list.
   Follow-up: profile the per-row checks before optimising them.
-- ``LSGrid``'s result getters (``get_gen_res``...) return views that do not keep the grid alive:
-  read after the grid is gone, they show freed memory. ``reference_internal`` would fix it; to
-  benchmark and weigh first (``docs/dev_notes/result_view_lifetime.md``).
 - ``ScenarioSweep.set_topo_actions`` still refuses, each a value-level extension to write: an
   element named in both a ``set_contingency_*`` mask and the action; moving or reactivating a
   slack participant, a generator on a slack bus, or one in a voltage-control group (disconnecting
@@ -27,14 +24,16 @@ Change Log
 - ``PhaseControl``: OpenLoadFlow's current-limiter one-tap move can undo itself depending on how its
   Newton rounds the shift it writes back (see ``PhaseControlLoop.hpp``); not reproduced, so a limiter
   can end one tap apart. Follow-up: decide whether to mirror it or leave it documented.
-- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``DistributedSlack``,
-  ``HvdcAcEmulationLimits``, ``VoltageMonitoring`` and ``ReactiveLimits`` are there, the others
-  are not yet (plan in ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
-- Control limits are detected but never **enforced**: ``compute_physical_violations`` reports a
-  distributed-slack machine past ``get_min_p`` / ``get_max_p`` (``GenPCheck``) and a bus past its
-  reactive capability (``BusQCheck``), but no algorithm reads a limit, so the solve still
-  converges to the state the check then flags. ``docs/dev_notes/nr_control_limits.md`` is a
-  design note for the enforcement side, companion to
+- OpenLoadFlow's outer loops in the ``NROuter_*`` algorithms: ``FreezingHvdcACEmulation``,
+  ``AreaInterchangeControl``, ``SecondaryVoltageControl``, ``TransformerReactivePowerControl`` and
+  ``AutomationSystem`` are not there yet, and ``PhaseControl``, ``TransformerVoltageControl`` and
+  ``ShuntVoltageControl`` have one mode each, not the incremental ones (plan in
+  ``docs/dev_notes/outer_loops_fixed_sparsity.md``).
+- Control limits are **enforced** by the outer loops of the ``NROuter_*`` algorithms only
+  (``DistributedSlack``, ``ReactiveLimits``): the other algorithms still converge to a state
+  ``compute_physical_violations`` then flags (``GenPCheck``, ``BusQCheck``).
+  ``docs/dev_notes/nr_control_limits.md`` is a design note for enforcing them inside the Newton
+  itself, companion to
   ``docs/dev_notes/outer_loop_checks_missing_data.md``: it argues that reactive limits, slack
   active limits, tap-ratio control, area interchange and secondary voltage control are one
   mathematical object -- a bounded control resource complementary to a regulated quantity --
@@ -42,8 +41,7 @@ Change Log
   fixed-sparsity / value-level-masking contract, with only tap *discreteness* left needing
   iteration around the solve. It also covers state-dependent slack weights (OLF's
   ``balanceType``) and the hydro produce / absorb mode question. Nothing of it is implemented
-  and none of its cost claims is benchmarked; the smallest useful first step is
-  clamp-and-renormalise on the slack, where ``GenPCheck`` already provides the oracle.
+  and none of its cost claims is benchmarked.
 - The Newton-Raphson conflates two different things under one flag. "Participates in the
   DISTRIBUTED SLACK" is a purely active statement -- this element takes a share of the
   power imbalance, by a participation factor -- and says nothing about voltage. "Is the
@@ -267,6 +265,32 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``DistributedSlack`` only caps the units pushed past ``min_p`` / ``max_p`` / 0 MW, out of the share.
 - [FIXED] ``ContingencyPropagator``: breakers right at a terminal whose other switches are breakers stay
   closed, and a node holding only breakers is walked through, as in OpenLoadFlow.
+- [FIXED] The result arrays of the batch classes read freed memory after the next ``compute`` or ``clear``.
+  They are now read-only snapshots that co-own their buffer, still without a copy.
+- [IMPROVED] ``TimeSerie``, ``ScenarioSweep`` and ``ContingencyAnalysis`` no longer copy the voltages
+  and the active power flows they return; those arrays are now read-only.
+- [FIXED] ``pandapower_compat.dcpf`` always raised: it sized the slack weights per slack bus,
+  and called the AC entry point. It now calls the new ``compute_pf_dc`` of the DC solvers.
+- [ADDED] ``compute_pf_dc`` on the python solvers: the DC powerflow entry point, with its inputs checked.
+- [IMPROVED] light environment: ``LightEnv.assign_time_series`` takes keywords, ``None`` keeping a
+  quantity unchanged (eg ``gen_v`` for an environment without ``prod_v``, which crashed the benchmark).
+- [ADDED] light environment: a NaN or infinite thermal limit leaves that side of the line out of
+  ``rho``. The benchmark limits the origin side only, like grid2op, so both play the same episodes.
+- [FIXED] Loading a pickle or binary file whose tap changer or shunt section tables are inconsistent
+  raises instead of crashing; ``check_grid`` checks the bus they regulate.
+- [FIXED] ``get_violations`` after a transformer's tap table was shortened raises instead of reading
+  past it.
+- [FIXED] ``get_violations`` / ``get_physical_violations`` after ``init_trafo`` replaced the transformers
+  of an ``NROuter_*`` solve raise instead of reading their freed tap tables.
+- [FIXED] The arrays of ``LSGrid``'s result getters (``get_gen_res``...) and of the hvdc lines'
+  ``get_bus_id_side_1`` / ``_2`` keep the grid alive: once the grid was gone, they read freed memory.
+- [FIXED] A diverged powerflow resets the element results to NaN in place; it freed the buffers
+  the result arrays read.
+- [BREAKING] The ``*_solver`` getters of ``LSGrid`` and an algorithm's ``get_V`` / ``get_Va`` /
+  ``get_Vm`` return copies (``get_Ybus_solver`` as before 1.2.0): later powerflows rebuild what
+  they viewed.
+- [ADDED] An ``_internal`` twin of each, and of ``get_J_solver`` / ``get_J``: the view, without the
+  copy. At the caller's risk: misused, it can corrupt memory (``docs/security.rst``).
 - [FIXED] ``set_config`` of the ``NR*`` algorithms: a config refused for one value no longer leaves
   the values checked before it applied.
 - [FIXED] ``ContingencyAnalysis``: a contingency naming its lines out of order or twice
@@ -410,7 +434,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``BINARY_FORMAT_VERSION`` 18 -> 22: the transformers serialize their tap changers,
   the shunts their sections, the SVCs their standby set-points and ``b0`` (and see the
   ``save_binary`` fix above). Files of format 18 no longer load.
-- [BREAKING] ``LSGrid.set_remote_voltage_control_vm_range`` is removed: a remote controller at an
+- [BREAKING] ``LSGrid.set_remote_voltage_control_vm_range`` is removed, and ``init_from_pypowsybl``'s
+  ``remote_voltage_control_vm_range`` deprecated (ignored, with a warning): a remote controller at an
   unrealistic voltage is checked against ``ReactiveLimits``' own realistic range.
 
 

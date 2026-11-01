@@ -16,12 +16,16 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "LSGrid.hpp"
 #include "batch_algorithm/BaseBatchSweep.hpp"
 #include "powerflow_algorithm/outer_loop/PhaseControlLoop.hpp"
 
 using Catch::Approx;
+using Catch::Matchers::ContainsSubstring;
+using Catch::Matchers::MessageMatches;
 using ls2g::CplxVect;
 using ls2g::LSGrid;
 using ls2g::LimitViolation;
@@ -272,6 +276,36 @@ TEST_CASE("the report after a solve reads the flow at the tap the loop moved to"
         CHECK(nb_phase_reports(ca.get_physical_violations()[0]) == 0);
         CHECK(nb_phase_reports(ca.get_physical_violations_n()) == 0);
     }
+}
+
+TEST_CASE("the taps a solve left on transformers replaced since are refused, not read", "[outer][phase_control]")
+{
+    // the checks after a solve read the taps its loops left, one per transformer of that
+    // solve; init_trafo then replaces the transformers (none here). They used to read those
+    // taps in the tap tables init_trafo had freed (a heap-use-after-free, then an id check
+    // raising after the read): the message shows the readback is now refused before any read
+    LSGrid ref = make_grid(21);
+    ref.change_algorithm("NRSing_SparseLU");
+    REQUIRE(ref.ac_pf(flat(ref), 30, 1e-12).size() == 3);
+    const real_type p0 = std::get<0>(ref.get_trafo_res1())(0);
+
+    LSGrid grid = make_grid(21);
+    grid.set_trafo_phase_tap_regulation(0, RegulationMode::ACTIVE_POWER, true, p0 + 5., 0., 1);
+    use_phase_control(grid);
+    REQUIRE(grid.ac_pf(flat(grid), 30, 1e-12).size() == 3);
+    std::vector<int> taps;
+    grid.get_algo().get_outer_phase_tap(taps);
+    REQUIRE(taps.size() == 1);
+    CHECK_NOTHROW(grid.get_violations(1., true, 0.));
+    CHECK_NOTHROW(grid.get_physical_violations(true, 1e-4, 1e-4));
+
+    grid.init_trafo(RealVect(0), RealVect(0), CplxVect(0), RealVect(0), RealVect(0), std::vector<bool>(),
+                    Eigen::VectorXi(0), Eigen::VectorXi(0), false);
+    REQUIRE(grid.get_trafos().nb() == 0);
+    CHECK_THROWS_MATCHES(grid.get_violations(1., true, 0.), std::out_of_range,
+                         MessageMatches(ContainsSubstring("were the transformers replaced")));
+    CHECK_THROWS_MATCHES(grid.get_physical_violations(true, 1e-4, 1e-4), std::out_of_range,
+                         MessageMatches(ContainsSubstring("were the transformers replaced")));
 }
 
 TEST_CASE("after a DC solve, a phase shifter's flow is the DC one", "[outer][phase_control]")

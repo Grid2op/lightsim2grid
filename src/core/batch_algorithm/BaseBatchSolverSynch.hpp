@@ -11,6 +11,7 @@
 
 #include "LSGrid.hpp"
 #include "OperationalCheck.hpp"  // BranchBusOverride
+#include "SharedMat.hpp"
 
 #include <array>
 #include <memory>
@@ -267,9 +268,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // run that produced them (compute() zeroes those again as the next one
         // starts). Not the algorithm, not the caches.
         virtual void clear_batch_outputs() {
-            _voltages = CplxMat();
-            _amps_flows = RealMat();
-            _active_power_flows = RealMat();
+            _voltages.reset();
+            _amps_flows.reset();
+            _active_power_flows.reset();
             _branch_results = RealMat();
             // the DC fast path holds the same voltages as an angle plus a shared
             // magnitude (see _dc_vm_row_grid): one result in several pieces, so the
@@ -360,8 +361,13 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // results
         // this should not be const, see https://pybind11.readthedocs.io/en/stable/advanced/cast/eigen.html#pass-by-reference
         // tl;dr: const can make copies ! OR NOT I AM LOST
-        const RealMat & get_flows() const {return _amps_flows;}
-        const RealMat & get_power_flows() const {return _active_power_flows;}
+        // The returned reference is valid until the next compute(), clear() or
+        // compute_flows(); the share_* twins below co-own the buffer instead (see
+        // SharedMat), which is what the python bindings hand out.
+        const RealMat & get_flows() const {return _amps_flows.get();}
+        const RealMat & get_power_flows() const {return _active_power_flows.get();}
+        std::shared_ptr<const RealMat> share_flows() const {return _amps_flows.share();}
+        std::shared_ptr<const RealMat> share_power_flows() const {return _active_power_flows.share();}
 
         /**
          * The last compute_branch_results(): one row per batch row, four columns per
@@ -379,10 +385,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // did not use the fast path (AC, or DC with handle_disconnected_grid) already
         // leaves _voltages fully populated, so this is then a no-op.
         const CplxMat & get_voltages() const {
-            if(_dc_lazy_storage_used_ && _voltages.size() == 0 && _thetas.size() != 0){
+            if(_dc_lazy_storage_used_ && _voltages.get().size() == 0 && _thetas.size() != 0){
                 _rebuild_voltages_from_thetas();
             }
-            return _voltages;
+            return _voltages.get();
+        }
+        std::shared_ptr<const CplxMat> share_voltages() const {
+            get_voltages();  // the DC fast path rebuilds them first
+            return _voltages.share();
         }
 
     protected:
@@ -838,14 +848,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             if(use_dc_lazy_v){
                 _thetas = RealMat::Zero(nb_steps, nb_total_bus);
                 _dc_row_solved_.assign(nb_steps, 0);
-                _voltages = CplxMat();
+                _voltages.reset();
             } else {
-                _voltages = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus);
+                _voltages.overwrite() = BaseBatchSolverSynch::CplxMat::Zero(nb_steps, nb_total_bus);
                 _thetas = RealMat();
                 _dc_row_solved_.clear();
             }
-            _amps_flows = RealMat::Zero(0, n_total_);
-            _active_power_flows = RealMat::Zero(0, n_total_);
+            _amps_flows.overwrite() = RealMat::Zero(0, n_total_);
+            _active_power_flows.overwrite() = RealMat::Zero(0, n_total_);
             _branch_results = RealMat::Zero(0, 4 * n_total_);
         }
 
@@ -976,7 +986,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // number of computed rows, whichever accumulator (_voltages or, DC fast
         // path, _thetas) actually holds them.
         Eigen::Index _nb_result_rows() const {
-            return _dc_lazy_storage_used_ ? _thetas.rows() : _voltages.rows();
+            return _dc_lazy_storage_used_ ? _thetas.rows() : _voltages.get().rows();
         }
 
         // DC fast path only: row i's magnitude (grid-space, one entry per bus), used
@@ -1025,12 +1035,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         void _rebuild_voltages_from_thetas() const {
             const Eigen::Index nb_steps = _thetas.rows();
             const Eigen::Index nb_bus = _thetas.cols();
-            _voltages = CplxMat::Zero(nb_steps, nb_bus);
+            // a new buffer: an array still reading the empty one keeps it
+            CplxMat & voltages = _voltages.reset();
+            voltages = CplxMat::Zero(nb_steps, nb_bus);
             RealVect scratch;
             for(Eigen::Index i = 0; i < nb_steps; ++i){
                 const RealVect & vm_row = _dc_vm_row_grid(i, scratch);
                 for(Eigen::Index j = 0; j < nb_bus; ++j){
-                    _voltages(i, j) = std::polar(vm_row(j), _thetas(i, j));
+                    voltages(i, j) = std::polar(vm_row(j), _thetas(i, j));
                 }
             }
         }
@@ -1100,7 +1112,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // mutable: get_voltages() rebuilds this lazily, from _thetas, on first request
         // when the DC fast path was used (see _rebuild_voltages_from_thetas) -- a pure
         // caching side effect of an otherwise-const accessor.
-        mutable CplxMat _voltages;
+        // The three are SharedMat so that python arrays can co-own them (share_*).
+        mutable SharedMat<CplxMat> _voltages;
         // ScenarioSweep set_topo_actions: per row, the branches whose placement the
         // row's action changed (sorted by branch id, gridmodel numbering: lines then
         // trafos) -- `connected` false for a disconnection, else the row's own end
@@ -1120,8 +1133,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                                        [](const std::pair<int, std::array<cplx_type, 4> > & a, int id){ return a.first < id; });
             return (it != row.end() && it->first == trafo_id) ? &it->second : nullptr;
         }
-        RealMat _amps_flows;
-        RealMat _active_power_flows;
+        SharedMat<RealMat> _amps_flows;
+        SharedMat<RealMat> _active_power_flows;
         RealMat _branch_results;
 
         // ----- DC theta-only fast path (see BaseAlgo::set_lazy_v) -----------------

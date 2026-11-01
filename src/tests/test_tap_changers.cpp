@@ -11,6 +11,8 @@
 // the closest tap, and their state. C++14 only.
 
 #include <cmath>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -225,6 +227,10 @@ TEST_CASE("a shunt's sections give its reactive power", "[tap_changer][shunt]")
     REQUIRE(V.size() == 3);
     CHECK((V - solve(ref)).cwiseAbs().maxCoeff() < 1e-12);
 
+    // a shunt without a table has no count to change: refused, its q kept
+    CHECK_THROWS(ref.change_shunt_section_count(0, 0));
+    CHECK(ref.get_shunts()[0].target_q_mvar == 25.);
+
     grid.change_shunt_section_count(0, 0);
     CHECK(grid.get_shunts()[0].target_q_mvar == 0.);
     grid.change_shunt_section_count(0, 3);
@@ -287,4 +293,125 @@ TEST_CASE("a rejected tap changer or section table leaves the element as it was"
         REQUIRE(V_after.size() == 3);
         CHECK((V_after - V).cwiseAbs().maxCoeff() < 1e-12);
     }
+}
+
+// ---------------------------------------------------------------------------
+// what a state (a pickle, a binary file) holds of the tables is checked on the way in, and a
+// position from elsewhere than the table (an algorithm's results) is checked where it is read:
+// a table is never read outside itself (docs/security.rst)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a tap changer state whose positions overflow an int is refused", "[tap_changer][state_poisoning]")
+{
+    using ls2g::TapChangers;
+    LSGrid grid = make_grid(R0, X0, B0, 1., 0.);
+    add_ratio_taps(grid);
+    LSGrid::StateRes good = grid.get_state();
+    SECTION("the position minus the lowest one overflows") {
+        // accepted once: `1 - INT_MIN` wrapped to a negative, then read as an index
+        LSGrid::StateRes st = good;
+        auto & taps = std::get<TrafoContainer::RATIO_TAPS>(std::get<LSGrid::TRAFO_ID>(st));
+        std::get<TapChangers::LOW_TAP>(taps)[0] = std::numeric_limits<int>::min();
+        std::get<TapChangers::POSITION>(taps)[0] = 1;
+        LSGrid restored;
+        CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+    }
+    SECTION("the highest position is past INT_MAX") {
+        LSGrid::StateRes st = good;
+        auto & taps = std::get<TrafoContainer::RATIO_TAPS>(std::get<LSGrid::TRAFO_ID>(st));
+        std::get<TapChangers::LOW_TAP>(taps)[0] = std::numeric_limits<int>::max();
+        std::get<TapChangers::POSITION>(taps)[0] = std::numeric_limits<int>::max();
+        LSGrid restored;
+        CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+    }
+    SECTION("the setter refuses the same table") {
+        CHECK_THROWS_AS(grid.set_trafo_ratio_tap_changer(0, std::numeric_limits<int>::max(),
+                                                         std::numeric_limits<int>::max(), {1., 1.},
+                                                         {0., 0.}, {0., 0.}, {0., 0.}, {0., 0.}),
+                        std::runtime_error);
+        CHECK(grid.get_trafos().get_tap_changers(false).high_tap(0) == 2);  // unchanged
+    }
+    SECTION("the untouched state is accepted") {
+        LSGrid restored;
+        REQUIRE_NOTHROW(restored.set_state(good));
+        CHECK(restored.get_trafos().get_tap_changers(false).position(0) == 1);
+    }
+}
+
+TEST_CASE("a shunt state whose fewest sections are outside its table is refused", "[shunt][state_poisoning]")
+{
+    LSGrid grid = make_grid(R0, X0, 0., 1., 0.);
+    grid.set_shunt_sections(0, 1, {0., 0., 0.}, {10., 25., 45.});
+    LSGrid::StateRes good = grid.get_state();
+    // the ShuntVoltageControl loop walks the table from that count: accepted before, a read
+    // count - 1 entries off the table
+    for (int bad : {-1, -100000000, 4, 100000000}) {
+        LSGrid::StateRes st = good;
+        std::get<ls2g::ShuntContainer::MIN_SECTION_COUNT>(std::get<LSGrid::SHUNT_ID>(st))[0] = bad;
+        LSGrid restored;
+        CHECK_THROWS_AS(restored.set_state(st), std::runtime_error);
+    }
+    for (int ok : {0, 3}) {
+        LSGrid::StateRes st = good;
+        std::get<ls2g::ShuntContainer::MIN_SECTION_COUNT>(std::get<LSGrid::SHUNT_ID>(st))[0] = ok;
+        LSGrid restored;
+        CHECK_NOTHROW(restored.set_state(st));
+    }
+}
+
+TEST_CASE("check_grid checks the bus a tap changer or a shunt's sections regulate", "[tap_changer][shunt][check_grid]")
+{
+    LSGrid grid = make_grid(R0, X0, 0., 1., 0.);
+    add_ratio_taps(grid);
+    grid.set_trafo_ratio_tap_regulation(0, true, 1., 0.01, 2);
+    grid.set_shunt_sections(0, 1, {0., 0.}, {10., 25.});
+    grid.set_shunt_section_regulation(0, true, 1., 0.01, 2);
+    LSGrid::StateRes good = grid.get_state();
+    for (int bad : {-2, 3, 1000000}) {
+        LSGrid::StateRes st = good;
+        auto & taps = std::get<TrafoContainer::RATIO_TAPS>(std::get<LSGrid::TRAFO_ID>(st));
+        std::get<ls2g::TapChangers::REGULATED>(taps)[0] = bad;
+        LSGrid restored;
+        CHECK_THROWS_AS(restored.set_state(st), std::out_of_range);
+
+        LSGrid::StateRes st2 = good;
+        std::get<ls2g::ShuntContainer::REGULATED_BUS>(std::get<LSGrid::SHUNT_ID>(st2))[0] = bad;
+        LSGrid restored2;
+        CHECK_THROWS_AS(restored2.set_state(st2), std::out_of_range);
+    }
+    LSGrid restored;
+    REQUIRE_NOTHROW(restored.set_state(good));
+    CHECK_NOTHROW(restored.check_grid());
+}
+
+TEST_CASE("a tap a solve left outside a table replaced since is refused, not read", "[tap_changer][outer]")
+{
+    LSGrid grid = make_grid(R0, X0, B0, 1., 0.);
+    add_ratio_taps(grid);
+    // what reads a table at a position from elsewhere: the pi model at those taps
+    const TrafoContainer & trafos = grid.get_trafos();
+    CHECK_NOTHROW(trafos.pi_block_at(0, 2, 0, 0.));
+    CHECK_THROWS_AS(trafos.pi_block_at(0, 3, 0, 0.), std::out_of_range);
+    CHECK_THROWS_AS(trafos.pi_block_at(0, -1, 0, 0.), std::out_of_range);
+    CHECK_THROWS_AS(trafos.pi_block_at(0, std::numeric_limits<int>::min(), 0, 0.), std::out_of_range);
+    // the changer it does not have reads neutral, whatever the position
+    CHECK_NOTHROW(trafos.pi_block_at(0, 2, 12345, 0.));
+}
+
+TEST_CASE("a tap a solve left on a transformer the grid no longer has is refused, not read", "[tap_changer][outer]")
+{
+    LSGrid grid = make_grid(R0, X0, B0, 1., 0.);
+    add_ratio_taps(grid);
+    const TrafoContainer & trafos = grid.get_trafos();
+    const int none = std::numeric_limits<int>::min();
+    // a solve's positions are one per transformer of that solve: another count is another grid
+    CHECK(trafos.moved_taps(false, {}).empty());
+    CHECK(trafos.moved_taps(false, {1}).empty());  // where the grid has it
+    CHECK(trafos.moved_taps(false, {2}).size() == 1);
+    CHECK_THROWS_AS(trafos.moved_taps(false, {none, 2}), std::out_of_range);
+    CHECK_THROWS_AS(trafos.moved_taps(true, {none, none}), std::out_of_range);
+    // the pi blocks of the moved taps read the transformer's tables: its id is checked first
+    CHECK_NOTHROW(trafos.moved_tap_blocks({{0, 2}}, {}));
+    CHECK_THROWS_AS(trafos.moved_tap_blocks({{1, 0}}, {}), std::out_of_range);
+    CHECK_THROWS_AS(trafos.moved_tap_blocks({}, {{-1, 0}}), std::out_of_range);
 }

@@ -73,6 +73,8 @@ std::vector<PhaseControlLoop::Shifter> PhaseControlLoop::shifters(const OuterGri
         if (side != 1 && side != 2) continue;
         int b1, b2;
         if (!view.trafo_closed(t, b1, b2) || b1 == b2) continue;
+        // a row's island is not solved (handle_disconnected_grid): a shifter on it controls nothing
+        if (view.is_masked(b1) || view.is_masked(b2)) continue;
         const bool regulates = mode != RegulationMode::ACTIVE_POWER || connected_without(view, t, b1, b2);
         res.push_back(Shifter{t, mode, side, regulates});
     }

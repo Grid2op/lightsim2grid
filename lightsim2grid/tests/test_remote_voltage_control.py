@@ -13,6 +13,7 @@ reported as ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL`` on 
 in kV, by a single solve and by the batches alike, exactly where OpenLoadFlow switches it."""
 
 import unittest
+import warnings
 
 import numpy as np
 
@@ -180,6 +181,26 @@ class TestRemoteVoltageControlCheck(unittest.TestCase):
         self.assertEqual(len(n_case), 1)
         self.assertAlmostEqual(n_case[0].value, ref[0].value, places=6)
         self.assertEqual(len(_remote(ca.get_physical_violations()[0])), 1)
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestRemoteVoltageControlVmRangeDeprecated(unittest.TestCase):
+    def test_keyword_warns_and_is_ignored(self):
+        # init_from_pypowsybl's keyword of 1.2.0: code passing it still loads, with a warning,
+        # and the check is the ReactiveLimits loop's whatever it says
+        ref = _remote(_ls(_ieee14_remote(14.2)).get_physical_violations(True, 0., 0.))
+        for value in ("olf", None, (0.5, 1.5)):
+            with self.assertWarns(DeprecationWarning):
+                grid = _ls(_ieee14_remote(14.2), remote_voltage_control_vm_range=value)
+            viols = _remote(grid.get_physical_violations(True, 0., 0.))
+            self.assertEqual([(el.violation_type, el.value, el.limit) for el in viols],
+                             [(el.violation_type, el.value, el.limit) for el in ref], f"value {value!r}")
+
+    def test_no_warning_when_not_given(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            _ls(_ieee14_remote(14.2))
+        self.assertFalse([w for w in caught if "remote_voltage_control_vm_range" in str(w.message)])
 
 
 if __name__ == "__main__":

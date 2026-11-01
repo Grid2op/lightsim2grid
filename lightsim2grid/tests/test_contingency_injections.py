@@ -193,12 +193,16 @@ class TestContingencyAnalysisWrapper(_Base):
         for cont in res.post_contingency_results:
             self.assertTrue(cont.converged)
 
-        # get_flows' rows follow the same order
+        # get_flows' rows follow the same order: each row is its own contingency's one-off
+        # powerflow (the line alone and the line with its load differ, so a swap shows)
         _, _, res_v = sa.get_flows()
         self.assertEqual(res_v.shape[0], 4)
         V_line = self._reference_V(branches=(5,))
         V_mixed = self._reference_V(branches=(5,), loads=(2,))
         self.assertGreater(np.abs(V_line - V_mixed).max(), 1e-5)
+        refs = (V_line, V_mixed, self._reference_V(shunts=(0,)), self._reference_V(gens=(self.gen_alone,)))
+        for row, ref in enumerate(refs):
+            np.testing.assert_allclose(res_v[row], ref, atol=1e-8, rtol=0., err_msg=f"row {row}")
 
     def test_a_single_line_by_name_or_numpy_id(self):
         # one line, given alone rather than in a list: by name, by python int, by numpy int

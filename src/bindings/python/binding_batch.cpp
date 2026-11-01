@@ -15,8 +15,10 @@
 #include "light_env/topo_action.hpp"
 #include "help_fun_msg.hpp"
 #include "sparse_helpers.hpp"
+#include "shared_array.hpp"
 
 using namespace ls2g;
+using ls2g_bindings::shared_mat_to_array;
 
 namespace {
 
@@ -597,11 +599,11 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              "before reaching the solver.")
 
         // results
-        .def("compute_flows", &T::compute_flows, DocTimeSeries::compute_flows.c_str())
-        .def("compute_power_flows", &T::compute_power_flows, DocTimeSeries::compute_power_flows.c_str())
-        .def("get_flows", &T::get_flows, DocTimeSeries::get_flows.c_str(), py::return_value_policy::reference_internal)
-        .def("get_power_flows", &T::get_power_flows, DocTimeSeries::get_power_flows.c_str(), py::return_value_policy::reference_internal)
-        .def("get_voltages", &T::get_voltages, DocTimeSeries::get_voltages.c_str(), py::return_value_policy::reference_internal)
+        .def("compute_flows", [](T & self){ self.compute_flows(); return shared_mat_to_array(self.share_flows()); }, DocTimeSeries::compute_flows.c_str())
+        .def("compute_power_flows", [](T & self){ self.compute_power_flows(); return shared_mat_to_array(self.share_power_flows()); }, DocTimeSeries::compute_power_flows.c_str())
+        .def("get_flows", [](const T & self){ return shared_mat_to_array(self.share_flows()); }, DocTimeSeries::get_flows.c_str())
+        .def("get_power_flows", [](const T & self){ return shared_mat_to_array(self.share_power_flows()); }, DocTimeSeries::get_power_flows.c_str())
+        .def("get_voltages", [](const T & self){ return shared_mat_to_array(self.share_voltages()); }, DocTimeSeries::get_voltages.c_str())
 
         // nb_thread is bound for every one of these classes on purpose, even though
         // TimeSeriesCPP rejects any value but 1 (see the warning in its docstring): a
@@ -628,7 +630,7 @@ void bind_legacy_compute_vs(py::class_<T> & cls)
         .def("compute_Vs", &T::template compute_Vs<>, py::call_guard<py::gil_scoped_release>(),
              (DocTimeSeries::compute_Vs + " DEPRECATED: prefer modify_gen_p / modify_sgen_p / "
               "modify_load_p / modify_load_q + compute() instead.").c_str())
-        .def("get_sbuses", &T::template get_sbuses<>, DocTimeSeries::get_sbuses.c_str(), py::return_value_policy::reference_internal);
+        .def("get_sbuses", [](const T & self){ return shared_mat_to_array(self.template share_sbuses<>()); }, DocTimeSeries::get_sbuses.c_str());
 }
 
 }  // namespace
@@ -988,11 +990,11 @@ void bind_batch(py::module_& m) {
         .def("get_direction_solver", &ContinuationSweep::get_direction_solver, py::return_value_policy::reference_internal,
              "The direction actually used (Sbus_target - Sbus_base), in solver bus ordering "
              "and per unit.")
-        .def("get_voltages", &ContinuationSweep::get_voltages, DocTimeSeries::get_voltages.c_str(), py::return_value_policy::reference_internal)
-        .def("compute_flows", &ContinuationSweep::compute_flows, DocTimeSeries::compute_flows.c_str())
-        .def("compute_power_flows", &ContinuationSweep::compute_power_flows, DocTimeSeries::compute_power_flows.c_str())
-        .def("get_flows", &ContinuationSweep::get_flows, DocTimeSeries::get_flows.c_str(), py::return_value_policy::reference_internal)
-        .def("get_power_flows", &ContinuationSweep::get_power_flows, DocTimeSeries::get_power_flows.c_str(), py::return_value_policy::reference_internal)
+        .def("get_voltages", [](const ContinuationSweep & self){ return shared_mat_to_array(self.share_voltages()); }, DocTimeSeries::get_voltages.c_str())
+        .def("compute_flows", [](ContinuationSweep & self){ self.compute_flows(); return shared_mat_to_array(self.share_flows()); }, DocTimeSeries::compute_flows.c_str())
+        .def("compute_power_flows", [](ContinuationSweep & self){ self.compute_power_flows(); return shared_mat_to_array(self.share_power_flows()); }, DocTimeSeries::compute_power_flows.c_str())
+        .def("get_flows", [](const ContinuationSweep & self){ return shared_mat_to_array(self.share_flows()); }, DocTimeSeries::get_flows.c_str())
+        .def("get_power_flows", [](const ContinuationSweep & self){ return shared_mat_to_array(self.share_power_flows()); }, DocTimeSeries::get_power_flows.c_str())
 
         // timers / counters
         .def("total_time", &ContinuationSweep::total_time, DocTimeSeries::total_time.c_str())
@@ -1422,13 +1424,13 @@ void bind_batch(py::module_& m) {
 
         // perform computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocContingencyAnalysis::compute.c_str())
-        .def("compute_flows", &ContingencyAnalysis::compute_flows, DocContingencyAnalysis::compute_flows.c_str())
-        .def("compute_power_flows", &ContingencyAnalysis::compute_power_flows, DocContingencyAnalysis::compute_power_flows.c_str())
+        .def("compute_flows", [](ContingencyAnalysis & self){ self.compute_flows(); return shared_mat_to_array(self.share_flows()); }, DocContingencyAnalysis::compute_flows.c_str())
+        .def("compute_power_flows", [](ContingencyAnalysis & self){ self.compute_power_flows(); return shared_mat_to_array(self.share_power_flows()); }, DocContingencyAnalysis::compute_power_flows.c_str())
 
         // results
-        .def("get_flows", &ContingencyAnalysis::get_flows, DocContingencyAnalysis::get_flows.c_str(), py::return_value_policy::reference_internal)
-        .def("get_voltages", &ContingencyAnalysis::get_voltages, DocContingencyAnalysis::get_voltages.c_str(), py::return_value_policy::reference_internal)
-        .def("get_power_flows", &ContingencyAnalysis::get_power_flows, DocContingencyAnalysis::get_power_flows.c_str(), py::return_value_policy::reference_internal)
+        .def("get_flows", [](const ContingencyAnalysis & self){ return shared_mat_to_array(self.share_flows()); }, DocContingencyAnalysis::get_flows.c_str())
+        .def("get_voltages", [](const ContingencyAnalysis & self){ return shared_mat_to_array(self.share_voltages()); }, DocContingencyAnalysis::get_voltages.c_str())
+        .def("get_power_flows", [](const ContingencyAnalysis & self){ return shared_mat_to_array(self.share_power_flows()); }, DocContingencyAnalysis::get_power_flows.c_str())
 
         // limit violations (only usable if `compute_limit_violations=True`, see above ;
         // raises otherwise). Row order matches `my_defaults()`.

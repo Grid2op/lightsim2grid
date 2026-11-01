@@ -16,7 +16,7 @@ Available powerflow algorithms
 Types of powerflow algorithms
 ------------------------------
 
-LightSim2Grid supports five families of powerflow algorithms:
+LightSim2Grid supports six families of powerflow algorithms:
 
 - **Gauss-Seidel**: :class:`lightsim2grid.algorithm.GaussSeidelAlgo` and
   :class:`lightsim2grid.algorithm.GaussSeidelSynchAlgo`.
@@ -47,6 +47,28 @@ LightSim2Grid supports five families of powerflow algorithms:
   - :class:`lightsim2grid.algorithm.NR_KLU`
   - :class:`lightsim2grid.algorithm.NR_NICSLU`
   - :class:`lightsim2grid.algorithm.NR_CKTSO`
+
+- **Newton-Raphson with OpenLoadFlow's outer loops** (``NROuter_*``): a single-slack Newton-Raphson wrapped in
+  the outer loops of OpenLoadFlow (reactive limits, distributed slack within the units' limits, tap and shunt
+  control, ...), see :ref:`outer_loops`. Opt-in, and registered by name only: they are not members of
+  :class:`lightsim2grid.algorithm.AlgorithmType` (see :ref:`algorithm_names`).
+
+  - ``NROuter_SparseLU``, ``NROuter_KLU``, ``NROuter_KLUStaticPivot``, ``NROuter_NICSLU``, ``NROuter_CKTSO``
+    (the last four when compiled in; ``NROuter_KLUStaticPivot`` is described in :ref:`static-pivot-refactorization`).
+
+  **The logic behind this family: one sparsity pattern for every outer iteration.** The outer loops change the
+  problem between two solves (a bus goes from PV to PQ, a tap moves, a shunt section is switched, the active power
+  targets are shared again), but they do it **by rewriting values** in a Jacobian whose sparsity pattern never changes.
+  The pattern is built once, before the first solve, **by the outer loops themselves, from the data of the grid**: each
+  loop of the grid's list *declares* the rows, columns and switchable buses it may need in any of the states it can reach
+  (a generator that may switch between PV and PQ gets both forms reserved, a regulating transformer gets its ratio
+  column and every row its control may use, a regulating shunt its susceptance column, ...), reading the units that
+  can switch, participate in the slack or regulate from the grid. The pattern is the union of what the loops declared,
+  on top of the plain single-slack Newton-Raphson's; what no loop of the list reserved is not in the solve at all.
+  As a consequence a solve, however many outer iterations it takes, needs a **single symbolic analysis** (``analyze``)
+  and a single numeric factorization, then only ``refactorize`` calls (the refactorization fallback is always on,
+  see :ref:`static-pivot-refactorization`); and so does each row of the batch classes (:ref:`batch_outer_loops`).
+  Editing the list of loops makes the next solve declare the pattern again, and so analyze again.
 
 - **Fast-Decoupled Powerflow (FDPF)**: the XB and BX variants of the fast-decoupled
   Newton-Raphson method.  Available with four linear-solver backends each:

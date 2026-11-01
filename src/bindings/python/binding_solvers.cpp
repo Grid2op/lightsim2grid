@@ -19,6 +19,7 @@
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
+#include "sparse_helpers.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
 #include "powerflow_algorithm/RefactorPolicies.hpp"
 
@@ -30,9 +31,15 @@ using namespace ls2g;
 template<typename Solver>
 void bind_algo_methods(py::class_<Solver>& cls) {
     cls
-        .def("get_Va",      &Solver::get_Va,      DocSolver::get_Va.c_str())
-        .def("get_Vm",      &Solver::get_Vm,      DocSolver::get_Vm.c_str())
-        .def("get_V",       &Solver::get_V,       DocSolver::get_V.c_str())
+        // copies: the algorithm frees its voltages on a reset or another solve's size, and
+        // an algorithm is often made for one call (pandapower_compat) -- a view of either dangles
+        .def("get_Va",      &Solver::get_Va,      DocSolver::get_Va.c_str(), py::return_value_policy::copy)
+        .def("get_Vm",      &Solver::get_Vm,      DocSolver::get_Vm.c_str(), py::return_value_policy::copy)
+        .def("get_V",       &Solver::get_V,       DocSolver::get_V.c_str(), py::return_value_policy::copy)
+        // the views, for code that cannot afford the copy: at the caller's risk (docs/security.rst)
+        .def("get_Va_internal", &Solver::get_Va,  DocSolver::get_Va_internal.c_str(), py::return_value_policy::reference_internal)
+        .def("get_Vm_internal", &Solver::get_Vm,  DocSolver::get_Vm_internal.c_str(), py::return_value_policy::reference_internal)
+        .def("get_V_internal",  &Solver::get_V,   DocSolver::get_V_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_error",   &Solver::get_error,   DocSolver::get_error.c_str())
         .def("get_nb_iter", &Solver::get_nb_iter, DocSolver::get_nb_iter.c_str())
         .def("reset",       &Solver::reset,       DocSolver::reset.c_str())
@@ -49,6 +56,9 @@ void bind_algo_methods(py::class_<Solver>& cls) {
         .def("compute_pf",  &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str(),
              py::arg("Ybus"), py::arg("V"), py::arg("Sbus"), py::arg("slack_ids"), py::arg("slack_weights"),
              py::arg("pv"), py::arg("pq"), py::arg("max_iter"), py::arg("tol_pu"))
+        .def("compute_pf_dc", &Solver::compute_pf_dc_with_input_validation, py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf_dc.c_str(),
+             py::arg("Bbus"), py::arg("V"), py::arg("Pbus"), py::arg("slack_ids"), py::arg("slack_weights"),
+             py::arg("pv"), py::arg("pq"))
         .def("get_timers",  &Solver::get_timers,  DocSolver::get_timers.c_str())
         .def("solve",       &Solver::compute_pf_with_input_validation,  py::call_guard<py::gil_scoped_release>(), DocSolver::compute_pf.c_str(),
              py::arg("Ybus"), py::arg("V"), py::arg("Sbus"), py::arg("slack_ids"), py::arg("slack_weights"),
@@ -114,6 +124,9 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
         .def("get_q_to_J_col",     &Solver::get_q_to_J_col_python, DocSolver::get_q_to_J_col.c_str())
         // the Jacobian, copied
         .def("get_J", [](const Solver & s){ return nr_of(s).get_J_python(); }, DocSolver::get_J_python.c_str())
+        .def("get_J_internal", [](const py::object & self){
+                return sparse_const_view_to_scipy(nr_of(self.cast<const Solver &>()).get_J(), self);
+            }, DocSolver::get_J_internal.c_str())
         ;
 }
 
@@ -780,10 +793,20 @@ void bind_solvers(py::module_& m) {
     py::class_<AlgorithmSelector>(m, "AlgorithmSelector", DocSolver::AlgorithmSelector.c_str())
         .def(py::init<>())
         .def("get_type",             &AlgorithmSelector::get_type,             DocSolver::get_type.c_str())
-        .def("get_Va",               &AlgorithmSelector::get_Va,               DocSolver::get_Va.c_str())
-        .def("get_Vm",               &AlgorithmSelector::get_Vm,               DocSolver::get_Vm.c_str())
-        .def("get_V",                &AlgorithmSelector::get_V,                DocSolver::get_V.c_str())
+        // copies, as for the algorithms themselves (bind_algo_methods)
+        .def("get_Va",               &AlgorithmSelector::get_Va,               DocSolver::get_Va.c_str(), py::return_value_policy::copy)
+        .def("get_Vm",               &AlgorithmSelector::get_Vm,               DocSolver::get_Vm.c_str(), py::return_value_policy::copy)
+        .def("get_V",                &AlgorithmSelector::get_V,                DocSolver::get_V.c_str(), py::return_value_policy::copy)
+        .def("get_Va_internal",      &AlgorithmSelector::get_Va,               DocSolver::get_Va_internal.c_str(), py::return_value_policy::reference_internal)
+        .def("get_Vm_internal",      &AlgorithmSelector::get_Vm,               DocSolver::get_Vm_internal.c_str(), py::return_value_policy::reference_internal)
+        .def("get_V_internal",       &AlgorithmSelector::get_V,                DocSolver::get_V_internal.c_str(), py::return_value_policy::reference_internal)
         .def("get_J",                &AlgorithmSelector::get_J_python,         DocSolver::chooseSolver_get_J_python.c_str())
+        .def("get_J_internal", [](const py::object & self){
+                const AlgorithmSelector & algo = self.cast<const AlgorithmSelector &>();
+                // a plugin's get_J may return a Ref holding a copy of its own, gone with it
+                if(!algo.is_builtin_algo()) return sparse_to_scipy(algo.get_J_python());
+                return sparse_const_view_to_scipy(algo.get_J(), self);
+            }, DocSolver::get_J_internal.c_str())
         .def("get_theta_to_J_col",   &AlgorithmSelector::get_theta_to_J_col_python, "bus_id -> Jacobian column of its voltage-angle (theta) unknown, -1 if none")
         .def("get_vm_to_J_col",      &AlgorithmSelector::get_vm_to_J_col_python,    "bus_id -> Jacobian column of its voltage-magnitude (vm) unknown, -1 if none")
         .def("get_q_to_J_col",       &AlgorithmSelector::get_q_to_J_col_python,     "bus_id -> Jacobian column of its reactive (q) unknown, currently always -1")

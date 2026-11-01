@@ -8,7 +8,8 @@
 
 """A batch row that islands a continuous control (handle_disconnected_grid): the island is not
 solved, so a shunt controller, a phase shifter or a ratio group inside it does nothing -- the
-row is the one of a grid without that control. Each grid below has one control only, inside
+row is the one of a grid without that control, voltages and work alike (no outer iteration, no
+Newton iteration, no tap or section moved for it). Each grid below has one control only, inside
 the island the contingency cuts off."""
 
 import os
@@ -39,7 +40,7 @@ def _branch_ids(grid, names):
 
 
 def _row(make_grid, loop, branches):
-    """the voltages of the contingency row, and whether it converged"""
+    """the voltages of the contingency row, whether it converged, and what its outer loops did"""
     grid = make_grid()
     grid.clear_outer_loops()
     if loop is not None:
@@ -53,7 +54,10 @@ def _row(make_grid, loop, branches):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         ca.compute(np.full(grid.total_bus(), 1. + 0j), 30, TOL)
-    return ca.get_voltages()[0], bool(ca.converged_mask()[0])
+    r = ca.get_outer_results()[0]
+    work = {"outer iterations": r.nb_outer_iterations, "Newton iterations": r.nb_nr_iterations,
+            "phase taps": r.phase_tap, "ratio taps": r.ratio_tap, "shunt sections": r.shunt_sections}
+    return ca.get_voltages()[0], bool(ca.converged_mask()[0]), work
 
 
 class TestOuterIslandedControls(unittest.TestCase):
@@ -62,12 +66,14 @@ class TestOuterIslandedControls(unittest.TestCase):
             self.skipTest("pypowsybl is not installed")
 
     def _check(self, make_grid, loop, branches):
-        V_ref, ok_ref = _row(make_grid, None, branches)
+        V_ref, ok_ref, work_ref = _row(make_grid, None, branches)
         self.assertTrue(ok_ref)
         self.assertTrue(np.any(np.abs(V_ref) == 0.))  # an island, or this checks nothing
-        V, ok = _row(make_grid, loop, branches)
+        V, ok, work = _row(make_grid, loop, branches)
         self.assertTrue(ok)
         np.testing.assert_allclose(V, V_ref, rtol=0., atol=1e-8)
+        # the island's control does nothing: not even an extra outer iteration or Newton solve
+        self.assertEqual(work, work_ref)
 
     def test_shunt_controller_on_an_island(self):
         import test_shunt_voltage_control as S

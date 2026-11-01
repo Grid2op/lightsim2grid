@@ -220,7 +220,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
         msg_ << "the base case (lambda = 0) did not converge (error: " << _algo.get_error()
              << "); nothing can be continued from it.";
         _msg = msg_.str();
-        _voltages = CplxMat::Zero(0, static_cast<Eigen::Index>(nb_total_bus));
+        _voltages.overwrite() = CplxMat::Zero(0, static_cast<Eigen::Index>(nb_total_bus));
         _lam = RealVect(); _tangent_lam = RealVect();
         _timer_total = timer.duration();
         return;
@@ -233,7 +233,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
     // ---- point 0: the base case ------------------------------------------------
     CplxVect V_last = _algo.get_V();
     real_type lam = 0.;
-    _voltages.row(0)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
+    _voltages.raw().row(0)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
     _lam(0) = 0.;
     _nb_points = 1;
 
@@ -356,7 +356,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
 
         lam = lam_pred;
         V_last = V_corr;
-        _voltages.row(_nb_points)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
+        _voltages.raw().row(_nb_points)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
         _lam(_nb_points) = lam;
         ++_nb_points;
 
@@ -377,7 +377,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
     }
 
     // truncate every result to the points actually traced
-    _voltages.conservativeResize(_nb_points, _voltages.cols());
+    _voltages.mut().conservativeResize(_nb_points, _voltages.get().cols());
     _lam.conservativeResize(_nb_points);
     _tangent_lam.conservativeResize(_nb_points);
 

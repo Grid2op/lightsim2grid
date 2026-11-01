@@ -403,8 +403,8 @@ class TimeSerie:
         elif status != 1:
             # only raise a warning in this case
             warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
-        Vs = self.computer.get_voltages().copy()  # If I don't copy, lazy eval may break stuff... 
-        # eg test_time_series_dc.py does behave stochastically
+        # a read-only snapshot: the next computation does not change it (no copy needed)
+        Vs = self.computer.get_voltages()
         self.__computed = True
         return Vs
         
@@ -501,7 +501,7 @@ class TimeSerie:
         elif status != 1:
             warnings.warn(f"Some error occurred, the powerflow has diverged after {self.computer.nb_solved()} step(s)")
         self.__computed = True
-        return self.computer.get_voltages().copy()
+        return self.computer.get_voltages()
 
     def compute_V(self, scenario_id=None, seed=None, v_init=None, ignore_errors=False):
         """
@@ -538,8 +538,7 @@ class TimeSerie:
         """
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute_V has been sucessfully called")
-        mws = 1. * self.computer.compute_power_flows() # If I don't copy, lazy eval may break stuff... 
-        # eg test_time_series_dc.py does behave stochastically
+        mws = self.computer.compute_power_flows()
         return mws
 
     def get_flows(self, scenario_id=None, seed=None, v_init=None, ignore_errors=False):

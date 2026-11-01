@@ -91,7 +91,7 @@ void SbusPolicy::Vary::prepare(const LSGrid & grid_model,
     sn_mva_ = sn_mva;
     nb_buses_solver_ = nb_buses_solver;
     nb_steps_ = nb_steps;
-    sbuses = CplxMat();   // a previous compute()'s matrix, if anyone asked for one
+    sbuses.reset();   // a previous compute()'s matrix, if anyone asked for one
     (void)ac_solver_used;  // kept for signature symmetry with the caller's other prep calls
 }
 
@@ -253,14 +253,16 @@ real_type SbusPolicy::Vary::row_p_change_mw(Eigen::Index i) const
 
 const SbusPolicy::Vary::CplxMat & SbusPolicy::Vary::materialize() const
 {
-    if(sbuses.rows() == nb_steps_ && sbuses.cols() == nb_buses_solver_ && nb_steps_ > 0) return sbuses;
-    sbuses = CplxMat(nb_steps_, nb_buses_solver_);
+    const CplxMat & cached = sbuses.get();
+    if(cached.rows() == nb_steps_ && cached.cols() == nb_buses_solver_ && nb_steps_ > 0) return cached;
+    CplxMat & res = sbuses.overwrite();
+    res.resize(nb_steps_, nb_buses_solver_);
     CplxVect row;
     for(Eigen::Index i = 0; i < nb_steps_; ++i){
         fill_row(i, row);
-        sbuses.row(i) = row.transpose();
+        res.row(i) = row.transpose();
     }
-    return sbuses;
+    return res;
 }
 
 CplxVect SbusPolicy::Vary::constant_sbus_pu(const LSGrid & grid_model,

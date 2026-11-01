@@ -372,7 +372,8 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
         # nothing provided and the default distributed slack found no participating
         # generator: fall back to a single slack on the most-connected generator bus
         bus_id, gen_id = model.assign_slack_to_most_connected()
-        gen_slack_ids_int = [gen_id]
+        # -1: a storage unit holds it, no generator (the -1 would flag the last generator)
+        gen_slack_ids_int = [gen_id] if gen_id >= 0 else []
 
     return gen_slack_ids_int
 

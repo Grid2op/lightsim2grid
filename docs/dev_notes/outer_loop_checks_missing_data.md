@@ -7,6 +7,13 @@ and `HvdcPCheck.hpp`). It records, loop by loop, what a post-solve
 is missing — so the next piece of this work does not have to re-derive it. It is not part
 of the built documentation (`docs/*.rst`).
 
+**Superseded in part.** The tap changers, shunt sections and their regulation, the capability
+curves and the standby automata were added to the model afterwards, and every loop of the table
+below now exists as an outer loop of the `NROuter_*` algorithms (see
+`outer_loops_fixed_sparsity.md`); the rows marked *absent* describe the state of the model when
+this note was written. The user documentation is `docs/physical_violations.rst` and
+`docs/outer_loops.rst`.
+
 Reference for the outer loops: PowSyBl OpenLoadFlow,
 `src/main/java/com/powsybl/openloadflow/lf/outerloop/config/DefaultAcOuterLoopConfig.java`
 (the registration order *is* the nesting order, innermost first) and the loop classes in
@@ -17,12 +24,12 @@ Reference for the outer loops: PowSyBl OpenLoadFlow,
 | OLF outer loop | Result side | Control side | Post-solve check possible? |
 |---|---|---|---|
 | `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_physical_violations`), for all three families that hold a bus' voltage; a single solve already publishes `res_q_mvar` |
-| `TransformerVoltageControl` | complete | **absent** | no |
-| `PhaseControl` / `IncrementalPhaseControl` | complete | **absent** | no |
-| `ShuntVoltageControl` | complete | **absent** | no |
+| `TransformerVoltageControl` | complete | ~~absent~~ **done** (`set_trafo_ratio_tap_*`) | yes — `TRANSFORMER_VOLTAGE_DEADBAND` |
+| `PhaseControl` / `IncrementalPhaseControl` | complete | ~~absent~~ **done** for `PhaseControl` (`set_trafo_phase_tap_*`) | yes — `PHASE_CONTROL_P`, `PHASE_LIMITER_CURRENT` |
+| `ShuntVoltageControl` | complete | ~~absent~~ **done** (`set_shunt_section*`) | yes — `SHUNT_VOLTAGE_CONTROL` |
 | `DistributedSlack` | complete | complete (limits optional) | **yes — implemented** for a batch (`compute_physical_violations`): lightsim2grid solves the distribution inside the Newton (`MultiSlack`) by participation factors that ignore limits, so a machine can converge past `min_p_mw` / `max_p_mw` |
 | `HvdcAcEmulationLimits` | complete | complete | **yes — implemented** for a batch (`compute_physical_violations`): `status_droop` is an *input*, so the linear regime is exactly where the trigger lives |
-| `VoltageMonitoring` (SVC stand-by automaton) | complete | partial | `b_min` / `b_max` are now **checked** (as part of the reactive capability above) but still never enforced; the stand-by band itself is not modelled |
+| `VoltageMonitoring` (SVC stand-by automaton) | complete | ~~partial~~ **done** (`set_svc_standby`, `set_svc_b0`) | yes — `LOW_VOLTAGE_SVC_STANDBY` / `HIGH_VOLTAGE_SVC_STANDBY`, and the `VoltageMonitoring` loop switches the SVC on |
 | `SecondaryVoltageControl` | complete | absent | no control zones / pilot points in the model |
 | `AreaInterchangeControl` | complete | absent | no `Area` concept in the model |
 | `AutomationSystem` | complete | absent | no overload-management systems in the model |

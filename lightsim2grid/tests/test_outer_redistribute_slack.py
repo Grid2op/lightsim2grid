@@ -121,13 +121,16 @@ class TestOuterRedistributeSlack(unittest.TestCase):
 
     def test_loss_shared_before_the_first_solve(self):
         p = self._check(_batch(redistribute_slack=True), pre_share=True)
-        # the units at 0 MW took a share of the losses only
+        # the units at 0 MW took a share of the losses only (the three condensers: with none
+        # of them below 10 MW, the check below would check nothing)
+        self.assertEqual(int((p < 10.).sum()), 3)
         self.assertTrue(np.all(p[p < 10.] > 0.))
 
     def test_without_the_option_the_first_solve_takes_it_all(self):
         p = self._check(_batch(redistribute_slack=False), pre_share=False)
         # the loop shared the lost load and the losses together: what is left goes down, the
         # units at 0 MW stay there
+        self.assertEqual(int((p < 10.).sum()), 3)
         self.assertTrue(np.all(p[p < 10.] == 0.))
 
 

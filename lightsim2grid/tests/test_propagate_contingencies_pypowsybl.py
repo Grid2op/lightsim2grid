@@ -134,6 +134,11 @@ class TestPropagateContingencies(unittest.TestCase):
         # the busbar through that node
         res = propagate_contingencies(_net_with_stuff_on_the_feeder(kind="BREAKER"), [["LINE_S2S3"]])
         self.assertEqual(res, [["LINE_S2S3"]])
+        # the same with the load also fed from the busbar section (node 0) behind its breaker
+        net = _net_with_stuff_on_the_feeder(kind="BREAKER")
+        net.create_switches(id="SW_BBS_FEEDER", voltage_level_id="S2VL1", node1=0, node2=20,
+                            kind="DISCONNECTOR", open=False)
+        self.assertEqual(propagate_contingencies(net, [["LINE_S2S3"]]), [["LINE_S2S3"]])
 
     def test_breakers_right_at_the_terminal_stay_closed(self):
         # (OpenLoadFlow's security analysis reports the same disconnected elements and opens no
@@ -174,7 +179,7 @@ class TestPropagateContingencies(unittest.TestCase):
         res = propagate_contingencies(_net_with_stuff_on_the_feeder(is_open=True), [["LINE_S2S3"]])
         self.assertEqual(res, [["LINE_S2S3"]])
 
-    def test_tripping_the_load_does_not_take_the_line(self):
+    def test_tripping_the_load_takes_the_line(self):
         # the walk from the load goes through the disconnector to node 6, where the line stands:
         # the line is equipment on the way, so it is tripped (powsybl does the same)
         res = propagate_contingencies(_net_with_stuff_on_the_feeder(), [["LOAD_FEEDER"]])
@@ -384,10 +389,6 @@ class TestContingencyPropagator(unittest.TestCase):
         self.assertEqual(propagator.propagate_contingencies(), [])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 def _documented_n1_example():
     """The code of the full N-1 example of docs/network.rst (the block that follows "A full
     N-1 of the lines and transformers"), or None when the docs are not next to the package."""
@@ -452,3 +453,7 @@ class TestDocumentedN1Example(unittest.TestCase):
                 continue
             np.testing.assert_allclose(V[k], ref_V(branch_ids=[branch_id[cont[0]]]), atol=1e-10, rtol=0.,
                                        err_msg=str(cont))
+
+
+if __name__ == "__main__":
+    unittest.main()

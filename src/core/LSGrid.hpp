@@ -1048,6 +1048,11 @@ class LS2G_API LSGrid final
          * own -- moved, or reactivated -- as a batch row's topological action does. One
          * produces its setpoint, out of the distributed slack, and shares the reactive
          * residual of THAT bus; `gen_off` must not flag it.
+         *
+         * `outer_gen_target_p` (empty, or one entry per generator, NaN: not moved): the
+         * targets the state's outer loops moved (an NROuter_* algorithm's
+         * get_outer_target_p), which a unit's reactive limits and a non-regulating unit's
+         * target Q follow, as compute_results reads them.
          */
         /**
          * Each generator's share of the distributed slack (one per generator, summing to 1
@@ -1073,7 +1078,8 @@ class LS2G_API LSGrid final
                                const IntVect & ctrl_elem,
                                RealVect & p_mw,
                                RealVect & q_mvar,
-                               const std::vector<std::pair<int, int> > & gen_placed = std::vector<std::pair<int, int> >()) const;
+                               const std::vector<std::pair<int, int> > & gen_placed = std::vector<std::pair<int, int> >(),
+                               const std::vector<real_type> & outer_gen_target_p = std::vector<real_type>()) const;
 
         //pickle
         LSGrid::StateRes get_state() const ;
@@ -2974,6 +2980,9 @@ class LS2G_API LSGrid final
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
+        // whether a connected generator or storage unit stands on a bus of `bus_in_main_cc`:
+        // what _assign_slack_most_connected needs to give that component a slack
+        [[nodiscard]] bool _main_component_has_unit(const std::vector<bool> & bus_in_main_cc) const;
         /// assign_slack_to_most_connected. With `island_fallback` (consider_only_main_component's
         /// fallback) the buses are compared on the highest nominal voltage first, and the units
         /// taken out of the slack keep their "can participate" flag, as every other unit does
@@ -3322,8 +3331,9 @@ class LS2G_API LSGrid final
             real_type range_max = std::numeric_limits<real_type>::quiet_NaN();  ///< its widest range, MVar
         };
         /// generator `gen_id`'s share, on grid bus `bus_id` (its own, or the one a batch row
-        /// places it on): every field filled, what either dispatch reads
-        QShare _gen_q_share(int gen_id, int bus_id) const;
+        /// places it on): every field filled, what either dispatch reads. Its limits at the
+        /// target the outer loops moved it to (`outer_target_p`, see gen_limits_at_outer_target)
+        QShare _gen_q_share(int gen_id, int bus_id, const std::vector<real_type> & outer_target_p) const;
         /// OpenLoadFlow's split of one bus' reactive power between its units (see
         /// set_reactive_dispatch_olf): `q_mvar` shared out, written into `q_out` (aligned
         /// with `units`)
@@ -3351,10 +3361,12 @@ class LS2G_API LSGrid final
 
         /// the machines that take a share of their bus' reactive residual, as a flat list.
         /// `gen_off` (null, or one entry per generator): generators to leave out as if
-        /// disconnected -- what a batch row that disconnected them needs
+        /// disconnected -- what a batch row that disconnected them needs. `outer_target_p`: see
+        /// _gen_q_share
         std::vector<QShare> _collect_q_residual_shares(const std::vector<bool> & gen_solved,
                                                        const std::vector<bool> & hvdc1_solved,
                                                        const std::vector<bool> & hvdc2_solved,
+                                                       const std::vector<real_type> & outer_target_p,
                                                        const std::vector<bool> * gen_off = nullptr) const;
 
         /// each one's share of its bus' reactive residual (MVAr), in the order of `shares`

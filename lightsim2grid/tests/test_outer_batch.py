@@ -460,6 +460,92 @@ class TestOuterTapsInContingencyAnalysis(_Equivalence, unittest.TestCase):
         self.assertTrue(any(r.ratio_tap for r in batch.get_outer_results()))
 
 
+def _moved_target_q_grid():
+    """pypowsybl's IEEE 14, the slack distributed by the DistributedSlack loop alone: B3-G does
+    not regulate and asks more reactive power than its capability curve allows, so its target Q
+    is clamped into its limits at its target P (OpenLoadFlow's forceTargetQInReactiveLimits),
+    and follows that P when the loop moves it"""
+    import pypowsybl as pp
+    from lightsim2grid.algorithm import DistributedSlack
+    from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+    net = pp.network.create_ieee14()
+    gen = net.get_generators()
+    net.update_generators(id=list(gen.index), min_p=[0.] * len(gen), max_p=[300.] * len(gen),
+                          target_p=list(gen["target_p"].where(gen["target_p"] > 0., 10.)))
+    net.update_generators(id="B3-G", voltage_regulator_on=False, target_q=-80.)
+    net.create_curve_reactive_limits(id=["B3-G", "B3-G"], p=[0., 300.], min_q=[-10., -70.], max_q=[40., 40.])
+    net.update_loads(id="B3-L", p0=net.get_loads().loc["B3-L", "p0"] + 150.)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        grid = init_from_pypowsybl(net, gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                   olf_rules=OlfLoadingParameters(reactive_limits=True))
+    grid.change_algorithm(OUTER)
+    grid.clear_outer_loops()
+    grid.add_outer_loop(DistributedSlack(slack_bus_p_max_mismatch_mw=1e-4))
+    return grid
+
+
+class TestOuterBatchMovedTargetQ(_Equivalence, unittest.TestCase):
+    """a row publishes a non-regulating unit's target Q at the target P its loops moved it to,
+    as a single solve does -- not at the grid's own target P"""
+
+    def setUp(self):
+        try:
+            import pypowsybl  # noqa: F401
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        self.base = _moved_target_q_grid()
+        load_p = np.asarray(self.base.get_load_target_p())
+        self.load_p = np.outer(1. + 0.05 * np.arange(N_ROWS), load_p)
+        self.gen_p = np.outer(np.ones(N_ROWS), [g.target_p_mw for g in self.base.get_generators()])
+
+    def _injection_rows(self):
+        rows = []
+        for i in range(N_ROWS):
+            grid = _moved_target_q_grid()
+            for load_id, p in enumerate(self.load_p[i]):
+                grid.change_p_load(load_id, float(p))
+            rows.append(grid)
+        return rows
+
+    def _injection_batch(self):
+        batch = InjectionSweepCPP(self.base)
+        batch.modify_gen_p(self.gen_p)
+        batch.modify_load_p(self.load_p)
+        return batch
+
+    def _contingency_rows(self):
+        rows = []
+        for line_id in range(N_ROWS):
+            grid = _moved_target_q_grid()
+            grid.deactivate_powerline(line_id)
+            rows.append(grid)
+        return rows
+
+    def _contingency_batch(self):
+        batch = ContingencyAnalysisCPP(self.base)
+        for line_id in range(N_ROWS):
+            batch.add_n1(line_id)
+        return batch
+
+    def test_the_target_q_moves(self):
+        # the loop moves B3-G's P, and its published Q with it, or this checks nothing
+        grid = _moved_target_q_grid()
+        self.assertGreater(grid.ac_pf(_v0(grid), MAX_IT, TOL).shape[0], 0)
+        gen = {g.name: g for g in grid.get_generators()}["B3-G"]
+        self.assertGreater(abs(gen.res_p_mw - gen.target_p_mw), 1.)
+        self.assertGreater(abs(gen.res_q_mvar - gen.target_q_mvar), 1.)
+
+    def test_injection_sweep(self):
+        self._check_rows(self._injection_batch, self._injection_rows())
+
+    def test_contingency_analysis(self):
+        self._check_rows(self._contingency_batch, self._contingency_rows())
+
+    def test_two_threads(self):
+        self._check_rows(self._injection_batch, self._injection_rows(), nb_thread=2)
+
+
 class TestOuterTripsTheControlledTransformer(_Equivalence, unittest.TestCase):
     """a row that opens the transformer TransformerVoltageControl regulates with: the row has
     no such transformer, whatever tap the "n" solve left it at -- its Ybus must not keep any

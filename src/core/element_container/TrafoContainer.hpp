@@ -229,14 +229,15 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
         /**
          * The taps an outer loop left off the grid's positions: (transformer, position) from
          * one position per transformer (INT_MIN where nothing handled it), its phase changers'
-         * (`phase` true) or its ratio changers'.
+         * (`phase` true) or its ratio changers'. Positions for another number of transformers
+         * (a solve before init_trafo) raise std::out_of_range.
          */
         std::vector<std::pair<int, int> > moved_taps(bool phase, const std::vector<int> & positions) const;
         /**
          * The pi block (as pi_block_at) of each transformer in `ratio_taps` or `phase_taps`
          * (as moved_taps gives them), at those positions -- the grid's for the changer it does
          * not list -- and the shift of its phase position (its own without a phase changer);
-         * by increasing transformer id.
+         * by increasing transformer id. An unknown transformer raises std::out_of_range.
          */
         std::vector<std::pair<int, std::array<cplx_type, 4> > > moved_tap_blocks(
             const std::vector<std::pair<int, int> > & ratio_taps,
@@ -464,6 +465,12 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
         }
 
         FDPFCoeffs _fdpf_coeffs(int tr_id, FDPFMethod xb_or_bx) const override;
+
+        // the branch checks plus the bus a ratio tap changer regulates
+        void _check_valid(int nb_bus,
+                          int nb_sub,
+                          const SubstationContainer & substations,
+                          std::vector<int> & all_pos_topo_vect) const override;
 };
 
 inline TrafoInfo::TrafoInfo(const TrafoContainer & r_data_trafo, int my_id) noexcept:

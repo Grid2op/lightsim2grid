@@ -12,6 +12,9 @@
 #include "LSGrid.hpp"
 
 #include <sstream>
+#include <memory>
+
+#include "SharedMat.hpp"
 
 namespace ls2g {
 
@@ -68,7 +71,8 @@ struct LS2G_API SbusPolicy
         // row loop never reads it: it builds each row into its own buffer as it
         // goes (fill_row), so a year of hourly rows on a 9241-bus grid does not
         // hold 1.3 GB of injections that are read once. Mutable: a cache.
-        mutable CplxMat sbuses;
+        // A SharedMat: the array get_sbuses() returns to python co-owns it.
+        mutable SharedMat<CplxMat> sbuses;
 
         // per-step raw injection inputs, as set by the modify_gen_p/modify_sgen_p/
         // modify_load_p/modify_load_q setters (one row per step, one column per grid
@@ -168,7 +172,7 @@ struct LS2G_API SbusPolicy
             load_off = BoolMat();
             clear_topo();
             storage_pu_ = CplxVect();
-            sbuses = CplxMat();
+            sbuses.reset();
             gen_bus_.clear(); sgen_bus_.clear(); load_bus_.clear(); storage_bus_.clear();
             gen_target_p_ = RealVect(); sgen_target_p_ = RealVect();
             load_target_p_ = RealVect(); load_target_q_ = RealVect();
@@ -210,6 +214,7 @@ struct LS2G_API SbusPolicy
         // the whole matrix, for whoever wants it (get_sbuses()): every row through
         // fill_row, built at most once per prepare().
         const CplxMat & materialize() const;
+        std::shared_ptr<const CplxMat> share_materialized() const { materialize(); return sbuses.share(); }
 
         /**
          * Per-unit injection that the four per-step matrices (gen_p/sgen_p/load_p/

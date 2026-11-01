@@ -219,6 +219,12 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
         }
         void _check_section_count(int el, int section_count, const char * where) const;
 
+        // the one-side checks plus the bus the sections regulate
+        void _check_valid(int nb_bus,
+                          int nb_sub,
+                          const SubstationContainer & substations,
+                          std::vector<int> & all_pos_topo_vect) const override;
+
         // the sections, see set_sections (empty: none)
         std::vector<std::vector<real_type> > section_p_mw_;
         std::vector<std::vector<real_type> > section_q_mvar_;

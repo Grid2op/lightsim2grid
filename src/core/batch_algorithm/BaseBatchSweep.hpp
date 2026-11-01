@@ -1081,6 +1081,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class S = SbusPolicy, class Y = YbusPolicy,
                  typename std::enable_if<S::supports_vary && !Y::supports_contingency, int>::type = 0>
         Eigen::Ref<const typename S::CplxMat> get_sbuses() const {return sbus_policy_.materialize();}
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        std::shared_ptr<const typename S::CplxMat> share_sbuses() const {return sbus_policy_.share_materialized();}
 
         // aggregate status (TimeSeries/InjectionSweep/ScenarioSweep -- everything
         // with SbusPolicy::supports_vary; ContingencyAnalysis reports per-row via
@@ -1351,13 +1353,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _maybe_check_results_match_defaults("compute_flows");
             compute_flows_from_Vs();
             _maybe_clean_flows(true);
-            return _amps_flows;
+            return _amps_flows.raw();
         }
         Eigen::Ref<RealMat > compute_power_flows() {
             _maybe_check_results_match_defaults("compute_power_flows");
             compute_flows_from_Vs(false);
             _maybe_clean_flows(false);
-            return _active_power_flows;
+            return _active_power_flows.raw();
         }
 
         // P and Q at both ends of every branch, every row: see get_branch_results for the
@@ -3012,10 +3014,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
             }
 
+            // the targets this row's loops moved: a unit's reactive limits and a non-regulating
+            // unit's target Q follow them, as LSGrid::compute_results reads them after a solve
+            std::vector<real_type> outer_gen_target_p, outer_storage_target_p;
+            if(ac && algo.supports_outer_loops()) algo.get_outer_target_p(outer_gen_target_p, outer_storage_target_p);
+
             RealVect p_mw, q_mvar;
             _grid_model.generator_results(ac, target_p, gen_off, no_share, storage_no_share, me_to_solver,
                                           active_mismatch, reactive_mismatch, ctrl_q, ctrl_kind, ctrl_elem,
-                                          p_mw, q_mvar, gen_placed_me);
+                                          p_mw, q_mvar, gen_placed_me, outer_gen_target_p);
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
                 _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id) = p_mw(gen_id);
                 _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id + 1) = q_mvar(gen_id);
@@ -4765,7 +4772,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         div_reason = LimitViolationType::NOT_SIMULATED;
                     }
 
-                    if(do_store) _voltages.row(cont_id)(active_layout().id_solver_to_me.as_eigen()) = V.array();
+                    if(do_store) _voltages.raw().row(cont_id)(active_layout().id_solver_to_me.as_eigen()) = V.array();
                     else if(first_diverging_step < 0) first_diverging_step = static_cast<int>(cont_id);
 
                     _converged_mask_[cont_id] = do_store ? 1 : 0;
@@ -4861,7 +4868,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(const auto & this_cont: ybus_policy_.li_defaults){
                 // a branch opened at one end only reads 0 too (see add_contingency)
                 for(auto l_id : this_cont.branches_out()){
-                    real_type & el = is_amps ? _amps_flows(cont_id, l_id): _active_power_flows(cont_id, l_id);
+                    real_type & el = is_amps ? _amps_flows.raw()(cont_id, l_id): _active_power_flows.raw()(cont_id, l_id);
                     if(isfinite(el)) el = 0.;
                 }
                 ++cont_id;
@@ -4878,7 +4885,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // merges them): a branch the row disconnected carries no flow
             for(Eigen::Index row = 0; row < nb_steps; ++row){
                 for(int br_id : ybus_policy_.branch_ids_for_row(row, n_line_)){
-                    real_type & el = is_amps ? _amps_flows(row, br_id) : _active_power_flows(row, br_id);
+                    real_type & el = is_amps ? _amps_flows.raw()(row, br_id) : _active_power_flows.raw()(row, br_id);
                     if(isfinite(el)) el = 0.;
                 }
             }

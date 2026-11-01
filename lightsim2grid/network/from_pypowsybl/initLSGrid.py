@@ -16,6 +16,7 @@ elements' buses), then generators, loads, lines, transformers, shunts, SVCs,
 HVDC lines, storage units, and finally slack assignment.
 """
 
+import warnings
 from typing import Dict, Iterable, Optional, Union
 
 import numpy as np
@@ -41,6 +42,9 @@ from ._aux_add_storage import _aux_add_storage
 from ._aux_add_slack import _aux_add_slack
 from lightsim2grid.network._default_algorithms import use_fastest_default_algorithms
 
+# tells "not given" apart from an explicit None (which 1.2.0 read as "check nothing")
+_NOT_GIVEN = object()
+
 
 def init(net : pypo.network.Network,
          gen_slack_id: Union[int, str, Iterable[str], Dict[str, float]] = None,
@@ -65,6 +69,7 @@ def init(net : pypo.network.Network,
          hvdc_ac_emulation_frozen=None,
          olf_rules=False,
          olf_parameters=None,
+         remote_voltage_control_vm_range=_NOT_GIVEN,  # deprecated in 1.3.0, ignored
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -297,9 +302,21 @@ def init(net : pypo.network.Network,
         of the installed pypowsybl, which differ between its builds.
     :type olf_parameters: None or pypowsybl.loadflow.Parameters
 
+    :param remote_voltage_control_vm_range: **Deprecated, ignored** (it emits a
+        ``DeprecationWarning``). A generator regulating a remote bus is now checked against the
+        realistic voltage range of the ``ReactiveLimits`` outer loop, which ``olf_parameters``
+        sets (``OuterLoopDriverParams.min_realistic_voltage`` / ``max_realistic_voltage``).
+
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
     """
+    if remote_voltage_control_vm_range is not _NOT_GIVEN:
+        warnings.warn("init_from_pypowsybl: `remote_voltage_control_vm_range` is deprecated and ignored. "
+                      "A generator regulating a remote bus is checked against the realistic voltage range "
+                      "of the ReactiveLimits outer loop, which `olf_parameters` sets "
+                      "(OuterLoopDriverParams.min_realistic_voltage / max_realistic_voltage).",
+                      DeprecationWarning,
+                      stacklevel=2)
     if olf_rules is True:
         olf_rules = OlfLoadingParameters()
     elif olf_rules is False:

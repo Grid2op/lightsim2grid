@@ -172,9 +172,8 @@ class LS2G_API BaseAlgo : public BaseConstants
             real_type                        tol);
 
         // Same idea for the DC entry point (validates, then calls the
-        // virtual compute_pf_dc). Not bound to python today -- compute_pf_dc
-        // itself isn't exposed under any name -- kept symmetric with the AC
-        // wrapper above and ready if that binding gap is ever closed.
+        // virtual compute_pf_dc). Bound to python as Solver.compute_pf_dc (see
+        // binding_solvers.cpp), which pandapower_compat's dcpf calls.
         // V stays plain: see the comment on the virtual compute_pf_dc above (resized).
         // Bbus is a bare (non-Ref) Eigen::SparseMatrix for the same pybind11 reason as
         // Ybus in compute_pf_with_input_validation above.
