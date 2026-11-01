@@ -56,10 +56,10 @@ def dcpf(B, Pbus, Va0, ref, pv, pq):
     # initialize the solver and perform some sanity checks
     solver = _get_valid_solver(None, B)
     
-    # do the newton raphson algorithm
-    slack_weights = np.ones(len(ref), dtype=float)
-    slack_weights /= slack_weights.sum()
-    solver.solve(B, np.cos(Va0) + 1j * np.sin(Va0), Pbus, ref, slack_weights, pv, pq, 1, 1e-8)
+    # solve the DC powerflow; one weight per bus (indexed by bus id), not one per slack bus
+    slack_weights = np.zeros(Pbus.shape[0], dtype=float)
+    slack_weights[ref] = 1.0 / len(ref)
+    solver.compute_pf_dc(B, np.cos(Va0) + 1j * np.sin(Va0), Pbus, ref, slack_weights, pv, pq)
     # extract the results
     Va = solver.get_Va()
     return Va

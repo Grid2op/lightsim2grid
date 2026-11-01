@@ -164,6 +164,18 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
              << "the NR algorithms (eg NR_KLU / NR_SparseLU).";
         throw std::runtime_error(exc_.str());
     }
+    if(_algo.supports_outer_loops() && !_grid_model.get_outer_loops().empty()){
+        // the corrector solves at a fixed lambda, on one system: the outer loops change it
+        // between two correctors (and the tangent is taken from whatever they left), so the
+        // points would not be those of the lambda-parametrised curve
+        std::ostringstream exc_;
+        exc_ << "ContinuationSweep::compute: the algorithm '" << _algo.get_name() << "' runs the grid's "
+             << "outer loops, which a continuation does not support: between two correctors they "
+             << "change the system it continues (DistributedSlack moves the units' targets off the "
+             << "curve's injection, ReactiveLimits switches buses between PV and PQ). Pick a plain "
+             << "Newton-Raphson algorithm (eg NR_KLU / NR_SparseLU).";
+        throw std::runtime_error(exc_.str());
+    }
     if(_step_min > _step_max){
         std::ostringstream exc_;
         exc_ << "ContinuationSweep::compute: step_min (" << _step_min << ") is larger than "
@@ -208,7 +220,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
         msg_ << "the base case (lambda = 0) did not converge (error: " << _algo.get_error()
              << "); nothing can be continued from it.";
         _msg = msg_.str();
-        _voltages = CplxMat::Zero(0, static_cast<Eigen::Index>(nb_total_bus));
+        _voltages.overwrite() = CplxMat::Zero(0, static_cast<Eigen::Index>(nb_total_bus));
         _lam = RealVect(); _tangent_lam = RealVect();
         _timer_total = timer.duration();
         return;
@@ -221,7 +233,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
     // ---- point 0: the base case ------------------------------------------------
     CplxVect V_last = _algo.get_V();
     real_type lam = 0.;
-    _voltages.row(0)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
+    _voltages.raw().row(0)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
     _lam(0) = 0.;
     _nb_points = 1;
 
@@ -344,7 +356,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
 
         lam = lam_pred;
         V_last = V_corr;
-        _voltages.row(_nb_points)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
+        _voltages.raw().row(_nb_points)(active_layout().id_solver_to_me.as_eigen()) = V_last.array();
         _lam(_nb_points) = lam;
         ++_nb_points;
 
@@ -365,7 +377,7 @@ void ContinuationSweep::compute(const Eigen::Ref<const CplxVect> & Vinit,
     }
 
     // truncate every result to the points actually traced
-    _voltages.conservativeResize(_nb_points, _voltages.cols());
+    _voltages.mut().conservativeResize(_nb_points, _voltages.get().cols());
     _lam.conservativeResize(_nb_points);
     _tangent_lam.conservativeResize(_nb_points);
 

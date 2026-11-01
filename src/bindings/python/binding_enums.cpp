@@ -91,5 +91,7 @@ void bind_enums(py::module_& m) {
         .value("NotInitError", ErrorType::NotInitError, "Attempt to perform some powerflow computation when the linear solver is not initiliazed")
         .value("LicenseError", ErrorType::LicenseError, "Impossible to use the linear solver as the license cannot be found (*eg* unable to locate the `nicslu.lic` file")
         .value("NotImplemented", ErrorType::NotImplemented, "The linear solver does not implement the operation that was asked of it (*eg* `solve_transpose` on a solver whose `CAN_SOLVE_TRANSPOSE` is False)")
+        .value("OuterLoopFailed", ErrorType::OuterLoopFailed, "An outer loop of an NROuter_* algorithm failed (*eg* the slack could not be distributed within the units' active power limits)")
+        .value("UnrealisticState", ErrorType::UnrealisticState, "An NROuter_* algorithm converged to a voltage outside the realistic band on a bus whose nominal voltage is checked (OpenLoadFlow's UNREALISTIC_STATE)")
         .export_values();
 }

@@ -16,6 +16,8 @@
 #include "Eigen/SparseLU"
 
 #include "Utils.hpp"
+#include <cmath>
+
 #include "GenericContainer.hpp"
 #include "SubstationContainer.hpp"
 
@@ -589,10 +591,10 @@ class OneSideContainer : public GenericContainer
 
         void reset_osc_results()
         {
-            res_p_ = RealVect(nb());  // in MW
-            res_q_ =  RealVect(nb());  // in MVar
-            res_v_ = RealVect(nb());  // in kV
-            res_theta_ = RealVect(nb());  // in deg
+            _reset_result(res_p_, nb());  // in MW
+            _reset_result(res_q_, nb());  // in MVar
+            _reset_result(res_v_, nb());  // in kV
+            _reset_result(res_theta_, nb());  // in deg
         }
 
     protected:
@@ -642,6 +644,27 @@ class OneSideContainer : public GenericContainer
                 throw std::runtime_error(exc_.str());
             }
         }
+    public:
+        /**
+         * Replace the published active power (MW, the container's own sign convention) by
+         * `res_p_mw` where it is not NaN: the target an outer loop set for the unit, which the
+         * grid's own target does not know about (see LSGrid::compute_results). Called right
+         * after compute_results, before the slack's share is added. Ignored if the sizes differ.
+         */
+        void override_res_p(const std::vector<real_type> & res_p_mw){
+            if(static_cast<Eigen::Index>(res_p_mw.size()) != res_p_.size()) return;
+            for(std::size_t el_id = 0; el_id < res_p_mw.size(); ++el_id){
+                if(!std::isnan(res_p_mw[el_id])) res_p_(static_cast<Eigen::Index>(el_id)) = res_p_mw[el_id];
+            }
+        }
+        /// the same for the reactive power (MVar): the target Q that followed such a target
+        void override_res_q(const std::vector<real_type> & res_q_mvar){
+            if(static_cast<Eigen::Index>(res_q_mvar.size()) != res_q_.size()) return;
+            for(std::size_t el_id = 0; el_id < res_q_mvar.size(); ++el_id){
+                if(!std::isnan(res_q_mvar[el_id])) res_q_(static_cast<Eigen::Index>(el_id)) = res_q_mvar[el_id];
+            }
+        }
+
     protected:
         // same as get_bus, for an el_id one of our own loops produced (see _get_bus_internal)
         GridModelBusId get_bus_internal(int el_id) const {return _get_bus_internal(el_id, status_, bus_id_);}

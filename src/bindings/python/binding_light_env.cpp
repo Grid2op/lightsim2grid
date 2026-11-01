@@ -81,10 +81,12 @@ void bind_light_env(py::module_& m) {
              "exceeds this value (grid2op NB_TIMESTEP_OVERFLOW_ALLOWED)")
         .def("set_thermal_limit_or", &Protections::set_thermal_limit_or, py::arg("thermal_limit_or"),
              "Set the thermal limits (kA) on the origin side, one per line (powerlines then transformers). "
-             "rho is the max over both sides of current / thermal limit.")
+             "rho is the max over both sides of current / thermal limit; a NaN or infinite limit leaves that "
+             "side out (eg NaN on every extremity side for grid2op's rho = a_or / limit).")
         .def("set_thermal_limit_ex", &Protections::set_thermal_limit_ex, py::arg("thermal_limit_ex"),
              "Set the thermal limits (kA) on the extremity side, one per line (powerlines then transformers). "
-             "rho is the max over both sides of current / thermal limit.")
+             "rho is the max over both sides of current / thermal limit; a NaN or infinite limit leaves that "
+             "side out (eg NaN on every extremity side for grid2op's rho = a_or / limit).")
         .def("set_max_line_time_step_overflow", &Protections::set_max_line_time_step_overflow, py::arg("max_line_time_step_overflow"),
              "Set, for each line (powerlines then transformers), the number of steps it can stay in overflow before "
              "the protections disconnect it (int32 vector)")
@@ -100,7 +102,7 @@ void bind_light_env(py::module_& m) {
         "of the environment or a step ending the episode by a divergence; once done is True the values are not "
         "meaningful. Lines use grid2op numbering (powerlines then transformers, 'or' being a transformer's hv side), "
         "powers are in MW / MVAr, currents in kA (like the thermal limits of Protections).")
-        .def_property_readonly("rho", &LightEnvObservation::get_rho, "For each line, the max over its two sides of current / thermal limit")
+        .def_property_readonly("rho", &LightEnvObservation::get_rho, "For each line, the max over its two sides of current / thermal limit (a side whose limit is NaN or infinite left out, 0 if both are)")
         .def_property_readonly("p_or", &LightEnvObservation::get_p_or, "Active power flow (MW) at the origin side of each line")
         .def_property_readonly("q_or", &LightEnvObservation::get_q_or, "Reactive power flow (MVAr) at the origin side of each line")
         .def_property_readonly("a_or", &LightEnvObservation::get_a_or, "Current flow (kA) at the origin side of each line")

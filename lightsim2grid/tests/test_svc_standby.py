@@ -159,7 +159,7 @@ class TestSvcStandbyCheck(unittest.TestCase):
         self.assertEqual(v.element_type, ViolationElementType.SVC)
         self.assertEqual(v.element_id, 0)
         self.assertEqual(v.violation_type, LimitViolationType.HIGH_VOLTAGE_SVC_STANDBY)
-        self.assertEqual(v.category, ViolationCategory.PHYSICAL)
+        self.assertEqual(v.category, ViolationCategory.CONTROL)
         self.assertEqual(v.name, "svc")
         self.assertAlmostEqual(v.value, abs(V[2]) * VN_KV, places=6)
         self.assertAlmostEqual(v.limit, hi * VN_KV, places=9)

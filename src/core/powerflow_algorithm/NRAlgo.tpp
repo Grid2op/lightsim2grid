@@ -18,11 +18,34 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         int                              max_iter,
         real_type                        tol)
 {
-    if (!is_linear_solver_valid()) return false;
+    if (!begin_solve()) return false;
+    auto timer = CustTimer();
 
-    reset_timer();
-    err_ = ErrorType::NoError;
-    auto timer     = CustTimer();
+    bool need_init = false;
+    if (!setup(Ybus, V, Sbus, slack_ids, slack_weights, pv, pq, need_init, [](){})) {
+        timer_total_nr_ += timer.duration();
+        return false;
+    }
+    const bool res = newton(max_iter, tol, need_init);
+    finalize();
+    timer_total_nr_ += timer.duration();
+    return res;
+}
+
+// Phases 1 and 2 of a solve, see the declaration.
+template<class LinearSolver, class NRSystem>
+template<class BeforeInitTopology>
+bool NRAlgo<LinearSolver, NRSystem>::setup(
+        const EigenRefConstCplxSpMat     & Ybus,
+        const Eigen::Ref<const CplxVect> & V,
+        const Eigen::Ref<const CplxVect> & Sbus,
+        const Eigen::Ref<const IntVect>  & slack_ids,
+        const Eigen::Ref<const RealVect> & slack_weights,
+        const Eigen::Ref<const IntVect>  & pv,
+        const Eigen::Ref<const IntVect>  & pq,
+        bool                             & need_init,
+        BeforeInitTopology               && before_init_topology)
+{
     auto timer_pre = CustTimer();
 
     // Determine whether topology rebuild is required.
@@ -60,10 +83,8 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     // without a explicit call to "reset"
     if (!((err_ == ErrorType::NotInitError) || (err_ == ErrorType::NoError))) {
         timer_pre_proc_ += timer_pre.duration();
-        timer_total_nr_ += timer.duration();
         return false;
     }
-    // std::cout << "Phase 1.5: update V/Sbus pointers and initial voltage state (cheap, always).\n";
     // The system fills OUR mismatch buffers -- it is ours, so it writes into the
     // members a caller reads through BaseAlgo::get_bus_mismatch(), the same two the
     // FDPF fills directly. Two pointer stores; done here rather than at construction
@@ -76,13 +97,13 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     detail::set_pivot_growth_guard_impl(_linear_solver, _system.has_voltage_controllers(), 0);
 
     // Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).
-    // std::cout << "Phase 1: rebuild pvpq maps, lag, etc. (skipped when topology is unchanged).\n";
-    if (need_rebuild)
+    if (need_rebuild) {
+        before_init_topology();
         _system.init_topology(slack_ids, slack_weights, pv, pq);
+    }
 
     // Phase 2: rebuild J sparsity + value_map, then initialize linear solver.
-    // std::cout << "Phase 2: rebuild J sparsity + value_map, then initialize linear solver.\n";
-    bool need_init = need_rebuild;
+    need_init = need_rebuild;
     if (need_rebuild) {
         _system.build_J_sparsity();
         n_ = static_cast<int>(_system.J().cols());
@@ -90,8 +111,18 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         ybus_nnz_ = Ybus.nonZeros();  // only used by the debug check above
 #endif
     }
-    // std::cout << "need_init " << need_init << "\n";
+    timer_pre_proc_ += timer_pre.duration();
+    return true;
+}
 
+// The Newton iterations, from whatever state the system holds: the one setup put it in,
+// or -- for an outer loop resuming the solve -- the one the previous call left, possibly
+// edited by value. Always factorizes on its first iteration: analyze + factorize if
+// `need_init`, refactorize otherwise.
+template<class LinearSolver, class NRSystem>
+bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool need_init)
+{
+    auto timer_pre = CustTimer();
 
     // Initial mismatch (negated: Sbus - Scomp)
     RealVect F = _system.mismatch();
@@ -106,7 +137,7 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     // zero iterations instead of one. No-op for the single-slack systems.
     _system.calibrate_slack_absorbed(F);
 
-    timer_pre_proc_ += timer_pre.duration(); 
+    timer_pre_proc_ += timer_pre.duration();
     bool converged = _check_for_convergence(F, tol);  // counted in timer_check_
     nr_iter_       = 0;
     bool res       = true;
@@ -114,19 +145,18 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
     while ((!converged) & (nr_iter_ < max_iter)) {
         nr_iter_++;
-        // std::cout << "=================================\n";
-        // std::cout << "start iter " << nr_iter_ << std::endl;
 
         need_factorize = (need_factorize || should_refactor_policy(nr_iter_));
         if (need_factorize) {
             // Phase 3: fill J numerically with current V.
-            // std::cout << "fill_internal_variables\n";
-            _system.fill_internal_variables();  // timer_dSbus_
-            // std::cout << "fill_J\n";
+            _system.fill_internal_variables(true);  // timer_dSbus_ (Ybus . V: the residual's)
             _system.fill_J();  // timer_fillJ_
 
             if (need_init) {
-                // New sparsity pattern: analyze (structure) then factorize (values).
+                // New sparsity pattern: analyze (structure) then factorize (values). A
+                // solver that orders with constraints gets the system's first (or none,
+                // see set_constrained_ordering).
+                detail::set_ordering_constraints_impl(_linear_solver, _system, constrained_ordering_, 0);
                 err_ = _linear_solver.analyze(_system.J());
                 if (err_ == ErrorType::NoError) {
                     err_ = _linear_solver.factorize(_system.J());
@@ -141,14 +171,12 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         }
 
         // Solve J * dx = F  (F = mismatch, negated convention; F overwritten with dx)
-        // std::cout << "_linear_solver.solve(F);\n";
         err_ = _linear_solver.solve(F);
         if (err_ != ErrorType::NoError) {
             res = false; break;
         }
 
         // Apply scaling policy (runtime dispatch)
-        // std::cout << "scaling_policy_->scale(_system, F);\n";
         auto timer_sc = CustTimer();
         real_type coeff = scaling_policy_->scale(_system, F);
         // scale F in place rather than passing the `coeff * F` expression:
@@ -171,7 +199,6 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
 
         // New mismatch (written into F's existing buffer: its dimension cannot
         // change inside the loop)
-        // std::cout << "mismatch\n";
         auto timer_mis = CustTimer();
         _system.mismatch_into(F);
         timer_mismatch_ += timer_mis.duration();
@@ -184,7 +211,13 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
         if (err_ == ErrorType::NoError) err_ = ErrorType::TooManyIterations;
         res = false;
     }
+    return res;
+}
 
+// After the last Newton iterations of a solve: publish the voltages and fold the timers.
+template<class LinearSolver, class NRSystem>
+void NRAlgo<LinearSolver, NRSystem>::finalize()
+{
     // Synchronise BaseAlgo's voltage state
     V_  = _system.V();
     Vm_ = _system.Vm();
@@ -207,11 +240,9 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
     wrap_va(Va_);
 
     // Propagate NRSystem timers to NRAlgo
-    // std::cout << "timers\n";
     timer_dSbus_ += _system.timer_dSbus();
     timer_fillJ_ += _system.timer_fillJ();
     _system.reset_timers();
-    timer_total_nr_ += timer.duration();
 
     #ifdef __COUT_TIMES
         {
@@ -227,7 +258,6 @@ bool NRAlgo<LinearSolver, NRSystem>::compute_pf(
                       << "\n\n";
         }
     #endif
-    return res;
 }
 
 template<class LinearSolver, class NRSystem>

@@ -16,6 +16,7 @@ from ._aux_handle_slack import handle_slack_iterable, handle_slack_one_el
 # `activePowerControl` extension does not set its own droop, under the
 # ``PROPORTIONAL_TO_GENERATION_P_MAX`` balance type -- see `_default_distributed_slack`.
 from ._olf_const import _OLF_DEFAULT_DROOP
+from . import _olf_rules
 from ._aux_battery_apc import (
     BATTERY_APC_SOURCES,
     battery_active_power_control as _battery_active_power_control,
@@ -34,10 +35,10 @@ def _default_distributed_slack(net, df_gen):
     The participating set and the sharing key mirror OLF's default distributed
     slack:
 
-    * participants are the connected generators with ``max_p > 0`` that take part in
-      active-power control (``participate`` flag of the ``activePowerControl``
-      extension); if that extension is absent, every connected producing generator
-      participates;
+    * participants are the connected generators OpenLoadFlow's own rule keeps
+      (:func:`._olf_rules.participation_weight`: the ``participate`` flag of the
+      ``activePowerControl`` extension, True without it; not a zero target, nor an
+      implausible ``max_p``, nor a target outside the unit's active range);
     * participants are restricted to the *main synchronous component* (OLF's
       ``ActivePowerDistribution.run`` only ever considers
       ``LfSynchronousNetwork.getBuses()``) -- **not** to any particular country:
@@ -91,40 +92,15 @@ def _default_distributed_slack(net, df_gen):
     if n == 0:
         return None
     connected = df_gen["connected"].to_numpy(bool)
-    max_p = df_gen["max_p"].to_numpy(float)
     target_p = df_gen["target_p"].to_numpy(float)
     gen_bus = df_gen["bus_id"].to_numpy()
 
-    # participation set + sharing key from the activePowerControl extension
-    try:
-        apc = net.get_extensions("activePowerControl")
-    except Exception:
-        apc = None
-    if apc is not None and len(apc) and "participate" in apc.columns:
-        # a generator listed in the extension uses its flag; one absent from it
-        # participates by default (OLF treats a missing extension as participating)
-        participate = apc["participate"].reindex(names).fillna(True).to_numpy(bool)
-        if "droop" in apc.columns:
-            droop = apc["droop"].reindex(names).to_numpy(float)
-        else:
-            droop = np.full(n, np.nan)
-    else:
-        participate = np.ones(n, bool)  # no (or empty) extension -> everything participates
-        droop = np.full(n, np.nan)
-
-    # sharing key (PROPORTIONAL_TO_GENERATION_P_MAX): max_p / droop. OLF's own
-    # DEFAULT_DROOP=4 only for a generator with NO extension row (NaN after the
-    # reindex above); a row carrying droop = 0 (pypowsybl reports an unset droop
-    # as 0.0, not NaN) makes OLF's participation factor max_p / 0 unusable and
-    # the generator does not participate (see the docstring: measured, not read
-    # off the Java source).
-    droop_used = np.where(np.isfinite(droop), droop, _OLF_DEFAULT_DROOP)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        weight = np.where(droop_used > 0., max_p / droop_used, 0.)
-
-    # participants: connected, *started* (positive target P -- OLF does not
-    # distribute on zero-MW generators), participating, with a usable positive weight.
-    mask = connected & participate & (target_p > 0.) & np.isfinite(weight) & (weight > 0.)
+    # participation set + sharing key: OpenLoadFlow's rule, shared with the batteries and
+    # with bake_outer_loops (_olf_rules.participation_weight: the extension's participate
+    # flag and droop, a zero or implausible target, the target range). lightsim2grid's
+    # in-Newton slack takes positive weights only, which every real unit has (max_p > 0).
+    weight = _olf_rules.generator_participation_weight(net, df_gen).to_numpy(float)
+    mask = connected & np.isfinite(weight) & (weight > 0.)
 
     # main-component filter: a slack generator must sit in the main component,
     # otherwise lightsim2grid's `consider_only_main_component` deactivates its
@@ -396,6 +372,34 @@ def _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
         # nothing provided and the default distributed slack found no participating
         # generator: fall back to a single slack on the most-connected generator bus
         bus_id, gen_id = model.assign_slack_to_most_connected()
-        gen_slack_ids_int = [gen_id]
+        # -1: a storage unit holds it, no generator (the -1 would flag the last generator)
+        gen_slack_ids_int = [gen_id] if gen_id >= 0 else []
 
     return gen_slack_ids_int
+
+
+def _aux_olf_slack_participation(model, net, df_gen, df_batt, params, battery_source="auto"):
+    """Flag every generator and battery OpenLoadFlow's distributed slack shares on as "can
+    participate in the slack", with its key (:func:`._olf_rules.participation_weight`), and
+    give each unit its ``activePowerControl`` target range as active power limits: what the
+    ``DistributedSlack`` outer loop reads. Independent of the slack the Newton itself uses
+    (a single one, for the ``NROuter_*`` algorithms). ``df_gen`` / ``df_batt`` are in the
+    order the units were added to ``model``."""
+    if len(df_gen):
+        weight = _olf_rules.generator_participation_weight(net, df_gen, params).to_numpy(float)
+        flags = df_gen["connected"].to_numpy(bool) & (weight > 0.)
+        model.set_gen_can_participate_slack(list(flags), np.where(flags, weight, 0.))
+        apc = _olf_rules.generator_active_power_control(net, df_gen.index)
+        min_tp, max_tp = _olf_rules.target_p_range(df_gen["min_p"], df_gen["max_p"],
+                                                   apc["min_target_p"], apc["max_target_p"])
+        model.set_gen_p_limits(min_tp, max_tp)
+    if df_batt is not None and len(df_batt):
+        participate, droop, min_target_p, max_target_p = _battery_active_power_control(
+            net, df_batt, battery_source)
+        # IIDM's own (generator) convention, as the participation rule and the limits read it
+        weight = _olf_rules.participation_weight(df_batt["target_p"], df_batt["min_p"], df_batt["max_p"],
+                                                 participate, droop, min_target_p, max_target_p, params)
+        flags = df_batt["connected"].to_numpy(bool) & (weight > 0.)
+        model.set_storage_can_participate_slack(list(flags), np.where(flags, weight, 0.))
+        min_tp, max_tp = _olf_rules.target_p_range(df_batt["min_p"], df_batt["max_p"], min_target_p, max_target_p)
+        model.set_storage_p_limits(min_tp, max_tp)

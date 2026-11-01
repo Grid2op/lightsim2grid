@@ -16,6 +16,7 @@ elements' buses), then generators, loads, lines, transformers, shunts, SVCs,
 HVDC lines, storage units, and finally slack assignment.
 """
 
+import warnings
 from typing import Dict, Iterable, Optional, Union
 
 import numpy as np
@@ -27,6 +28,10 @@ from ...lightsim2grid_cpp import LSGrid  # type: ignore
 from ._aux_common import _aux_ensure_net_pu, _aux_get_operational_limits_current
 from ._aux_add_buses import _aux_add_buses
 from ._aux_add_generators import _aux_add_generators
+from . import _olf_rules
+from ._olf_rules import OlfLoadingParameters
+from ._olf_outer_loops import set_olf_outer_loops
+from ._aux_add_slack import _aux_olf_slack_participation
 from ._aux_add_loads import _aux_add_loads
 from ._aux_add_lines import _aux_add_lines
 from ._aux_add_trafos import _aux_add_trafos
@@ -35,8 +40,10 @@ from ._aux_add_svc import _aux_add_svc
 from ._aux_add_hvdc import _aux_add_hvdc
 from ._aux_add_storage import _aux_add_storage
 from ._aux_add_slack import _aux_add_slack
-from ._olf_params import _olf_realistic_voltage_range
 from lightsim2grid.network._default_algorithms import use_fastest_default_algorithms
+
+# tells "not given" apart from an explicit None (which 1.2.0 read as "check nothing")
+_NOT_GIVEN = object()
 
 
 def init(net : pypo.network.Network,
@@ -60,7 +67,9 @@ def init(net : pypo.network.Network,
          can_participate_slack=None,
          can_participate_slack_overshoot=None,
          hvdc_ac_emulation_frozen=None,
-         remote_voltage_control_vm_range="olf",
+         olf_rules=False,
+         olf_parameters=None,
+         remote_voltage_control_vm_range=_NOT_GIVEN,  # deprecated in 1.3.0, ignored
          ) -> LSGrid:
     """
     This function is available under the `init_from_pypowsybl` in lightsim2grid
@@ -272,19 +281,49 @@ def init(net : pypo.network.Network,
         (default) flags nothing. An unknown id raises.
     :type hvdc_ac_emulation_frozen: None or Iterable[str]
 
-    :param remote_voltage_control_vm_range: The range of voltage (pu of its own bus' nominal
-        voltage) a generator regulating a REMOTE bus may sit at, for the physical checks
-        (``LSGrid.set_remote_voltage_control_vm_range``): a remote controller outside it is
-        reported as ``LOW_VOLTAGE_REMOTE_CONTROL`` / ``HIGH_VOLTAGE_REMOTE_CONTROL``, as
-        OpenLoadFlow's robust remote voltage control would switch it to PQ. ``"olf"``
-        (default) uses the default ``minRealisticVoltage`` / ``maxRealisticVoltage`` of the
-        OpenLoadFlow pypowsybl ships (they differ between versions) with its margin, a ``(min_vm_pu, max_vm_pu)`` pair is used as is (``NaN`` switching a
-        side off), ``None`` checks nothing. Never read by a powerflow.
-    :type remote_voltage_control_vm_range: str, None or tuple(float, float)
+    :param olf_rules: Apply OpenLoadFlow's network-loading rules (``_olf_rules``): a
+        generator OpenLoadFlow would not let regulate a voltage (not started, too small a
+        reactive range, an unreachable regulated bus, an implausible target, inconsistent
+        controls on its bus) is added without voltage control, and a non-regulating
+        generator injects its target Q clamped into its reactive limits at its target P. Every
+        generator and battery OpenLoadFlow's distributed slack would share on is flagged "can
+        participate in the slack" with OpenLoadFlow's key, and its active power limits are its
+        ``activePowerControl`` target range: what the ``DistributedSlack`` outer loop of the
+        ``NROuter_*`` algorithms reads. A line or transformer with both ends on the same bus
+        is disconnected, as OpenLoadFlow discards it. ``True`` uses the default parameters (``OlfLoadingParameters()``), an
+        ``OlfLoadingParameters`` is used as is. ``False`` (default) reads the network as it
+        is written.
+    :type olf_rules: bool or OlfLoadingParameters
+
+    :param olf_parameters: The OpenLoadFlow parameters whose outer loops the ``NROuter_*``
+        algorithms run on this grid: the grid's list of outer loops, their order and their
+        parameters, and the driver's, are OpenLoadFlow's for them (see
+        :func:`lightsim2grid.network.olf_outer_loops`). ``None`` (default) uses the defaults
+        of the installed pypowsybl, which differ between its builds.
+    :type olf_parameters: None or pypowsybl.loadflow.Parameters
+
+    :param remote_voltage_control_vm_range: **Deprecated, ignored** (it emits a
+        ``DeprecationWarning``). A generator regulating a remote bus is now checked against the
+        realistic voltage range of the ``ReactiveLimits`` outer loop, which ``olf_parameters``
+        sets (``OuterLoopDriverParams.min_realistic_voltage`` / ``max_realistic_voltage``).
 
     :return: The properly initialized network.
     :rtype: :class:`LSGrid`
     """
+    if remote_voltage_control_vm_range is not _NOT_GIVEN:
+        warnings.warn("init_from_pypowsybl: `remote_voltage_control_vm_range` is deprecated and ignored. "
+                      "A generator regulating a remote bus is checked against the realistic voltage range "
+                      "of the ReactiveLimits outer loop, which `olf_parameters` sets "
+                      "(OuterLoopDriverParams.min_realistic_voltage / max_realistic_voltage).",
+                      DeprecationWarning,
+                      stacklevel=2)
+    if olf_rules is True:
+        olf_rules = OlfLoadingParameters()
+    elif olf_rules is False:
+        olf_rules = None
+    elif not isinstance(olf_rules, OlfLoadingParameters):
+        raise TypeError(f"olf_rules: expected a bool or an OlfLoadingParameters, got {type(olf_rules).__name__}")
+
     model = LSGrid()
     if hasattr(net, "_nominal_apparent_power"):
         sn_mva_used = getattr(net, "_nominal_apparent_power")
@@ -292,13 +331,6 @@ def init(net : pypo.network.Network,
         sn_mva_used = float(sn_mva)
     model.set_sn_mva(sn_mva_used)
     model.set_init_vm_pu(float(init_vm_pu))
-    if isinstance(remote_voltage_control_vm_range, str):
-        if remote_voltage_control_vm_range != "olf":
-            raise ValueError(f"remote_voltage_control_vm_range: unknown value "
-                             f"{remote_voltage_control_vm_range!r}, expected \"olf\", None or a pair")
-        remote_voltage_control_vm_range = _olf_realistic_voltage_range()
-    if remote_voltage_control_vm_range is not None:
-        model.set_remote_voltage_control_vm_range(*(float(el) for el in remote_voltage_control_vm_range))
     if keep_half_open_lines:
         # allow branches connected on a single terminal (the open end is Kron-reduced
         # in the C++ model); a one-sided disconnection is no longer mirrored to the
@@ -322,7 +354,8 @@ def init(net : pypo.network.Network,
         svc_ids = net.get_static_var_compensators(attributes=["connected"]).index.append(
             net.get_vsc_converter_stations(attributes=["connected"]).index)
     df_gen, gen_sub = _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                                          can_be_pv=can_be_pv, can_be_pv_other_ids=svc_ids)
+                                          can_be_pv=can_be_pv, can_be_pv_other_ids=svc_ids,
+                                          olf_rules=olf_rules)
 
     # loads
     df_load, load_sub = _aux_add_loads(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, df_dl)
@@ -338,30 +371,39 @@ def init(net : pypo.network.Network,
     df_line, lor_sub, lex_sub = _aux_add_lines(
         model, net, net_pu, sort_index, voltage_levels, bus_df, first_bus_per_vl,
         df_dl, ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_line_ids,
+        olf_rules=olf_rules,
     )
 
     # trafos
     df_trafo, tor_sub, tex_sub = _aux_add_trafos(
         model, net, net_pu, sort_index, voltage_levels, bus_df, first_bus_per_vl,
         ol_current, keep_half_open_lines, fuse_zero_impedance_branches, fused_trafo_ids,
+        olf_rules=olf_rules,
     )
 
+    # OpenLoadFlow's voltage-control loading rules, over every kind of unit at once
+    olf_vc = _olf_rules.voltage_controllers(net, olf_rules) if olf_rules is not None else None
+
     # shunts
-    df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
+    df_shunt, sh_sub = _aux_add_shunts(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+                                       olf_rules=olf_rules)
 
     # SVCs
     df_svc = _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, sn_mva_used,
-                          can_be_pv=can_be_pv)
+                          can_be_pv=can_be_pv, olf_rules=olf_rules, olf_vc=olf_vc)
 
     # HVDC lines
     df_dc, hvdc_sub_from_id, hvdc_sub_to_id = _aux_add_hvdc(
         model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
         can_be_pv=can_be_pv,
         ac_emulation_frozen=hvdc_ac_emulation_frozen,
+        olf_vc=olf_vc,
+        olf_rules=olf_rules,
     )
 
     # storage units
-    df_batt, batt_sub = _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl)
+    df_batt, batt_sub = _aux_add_storage(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
+                                         olf_vc=olf_vc, olf_rules=olf_rules)
 
     # slack bus(es)
     gen_slack_ids_int = _aux_add_slack(model, net, df_gen, gen_slack_id, slack_bus_id,
@@ -369,6 +411,9 @@ def init(net : pypo.network.Network,
                                        battery_active_power_control=battery_active_power_control,
                                        can_participate_slack=can_participate_slack,
                                        can_participate_slack_overshoot=can_participate_slack_overshoot)
+    if olf_rules is not None:
+        # who OpenLoadFlow's DistributedSlack outer loop shares the slack on, and within what
+        _aux_olf_slack_participation(model, net, df_gen, df_batt, olf_rules, battery_active_power_control)
 
     # TODO checks
     # no 3windings trafo and other exotic stuff
@@ -411,6 +456,7 @@ def init(net : pypo.network.Network,
     model.check_grid()
     # KLU where this build has it (see use_fastest_default_algorithms)
     use_fastest_default_algorithms(model)
+    set_olf_outer_loops(model, olf_parameters)
 
     if not return_sub_id:
         return model

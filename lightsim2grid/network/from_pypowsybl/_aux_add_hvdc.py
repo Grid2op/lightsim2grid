@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from . import _olf_rules
 from ._aux_common import _aux_get_bus, _aux_reactive_limits_at_target_p
 
 
@@ -38,7 +39,7 @@ def _hvdc_pmax_per_direction(net, hvdc_ids, max_p_mw):
 
 
 def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl, can_be_pv=None,
-                  ac_emulation_frozen=None):
+                  ac_emulation_frozen=None, olf_vc=None, olf_rules=None):
     """Add every HVDC line of ``net`` (VSC / LCC converter stations, possibly
     carrying the angle-droop ("AC emulation") extension) to ``model``. Returns
     ``(df_dc, hvdc_sub_from_id, hvdc_sub_to_id)``, used by the final
@@ -50,7 +51,13 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
 
     The hvdc line ids ``ac_emulation_frozen`` holds (what `bake_outer_loops` froze at their
     AC-emulation limit) are flagged with ``LSGrid.set_hvdc_ac_emulation_frozen``, their droop
-    parameters read off the extension although it is disabled."""
+    parameters read off the extension although it is disabled.
+
+    ``olf_vc`` (:func:`._olf_rules.voltage_controllers`, with ``olf_rules``) says which
+    voltage-regulating stations OpenLoadFlow lets regulate: the others inject their target Q.
+    With ``olf_rules``, a station's reactive limits are its capability curve at the active
+    power OpenLoadFlow gives it (losses included, :func:`._olf_rules.vsc_station_target_p`),
+    not at the line's set-point."""
     if sort_index:
         df_dc = net.get_hvdc_lines().sort_index()
     else:
@@ -78,6 +85,8 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         loss_factor = np.where(np.isfinite(loss_factor), loss_factor, 0.)
         vreg_on = df_side["voltage_regulator_on"].values.astype(bool) if nb_dc else np.zeros(0, dtype=bool)
         vreg_on = vreg_on & ~is_lcc  # lcc never regulates (NaN -> random bool otherwise)
+        if olf_vc is not None:
+            vreg_on = vreg_on & ~olf_vc["discarded"].reindex(df_side.index).fillna(False).to_numpy(bool)
         vl_kv = voltage_levels.loc[df_side["voltage_level_id"].values]["nominal_v"].values
         vset_pu = df_side["target_v"].values / vl_kv
         vset_pu = np.where(np.isfinite(vset_pu), vset_pu, 1.0)
@@ -85,6 +94,12 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         qset = np.where(np.isfinite(qset), qset, 0.)
         # as for the generators: the curve at the target P for a CURVE-kind station
         min_q, max_q = _aux_reactive_limits_at_target_p(df_side)
+        if olf_rules is not None and nb_dc:
+            p_station = _olf_rules.vsc_station_target_p(net).reindex(df_side.index).fillna(0.).to_numpy(float)
+            min_q, max_q = _olf_rules.curve_limits_at_p(net, df_side.index, p_station, min_q, max_q)
+            # malformed curve data can give min_q > max_q at the target P (as for the generators)
+            swapped = np.isfinite(min_q) & np.isfinite(max_q) & (min_q > max_q)
+            min_q[swapped], max_q[swapped] = max_q[swapped], min_q[swapped].copy()
         min_q = np.where(np.isfinite(min_q), min_q, -_max_hvdc_mva)
         max_q = np.where(np.isfinite(max_q), max_q, _max_hvdc_mva)
         power_factor = df_side["power_factor"].values
@@ -171,6 +186,14 @@ def _aux_add_hvdc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_
         elif ex_disc:
             model.deactivate_dcline_side2(hvdc_id)
     model.set_dcline_names(df_dc.index)
+    if olf_rules is not None and nb_dc and len(df_vsc):
+        # a VSC station shares its bus' reactive power by its widest range over its curve,
+        # as a generator (OpenLoadFlow's reactiveRangeCheckMode MAX)
+        box = df_vsc[["reactive_limits_kind", "min_q", "max_q"]]
+        rng = _olf_rules.generator_max_reactive_range(net, df_vsc.index, box=box)
+        model.set_station_reactive_range_max(
+            rng.reindex(df_dc["converter_station1_id"].values).to_numpy(float),
+            rng.reindex(df_dc["converter_station2_id"].values).to_numpy(float))
     if frozen.any():
         model.set_hvdc_ac_emulation_frozen([bool(el) for el in frozen])
 

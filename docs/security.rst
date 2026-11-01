@@ -35,6 +35,12 @@ The short version
    * - Building a grid from a source file (pandapower, pypowsybl, matpower,
        powermodels — including through a grid2op environment)
      - **Validated on load.** See below.
+   * - Calling a method whose name ends in ``_internal``
+       (``get_Ybus_solver_internal``, ``get_V_solver_internal``, an
+       algorithm's ``get_V_internal``, ...)
+     - **Your own responsibility.** These hand out the solver's memory
+       without a copy, and nothing checks how you use it: misused, they
+       **can corrupt memory**. See :ref:`internal_methods`.
 
 Pickle, plugins and grid2op environments are trusted-input-only by design
 -------------------------------------------------------------------------
@@ -63,13 +69,17 @@ The binary format is the least dangerous channel
 
 The fast binary format (:ref:`binary-serialization`) was designed as an
 additive alternative to pickle. Loading a binary file never executes code from
-the file, and it is validated at two levels:
+the file, and it is validated at three levels:
 
 * **Byte level.** The reader checks the file's magic number, format version and
   object type, validates every length field against the actual file size
   *before* allocating (so a corrupted size cannot trigger a huge allocation),
   and requires the file to be fully consumed. Malformed, truncated or corrupted
   bytes raise ``RuntimeError``.
+* **Table level.** The step tables of the tap changers and the section tables of
+  the shunts are read by position, so each must hold the position (and, for a
+  shunt, the fewest sections a control may leave) it is restored at; one that
+  does not raises ``RuntimeError``.
 * **Semantic level.** After the bytes are read back into a grid, ``check_grid()``
   runs automatically (see below): a file that is byte-wise well-formed but
   *inconsistent* — for example one with an out-of-range bus id — raises a clean
@@ -82,8 +92,9 @@ the file, and it is validated at two levels:
 :py:meth:`lightsim2grid.network.LSGrid.check_grid` verifies that a grid
 is internally consistent and safe to run a powerflow on. It checks that every
 index the grid carries is in range — the bus id of every element, the substation
-id and the position in the topology vector (both optional), and the generator and
-SVC slack / remote-regulated bus references. The topology-vector positions are
+id and the position in the topology vector (both optional), the generator and
+SVC slack / remote-regulated bus references, and the bus a transformer's ratio tap
+changer or a shunt's sections regulate. The topology-vector positions are
 additionally required to form a permutation of ``[0, dim_topo)`` over exactly the
 elements :py:meth:`lightsim2grid.network.LSGrid.update_topo` drives (loads, generators, storage units,
 powerlines and transformers): that is what makes them safe to index the
@@ -159,7 +170,8 @@ The memory-safety invariant: raise, never corrupt
 
 Underneath all of the above is a single design rule the C++ core holds itself
 to: **a** :py:class:`~lightsim2grid.network.LSGrid` **must never corrupt process
-memory.** Whatever it is handed — a malformed pickle or binary file, a grid
+memory** — through any method but the ``_internal`` ones, which opt out of it
+(:ref:`internal_methods`). Whatever it is handed — a malformed pickle or binary file, a grid
 loaded from a source file, or a perfectly ordinary Python API call made in the
 wrong order or with an out-of-range id — the worst it is allowed to do is raise
 a clean Python exception (``IndexError`` / ``RuntimeError`` / ``ValueError`` /
@@ -181,6 +193,44 @@ you that whatever you do accept, a bug in it surfaces as an exception you can
 catch, not as silent heap corruption. If you ever observe a genuine crash
 (segfault, ``malloc``/``free`` abort, ASan/UBSan report) instead of an
 exception, that is a bug in lightsim2grid — please report it.
+
+.. _internal_methods:
+
+Methods ending in ``_internal``: your own responsibility
+--------------------------------------------------------
+
+The invariant above has one deliberate exception. A method whose name ends in
+``_internal`` returns a **view, without any copy, of a buffer the solver owns**:
+``get_Ybus_solver_internal``, ``get_V_solver_internal``, ``get_pv_solver_internal``
+and the other ``*_solver_internal`` methods of
+:py:class:`~lightsim2grid.network.LSGrid` (the Jacobian's ``get_J_solver_internal``
+among them), and the ``get_V_internal`` / ``get_Va_internal`` / ``get_Vm_internal`` /
+``get_J_internal`` of an algorithm. Each is the twin of the
+method of the same name without ``_internal``, which returns a copy and is safe.
+The twin exists for code that measured the cost of that copy and cannot afford it.
+
+The solver rebuilds those buffers on later calls — a powerflow after a change of
+topology, a reset of the solver, a change of algorithm, among others — and frees
+the old ones. A view does not know it: read afterwards, it reads freed memory.
+
+**Using these methods correctly is entirely your responsibility, and using them
+incorrectly can corrupt memory.** lightsim2grid does not detect a stale view, and
+the clean exception the invariant above promises is not available here. What you
+get instead is undefined behaviour: stale values, garbage, a crash, or corrupted
+memory, in the process or in what you compute from the view — for example by
+handing it to a function that reads it later, or by making it writeable and
+writing into it. The views are read only and keep their grid (or algorithm)
+alive, which narrows the risk but does not remove it.
+
+If you use them:
+
+* read the view right after the call that produced it, and before any other call
+  on the grid or the algorithm it comes from;
+* copy (``.copy()``) whatever must outlive that;
+* never store it, or hand it to code that may keep it;
+* never make it writeable.
+
+When in doubt, use the method without ``_internal``.
 
 A note for solver-plugin authors
 ---------------------------------
