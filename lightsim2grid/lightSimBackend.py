@@ -131,7 +131,8 @@ class LightSimBackend(Backend):
         #: send a "divergence error"
         self.max_it = max_iter
 
-        #: ``float`` tolerance of the solver
+        #: ``float`` tolerance of the solver, in MVA (not in per unit): it is divided
+        #: by the grid's ``sn_mva`` before reaching the solver
         self.tol = tol  # tolerance for the solver
 
         algo_type = self._aux_merge_solver_type_algo_type(solver_type, algo_type)
@@ -785,7 +786,8 @@ class LightSimBackend(Backend):
     def set_tol(self, new_tol: float) -> None:
         """
         Set the tolerance of the powerflow. This means that the powerflow will stop when the Kirchhoff's Circuit Laws
-        are met up to a tolerance of "new_tol".
+        are met up to a tolerance of "new_tol", **in MVA** (not in per unit): no bus may have an active or reactive
+        mismatch larger than "new_tol" MW / MVAr.
 
         Decrease the tolerance might speed up the computation of the powerflow but will decrease the accuracy. We do
         not recommend to modify the default value of 1e-8.
@@ -793,7 +795,7 @@ class LightSimBackend(Backend):
         Parameters
         ----------
         new_tol: ``float``
-            The new tolerance to use (should be a float > 0)
+            The new tolerance to use, in MVA (should be a float > 0)
 
         Notes
         -------

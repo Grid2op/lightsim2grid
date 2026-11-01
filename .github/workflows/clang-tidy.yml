@@ -26,11 +26,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          # eigen (transitive include of the core headers), Catch2 (needed to
-          # configure src/tests, even though test files are not analyzed) and
-          # SuiteSparse (KLU headers)
-          submodules: true
+      # eigen (transitive include of the core headers), Catch2 (needed to
+      # configure src/tests, even though test files are not analyzed) and
+      # SuiteSparse (KLU headers)
+      - name: Fetch submodules (restored from the cache when possible)
+        uses: ./.github/actions/fetch-deps
 
       - name: Install clang-tidy
         run: |

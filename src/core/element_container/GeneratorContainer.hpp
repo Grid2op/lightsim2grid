@@ -174,8 +174,20 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
                                          solver_control, "GeneratorContainer::rejoin_slackbus_if_able");
         }
         void remove_all_slackbus(){ slack_.remove_all(); }
+        /// every generator out of the slack, still flagged "can participate" (see SlackParticipation::leave_all)
+        void leave_all_slackbus(){ slack_.leave_all(); }
 
-        // returns only the gen_id with the highest p that is connected to this bus !
+        /// add, per bus, the active power (MW, generator convention) the connected generators
+        /// produce: what LSGrid::assign_slack_to_most_connected shares the slack by
+        void slack_p_per_bus(std::vector<real_type> & res) const {
+            for(int gen_id = 0; gen_id < nb(); ++gen_id){
+                if(status_[gen_id]) res[bus_id_(gen_id).cast_int()] += target_p_mw_(gen_id);
+            }
+        }
+
+        /// put every connected generator of `slack_bus_id` producing power in the slack, weighted
+        /// by its share of `gen_p_per_bus` (see slack_p_per_bus); returns the gen_id of the
+        /// connected one with the highest p (-1 if none is connected there)
         int assign_slack_bus(int slack_bus_id,
                              const std::vector<real_type> & gen_p_per_bus,
                              DualAlgoControl & solver_control){
@@ -193,8 +205,6 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
                     max_p = p_mw;
                 }
             }
-            // TODO DEBUG MODE
-            if(res_gen_id == -1) throw std::runtime_error("GeneratorContainer::assign_slack_bus No generator connected to the desired buses");
             return res_gen_id;
         }
 
@@ -208,8 +218,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
          */
         void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res,
                                              const SolverBusIdVect & id_grid_to_solver,
-                                             const std::vector<bool> * gen_off) const {
-            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name());
+                                             const std::vector<bool> * gen_off,
+                                             bool can_participate = false) const {
+            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name(),
+                                  can_participate);
         }
         /// append the grid buses of the flagged generators not in `buses` yet
         void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
@@ -217,9 +229,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         /** distribute the active mismatch of the slack buses onto the participating generators **/
         void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,
                          const SolverBusIdVect & id_grid_to_solver,
-                         const Eigen::Ref<const RealVect> & bus_raw_total){
+                         const Eigen::Ref<const RealVect> & bus_raw_total,
+                         bool can_participate = false){
             slack_.split(res_p_, 1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
-                         "GeneratorContainer::set_p_slack");
+                         "GeneratorContainer::set_p_slack", can_participate);
         }
         /**
          * set_p_slack, for a state the caller solved itself and keeps outside this

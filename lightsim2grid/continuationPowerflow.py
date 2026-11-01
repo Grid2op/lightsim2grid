@@ -20,7 +20,7 @@ __all__ = ["ContinuationPowerFlow", "CPFResult", "run_cpf", "plot_pv_curve"]
 
 import numpy as np
 
-from .lightsim2grid_cpp import ContinuationSweepCPP
+from .lightsim2grid_cpp import ContinuationSweepCPP, AlgorithmType
 
 
 class CPFResult:
@@ -151,8 +151,15 @@ class ContinuationPowerFlow:
     """
 
     def __init__(self, grid, algorithm=None):
+        """`algorithm`: the Newton-Raphson algorithm of the correctors; by default the grid's,
+        or the plain Newton-Raphson (``NR_KLU`` if available, ``NR_SparseLU`` otherwise)
+        when the grid's runs outer loops (``NROuter_*``), which a continuation does not
+        support (between two correctors they change the system it continues)."""
         self._grid = grid
         self._cpp = ContinuationSweepCPP(grid)
+        if algorithm is None and grid.get_algo().supports_outer_loops() and len(grid.get_outer_loops()):
+            available = self._cpp.available_default_algorithms()
+            algorithm = AlgorithmType.NR_KLU if AlgorithmType.NR_KLU in available else AlgorithmType.NR_SparseLU
         if algorithm is not None:
             self._cpp.change_algorithm(algorithm)
 
@@ -278,7 +285,8 @@ class ContinuationPowerFlow:
         v_init: ``np.ndarray``, optional
             Starting voltage, one entry per grid bus. Defaults to a flat 1.04 pu start.
         max_iter, tol:
-            Passed to every corrector's Newton-Raphson.
+            Passed to every corrector's Newton-Raphson. ``tol`` is in MVA (not in per
+            unit), as for :func:`lightsim2grid.network.LSGrid.ac_pf`.
         """
         target = self._build_target(loading_factor, load_steering, gen_steering,
                                     scale_q, direction)

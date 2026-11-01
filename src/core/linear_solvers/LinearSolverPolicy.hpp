@@ -9,9 +9,12 @@
 #ifndef LINEAR_SOLVER_POLICY_H
 #define LINEAR_SOLVER_POLICY_H
 
+#include <utility>
+
 #include "Utils.hpp"
 #include "CustTimer.hpp"
 #include "LinearSolverStats.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 
 namespace ls2g {
 
@@ -29,6 +32,26 @@ pointer/reference), so plain method-hiding is correct here and avoids an unneces
 vtable / indirect-call overhead that a virtual interface would add to every single
 solver call for no actual polymorphism ever exercised.
 **/
+namespace detail {
+    // a solver that can reject a refactorization on its pivot growth gets the threshold,
+    // any other one is left as it is
+    template<class T>
+    auto set_rgrowth_threshold_impl(T & solver, real_type val, int) -> decltype(solver.set_rgrowth_threshold(val)) {
+        return solver.set_rgrowth_threshold(val);
+    }
+    template<class T>
+    void set_rgrowth_threshold_impl(T &, real_type, long) {}
+
+    // overload on the extra int/long argument: the first is chosen (as int is the exact match)
+    // when the solver has set_pivot_growth_guard, the second is the no-op for the others
+    template<class S>
+    auto set_pivot_growth_guard_impl(S & solver, bool val, int) noexcept -> decltype(solver.set_pivot_growth_guard(val), void()) {
+        solver.set_pivot_growth_guard(val);
+    }
+    template<class S>
+    void set_pivot_growth_guard_impl(S &, bool, long) noexcept {}
+}  // namespace detail
+
 template<class LinearSolver>
 class LinearSolverPolicy
 {
@@ -98,8 +121,40 @@ class LinearSolverPolicy
         // RefactorRetryLinearSolver is this policy with the switch on from
         // construction; the batch algorithms turn it on for whatever algorithm they
         // run when they mask buses or switch PV / PQ (BaseAlgo::set_refactor_fallback).
-        void set_refactor_fallback(bool val) noexcept { refactor_fallback_ = val; }
+        //
+        // With it on, a refactorize that went through but with pivots now too small to
+        // trust (a solver that can tell, see KLULinearSolver::set_rgrowth_threshold)
+        // takes the same fallback: OpenLoadFlow's threshold (powsybl's
+        // DEFAULT_RGROWTH_THRESHOLD) on the reciprocal pivot growth. Off, nothing is
+        // checked, so a plain algorithm's results are unchanged.
+        void set_refactor_fallback(bool val) noexcept {
+            refactor_fallback_ = val;
+            detail::set_rgrowth_threshold_impl(inner_, val ? RGROWTH_THRESHOLD : 0., 0);
+            _apply_pivot_growth_guard();
+        }
+
+        // Asks a solver that can tell a poor refactorization from a failed one (KLU) to do
+        // so, for the algorithm that knows its Jacobian needs it (bordered voltage-control
+        // rows). Only effective with the fallback on: with nothing to catch the failure, it
+        // would turn a poor-but-working solve into an error. A no-op for the other solvers.
+        void set_pivot_growth_guard(bool val) noexcept {
+            guard_wanted_ = val;
+            _apply_pivot_growth_guard();
+        }
         bool refactor_fallback() const noexcept { return refactor_fallback_; }
+
+        // the inner solver's (see detail::orders_with_constraints_by_default)
+        static constexpr bool ORDERS_WITH_CONSTRAINTS_BY_DEFAULT =
+            detail::orders_with_constraints_by_default<LinearSolver>::value;
+
+        // Forwarded to a solver that orders with constraints (see OrderingConstraints), and
+        // only declared for one, so that detail::set_ordering_constraints_impl leaves the
+        // others alone without building any constraint.
+        template<class LS = LinearSolver>
+        auto set_ordering_constraints(OrderingConstraints constraints)
+            -> decltype(std::declval<LS &>().set_ordering_constraints(std::move(constraints)), void()) {
+            inner_.set_ordering_constraints(std::move(constraints));
+        }
 
         ErrorType solve(Eigen::Ref<RealVect> b) {
             ++stats_.nb_solve;
@@ -125,6 +180,10 @@ class LinearSolverPolicy
 
         const LinearSolverStats & get_linear_solver_stats() const noexcept { return stats_; }
 
+        /// the reciprocal pivot growth below which a refactorization is not trusted when
+        /// the fallback is on (powsybl-core's SparseLUDecomposition.DEFAULT_RGROWTH_THRESHOLD)
+        static constexpr real_type RGROWTH_THRESHOLD = 1e-10;
+
         // Called from the owning algorithm's reset_timer() (itself invoked at the start
         // of every compute_pf/compute_pf_dc): zeroes only the timer_* fields, so
         // get_timers_jacobian() keeps reporting "last call only" like it always has.
@@ -141,6 +200,10 @@ class LinearSolverPolicy
         LinearSolver inner_;
         LinearSolverStats stats_;
         bool refactor_fallback_ = false;
+        bool guard_wanted_      = false;
+        void _apply_pivot_growth_guard() noexcept {
+            detail::set_pivot_growth_guard_impl(inner_, guard_wanted_ && refactor_fallback_, 0);
+        }
 
     private:
         // no copy allowed (matches the concrete solver classes' own convention)

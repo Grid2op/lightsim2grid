@@ -190,11 +190,11 @@ class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
         // algorithms' (one row per point, one column per powerline then trafo).
         Eigen::Ref<RealMat> compute_flows() {
             compute_flows_from_Vs();
-            return _amps_flows;
+            return _amps_flows.raw();
         }
         Eigen::Ref<RealMat> compute_power_flows() {
             compute_flows_from_Vs(false);
-            return _active_power_flows;
+            return _active_power_flows.raw();
         }
 
         // timers
@@ -246,7 +246,7 @@ class LS2G_API ContinuationSweep final : public BaseBatchSolverSynch
         // converges immediately it never enters the NR loop and so never
         // refactorizes, which is why the refactorization is asked for explicitly.
         bool _restore_at(const Eigen::Ref<const CplxVect> & V_last, real_type lam_last,
-                         int max_iter, real_type tol);
+                         int max_iter, real_type tol_pu);
 
         // MATPOWER's predictor-error step control (cpf.adapt_step):
         //   err        = ||[theta(pv,pq); |V|(pq)]_corrected - [..]_predicted||_inf

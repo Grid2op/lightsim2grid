@@ -1,0 +1,105 @@
+# Copyright (c) 2026, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+name: Fetch submodules (cached)
+description: >
+  Fetches the vendored dependencies (the eigen, SuiteSparse and Catch2 submodules) for CI, from a
+  cache of their working trees when there is one, and from their upstream otherwise, with retries.
+  CI only: .gitmodules is unchanged, users keep cloning the submodules from their upstream.
+
+# WHY THIS EXISTS
+# Every job used to run `actions/checkout` with `submodules: true`: a fresh clone of three
+# repositories on two hosts (gitlab.com for eigen, github.com for the others), per job, with no
+# cache and no retry. A single dropped connection, or an outage of one host, failed the job before
+# any code was built -- and on a PR with ~60 jobs, some of them always did.
+#
+# The three submodules are pinned by commit, so their content is exactly known. The cache key is
+# those three commits (plus the runner's OS and architecture, whose line endings and file modes the
+# working trees carry): it can never hand back stale content, and a submodule bump is a new key.
+#
+# On a hit, `git submodule update` below finds every pinned commit in the restored
+# `.git/modules` and makes no network call at all. On a miss it fetches (with retries) and the
+# result is saved for the next job. Both paths run the same command, so a restored cache that
+# turned out to be incomplete is repaired rather than trusted.
+#
+# Use it right after `actions/checkout` (which must NOT ask for `submodules: true` any more).
+
+runs:
+  using: composite
+  steps:
+    - name: Trust the workspace
+      shell: bash
+      # In a container job (the manylinux wheels) the workspace is owned by the runner's user while
+      # the container runs as root, and git then refuses to touch it ("dubious ownership").
+      # actions/checkout only excepts it for its own steps, which was enough while it was the only
+      # thing running git here; the steps below run git too.
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+    - name: Key of the submodule cache
+      id: key
+      shell: bash
+      run: |
+        set -eu
+        # the three commits the superproject pins (gitlinks), as `git ls-tree` prints them
+        pins=$(git ls-tree HEAD eigen SuiteSparse Catch2)
+        if [ "$(printf '%s\n' "$pins" | wc -l | tr -d ' ')" != "3" ]; then
+          echo "::error::expected eigen, SuiteSparse and Catch2 to be pinned submodules, got: $pins"
+          exit 1
+        fi
+        digest=$(printf '%s' "$pins" | git hash-object --stdin | cut -c1-20)
+        echo "key=submodules-${{ runner.os }}-${{ runner.arch }}-${digest}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the submodule cache
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          eigen
+          SuiteSparse
+          Catch2
+          .git/modules
+        key: ${{ steps.key.outputs.key }}
+
+    - name: Fetch the submodules
+      shell: bash
+      run: |
+        set -u
+        echo "submodule cache: ${{ steps.cache.outputs.cache-hit == 'true' && 'hit' || 'miss' }} (${{ steps.key.outputs.key }})"
+        for sm in eigen SuiteSparse Catch2; do
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if git submodule update --init --force --depth=1 -- "$sm"; then
+              ok=1
+              break
+            fi
+            echo "::warning::fetching the submodule $sm failed (attempt $attempt of 5)"
+            # whatever the failed attempt left behind (an empty clone, a half-written pack)
+            # would make the next one fail the same way
+            rm -rf ".git/modules/$sm" "$sm"
+            sleep $((attempt * 20))
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::could not fetch the submodule $sm after 5 attempts"
+            exit 1
+          fi
+        done
+
+    - name: Save the submodule cache
+      # right after the fetch, not at the end of the job: the build must not get a chance to
+      # write into the trees that are saved. Many jobs missing at once all try to save the same
+      # key and all but one are refused, which is fine.
+      if: steps.cache.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: |
+          eigen
+          SuiteSparse
+          Catch2
+          .git/modules
+        key: ${{ steps.key.outputs.key }}

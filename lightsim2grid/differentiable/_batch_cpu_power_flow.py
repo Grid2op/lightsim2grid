@@ -147,6 +147,7 @@ class BatchCPUPowerFlow:
         self.n_load = self._load_bus.shape[0]
         self.n_gen = self._gen_bus.shape[0]
         self.n_sgen = self._sgen_bus.shape[0]
+        self.n_shunt = np.asarray(grid.get_shunts().get_bus_id()).shape[0]
 
         lines, trafos = grid.get_lines(), grid.get_trafos()
         self.n_line = np.asarray(lines.get_bus_id_side_1()).shape[0]
@@ -176,6 +177,8 @@ class BatchCPUPowerFlow:
         self._line_off = None
         self._trafo_off = None
         self._gen_off = None
+        self._shunt_off = None
+        self._load_off = None
         self._gen_v_set = False
         self._last_connected = None      # (n_scen, n_branch) bool, for compute_flows
         self._converged = None
@@ -211,7 +214,8 @@ class BatchCPUPowerFlow:
         return self.forward(*args, **kwargs)
 
     def forward(self, load_p=None, load_q=None, gen_p=None, sgen_p=None, gen_v=None,
-                line_status=None, trafo_status=None, gen_status=None):
+                line_status=None, trafo_status=None, gen_status=None,
+                shunt_status=None, load_status=None):
         """Solve one scenario per row; returns complex ``V`` of shape
         ``(n_scenarios, n_bus)`` in per unit, in grid bus numbering (the same
         numbering the grid's own accessors use).
@@ -224,13 +228,18 @@ class BatchCPUPowerFlow:
         line_status    : (n_scen, n_line)  bool, True = connected
         trafo_status   : (n_scen, n_trafo) bool, True = connected
         gen_status     : (n_scen, n_gen)   bool, True = connected
+        shunt_status   : (n_scen, n_shunt) bool, True = connected
+        load_status    : (n_scen, n_load)  bool, True = connected; a disconnected
+                                           load's power leaves the row, so its
+                                           load_p / load_q gradient there is 0
 
         ``None`` means "whatever the grid itself says", in every row. At least one
         input must be given: it is what fixes the number of scenarios.
         """
         n_scen = self._infer_n_scen(load_p=load_p, load_q=load_q, gen_p=gen_p, sgen_p=sgen_p,
                                     gen_v=gen_v, line_status=line_status,
-                                    trafo_status=trafo_status, gen_status=gen_status)
+                                    trafo_status=trafo_status, gen_status=gen_status,
+                                    shunt_status=shunt_status, load_status=load_status)
 
         # The row count is locked by the first setter of a batch, so a different one
         # means starting the batch over. So does dropping gen_v: unlike the three
@@ -241,6 +250,7 @@ class BatchCPUPowerFlow:
             self._sweep.clear()
             self._reconfigure()
             self._line_off = self._trafo_off = self._gen_off = None
+            self._shunt_off = self._load_off = None
             self._gen_v_set = False
             self._n_scen = n_scen
 
@@ -252,7 +262,8 @@ class BatchCPUPowerFlow:
         if gen_v is not None:
             gen_v = self._as_input(gen_v, self.n_gen, n_scen, "gen_v")
 
-        self._apply_status(line_status, trafo_status, gen_status, n_scen)
+        self._apply_status(line_status, trafo_status, gen_status, n_scen,
+                           shunt_status=shunt_status, load_status=load_status)
         if gen_v is not None:
             self._gen_v_set = True
 
@@ -320,7 +331,8 @@ class BatchCPUPowerFlow:
         if n is None:
             raise ValueError(
                 "BatchCPUPowerFlow needs at least one input (load_p, load_q, gen_p, "
-                "sgen_p, gen_v, line_status, trafo_status or gen_status): it is what "
+                "sgen_p, gen_v, line_status, trafo_status, gen_status, shunt_status or "
+                "load_status): it is what "
                 "fixes the number of scenarios.")
         if n <= 0:
             raise ValueError("the number of scenarios must be > 0.")
@@ -358,8 +370,9 @@ class BatchCPUPowerFlow:
                              f"got {tuple(x.shape)}.")
         return x
 
-    def _apply_status(self, line_status, trafo_status, gen_status, n_scen):
-        """Hand the three contingency masks to the sweep, and remember them.
+    def _apply_status(self, line_status, trafo_status, gen_status, n_scen,
+                      shunt_status=None, load_status=None):
+        """Hand the contingency masks to the sweep, and remember them.
 
         A call that drops a mask the previous one had must say so explicitly -- an
         all-False mask -- or the sweep would keep applying the old one. That is what
@@ -369,11 +382,15 @@ class BatchCPUPowerFlow:
         line_status = self._as_status(line_status, self.n_line, n_scen, "line_status")
         trafo_status = self._as_status(trafo_status, self.n_trafo, n_scen, "trafo_status")
         gen_status = self._as_status(gen_status, self.n_gen, n_scen, "gen_status")
+        shunt_status = self._as_status(shunt_status, self.n_shunt, n_scen, "shunt_status")
+        load_status = self._as_status(load_status, self.n_load, n_scen, "load_status")
 
         for name, status, n_cols, attr, setter in (
                 ("line", line_status, self.n_line, "_line_off", self._sweep.set_contingency_lines),
                 ("trafo", trafo_status, self.n_trafo, "_trafo_off", self._sweep.set_contingency_trafos),
-                ("gen", gen_status, self.n_gen, "_gen_off", self._sweep.set_contingency_gens)):
+                ("gen", gen_status, self.n_gen, "_gen_off", self._sweep.set_contingency_gens),
+                ("shunt", shunt_status, self.n_shunt, "_shunt_off", self._sweep.set_contingency_shunts),
+                ("load", load_status, self.n_load, "_load_off", self._sweep.set_contingency_loads)):
             if status is not None:
                 off = np.ascontiguousarray(~status.numpy())
             elif getattr(self, attr) is not None:
@@ -481,6 +498,12 @@ def _make_op(torch):
             grad_load_q = element_grad(pf._load_bus, q_row, -1.) if wants_lq else None
             grad_gen_p = element_grad(pf._gen_bus, p_row, +1.) if wants_gp else None
             grad_sgen_p = element_grad(pf._sgen_bus, p_row, +1.) if wants_sp else None
+            # an element a row disconnects is out of that row's injection: its value
+            # there changes nothing
+            for grad, off in ((grad_load_p, pf._load_off), (grad_load_q, pf._load_off),
+                              (grad_gen_p, pf._gen_off)):
+                if grad is not None and off is not None:
+                    grad[torch.as_tensor(off)] = 0.
 
             # gen_v is not an injection: it FIXES the magnitude of the bus it regulates,
             # which the Newton-Raphson therefore does not solve for. So lambda is not

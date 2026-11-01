@@ -26,11 +26,17 @@ struct LS2G_API DocSolver
     static const std::string get_Va;
     static const std::string get_Vm;
     static const std::string get_V;
+    // their `_internal` twins: the views, without the copy, at the caller's risk
+    static const std::string get_Va_internal;
+    static const std::string get_Vm_internal;
+    static const std::string get_V_internal;
+    static const std::string get_J_internal;
     static const std::string get_error;
     static const std::string get_nb_iter;
     static const std::string reset;
     static const std::string converged;
     static const std::string compute_pf;
+    static const std::string compute_pf_dc;
     static const std::string get_timers;
 
     // TimerJac: returned by get_timers_jacobian()
@@ -85,6 +91,7 @@ struct LS2G_API DocSolver
     static const std::string set_iw_mu_max;
     static const std::string get_refactor_every_n;
     static const std::string set_refactor_every_n;
+    static const std::string constrained_ordering;
     static const std::string get_config;
     static const std::string set_config;
     static const std::string get_theta_to_J_col;
@@ -104,6 +111,17 @@ struct LS2G_API DocSolver
     static const std::string FDPF_XB_KLU;
     static const std::string FDPF_BX_KLU;
     static const std::string NRRefactorRetry_KLU;
+    static const std::string NR_KLUStaticPivot;
+    static const std::string NROuter;
+    static const std::string OuterLoopStats;
+    static const std::string OuterLoopDriverParams;
+    static const std::string OuterDecision;
+    static const std::string BaseOuterLoop;
+    static const std::string OuterLoopStatus;
+    static const std::string DistributedSlackLoop;
+    static const std::string HvdcAcEmulationLimitsLoop;
+    static const std::string VoltageMonitoringLoop;
+    static const std::string ReactiveLimitsLoop;
 
     static const std::string NR_NICSLU;
     static const std::string NRSing_NICSLU;
@@ -199,6 +217,9 @@ struct LS2G_API DocIterator
     static const std::string can_participate_slack_overshoot_mw;
     static const std::string svc_standby_low_vm_pu;
     static const std::string svc_standby_high_vm_pu;
+    static const std::string svc_standby_low_target_vm_pu;
+    static const std::string svc_standby_high_target_vm_pu;
+    static const std::string svc_b0_pu;
 
     // specific to loads (and storage units)
     static const std::string LoadContainer;
@@ -548,7 +569,7 @@ struct LS2G_API DocLSGrid
     static const std::string total_bus;
     static const std::string nb_connected_bus;
 
-    // TODO doc: make more precise when things are copied and when things are not
+    // copies; the `_internal` twins of the solver ones, declared below, are the views
     static const std::string get_pv;
     static const std::string get_pq;
     static const std::string get_slack_ids;
@@ -578,6 +599,27 @@ struct LS2G_API DocLSGrid
     static const std::string get_lodf;
     static const std::string get_Bf;
     static const std::string get_Bf_solver;
+    // the `_internal` twins of the solver getters that copy: the views, without the copy, at
+    // the caller's risk (docs/security.rst)
+    static const std::string get_V_solver_internal;
+    static const std::string get_Va_solver_internal;
+    static const std::string get_Vm_solver_internal;
+    static const std::string get_Sbus_solver_internal;
+    static const std::string get_dcSbus_solver_internal;
+    static const std::string get_Ybus_solver_internal;
+    static const std::string get_dcYbus_solver_internal;
+    static const std::string get_pv_solver_internal;
+    static const std::string get_pq_solver_internal;
+    static const std::string get_ac_pv_solver_internal;
+    static const std::string get_dc_pv_solver_internal;
+    static const std::string get_ac_pq_solver_internal;
+    static const std::string get_dc_pq_solver_internal;
+    static const std::string get_slack_ids_solver_internal;
+    static const std::string get_slack_ids_dc_solver_internal;
+    static const std::string get_slack_weights_solver_internal;
+    static const std::string get_ac_slack_weights_solver_internal;
+    static const std::string get_dc_slack_weights_solver_internal;
+    static const std::string get_J_solver_internal;
 
     static const std::string check_solution;
 
@@ -594,8 +636,7 @@ struct LS2G_API DocLSGrid
     static const std::string set_init_vm_pu;
     static const std::string get_init_vm_pu;
     static const std::string set_keep_vinit_at_group_controlled_buses;
-    static const std::string set_remote_voltage_control_vm_range;
-    static const std::string get_remote_voltage_control_vm_range;
+    static const std::string set_outer_loop_driver_params;
     static const std::string get_keep_vinit_at_group_controlled_buses;
     static const std::string set_hold_frozen_regulators;
     static const std::string get_hold_frozen_regulators;
@@ -828,12 +869,18 @@ struct LS2G_API DocContingencyAnalysis
     static const std::string add_n1;
     static const std::string add_nk;
     static const std::string add_multiple_n1;
+    static const std::string add_contingency;
+    static const std::string add_contingency_shunt;
+    static const std::string add_contingency_load;
+    static const std::string add_contingency_gen;
     static const std::string clear;
     static const std::string remove_n1;
     static const std::string remove_nk;
     static const std::string remove_multiple_n1;
+    static const std::string remove_contingency;
 
     static const std::string my_defaults_vect;
+    static const std::string my_contingencies;
 
     static const std::string compute;
     static const std::string compute_flows;

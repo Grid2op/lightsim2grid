@@ -15,15 +15,19 @@
 #include "NRLedger.hpp"
 #include "HvdcDroopData.hpp"
 #include "VoltageControlData.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
+#include "outer_loop/OuterControlLayout.hpp"
 #include "Eigen/Core"
 #include "Eigen/SparseCore"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstring>
 #include <tuple>
 #include <type_traits>
+#include <functional>
 #include <vector>
 #include <set>
 #include <stdexcept>
@@ -138,6 +142,12 @@ class LS2G_API Contrib final
 //                                   P/Q rows are filled generically by NRSystem.
 //  - apply_step(dx)               : updates ONLY the component's own non-voltage
 //                                   state. Voltage updates are generic.
+//  - declare_ordering_constraints(OrderingConstraints&) const : appends the indices
+//                                   to eliminate after others (the component's rows
+//                                   that switch form by value after the Vm columns
+//                                   that keep their pivot usable), read by a linear
+//                                   solver that orders with them; no-op for most.
+//                                   Optional: an extension without it declares nothing.
 //  - clear()                      : reset.
 
 /**
@@ -312,6 +322,7 @@ class LS2G_API Base
         const std::set<int>& switchable_vm_buses() const { return switchable_vm_buses_; }
 
         void declare_feature_entries(FeatureSink& /*sink*/) {}
+        void declare_ordering_constraints(OrderingConstraints& /*out*/) const {}
         void fill_feature_values(FeatureWriter& /*writer*/, const Eigen::Ref<const RealVect>& /*Va*/) const {}
         void adjust_mismatch(const Eigen::Ref<const CplxVect>& /*V_t*/, const Eigen::Ref<const RealVect>& /*dx*/, Eigen::Ref<CplxVect> /*mis*/) const {}
         void fill_custom_rows(Eigen::Ref<RealVect> /*res*/,
@@ -429,6 +440,8 @@ class LS2G_API MultiSlack   // distributed-slack extension
         }
 
         // one entry per slack bus: (that bus' P row, slack_absorbed column)
+        void declare_ordering_constraints(OrderingConstraints& /*out*/) const {}
+
         void declare_feature_entries(FeatureSink& sink)
         {
             feature_handles_.clear();
@@ -630,6 +643,8 @@ class LS2G_API Hvdc
         }
 
         // up to 4 dP/dtheta entries per line, declared whatever the regime
+        void declare_ordering_constraints(OrderingConstraints& /*out*/) const {}
+
         void declare_feature_entries(FeatureSink& sink)
         {
             h11_.assign(my_size_, -1);
@@ -692,6 +707,21 @@ class LS2G_API Hvdc
 
         void apply_step(const Eigen::Ref<const RealVect>& /*dx*/) {}
 
+        /**
+         * The regime (0 linear, +1 saturated 1 -> 2, -1 saturated 2 -> 1) of each droop
+         * line, indexed by its id in the grid; `keep` leaves a line as update_state read it
+         * from the grid. A value edit: every regime's Jacobian entries are declared (an
+         * outer loop changes it between two solves, see HvdcAcEmulationLimitsLoop).
+         */
+        void set_status_override(const std::vector<int>& status_per_line, int keep) {
+            for (int k = 0; k < my_size_; ++k) {
+                const int hvdc_id = data_.hvdc_id[static_cast<std::size_t>(k)];
+                if (hvdc_id < 0 || static_cast<std::size_t>(hvdc_id) >= status_per_line.size()) continue;
+                const int status = status_per_line[static_cast<std::size_t>(hvdc_id)];
+                if (status != keep) data_.status(k) = status;
+            }
+        }
+
         void clear() {
             my_size_ = 0;
             data_.clear();
@@ -711,6 +741,296 @@ class LS2G_API Hvdc
         std::vector<int>     p_row_1_, p_row_2_;          // P row of each end bus (-1 if none)
         std::vector<int>     theta_col_1_, theta_col_2_;  // theta column of each end bus (-1 if none)
         std::vector<int>     h11_, h12_, h21_, h22_;      // FeatureSink handles (-1 if entry dropped)
+};
+
+/**
+ * Transformers whose phase shift or ratio the Newton solves for, or whose phase or ratio tap
+ * an outer loop moves between two solves: OpenLoadFlow's PhaseControl and
+ * TransformerVoltageControl (both "continuous, then rounded"). Nothing is declared unless an
+ * outer-loop algorithm asks (set_controllers, set_ratio_groups): every loop below is then
+ * empty and the system is bit-identical to one without this extension.
+ *
+ * Per declared transformer t (connected at both ends, on two different solver buses), its pi
+ * block lives in Ybus, PATCHED BY VALUE whenever its shift a_t, its ratio rho_t or a tap moves
+ * (a mutable Ybus handed in by the algorithm, see set_mutable_ybus): the difference to the
+ * block stamped there, so whatever else sits on those coefficients keeps its part. A shift or
+ * a ratio moves the block as OpenLoadFlow's PiModelArray does, the tap's r, x, g, b kept:
+ * y12, y21 rotated by exp(+/- j s (a - a_tap)), s = TrafoContainer::shift_sign, and y11, y12,
+ * y21 scaled by f^(2e), f^e, f^e, f = rho / rho_tap, e = TrafoContainer::ratio_exponent.
+ *
+ * Phase (set_controllers): a CONTROLLER (an active power one) owns a column, a_t (rad, the
+ * transformer's `shift_`), and a row, the union of OpenLoadFlow's two equations, chosen by value:
+ *     F = a_t - a_target                (control off: BRANCH_TARGET_ALPHA1)
+ *     F = P_side(V, a_t) - p_target     (control on:  BRANCH_TARGET_P)
+ * Any other phase transformer (a current limiter) owns nothing: only its tap moves.
+ *
+ * Ratio (set_ratio_groups): a group is the transformers regulating one bus. A SOLVED group
+ * of n transformers owns one column per transformer, rho_t (its `ratio_`), and n rows, slot i
+ * holding by value one of OpenLoadFlow's equations for controller i:
+ *     F = rho_i - rho_target_i                 (its control off: BRANCH_TARGET_RHO1)
+ *     F = Vm(bus) - v_target                   (the first one on: BUS_TARGET_V)
+ *     F = sum_j rho_j / n - rho_i              (any other one on: DISTR_RHO)
+ * so every slot reserves the n columns and the bus' Vm column. The transformers of a group
+ * that is not solved (hidden by a generator's voltage control) own nothing: only their tap moves.
+ * The P and Q rows of a transformer's two buses get dS/da_t, dS/drho_t for its columns. A
+ * transformer may not be both a phase controller and in a solved ratio group (its ratio column
+ * is then dropped), as OpenLoadFlow does not support both on one branch.
+ *
+ * Sign conventions as VoltageControl (mis = V conj(Ybus V) - Sbus, res = -F, J = dF/dx).
+ */
+class LS2G_API BranchControl
+{
+    public:
+        /// the transformers regulating one bus, see the class comment
+        struct RatioGroupDecl {
+            int bus_solver = -1;          ///< the regulated bus
+            real_type target_vm = 1.;     ///< pu
+            std::vector<int> trafos;      ///< grid ids, OpenLoadFlow's order (the first one on holds the voltage)
+            bool solved = true;           ///< false: hidden, the taps only move
+        };
+
+        BranchControl() = default;
+
+        /// the phase transformers to handle (grid ids) and, for each, whether it is a
+        /// controller owning a column; read at the next init_topology
+        void set_controllers(const std::vector<int> & trafo_ids, const std::vector<char> & with_column) {
+            declared_ = trafo_ids;
+            declared_column_ = with_column;
+        }
+        /// the ratio groups to handle; read at the next init_topology
+        void set_ratio_groups(const std::vector<RatioGroupDecl> & groups) { declared_groups_ = groups; }
+        /// the matrix Ybus refers to, writable (null: nothing is patched and nothing declared
+        /// may act)
+        void set_mutable_ybus(Eigen::SparseMatrix<cplx_type> * ybus) { ybus_ = ybus; }
+        /// the system's voltages, read when J is filled
+        void bind_voltages(const CplxVect * V) { V_ = V; }
+
+        void update_state(const Base * nr_system_base_ptr, const LSGrid * lsgrid_ptr,
+                          const EigenRefConstCplxSpMat & Ybus, const Eigen::Ref<const CplxVect> & Sbus,
+                          const Eigen::Ref<const RealVect> & slack_weights);
+        void init_topology(const Eigen::Ref<const IntVect> & slack_ids, const Eigen::Ref<const RealVect> & slack_weights,
+                           const Eigen::Ref<const IntVect> & pv, const Eigen::Ref<const IntVect> & pq);
+        void register_in(NRLedger & ledger);
+        void declare_feature_entries(FeatureSink & sink);
+        void declare_ordering_constraints(OrderingConstraints & out) const;
+        void fill_feature_values(FeatureWriter & writer, const Eigen::Ref<const RealVect> & Va) const;
+        void adjust_mismatch(const Eigen::Ref<const CplxVect> & V_t, const Eigen::Ref<const RealVect> & dx,
+                             Eigen::Ref<CplxVect> mis) const;
+        void fill_custom_rows(Eigen::Ref<RealVect> res, const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm, const Eigen::Ref<const RealVect> & dx) const;
+        void apply_step(const Eigen::Ref<const RealVect> & dx);
+        void clear();
+
+        // ----- what an outer loop acts on (by transformer grid id; a no-op for one not handled)
+        bool handles(int trafo_id) const { const int k = _index(trafo_id); return k >= 0 && entries_[static_cast<std::size_t>(k)].phase; }
+        bool handles_ratio(int trafo_id) const { const int k = _index(trafo_id); return k >= 0 && entries_[static_cast<std::size_t>(k)].ratio; }
+        /// switch the active power control of a phase controller on or off (off: its shift
+        /// stays where it is)
+        void set_control_on(int trafo_id, bool on);
+        /// switch the voltage control of a transformer of a solved ratio group on or off (off:
+        /// its ratio stays where it is)
+        void set_ratio_control_on(int trafo_id, bool on);
+        /// move its phase / ratio tap to `position`: its block follows, its shift and ratio are
+        /// that tap's
+        void set_tap(int trafo_id, int position);
+        void set_ratio_tap(int trafo_id, int position);
+        real_type shift(int trafo_id) const;
+        real_type ratio(int trafo_id) const;
+        int position(int trafo_id) const;
+        int ratio_position(int trafo_id) const;
+        /// the phase / ratio tap position of every transformer handled for it, INT_MIN for the
+        /// others (by grid id)
+        void positions(std::vector<int> & out) const;
+        void ratio_positions(std::vector<int> & out) const;
+        /// the current through its `side` (1 or 2), pu of that side's base, and its derivative
+        /// with respect to the shift
+        void current(int trafo_id, int side, real_type & i_pu, real_type & di_da) const;
+        /// The transformers the next solve's Ybus holds, read when the entries are reset
+        /// (update_state, init_topology): `in_solve(trafo, b1, b2)` is false for a transformer
+        /// the solve's row opens (a batch row's contingency, which took its block out of Ybus),
+        /// or connects elsewhere than (b1, b2). Such a transformer has nothing stamped in Ybus,
+        /// so it is out of the solve and never patched: its taps do not move (set_tap,
+        /// set_ratio_tap are no-ops, and its positions stay the grid's) and its controls stay
+        /// off. Empty (the default): the grid's own status alone decides.
+        void set_in_solve(std::function<bool(int trafo, int b1, int b2)> in_solve) { in_solve_ = std::move(in_solve); }
+        /// where the transformers it handles and its ratio groups sit in J (appended to
+        /// `out.branches` / `out.ratio_groups`), see OuterControlLayout
+        void describe(OuterControlLayout & out) const;
+
+    private:
+        struct Entry {
+            int trafo = -1;
+            bool phase = false;                // handled for its phase (set_controllers)
+            bool column = false;               // ... and owning a shift column
+            bool ratio = false;                // handled for its ratio (a ratio group)
+            bool r_column = false;             // ... and owning a ratio column (a solved group)
+            bool out = false;                  // not in this solve's Ybus (set_in_solve)
+            int b1 = -1, b2 = -1;              // solver buses
+            int k11 = -1, k12 = -1, k21 = -1, k22 = -1;  // Ybus value positions
+            real_type sign = 1.;               // TrafoContainer::shift_sign
+            real_type rexp = 1.;               // TrafoContainer::ratio_exponent
+            int side = 1;                      // the regulated side (phase)
+            real_type p_target = 0.;           // pu
+            bool control_on = false;           // phase control
+            bool r_control_on = false;         // voltage control
+            int pos = 0;                       // phase tap position
+            int rpos = 0;                      // ratio tap position
+            real_type a_tap = 0.;              // the taps' shift
+            real_type a = 0.;                  // the shift now
+            real_type a_target = 0.;           // the alpha row's target
+            real_type rho_tap = 1.;            // the taps' ratio
+            real_type rho = 1.;                // the ratio now
+            real_type rho_target = 1.;         // the rho row's target
+            std::array<cplx_type, 4> applied;  // the block stamped in Ybus now
+            std::array<cplx_type, 4> tap;      // the block at the taps
+            // ledger
+            int col = -1, row = -1, rcol = -1;
+            int p1 = -1, q1 = -1, p2 = -1, q2 = -1;      // rows of the two buses
+            int th1 = -1, th2 = -1, vm1 = -1, vm2 = -1;  // columns of the two buses
+            // feature handles
+            int h_p1 = -1, h_q1 = -1, h_p2 = -1, h_q2 = -1;
+            int h_a = -1, h_th1 = -1, h_th2 = -1, h_vm1 = -1, h_vm2 = -1;
+            int h_rp1 = -1, h_rq1 = -1, h_rp2 = -1, h_rq2 = -1;
+        };
+        struct RatioGroup {
+            int bus = -1;
+            real_type target = 1.;
+            std::vector<int> members;               // entries
+            int vm_col = -1;
+            std::vector<int> rows;                  // slot rows
+            std::vector<std::vector<int> > h_cols;  // [slot][member] handles on the members' columns
+            std::vector<int> h_vm;                  // [slot] handle on the bus' Vm column
+        };
+        int _index(int trafo_id) const {
+            if (trafo_id < 0 || static_cast<std::size_t>(trafo_id) >= index_of_trafo_.size()) return -1;
+            return index_of_trafo_[static_cast<std::size_t>(trafo_id)];
+        }
+        // the block at shift a and ratio rho (the taps' r, x, g, b)
+        static std::array<cplx_type, 4> _block_at(const Entry & e, real_type a, real_type rho) {
+            const real_type d = e.sign * (a - e.a_tap);
+            const cplx_type rot(std::cos(d), std::sin(d));
+            const real_type f = std::pow(rho / e.rho_tap, e.rexp);
+            return {e.tap[0] * f * f, e.tap[1] * f * rot, e.tap[2] * f * std::conj(rot), e.tap[3]};
+        }
+        void _patch(Entry & e);
+        void _reset(Entry & e);
+        void _retap(Entry & e, int rpos, int pos);
+        int _add_entry(int trafo);
+
+        std::vector<int> declared_;
+        std::vector<char> declared_column_;
+        std::vector<RatioGroupDecl> declared_groups_;
+        Eigen::SparseMatrix<cplx_type> * ybus_ = nullptr;
+        const CplxVect * V_ = nullptr;
+        const LSGrid * lsgrid_ = nullptr;
+        std::function<bool(int, int, int)> in_solve_;  // see set_in_solve
+        std::vector<Entry> entries_;
+        std::vector<RatioGroup> groups_;
+        std::vector<int> index_of_trafo_;
+};
+
+/**
+ * Shunts whose susceptance the Newton solves for, or whose sections an outer loop switches
+ * between two solves: OpenLoadFlow's ShuntVoltageControl ("continuous, then rounded"). Nothing
+ * is declared unless an outer-loop algorithm asks (set_groups): every loop below is then empty
+ * and the system is bit-identical to one without this extension.
+ *
+ * As OpenLoadFlow, the regulating shunts of one bus are ONE controller with a susceptance B
+ * (pu, sn_mva base, positive producing: the bus' Ybus diagonal holds j B), their conductance
+ * kept. B lives in Ybus, PATCHED BY VALUE (a mutable Ybus handed in by the algorithm): the
+ * difference to what is stamped there. A group is the controllers regulating one bus; a SOLVED
+ * one owns a column per controller and one row per controller, slot i holding by value:
+ *     F = B_i - B_target_i                    (its control off: SHUNT_TARGET_B)
+ *     F = Vm(bus) - v_target                  (the first one on: BUS_TARGET_V)
+ *     F = sum_j B_j / n - B_i                 (any other one on: DISTR_SHUNT_B)
+ * The controllers of a group that is not solved (hidden by another control) own nothing: only
+ * their sections move. The Q row of a controller bus gets dQ/dB = -|V|^2.
+ *
+ * Sign conventions as VoltageControl (mis = V conj(Ybus V) - Sbus, res = -F, J = dF/dx).
+ */
+class LS2G_API ShuntControl
+{
+    public:
+        /// the controllers regulating one bus, see the class comment
+        struct GroupDecl {
+            int bus_solver = -1;                       ///< the regulated bus
+            real_type target_vm = 1.;                  ///< pu
+            std::vector<int> controller_buses;         ///< solver ids, OpenLoadFlow's order
+            std::vector<std::vector<int> > shunts;     ///< per controller bus, its shunts (grid ids)
+            bool solved = true;                        ///< false: hidden, the sections only move
+        };
+
+        ShuntControl() = default;
+
+        void set_groups(const std::vector<GroupDecl> & groups) { declared_ = groups; }
+        void set_mutable_ybus(Eigen::SparseMatrix<cplx_type> * ybus) { ybus_ = ybus; }
+
+        void update_state(const Base * nr_system_base_ptr, const LSGrid * lsgrid_ptr,
+                          const EigenRefConstCplxSpMat & Ybus, const Eigen::Ref<const CplxVect> & Sbus,
+                          const Eigen::Ref<const RealVect> & slack_weights);
+        void init_topology(const Eigen::Ref<const IntVect> & slack_ids, const Eigen::Ref<const RealVect> & slack_weights,
+                           const Eigen::Ref<const IntVect> & pv, const Eigen::Ref<const IntVect> & pq);
+        void register_in(NRLedger & ledger);
+        void declare_feature_entries(FeatureSink & sink);
+        void declare_ordering_constraints(OrderingConstraints & out) const;
+        void fill_feature_values(FeatureWriter & writer, const Eigen::Ref<const RealVect> & Va) const;
+        void adjust_mismatch(const Eigen::Ref<const CplxVect> & V_t, const Eigen::Ref<const RealVect> & dx,
+                             Eigen::Ref<CplxVect> mis) const;
+        void fill_custom_rows(Eigen::Ref<RealVect> res, const Eigen::Ref<const RealVect> & Va,
+                              const Eigen::Ref<const RealVect> & Vm, const Eigen::Ref<const RealVect> & dx) const;
+        void apply_step(const Eigen::Ref<const RealVect> & dx);
+        void clear();
+        /// the system's voltages, read when J is filled
+        void bind_voltages(const CplxVect * V) { V_ = V; }
+
+        // ----- what an outer loop acts on (by controller bus, solver id; a no-op for one not handled)
+        bool handles(int bus) const { return _index(bus) >= 0; }
+        void set_control_on(int bus, bool on);
+        /// switch the sections of its shunts (aligned with the declared list): its B follows
+        void set_sections(int bus, const std::vector<int> & counts);
+        real_type b(int bus) const;
+        /// the section count of every shunt handled, INT_MIN for the others (by grid id)
+        void section_counts(std::vector<int> & out) const;
+        /// where its controllers and groups sit in J (appended to `out.shunts` /
+        /// `out.shunt_groups`), see OuterControlLayout
+        void describe(OuterControlLayout & out) const;
+
+    private:
+        struct Entry {
+            int bus = -1;
+            int k = -1;                    // Ybus position of (bus, bus)
+            std::vector<int> shunts;
+            std::vector<int> counts;
+            bool column = false;
+            bool on = false;
+            real_type b = 0., b_applied = 0., b_target = 0.;
+            int col = -1, q_row = -1;
+            int h_q = -1;
+        };
+        struct Group {
+            int bus = -1;
+            real_type target = 1.;
+            std::vector<int> members;
+            int vm_col = -1;
+            std::vector<int> rows;
+            std::vector<std::vector<int> > h_cols;
+            std::vector<int> h_vm;
+        };
+        int _index(int bus) const {
+            if (bus < 0 || static_cast<std::size_t>(bus) >= index_of_bus_.size()) return -1;
+            return index_of_bus_[static_cast<std::size_t>(bus)];
+        }
+        void _patch(Entry & e);
+        void _reset(Entry & e);
+
+        std::vector<GroupDecl> declared_;
+        Eigen::SparseMatrix<cplx_type> * ybus_ = nullptr;
+        const CplxVect * V_ = nullptr;
+        const LSGrid * lsgrid_ = nullptr;
+        std::vector<Entry> entries_;
+        std::vector<Group> groups_;
+        std::vector<int> index_of_bus_;
+        int nb_shunts_ = 0;
 };
 
 /**
@@ -828,6 +1148,24 @@ class LS2G_API VoltageControl
         // set_may_mask_voltage_control / BaseAlgo::set_may_mask_voltage_control.
         void set_may_mask_voltage_control(bool val) { may_mask_ = val; }
 
+        // Gates what holding any controller by value needs (set_held_controllers): the
+        // (v_row, q_col) slot of every group's first controller, and in each sharing row an
+        // entry towards every other controller of the group, so that the reference of the
+        // sharing can be any active one. Caller-set, before the sparsity build it should
+        // affect (an outer loop's declaration, see OuterLoopAlgo); off, nothing changes.
+        void set_may_hold_controllers(bool val) { may_hold_ = val; }
+
+        // Hold some controllers at a reactive output by value, for the next Newton solves:
+        // an entry of `q_pu_per_controller` (in the plan's controller order) that is finite
+        // holds that controller there (its sharing row, or the group's voltage row when
+        // the whole group is held, pins it); NaN (or an empty vector) leaves it as the plan
+        // has it. Unlike a held controller of the plan, whose frozen output is already in
+        // Sbus (a frozen generator), the value is the controller's whole output, nothing of
+        // it in Sbus. Needs set_may_hold_controllers; reset by update_state().
+        void set_held_controllers(const std::vector<real_type>& q_pu_per_controller) {
+            hold_q_ = q_pu_per_controller;
+        }
+
         // Per-solve override of the groups' voltage set-points, indexed by group
         // (the grid's own plan order). A finite entry replaces that group's v_set for
         // every following solve; NaN (or an empty vector) keeps the grid's own. A
@@ -838,6 +1176,28 @@ class LS2G_API VoltageControl
         // back at the grid's own target. Caller-set, NOT reset by clear() or
         // update_state(), like the pinning above.
         void set_v_set_override(const Eigen::Ref<const RealVect> & v_set) { v_set_override_ = v_set; }
+
+        // Switch held SVCs on, by value (an outer loop's, see VoltageMonitoringLoop): an
+        // entry of `target_vm_per_svc` (indexed by SVC id) that is finite releases the held
+        // SVC controller of that id and makes it regulate its group's bus at that
+        // set-point; NaN (or an empty vector) leaves it as the plan has it. Every held SVC
+        // is alone in its group (VoltageControlPlan::_group_and_emit), so releasing it
+        // turns the group's "Q = 0" row back into its voltage row -- entries declared
+        // either way. Applied to the state update_state() read, so call it after that,
+        // before each Newton; the next update_state() starts from the plan again.
+        void release_held_svcs(const std::vector<real_type> & target_vm_per_svc) {
+            const int nc = data_.n_controllers();
+            if (data_.held.size() != nc) return;
+            for (int j = 0; j < nc; ++j) {
+                if (!data_.is_held(j) || data_.kind(j) != VoltageControlSolverData::SVC) continue;
+                const int svc_id = data_.elem_id(j);
+                if (svc_id < 0 || static_cast<std::size_t>(svc_id) >= target_vm_per_svc.size()) continue;
+                const real_type target = target_vm_per_svc[static_cast<std::size_t>(svc_id)];
+                if (!std::isfinite(target)) continue;
+                data_.held(j) = 0;
+                data_.v_set(data_.group(j)) = target;
+            }
+        }
 
         // J row of each group's voltage constraint (group order), what the gradient of
         // a loss with respect to that group's v_set is read from (dF_v/dv_set = -1).
@@ -854,6 +1214,7 @@ class LS2G_API VoltageControl
             const int ng = data_.n_groups();
             q_cols_.assign(nc, -1);
             q_rows_.assign(nc, -1);
+            ctrl_vm_cols_.assign(nc, -1);
             v_rows_.assign(ng, -1);
             vm_cols_.assign(ng, -1);
             share_rows_.assign(ng, std::vector<int>());
@@ -864,11 +1225,44 @@ class LS2G_API VoltageControl
                     const int j = first + off;
                     q_cols_[j] = ledger.add_q_unknown(data_.bus(j));
                     q_rows_[j] = ledger.q_row(data_.bus(j));
+                    ctrl_vm_cols_[j] = ledger.vm_col(data_.bus(j));
                 }
                 v_rows_[g]  = ledger.add_custom_row();
                 vm_cols_[g] = ledger.vm_col(data_.reg_bus(g));
                 share_rows_[g].assign(cnt - 1, -1);
                 for (int k = 0; k < cnt - 1; ++k) share_rows_[g][k] = ledger.add_custom_row();
+            }
+        }
+
+        // A group whose voltage row has an entry on a controller's Q column (an SVC's slope,
+        // or the slot reserved when the batch may mask a bus or the loops may hold a
+        // controller, see declare_feature_entries) is switched by value between "Vm(reg) =
+        // target" and a Q form. Its rows sit on the diagonal of its Q columns (allocated
+        // together, see register_in): eliminated after the Vm of the regulated bus and of the
+        // controller buses, whose pivots on those buses' Q rows fill the rows' Q entries in,
+        // they keep a usable pivot in both forms. A group that cannot switch adds nothing, and
+        // its ordering is AMD's.
+        void declare_ordering_constraints(OrderingConstraints& out) const
+        {
+            const int ng = data_.n_groups();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                bool switchable = false;
+                for (int off = 0; off < cnt; ++off) {
+                    if (static_cast<std::size_t>(first + off) < h_slope_.size() && h_slope_[first + off] >= 0) switchable = true;
+                }
+                if (!switchable) continue;
+                OrderingConstraint c;
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    if (q_cols_[j] >= 0) c.follow.push_back(q_cols_[j]);
+                    if (ctrl_vm_cols_[j] >= 0) c.lead.push_back(ctrl_vm_cols_[j]);
+                }
+                if (v_rows_[g] >= 0) c.follow.push_back(v_rows_[g]);
+                for (int r : share_rows_[g]) if (r >= 0) c.follow.push_back(r);
+                if (vm_cols_[g] >= 0) c.lead.push_back(vm_cols_[g]);
+                if (!c.follow.empty() && !c.lead.empty()) out.push_back(std::move(c));
             }
         }
 
@@ -882,6 +1276,7 @@ class LS2G_API VoltageControl
             h_vm_.assign(ng, -1);
             h_shareA_.assign(ng, std::vector<int>());
             h_shareB_.assign(ng, std::vector<int>());
+            h_shareRef_.assign(ng, std::vector<std::vector<int> >());
             for (int g = 0; g < ng; ++g) {
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
@@ -901,7 +1296,7 @@ class LS2G_API VoltageControl
                     // ... and for a group whose first controller is HELD (so all of them are,
                     // see VoltageControlSolverData::held): its voltage row is "Q_first = q"
                     if ((data_.kind(j) == VoltageControlSolverData::SVC ||
-                         (off == 0 && (may_mask_ || data_.is_held(j)))) &&
+                         (off == 0 && (may_mask_ || may_hold_ || data_.is_held(j)))) &&
                         v_row >= 0 && q_cols_[j] >= 0)
                         h_slope_[j] = sink.add(v_row, q_cols_[j]);
                 }
@@ -915,11 +1310,114 @@ class LS2G_API VoltageControl
                     if (row >= 0 && col_kp1   >= 0) h_shareA_[g][k] = sink.add(row, col_kp1);
                     if (row >= 0 && col_first >= 0) h_shareB_[g][k] = sink.add(row, col_first);
                 }
+                // holding by value: each sharing row towards every other controller but the
+                // first (its own and the first one's are the two above)
+                if (may_hold_) {
+                    h_shareRef_[g].assign(cnt > 1 ? cnt - 1 : 0, std::vector<int>(cnt, -1));
+                    for (int k = 0; k < cnt - 1; ++k) {
+                        const int row = share_rows_[g][k];
+                        for (int m = 1; m < cnt; ++m) {
+                            if (m == k + 1) continue;
+                            const int col = q_cols_[first + m];
+                            if (row >= 0 && col >= 0) h_shareRef_[g][k][static_cast<std::size_t>(m)] = sink.add(row, col);
+                        }
+                    }
+                }
+            }
+        }
+
+        // held by value (set_held_controllers)
+        bool _held_by_value(int j) const {
+            return static_cast<std::size_t>(j) < hold_q_.size() && std::isfinite(hold_q_[static_cast<std::size_t>(j)]);
+        }
+        bool _held(int j) const { return data_.is_held(j) || _held_by_value(j); }
+        // the output a held controller holds, and what of it Sbus already carries
+        real_type _held_q(int j) const { return _held_by_value(j) ? hold_q_[static_cast<std::size_t>(j)] : q_held_(j); }
+        real_type _q_in_sbus(int j) const { return data_.is_held(j) ? q_held_(j) : static_cast<real_type>(0.); }
+
+        // The rows of a group when any controller may be held by value (may_hold_): with
+        // nobody active, every controller pinned at its held output (the voltage row pins
+        // the first one); otherwise the voltage row, and the sharing taken against the first
+        // ACTIVE controller `ref` -- the row of `ref` itself, which it does not need, pins
+        // the first controller when that one is held.
+        int _ref_active(int g) const {
+            const int first = data_.grp_start(g);
+            const int cnt = data_.grp_count(g);
+            const bool stranded = !group_stranded_.empty() && group_stranded_[g];
+            if (stranded) return -1;
+            for (int off = 0; off < cnt; ++off) if (!_held(first + off)) return off;
+            return -1;
+        }
+        void _fill_feature_values_holding(FeatureWriter& writer) const
+        {
+            const int ng = data_.n_groups();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                const int ref = _ref_active(g);
+                for (int off = 0; off < cnt; ++off) {
+                    const int j = first + off;
+                    if (h_qrow_[j] >= 0) writer.add(h_qrow_[j], static_cast<real_type>(-1.));
+                    if (h_slope_[j] >= 0) {
+                        const real_type coeff = ref >= 0 ? data_.slope(j)
+                                                         : (off == 0 ? static_cast<real_type>(1.) : static_cast<real_type>(0.));
+                        writer.add(h_slope_[j], coeff);
+                    }
+                }
+                if (h_vm_[g] >= 0) writer.add(h_vm_[g], ref >= 0 ? static_cast<real_type>(1.) : static_cast<real_type>(0.));
+                for (int k = 0; k < cnt - 1; ++k) {
+                    const int m = k + 1;  // the controller this row is the sharing row of
+                    if (ref < 0 || _held(first + m)) {
+                        if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], static_cast<real_type>(1.));
+                    } else if (m == ref) {
+                        // the first controller is held: this row pins it
+                        if (h_shareB_[g][k] >= 0) writer.add(h_shareB_[g][k], static_cast<real_type>(1.));
+                    } else {
+                        // w_ref.Q_m - w_m.Q_ref
+                        if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], data_.weight(first + ref));
+                        const int h_ref = ref == 0 ? h_shareB_[g][k] : h_shareRef_[g][k][static_cast<std::size_t>(ref)];
+                        if (h_ref >= 0) writer.add(h_ref, -data_.weight(first + m));
+                    }
+                }
+            }
+        }
+        void _fill_custom_rows_holding(Eigen::Ref<RealVect> res,
+                                       const Eigen::Ref<const RealVect>& Vm,
+                                       const Eigen::Ref<const RealVect>& dx) const
+        {
+            const int ng = data_.n_groups();
+            for (int g = 0; g < ng; ++g) {
+                const int first = data_.grp_start(g);
+                const int cnt   = data_.grp_count(g);
+                const int ref = _ref_active(g);
+                auto Qt = [&](int off) { return q_(first + off) + dx(q_cols_[first + off]); };
+                const bool stranded = !group_stranded_.empty() && group_stranded_[g];
+                auto held_q = [&](int off) { return stranded ? static_cast<real_type>(0.) : _held_q(first + off); };
+                if (ref < 0) {
+                    res(v_rows_[g]) -= Qt(0) - held_q(0);
+                } else {
+                    real_type vm_trial = Vm(data_.reg_bus(g));
+                    if (vm_cols_[g] >= 0) vm_trial += dx(vm_cols_[g]);
+                    real_type slope_term = static_cast<real_type>(0.);
+                    for (int off = 0; off < cnt; ++off) slope_term += data_.slope(first + off) * Qt(off);
+                    res(v_rows_[g]) -= vm_trial + slope_term - data_.v_set(g);
+                }
+                for (int k = 0; k < cnt - 1; ++k) {
+                    const int m = k + 1;
+                    if (ref < 0 || _held(first + m)) {
+                        res(share_rows_[g][k]) -= Qt(m) - held_q(m);
+                    } else if (m == ref) {
+                        res(share_rows_[g][k]) -= Qt(0) - held_q(0);
+                    } else {
+                        res(share_rows_[g][k]) -= data_.weight(first + ref) * Qt(m) - data_.weight(first + m) * Qt(ref);
+                    }
+                }
             }
         }
 
         void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& /*Va*/) const
         {
+            if (may_hold_) { _fill_feature_values_holding(writer); return; }
             const int ng = data_.n_groups();
             const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
@@ -963,7 +1461,7 @@ class LS2G_API VoltageControl
             // a held controller's frozen output is already in Sbus (it is a PQ generator
             // there): only what it moves away from it enters here
             for (int j = 0; j < nc; ++j)
-                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]) - q_held_(j));
+                mis(data_.bus(j)) -= cplx_type(static_cast<real_type>(0.), q_(j) + dx(q_cols_[j]) - _q_in_sbus(j));
         }
 
         // the bordered voltage and sharing rows
@@ -972,6 +1470,7 @@ class LS2G_API VoltageControl
                               const Eigen::Ref<const RealVect>& Vm,
                               const Eigen::Ref<const RealVect>& dx) const
         {
+            if (may_hold_) { _fill_custom_rows_holding(res, Vm, dx); return; }
             const int ng = data_.n_groups();
             const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
@@ -1034,6 +1533,9 @@ class LS2G_API VoltageControl
             group_stranded_.clear();
         }
 
+        // number of controllers of the current solve (valid after update_state)
+        int n_controllers() const { return my_size_; }
+
         // converged reactive injection per controller (pu, registration order)
         Eigen::Ref<const RealVect>  controller_q()       const { return q_; }
         Eigen::Ref<const IntVect>   controller_kind()    const { return data_.kind; }
@@ -1084,6 +1586,11 @@ class LS2G_API VoltageControl
         // (BaseBatchSweep::_maybe_prepare_masks) re-asserts it before every
         // compute(), so it never actually goes stale across a clear_jacobian().
         bool                           may_mask_ = false;
+        bool                           may_hold_ = false;    // see set_may_hold_controllers
+        std::vector<real_type>         hold_q_;              // see set_held_controllers, pu, NaN: not held
+        // handle (share_row k, q_col m) per group, sharing row, controller (-1 where none):
+        // the entries towards every other controller of the group (may_hold_)
+        std::vector<std::vector<std::vector<int> > > h_shareRef_;
         int                            my_size_;     // number of controllers
         VoltageControlSolverData       data_;        // per-solve controller data (refreshed every update_state)
         RealVect                       v_set_override_;  // per group, NaN = grid's own (see set_v_set_override)
@@ -1091,6 +1598,7 @@ class LS2G_API VoltageControl
         RealVect                       q_held_;      // per controller, the frozen output a held one holds (pu), 0 otherwise
         std::vector<int>               q_cols_;      // J column of each controller's Q unknown
         std::vector<int>               q_rows_;      // q_row of each controller bus (-1 if none)
+        std::vector<int>               ctrl_vm_cols_; // vm_col of each controller bus (-1 if none)
         std::vector<int>               v_rows_;      // voltage row of each group
         std::vector<int>               vm_cols_;     // vm column of each group's regulated bus (-1 if none)
         std::vector<std::vector<int> > share_rows_;  // sharing rows of each group (size N-1)
@@ -1191,7 +1699,20 @@ public:
     // ----- Phase 3: fill J numerically -------------------------------------------
 
     void fill_J();
-    void fill_internal_variables();
+    // reuse_ybus_v: take Ybus . V from the last residual instead of recomputing it, when
+    // that residual was evaluated at this V with this Ybus (see ybus_v_at_V_); NRAlgo's
+    // loop asks for it, where the residual it just read always precedes the fill
+    void fill_internal_variables(bool reuse_ybus_v = false);
+
+    // What the components know of the elimination order the Jacobian wants (see
+    // OrderingConstraints), for a linear solver that orders with it. Valid once the
+    // sparsity is built; empty on a system without rows switched by value.
+    OrderingConstraints ordering_constraints() const {
+        OrderingConstraints out;
+        base_.declare_ordering_constraints(out);
+        _declare_ordering_constraints_extensions(out, std::make_index_sequence<sizeof...(Rest)>{});
+        return out;
+    }
 
     // ----- bus masking (ContingencyAnalysis "handle disconnected grid" mode) ------
     // Mark some solver buses as "masked": their P/Q mismatch rows are replaced by
@@ -1245,6 +1766,55 @@ public:
     void set_may_mask_voltage_control(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_mask_voltage_control(val);
+    }
+
+    // Per-line droop regime of the Hvdc extension, see Hvdc::set_status_override. No-op
+    // without the extension.
+    void set_hvdc_status_override(const std::vector<int>& status_per_line, int keep) {
+        Hvdc* hvdc = _find_extension<Hvdc>();
+        if (hvdc != nullptr) hvdc->set_status_override(status_per_line, keep);
+    }
+
+    // Holding voltage controllers by value, see VoltageControl::set_may_hold_controllers /
+    // set_held_controllers. No-op without the extension.
+    void set_may_hold_voltage_controllers(bool val) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_may_hold_controllers(val);
+    }
+    void set_held_voltage_controllers(const std::vector<real_type> & q_pu_per_controller) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_held_controllers(q_pu_per_controller);
+    }
+
+    // The BranchControl extension, see BranchControl. No-ops (and null / empty answers) without it.
+    void set_phase_controllers(const std::vector<int> & trafo_ids, const std::vector<char> & with_column) {
+        BranchControl* ps = _find_extension<BranchControl>();
+        if (ps != nullptr) ps->set_controllers(trafo_ids, with_column);
+    }
+    void set_shunt_groups(const std::vector<ShuntControl::GroupDecl> & groups) {
+        ShuntControl* sc = _find_extension<ShuntControl>();
+        if (sc != nullptr) sc->set_groups(groups);
+    }
+    ShuntControl * shunt_control() { return _find_extension<ShuntControl>(); }
+    const ShuntControl * shunt_control() const { return _find_extension<ShuntControl>(); }
+    void set_ratio_groups(const std::vector<BranchControl::RatioGroupDecl> & groups) {
+        BranchControl* bc = _find_extension<BranchControl>();
+        if (bc != nullptr) bc->set_ratio_groups(groups);
+    }
+    void set_branch_mutable_ybus(Eigen::SparseMatrix<cplx_type> * ybus) {
+        BranchControl* ps = _find_extension<BranchControl>();
+        if (ps != nullptr) ps->set_mutable_ybus(ybus);
+        ShuntControl* sc = _find_extension<ShuntControl>();
+        if (sc != nullptr) sc->set_mutable_ybus(ybus);
+    }
+    BranchControl * branch_control() { return _find_extension<BranchControl>(); }
+    const BranchControl * branch_control() const { return _find_extension<BranchControl>(); }
+
+    // Held SVCs switched on, see VoltageControl::release_held_svcs. No-op without the
+    // extension.
+    void release_held_svcs(const std::vector<real_type> & target_vm_per_svc) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->release_held_svcs(target_vm_per_svc);
     }
 
     // Per-solve group set-points of the VoltageControl extension (NaN = the grid's
@@ -1379,6 +1949,7 @@ public:
         init_Vm_cache_  = RealVect();
         if(ybus_v_ptr_ != nullptr) *ybus_v_ptr_ = CplxVect();
         if(mis_ptr_ != nullptr)    *mis_ptr_    = CplxVect();
+        ybus_v_at_V_ = false;
         Va_trial_cache_ = RealVect();
         Vm_trial_cache_ = RealVect();
         V_trial_cache_  = CplxVect();
@@ -1407,11 +1978,26 @@ public:
     void set_mismatch_buffers(CplxVect & mis, CplxVect & ybus_v) noexcept {
         mis_ptr_ = &mis;
         ybus_v_ptr_ = &ybus_v;
+        ybus_v_at_V_ = false;
     }
 
     Eigen::Ref<const CplxVect> V()  const { return V_; }
     Eigen::Ref<const RealVect> Va() const { return Va_; }
     Eigen::Ref<const RealVect> Vm() const { return Vm_; }
+
+    // Set the magnitude of some buses (solver ids, pu) between two Newton solves, their
+    // angle kept: an outer loop putting a bus back to PV at its set-point (a pinned Q row
+    // keeps the magnitude the bus has, see set_pv_pinned_buses), or OpenLoadFlow's robust
+    // mode restarting a bus from 1 pu. Values only.
+    void set_vm_at(const std::vector<int>& buses, const std::vector<real_type>& vm) {
+        ybus_v_at_V_ = false;
+        for (std::size_t k = 0; k < buses.size() && k < vm.size(); ++k) {
+            const int b = buses[k];
+            if (b < 0 || b >= Vm_.size()) continue;
+            Vm_(b) = vm[k];
+            V_(b) = std::polar(vm[k], Va_(b));
+        }
+    }
 
     // bus_id -> Jacobian column of that bus' theta / vm / q unknown (-1 if none).
     // Each vector has size n_bus and spans the full augmented J (base + extensions).
@@ -1444,6 +2030,13 @@ public:
     const std::vector<int>& vm_cols()     const { return ledger_.vm_cols(); }
 
     size_t total_state_variables() const { return static_cast<size_t>(ledger_.size()); }
+
+    // whether the current solve has voltage-control groups: their bordered rows are what
+    // makes a refactorization's pivots go stale (see KLULinearSolver::set_pivot_growth_guard)
+    bool has_voltage_controllers() const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc != nullptr && vc->n_controllers() > 0;
+    }
 
     // ----- VoltageControl results (empty when the extension is not in the tuple) --
     // converged reactive injection / kind / element id per controller (pu, in the
@@ -1540,6 +2133,9 @@ private:
     CplxVect *                             ybus_v_ptr_ = nullptr;   // Ybus * V_t
     CplxVect *                             mis_ptr_ = nullptr;      // per-bus complex mismatch
     mutable CplxVect                       ybus_v_own_;  // used iff ybus_v_ptr_ is null
+    // the Ybus . V buffer holds Ybus_ref_ * V_: the last _residual_into was evaluated at
+    // V_, and neither V_ nor Ybus has moved since (every writer of either clears it)
+    mutable bool                           ybus_v_at_V_ = false;
     mutable CplxVect                       mis_own_;     // used iff mis_ptr_ is null
     mutable RealVect                       Va_trial_cache_, Vm_trial_cache_;
     mutable CplxVect                       V_trial_cache_;
@@ -1687,6 +2283,9 @@ protected:
     void _residual_into(Eigen::Ref<RealVect> res,
                         const Eigen::Ref<const CplxVect>& V_t,
                         const Eigen::Ref<const RealVect>& dx) const;
+    // out = Ybus_ref_ * V, its products spelled out on real and imaginary parts (see
+    // the definition)
+    void _ybus_times_into(CplxVect & out, const Eigen::Ref<const CplxVect>& V) const;
 
     // value-returning wrappers, kept for out-of-tree derived algorithms: the
     // *_into forms above are what the hot path uses.
@@ -1742,6 +2341,21 @@ private:
         int dummy[] = { 0, (std::get<Is>(extensions_).declare_feature_entries(sink), 0)... };
         (void)dummy;
     }
+
+    template <std::size_t... Is>
+    void _declare_ordering_constraints_extensions(OrderingConstraints& out, std::index_sequence<Is...>) const {
+        int dummy[] = { 0, (_declare_ordering_constraints_of(std::get<Is>(extensions_), out, 0), 0)... };
+        (void)dummy;
+        (void)out;
+    }
+    // optional in the protocol: an extension written before it declares nothing
+    template <class Component>
+    static auto _declare_ordering_constraints_of(const Component& component, OrderingConstraints& out, int)
+        -> decltype(component.declare_ordering_constraints(out), void()) {
+        component.declare_ordering_constraints(out);
+    }
+    template <class Component>
+    static void _declare_ordering_constraints_of(const Component&, OrderingConstraints&, long) {}
 
     template <std::size_t... Is>
     void _fill_feature_values_extensions(FeatureWriter& writer, std::index_sequence<Is...>) const {
@@ -1830,7 +2444,7 @@ private:
 // from the ledger) and before Hvdc; Hvdc must stay the LAST extension (it reads
 // the ledger populated by all the others).
 
-using SingleSlackNRSystem = NRSystem<Base, VoltageControl, Hvdc>;
+using SingleSlackNRSystem = NRSystem<Base, VoltageControl, BranchControl, ShuntControl, Hvdc>;
 using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, VoltageControl, Hvdc>;
 
 } // namespace ls2g

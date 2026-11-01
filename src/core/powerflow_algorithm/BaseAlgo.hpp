@@ -26,6 +26,9 @@
 #include "BaseConstants.hpp"
 #include "AlgoConfig.hpp"
 #include "linear_solvers/LinearSolverStats.hpp"
+#include "outer_loop/BaseOuterLoop.hpp"
+#include "outer_loop/OuterLoopDriver.hpp"
+#include "outer_loop/OuterControlLayout.hpp"
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -168,9 +171,8 @@ class LS2G_API BaseAlgo : public BaseConstants
             real_type                        tol);
 
         // Same idea for the DC entry point (validates, then calls the
-        // virtual compute_pf_dc). Not bound to python today -- compute_pf_dc
-        // itself isn't exposed under any name -- kept symmetric with the AC
-        // wrapper above and ready if that binding gap is ever closed.
+        // virtual compute_pf_dc). Bound to python as Solver.compute_pf_dc (see
+        // binding_solvers.cpp), which pandapower_compat's dcpf calls.
         // V stays plain: see the comment on the virtual compute_pf_dc above (resized).
         // Bbus is a bare (non-Ref) Eigen::SparseMatrix for the same pybind11 reason as
         // Ybus in compute_pf_with_input_validation above.
@@ -604,6 +606,54 @@ class LS2G_API BaseAlgo : public BaseConstants
                                      "not Newton-Raphson based and cannot support a continuation "
                                      "powerflow (see supports_cpf).");
         }
+
+        // ---- OpenLoadFlow-style outer loops (NROuter_* only) --------------------------
+        //
+        // The loops run around the Newton-Raphson are the grid's (LSGrid::add_outer_loop),
+        // and so are the driver's parameters (LSGrid::set_outer_loop_driver_params): the grid
+        // hands both over before each solve and the algorithm keeps a clone of each loop, so
+        // that a loop's per-solve state is the algorithm's own. Only the NROuter_* family runs
+        // them (see supports_outer_loops); the others reject a list.
+        virtual bool supports_outer_loops() const noexcept { return false; }
+        virtual void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops,
+                                     const OuterLoopDriverParams & /*driver*/){
+            if(!loops.empty()){
+                throw std::runtime_error("BaseAlgo::set_outer_loops: this algorithm does not run "
+                                         "outer loops, use an NROuter_* algorithm (see "
+                                         "supports_outer_loops).");
+            }
+        }
+        // what the solved row changes compared with the grid (a batch's: its overrides, its
+        // labelling, its stranded buses), for the loops to read; null: the grid as it is.
+        // The caller keeps it alive until the next call. Ignored without outer loops.
+        virtual void set_outer_row_view(const OuterRowView * /*row*/) {}
+        // what the last solve's outer loops did; empty for an algorithm without them
+        virtual OuterLoopStats get_outer_loop_stats() const { return OuterLoopStats{}; }
+        // the active power targets (MW) the last solve's outer loops set, per generator and
+        // per storage unit (load convention), NaN where unchanged; empty when none did
+        virtual void get_outer_target_p(std::vector<real_type> & gen_p_mw,
+                                        std::vector<real_type> & storage_p_mw) const {
+            gen_p_mw.clear();
+            storage_p_mw.clear();
+        }
+        // the droop regime the last solve's outer loops set per hvdc line (grid id,
+        // HvdcRegimeControl::KEEP where they kept the grid's), empty when none did
+        virtual void get_outer_hvdc_status(std::vector<int> & status) const { status.clear(); }
+        /// the phase tap position the outer loops left each transformer at (grid id,
+        /// INT_MIN where they kept the grid's; empty: none)
+        virtual void get_outer_phase_tap(std::vector<int> & positions) const { positions.clear(); }
+        /// the same for the ratio tap changers
+        virtual void get_outer_ratio_tap(std::vector<int> & positions) const { positions.clear(); }
+        /// the section count the outer loops left each shunt at (grid id, INT_MIN where they kept
+        /// the grid's; empty: none)
+        virtual void get_outer_shunt_sections(std::vector<int> & counts) const { counts.clear(); }
+        /// where the last solve's outer loops ended, for other solves to resume from (see
+        /// OuterRowView::resume_from); null when it did not converge, or without outer loops
+        virtual std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const { return nullptr; }
+        /// where the outer loops' continuous controls (phase shifters, ratio groups, shunt
+        /// controllers) sit in the system the last rebuild built, see OuterControlLayout;
+        /// empty without outer loops, or with none of those controls
+        virtual OuterControlLayout get_outer_control_layout() const { return OuterControlLayout(); }
 
         virtual AlgoConfig get_config() const { return AlgoConfig{}; }
         virtual void set_config(const AlgoConfig&) {}

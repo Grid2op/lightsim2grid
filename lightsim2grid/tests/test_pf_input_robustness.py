@@ -290,6 +290,20 @@ class TestSolverComputePfInputs(unittest.TestCase):
             self._assert_all_solvers_raise(
                 RuntimeError, f"tol={bad_tol}", tol=bad_tol)
 
+    def test_keyword_arguments(self):
+        # the tolerance is named `tol_pu`: a solver compares the per-unit mismatch with
+        # it, unlike the `tol` (in MVA) of LSGrid.ac_pf
+        kwargs = dict(Ybus=self.Ybus, Sbus=self.Sbus, slack_ids=self.slack_ids,
+                      slack_weights=self.slack_weights, pv=self.pv, pq=self.pq,
+                      max_iter=MAX_IT)
+        for meth in ("compute_pf", "solve"):
+            with self.subTest(meth):
+                solver = lightsim2grid_cpp.NR_SparseLU()
+                conv = getattr(solver, meth)(V=1.0 * self.V0, tol_pu=TOL, **kwargs)
+                assert conv, f"{meth} did not converge when called by keyword"
+                with self.assertRaises(TypeError):
+                    getattr(solver, meth)(V=1.0 * self.V0, tol=TOL, **kwargs)
+
 
 if __name__ == "__main__":
     unittest.main()

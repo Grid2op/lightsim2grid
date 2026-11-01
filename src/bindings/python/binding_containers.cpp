@@ -30,7 +30,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const GeneratorContainer & data)  {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &GeneratorContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(gen_cls, "GeneratorContainer");
     add_binary_serialization(gen_cls);
 
@@ -103,6 +103,9 @@ void bind_containers(py::module_& m) {
         .def_readonly("can_be_pv", &SvcInfo::can_be_pv, DocIterator::svc_can_be_pv.c_str())
         .def_readonly("standby_low_vm_pu", &SvcInfo::standby_low_vm_pu, DocIterator::svc_standby_low_vm_pu.c_str())
         .def_readonly("standby_high_vm_pu", &SvcInfo::standby_high_vm_pu, DocIterator::svc_standby_high_vm_pu.c_str())
+        .def_readonly("standby_low_target_vm_pu", &SvcInfo::standby_low_target_vm_pu, DocIterator::svc_standby_low_target_vm_pu.c_str())
+        .def_readonly("standby_high_target_vm_pu", &SvcInfo::standby_high_target_vm_pu, DocIterator::svc_standby_high_target_vm_pu.c_str())
+        .def_readonly("b0_pu", &SvcInfo::b0_pu, DocIterator::svc_b0_pu.c_str())
         .def_readonly("has_res", &SvcInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p_mw", &SvcInfo::res_p_mw, DocIterator::res_p_mw.c_str())
         .def_readonly("res_q_mvar", &SvcInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
@@ -116,7 +119,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const SGenContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &SGenContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(sgen_cls, "SGenContainer");
     add_binary_serialization(sgen_cls);
 
@@ -146,7 +149,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const LoadContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &LoadContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(load_cls, "LoadContainer");
     add_binary_serialization(load_cls);
 
@@ -174,7 +177,7 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const StorageContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &StorageContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &StorageContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(storage_cls, "StorageContainer");
     add_binary_serialization(storage_cls);
 
@@ -212,9 +215,21 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const ShuntContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id", &ShuntContainer::get_bus_id_numpy, DocIterator::get_bus_id.c_str(), py::return_value_policy::reference_internal);
     add_pickle(shunt_cls, "ShuntContainer");
     add_binary_serialization(shunt_cls);
+
+    py::enum_<RegulationMode>(m, "RegulationMode",
+        "What a discrete control (a transformer's tap changer, a shunt's sections) regulates; the "
+        "unit of its target and deadband follows.")
+        .value("FIXED", RegulationMode::FIXED, "Nothing: the position only moves when someone moves it.")
+        .value("VOLTAGE", RegulationMode::VOLTAGE,
+               "The voltage of a bus, target and deadband in pu of its nominal voltage.")
+        .value("REACTIVE_POWER", RegulationMode::REACTIVE_POWER,
+               "The reactive power through one side of the branch, MVar.")
+        .value("CURRENT_LIMITER", RegulationMode::CURRENT_LIMITER,
+               "The current through one side of the branch kept below the target, A.")
+        .value("ACTIVE_POWER", RegulationMode::ACTIVE_POWER, "The active power through one side of the branch, MW.");
 
     py::class_<ShuntInfo>(m, "ShuntInfo", DocIterator::ShuntInfo.c_str())
         .def_readonly("id", &ShuntInfo::id, DocIterator::id.c_str())
@@ -230,7 +245,20 @@ void bind_containers(py::module_& m) {
         .def_readonly("res_q_mvar", &ShuntInfo::res_q_mvar, DocIterator::res_q_mvar.c_str())
         .def_readonly("res_theta_deg", &ShuntInfo::res_theta_deg, DocIterator::res_theta_deg.c_str())
         .def_readonly("res_v_kv", &ShuntInfo::res_v_kv, DocIterator::res_v_kv.c_str())
-        .def_readonly("voltage_level_id", &ShuntInfo::sub_id, DocIterator::shunt_sub_id.c_str());
+        .def_readonly("voltage_level_id", &ShuntInfo::sub_id, DocIterator::shunt_sub_id.c_str())
+        .def_readonly("has_sections", &ShuntInfo::has_sections,
+             "Whether it has sections (LSGrid.set_shunt_sections); the next fields are meaningless otherwise.")
+        .def_readonly("section_count", &ShuntInfo::section_count, "The number of sections on.")
+        .def_readonly("max_section_count", &ShuntInfo::max_section_count, "Its number of sections.")
+        .def_readonly("regulating", &ShuntInfo::regulating,
+             "Whether its sections regulate a voltage (LSGrid.set_shunt_section_regulation).")
+        .def_readonly("target_vm_pu", &ShuntInfo::target_vm_pu,
+             "The voltage they regulate, in pu of the regulated bus' nominal voltage.")
+        .def_readonly("target_deadband_pu", &ShuntInfo::target_deadband_pu, "Its deadband, in the same pu.")
+        .def_readonly("regulated_bus", &ShuntInfo::regulated_bus, "The grid bus id they regulate, -1 for none.")
+        .def_readonly("res_section_count", &ShuntInfo::res_section_count,
+             "Its section count in the last results: the input one unless an outer loop (ShuntVoltageControl) "
+             "switched it, the flows being those at that count.");
 
     auto trafo_cls = py::class_<TrafoContainer>(m, "TrafoContainer", DocIterator::TrafoContainer.c_str())
         .def("__len__", [](const TrafoContainer & data) { return data.nb(); })
@@ -243,12 +271,12 @@ void bind_containers(py::module_& m) {
             Whether ignore the tap side is ignored when using the
             'shift' attribute (should be True for pandapower,
             where it is ignored and False otherwise).)mydelimiter")
-        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_11", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_12", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_21", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_22", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id_side_1", &TrafoContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_id_side_2", &TrafoContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_11", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_12", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_21", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_22", [](const TrafoContainer & t) -> Eigen::Ref<const CplxVect> { return t.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::return_value_policy::reference_internal);
     add_pickle(trafo_cls, "TrafoContainer");
     add_binary_serialization(trafo_cls);
 
@@ -271,6 +299,39 @@ void bind_containers(py::module_& m) {
         .def_readonly("is_tap_side_1", &TrafoInfo::is_tap_side1, DocIterator::is_tap_hv_side.c_str())
         .def_readonly("ratio", &TrafoInfo::ratio, DocIterator::ratio.c_str())
         .def_readonly("shift_rad", &TrafoInfo::shift_rad, DocIterator::shift_rad.c_str())
+        .def_readonly("has_ratio_tap_changer", &TrafoInfo::has_ratio_tap_changer,
+             "Whether it has a ratio tap changer (LSGrid.set_trafo_ratio_tap_changer); its tap fields are "
+             "meaningless otherwise.")
+        .def_readonly("ratio_tap_position", &TrafoInfo::ratio_tap_position, "Its ratio tap changer's position.")
+        .def_readonly("ratio_low_tap", &TrafoInfo::ratio_low_tap, "Its lowest position.")
+        .def_readonly("ratio_high_tap", &TrafoInfo::ratio_high_tap, "Its highest position.")
+        .def_readonly("ratio_regulation_mode", &TrafoInfo::ratio_regulation_mode,
+             "What it regulates (RegulationMode.VOLTAGE once LSGrid.set_trafo_ratio_tap_regulation was called).")
+        .def_readonly("ratio_regulating", &TrafoInfo::ratio_regulating, "Whether it regulates.")
+        .def_readonly("ratio_target", &TrafoInfo::ratio_target,
+             "The voltage it regulates, in pu of the regulated bus' nominal voltage.")
+        .def_readonly("ratio_deadband", &TrafoInfo::ratio_deadband, "Its deadband, in the same pu.")
+        .def_readonly("ratio_regulated", &TrafoInfo::ratio_regulated, "The grid bus id it regulates, -1 for none.")
+        .def_readonly("has_phase_tap_changer", &TrafoInfo::has_phase_tap_changer,
+             "Whether it has a phase tap changer (LSGrid.set_trafo_phase_tap_changer); its tap fields are "
+             "meaningless otherwise.")
+        .def_readonly("phase_tap_position", &TrafoInfo::phase_tap_position, "Its phase tap changer's position.")
+        .def_readonly("phase_low_tap", &TrafoInfo::phase_low_tap, "Its lowest position.")
+        .def_readonly("phase_high_tap", &TrafoInfo::phase_high_tap, "Its highest position.")
+        .def_readonly("phase_regulation_mode", &TrafoInfo::phase_regulation_mode,
+             "What it regulates: RegulationMode.FIXED, ACTIVE_POWER or CURRENT_LIMITER.")
+        .def_readonly("phase_regulating", &TrafoInfo::phase_regulating, "Whether it regulates.")
+        .def_readonly("phase_target", &TrafoInfo::phase_target,
+             "Its target: MW for ACTIVE_POWER, A for CURRENT_LIMITER.")
+        .def_readonly("phase_deadband", &TrafoInfo::phase_deadband, "Its deadband, in the same unit.")
+        .def_readonly("phase_regulated", &TrafoInfo::phase_regulated,
+             "The side of the transformer (1 or 2) whose flow it regulates.")
+        .def_readonly("res_ratio_tap_position", &TrafoInfo::res_ratio_tap_position,
+             "Its ratio tap changer's position in the last results: the input one unless an outer "
+             "loop (TransformerVoltageControl) moved it, the flows being those at that position.")
+        .def_readonly("res_phase_tap_position", &TrafoInfo::res_phase_tap_position,
+             "Its phase tap changer's position in the last results: the input one unless an outer "
+             "loop (PhaseControl) moved it, the flows being those at that position.")
         .def_readonly("has_res", &TrafoInfo::has_res, DocIterator::has_res.c_str())
         .def_readonly("res_p1_mw", &TrafoInfo::res_p1_mw, DocIterator::res_p_hv_mw.c_str())
         .def_readonly("res_q1_mvar", &TrafoInfo::res_q1_mvar, DocIterator::res_q_hv_mvar.c_str())
@@ -305,12 +366,12 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const LineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::keep_alive<0, 1>())
-        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_11", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_12", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_21", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::keep_alive<0, 1>())
-        .def("get_yac_eff_22", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::keep_alive<0, 1>());
+        .def("get_bus_id_side_1", &LineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_id_side_2", &LineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_11", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_11(); }, DocIterator::get_yac_eff_11.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_12", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_12(); }, DocIterator::get_yac_eff_12.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_21", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_21(); }, DocIterator::get_yac_eff_21.c_str(), py::return_value_policy::reference_internal)
+        .def("get_yac_eff_22", [](const LineContainer & l) -> Eigen::Ref<const CplxVect> { return l.yac_eff_22(); }, DocIterator::get_yac_eff_22.c_str(), py::return_value_policy::reference_internal);
     add_pickle(line_cls, "LineContainer");
     add_binary_serialization(line_cls);
 
@@ -395,8 +456,8 @@ void bind_containers(py::module_& m) {
         .def("__iter__", [](const HvdcLineContainer & data) {
                 return py::make_iterator(data.begin(), data.end());
             }, py::keep_alive<0, 1>())
-        .def("get_bus_id_side_1", &HvdcLineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str())
-        .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str());
+        .def("get_bus_id_side_1", &HvdcLineContainer::get_bus_id_side_1_numpy, DocIterator::get_bus_id_side_1.c_str(), py::return_value_policy::reference_internal)
+        .def("get_bus_id_side_2", &HvdcLineContainer::get_bus_id_side_2_numpy, DocIterator::get_bus_id_side_2.c_str(), py::return_value_policy::reference_internal);
     add_pickle(dcline_cls, "HvdcLineContainer");
     add_binary_serialization(dcline_cls);
     // exposed (also) so TestSerializedEnumValues can pin the integer values,
