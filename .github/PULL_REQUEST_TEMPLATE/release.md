@@ -1,7 +1,7 @@
 <!-- release-checklist -->
 <!--
 Release pull request: dev_x.y.z -> master. The whole procedure is in RELEASE.md.
-The "release checklist" CI job fails until every box below is ticked and the two
+The "Release checklist" CI job fails until every box below is ticked and the two
 text sections are written; it reruns each time this description is edited.
 -->
 
@@ -13,7 +13,7 @@ text sections are written; it reruns each time this description is edited.
   `docs/conf.py`, matching the top `CHANGELOG.rst` section, dated, and sorted
   BREAKING > DEPRECATED > FIXED > ADDED > IMPROVED > UPDATED.
   `python3 utils/release.py prepare x.y.z` does all of it.
-- The documentation builds with no Sphinx warning (`release_check.yml`, job `docs`).
+- The documentation builds with no Sphinx warning (`release_check.yml`, job `Docs build without warnings`).
 
 ## Before merging
 

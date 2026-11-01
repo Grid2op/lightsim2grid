@@ -20,16 +20,17 @@ description. Below, `x.y.z` is the version being released and `x.y.z'` the next 
 
 2. Open the pull request into `master` with the release template:
    `https://github.com/Grid2op/lightsim2grid/compare/master...dev_x.y.z?template=release.md`.
-   If it was opened without it, the `Release check` workflow appends the checklist to the
-   description.
+   If it was opened without it, the `Release checklist` workflow appends the checklist to
+   the description.
 
-3. Go through the checklist. `Release check` (`.github/workflows/release_check.yml`) runs
-   on every pull request into `master` and fails until:
+3. Go through the checklist. Two workflows run on every pull request into `master`, and
+   their three checks fail until:
 
-   - **Version and changelog**: `python3 utils/release.py check` passes;
-   - **Docs build without warnings**: Sphinx, installed as Read the Docs installs it, with `-W`;
-   - **Release checklist**: every box ticked, *Release notes* and *Announcement* written.
-     Ticking a box reruns it.
+   - **Version and changelog** (`release_check.yml`): `python3 utils/release.py check` passes;
+   - **Docs build without warnings** (`release_check.yml`): Sphinx, installed as Read the
+     Docs installs it, with `-W`;
+   - **Release checklist** (`release_checklist.yml`): every box ticked, *Release notes* and
+     *Announcement* written. Ticking a box reruns it.
 
    The boxes:
 
@@ -88,3 +89,18 @@ description. Below, `x.y.z` is the version being released and `x.y.z'` the next 
       points to `vx.y.z`);
     - **SonarQube**: add `dev_x.y.z'` as a long-lived branch of the project;
     - **Codacy**: *Settings → Branches* → enable `dev_x.y.z'`.
+
+## The `master` branch protection
+
+The checks above only block a merge if `master` requires them. In the repository's
+*Settings → Rules → Rulesets* (or *Settings → Branches*), for the branch `master`:
+
+- require a pull request before merging;
+- require status checks to pass, with `Version and changelog`,
+  `Docs build without warnings` and `Release checklist` (plus the `main.yml` jobs wanted
+  green). GitHub only offers a check once it has run, so open the release pull request
+  first;
+- block force pushes and deletion.
+
+Keep the checklist in its own workflow: a job skipped on a description edit would count
+as passed and hide a failing check of the same commit.

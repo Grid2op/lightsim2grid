@@ -365,5 +365,5 @@ comments, which is where this repository already puts it at length.
 
 `RELEASE.md` has the procedure: a pull request from `dev_x.y.z` into `master`, checked by
 `.github/workflows/release_check.yml` (final version, dated and sorted changelog, docs
-building without warnings, a ticked checklist), then the tag, the PyPI release and the next
+building without warnings) and `release_checklist.yml` (a ticked checklist), then the tag, the PyPI release and the next
 `dev_x.y.z` branch (`python3 utils/release.py start-dev`).
