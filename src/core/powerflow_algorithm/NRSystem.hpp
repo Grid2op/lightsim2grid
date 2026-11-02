@@ -1820,8 +1820,12 @@ public:
     // vector (the default) disables masking and reproduces the unmasked behaviour
     // bit-for-bit. solver_bus_ids must never include the reference slack.
     void set_masked_buses(const std::vector<int>& solver_bus_ids) {
-        masked_buses_ = solver_bus_ids;
-        masked_dirty_ = true;
+        // the same set again (a driver hands it over before every Newton) keeps the
+        // positions resolved for it: finding them is a pass over all of J's nonzeros
+        if (solver_bus_ids != masked_buses_) {
+            masked_buses_ = solver_bus_ids;
+            masked_dirty_ = true;
+        }
         // forward to the VoltageControl extension when present (both AC
         // instantiations carry it -- see the SingleSlackNRSystem / MultiSlackNRSystem
         // aliases below): lets the voltage row of a group whose controllers are all
@@ -1849,8 +1853,11 @@ public:
     // nothing for) is silently ignored: q_row() answers -1 and there is nothing to
     // pin. Pass the buses that are PV in THIS scenario, not the ones that are PQ.
     void set_pv_pinned_buses(const std::vector<int>& solver_bus_ids) {
-        pv_pinned_buses_ = solver_bus_ids;
-        masked_dirty_ = true;
+        // the same set again keeps the resolved positions, as for set_masked_buses
+        if (solver_bus_ids != pv_pinned_buses_) {
+            pv_pinned_buses_ = solver_bus_ids;
+            masked_dirty_ = true;
+        }
     }
 
     // Whether the stranded-controller Jacobian slot (see VoltageControl::
@@ -2083,6 +2090,7 @@ public:
         masked_zero_pos_.clear();
         masked_one_pos_.clear();
         masked_dirty_ = false;
+        J_row_start_.clear();
         ledger_.reset(0);
     }
 
@@ -2345,6 +2353,13 @@ private:
     std::vector<int>                       masked_zero_pos_;
     std::vector<int>                       masked_one_pos_;
     bool                                   masked_dirty_;
+    // J_'s pattern by row (see _build_J_row_index), built when a mask first needs it
+    // and dropped with the pattern; scratch of _recompute_mask_positions
+    std::vector<int>                       J_row_start_;
+    std::vector<int>                       J_row_pos_;
+    std::vector<int>                       J_row_col_;
+    std::vector<int>                       one_col_of_row_;
+    std::vector<int>                       masked_rows_;
 
     // one dS -> J pass over a value map: for every Ybus nonzero that feeds a
     // Jacobian coefficient, J[pos] = real/imag(ds[k]). TakeReal picks the part,
@@ -2374,40 +2389,64 @@ private:
     }
 
     // resolve masked_zero_pos_ / masked_one_pos_ from masked_buses_ and J_'s
-    // sparsity (one pass over the nonzeros). Call only when J_ is built.
+    // sparsity. Call only when J_ is built. Visits the entries of the masked rows
+    // only, through a row index of J_'s pattern built once per pattern: the sets
+    // change at every row of a batch and at every PV / PQ switch, and a pass over
+    // all of J_'s nonzeros each time is a measurable share of a batch. Each
+    // position belongs to one row, so the order the positions are listed in does
+    // not change J.
     void _recompute_mask_positions() {
         masked_zero_pos_.clear();
         masked_one_pos_.clear();
         masked_dirty_ = false;
         if ((masked_buses_.empty() && pv_pinned_buses_.empty()) || J_.nonZeros() == 0) return;
         const int dim = static_cast<int>(J_.rows());
-        std::vector<char> is_masked_row(dim, 0);
-        std::vector<int>  one_col_of_row(dim, -1);  // for a masked row: the col forced to 1
+        if (static_cast<int>(J_row_start_.size()) != dim + 1) _build_J_row_index();
+        // for a masked row: the col forced to 1 (-2: not a masked row); rows listed once
+        if (static_cast<int>(one_col_of_row_.size()) != dim) one_col_of_row_.assign(dim, -2);
+        masked_rows_.clear();
+        auto mark = [this](int row, int col) {
+            if (row < 0) return;
+            if (one_col_of_row_[row] == -2) masked_rows_.push_back(row);
+            one_col_of_row_[row] = col;
+        };
         for (int b : masked_buses_) {
-            const int pr = ledger_.p_row(b);
-            const int tc = ledger_.theta_col(b);
-            if (pr >= 0) { is_masked_row[pr] = 1; one_col_of_row[pr] = tc; }
-            const int qr = ledger_.q_row(b);
-            const int vc = ledger_.vm_col(b);
-            if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }
+            mark(ledger_.p_row(b), ledger_.theta_col(b));
+            mark(ledger_.q_row(b), ledger_.vm_col(b));
         }
         // a PV-pinned bus keeps its P equation live -- only the Q row goes to
         // identity, which freezes dVm at 0 and leaves dTheta to be solved for.
         // A bus that is ALSO masked above is left as the mask set it (same Q row,
         // same one-column: the two agree, so the order does not matter).
-        for (int b : pv_pinned_buses_) {
-            const int qr = ledger_.q_row(b);
-            const int vc = ledger_.vm_col(b);
-            if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }
+        for (int b : pv_pinned_buses_) mark(ledger_.q_row(b), ledger_.vm_col(b));
+        for (int row : masked_rows_) {
+            const int one_col = one_col_of_row_[row];
+            for (int k = J_row_start_[row]; k < J_row_start_[row + 1]; ++k) {
+                if (J_row_col_[k] == one_col) masked_one_pos_.push_back(J_row_pos_[k]);
+                else                          masked_zero_pos_.push_back(J_row_pos_[k]);
+            }
+            one_col_of_row_[row] = -2;
         }
+    }
+
+    // J_'s pattern by row: the positions in J_.valuePtr() of row r's entries, and
+    // their columns, are J_row_pos_ / J_row_col_ over [J_row_start_[r], J_row_start_[r + 1])
+    void _build_J_row_index() {
+        const int dim = static_cast<int>(J_.rows());
+        const int nnz = static_cast<int>(J_.nonZeros());
         const int* outer = J_.outerIndexPtr();
         const int* inner = J_.innerIndexPtr();
+        J_row_start_.assign(dim + 1, 0);
+        for (int p = 0; p < nnz; ++p) ++J_row_start_[inner[p] + 1];
+        for (int r = 0; r < dim; ++r) J_row_start_[r + 1] += J_row_start_[r];
+        J_row_pos_.resize(nnz);
+        J_row_col_.resize(nnz);
+        std::vector<int> next(J_row_start_.begin(), J_row_start_.end() - 1);
         for (int col = 0; col < dim; ++col) {
             for (int p = outer[col]; p < outer[col + 1]; ++p) {
-                const int row = inner[p];
-                if (!is_masked_row[row]) continue;
-                if (one_col_of_row[row] == col) masked_one_pos_.push_back(p);
-                else                            masked_zero_pos_.push_back(p);
+                const int k = next[inner[p]]++;
+                J_row_pos_[k] = p;
+                J_row_col_[k] = col;
             }
         }
     }

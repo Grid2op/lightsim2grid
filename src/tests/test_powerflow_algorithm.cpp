@@ -623,6 +623,70 @@ TEST_CASE("the masked rows stay the identity in a J rebuilt with another pattern
     CHECK(nb_ones == 2);
 }
 
+TEST_CASE("the masked and pinned rows follow every change of their sets, the same set given again included", "[NRSystem][mask]")
+{
+    // an outer-loop driver hands its pinned buses over before every Newton, most of the time
+    // unchanged: J must hold the identity on exactly the rows of the current sets, and the
+    // Jacobian's own values everywhere else
+    LSGrid grid = make_radial_grid(5);
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    REQUIRE(in.pq.size() >= 2);
+    MultiSlackNRSystem plain;
+    build_system(plain, in, &grid);
+    const std::vector<real_type> values_plain = values_of(SpMatReal(plain.J()));
+
+    MultiSlackNRSystem sys;
+    build_system(sys, in, &grid);
+    const int bus_a = in.pq(in.pq.size() - 1);
+    const int bus_b = in.pq(in.pq.size() - 2);
+
+    // J against what the sets say: the identity on the rows of the masked buses (P and Q)
+    // and of the pinned ones (Q only), plain's values on every other row
+    auto check_J = [&](const std::vector<int> & masked, const std::vector<int> & pinned){
+        const SpMatReal J = sys.J();
+        std::vector<int> one_col(J.rows(), -2);  // -2: a row left alone
+        for (int b : masked) {
+            one_col[sys.p_to_J_row()[b]] = sys.theta_to_J_col()[b];
+            one_col[sys.q_to_J_row()[b]] = sys.vm_to_J_col()[b];
+        }
+        for (int b : pinned) one_col[sys.q_to_J_row()[b]] = sys.vm_to_J_col()[b];
+        for (int col = 0; col < static_cast<int>(J.cols()); ++col) {
+            for (int p = J.outerIndexPtr()[col]; p < J.outerIndexPtr()[col + 1]; ++p) {
+                const int row = J.innerIndexPtr()[p];
+                INFO("entry (" << row << ", " << col << ")");
+                if (one_col[row] == -2) CHECK(J.valuePtr()[p] == values_plain[p]);
+                else CHECK(J.valuePtr()[p] == (one_col[row] == col ? 1. : 0.));
+            }
+        }
+    };
+    auto refill = [&](){ sys.fill_internal_variables(); sys.fill_J(); };
+
+    sys.set_masked_buses({bus_a});
+    refill();
+    check_J({bus_a}, {});
+    sys.set_masked_buses({bus_a});  // the same set again
+    refill();
+    check_J({bus_a}, {});
+    sys.set_masked_buses({bus_b});  // another one: bus_a's rows get their values back
+    refill();
+    check_J({bus_b}, {});
+
+    sys.set_pv_pinned_buses({bus_a});
+    refill();
+    check_J({bus_b}, {bus_a});
+    sys.set_pv_pinned_buses({bus_a});  // the same set again
+    refill();
+    check_J({bus_b}, {bus_a});
+    sys.set_pv_pinned_buses({bus_b});  // the bus masked already: masking wins, same rows
+    refill();
+    check_J({bus_b}, {bus_b});
+
+    sys.set_masked_buses({});
+    sys.set_pv_pinned_buses({});
+    refill();
+    check_J({}, {});
+}
+
 // ===========================================================================
 // MultiSlack
 // ===========================================================================
