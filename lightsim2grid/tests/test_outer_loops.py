@@ -77,10 +77,10 @@ class TestNROuter(unittest.TestCase):
     def test_config_holds_only_the_resume_flag(self):
         grid = _grid(OUTER)
         cfg = grid.get_ac_algo_config()
-        # the Newton's 5 + 6 parameters, then resume_outer_state: the driver's OpenLoadFlow
-        # parameters are the grid's
+        # the Newton's 5 + 7 parameters (the 7th real one its rgrowth_threshold), then
+        # resume_outer_state: the driver's OpenLoadFlow parameters are the grid's
         self.assertEqual(len(cfg.int_params), 6)
-        self.assertEqual(len(cfg.real_params), 6)
+        self.assertEqual(len(cfg.real_params), 7)
         self.assertEqual(cfg.int_params[5], 0)
         ip = list(cfg.int_params)
         ip[5] = 1
