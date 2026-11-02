@@ -421,6 +421,7 @@ struct LS2G_API DocLSGrid
     static const std::string get_dc_computation_time;
     static const std::string get_algo_type;
     static const std::string get_dc_algo_type;
+    static const std::string get_algo_name;
     static const std::string get_algo;
     static const std::string get_dc_algo;
 

@@ -391,6 +391,9 @@ class LS2G_API LSGrid final
         }
         [[nodiscard]] AlgorithmType get_algo_type() const {return _algo.get_type(); }
         [[nodiscard]] AlgorithmType get_dc_algo_type() const {return _dc_algo.get_type(); }
+        // the registry name: unlike get_algo_type, it also names the algorithms that have no
+        // AlgorithmType value (they all read AlgorithmType::Custom there)
+        [[nodiscard]] const std::string & get_algo_name() const {return _algo.get_name(); }
         [[nodiscard]] const AlgorithmSelector & get_algo() const {return _algo;}
         [[nodiscard]] const AlgorithmSelector & get_dc_algo() const {return _dc_algo;}
 

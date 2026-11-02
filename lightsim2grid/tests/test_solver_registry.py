@@ -80,6 +80,37 @@ class TestStringOverload(unittest.TestCase):
             gm.change_algorithm("NonExistentSolverXYZ")
 
 
+class TestAlgoName(unittest.TestCase):
+    """get_algo_name() returns the registry name of the AC algorithm."""
+
+    def test_default_algo_name(self):
+        gm = _make_grid()
+        self.assertEqual(gm.get_algo_name(), "NR_SparseLU")
+
+    def test_algo_name_follows_change_algorithm(self):
+        gm = _make_grid()
+        gm.change_algorithm(AlgorithmType.GaussSeidel)
+        self.assertEqual(gm.get_algo_name(), "GaussSeidel")
+        gm.change_algorithm("NRSing_SparseLU")
+        self.assertEqual(gm.get_algo_name(), "NRSing_SparseLU")
+
+    def test_dc_change_leaves_ac_name(self):
+        gm = _make_grid()
+        gm.change_algorithm("DC_SparseLU")
+        self.assertEqual(gm.get_algo_name(), "NR_SparseLU")
+
+    def test_name_only_algorithm(self):
+        """An algorithm without its own AlgorithmType value is still named."""
+        gm = _make_grid()
+        name_only = [nm for nm in gm.available_algorithm_names()
+                     if nm.startswith("NR") and "StaticPivot" in nm]
+        if not name_only:
+            self.skipTest("no name-only NR algorithm in this build (KLU not compiled in)")
+        gm.change_algorithm(name_only[0])
+        self.assertEqual(gm.get_algo_type(), AlgorithmType.Custom)
+        self.assertEqual(gm.get_algo_name(), name_only[0])
+
+
 class TestAvailableSolvers(unittest.TestCase):
     """available_solvers() and available_solver_names() must return consistent info."""
 

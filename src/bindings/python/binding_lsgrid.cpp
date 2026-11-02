@@ -100,6 +100,7 @@ void bind_gridmodel(py::module_& m) {
         .def("get_dc_computation_time", &LSGrid::get_dc_computation_time, DocLSGrid::get_dc_computation_time.c_str())
         .def("get_algo_type", &LSGrid::get_algo_type, DocLSGrid::get_algo_type.c_str())
         .def("get_dc_algo_type", &LSGrid::get_dc_algo_type, DocLSGrid::get_dc_algo_type.c_str())
+        .def("get_algo_name", &LSGrid::get_algo_name, DocLSGrid::get_algo_name.c_str())
         .def("get_algo", &LSGrid::get_algo, py::return_value_policy::reference_internal, DocLSGrid::get_algo.c_str())
         .def("get_dc_algo", &LSGrid::get_dc_algo, py::return_value_policy::reference_internal, DocLSGrid::get_dc_algo.c_str())
         .def("set_dc_distribute_slack_on_can_participate", &LSGrid::set_dc_distribute_slack_on_can_participate,

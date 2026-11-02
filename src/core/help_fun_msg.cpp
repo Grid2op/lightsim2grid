@@ -3925,6 +3925,15 @@ const std::string DocLSGrid::get_dc_algo_type = R"mydelimiter(
     Return the type of the solver currently used to compute DC powerflow.
 
 )mydelimiter";
+const std::string DocLSGrid::get_algo_name = R"mydelimiter(
+    Return the registry name of the solver currently used (for example ``"NR_KLU"``), the name
+    :func:`lightsim2grid.network.LSGrid.change_algorithm` accepts.
+
+    Unlike :func:`lightsim2grid.network.LSGrid.get_algo_type`, it also names the algorithms that have
+    no :class:`lightsim2grid.algorithm.AlgorithmType` value (plugins, and built-ins registered by
+    name only, such as ``NRSing_KLUStaticPivot``), which all read ``AlgorithmType.Custom`` there.
+
+)mydelimiter";
 const std::string DocLSGrid::get_algo = R"mydelimiter(
     Return the solver currently in use as a :func:`lightsim2grid.algorithm.AlgorithmSelector` instance.
 
