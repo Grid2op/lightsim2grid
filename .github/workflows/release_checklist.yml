@@ -1,0 +1,55 @@
+name: Release checklist
+
+# The checklist half of the release checks (release_check.yml has the rest): every
+# box of .github/PULL_REQUEST_TEMPLATE/release.md ticked, the release notes and the
+# announcement written. Make its job required in master's branch protection.
+on:
+  pull_request:
+    branches:
+      - master
+    # "edited": ticking a box reruns it.
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-checklist-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  checklist:
+    name: Release checklist
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # to put the checklist in a description that lacks it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Only the script and the template are read.
+          sparse-checkout: |
+            utils/release.py
+            .github/PULL_REQUEST_TEMPLATE/release.md
+          sparse-checkout-cone-mode: false
+      # A pull request opened without ?template=release.md gets the checklist appended
+      # to its description, so nobody has to remember the template. The job still
+      # fails: the boxes are not ticked yet.
+      - name: Add the checklist if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          if ! printf '%s' "$PR_BODY" | grep -q '<!-- release-checklist -->'; then
+            if [ "$SAME_REPO" = "true" ]; then
+              { printf '%s\n\n' "$PR_BODY"; cat .github/PULL_REQUEST_TEMPLATE/release.md; } > body.md
+              gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file body.md
+              echo "::notice::Release checklist added to the pull request description."
+            fi
+          fi
+      - name: Every box ticked, release notes and announcement written
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$PR_BODY" | python3 utils/release.py check-pr-body

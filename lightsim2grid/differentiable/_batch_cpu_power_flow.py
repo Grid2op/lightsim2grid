@@ -218,20 +218,20 @@ class BatchCPUPowerFlow:
                 shunt_status=None, load_status=None):
         """Solve one scenario per row; returns complex ``V`` of shape
         ``(n_scenarios, n_bus)`` in per unit, in grid bus numbering (the same
-        numbering the grid's own accessors use).
+        numbering the grid's own accessors use). The inputs::
 
-        load_p, load_q : (n_scen, n_load) MW / MVAr        differentiable
-        gen_p          : (n_scen, n_gen)  MW               differentiable
-        sgen_p         : (n_scen, n_sgen) MW               differentiable
-        gen_v          : (n_scen, n_gen)  vm_pu            differentiable; generators on
-                                                           one bus must agree, see above
-        line_status    : (n_scen, n_line)  bool, True = connected
-        trafo_status   : (n_scen, n_trafo) bool, True = connected
-        gen_status     : (n_scen, n_gen)   bool, True = connected
-        shunt_status   : (n_scen, n_shunt) bool, True = connected
-        load_status    : (n_scen, n_load)  bool, True = connected; a disconnected
-                                           load's power leaves the row, so its
-                                           load_p / load_q gradient there is 0
+            load_p, load_q : (n_scen, n_load) MW / MVAr        differentiable
+            gen_p          : (n_scen, n_gen)  MW               differentiable
+            sgen_p         : (n_scen, n_sgen) MW               differentiable
+            gen_v          : (n_scen, n_gen)  vm_pu            differentiable; generators on
+                                                               one bus must agree, see above
+            line_status    : (n_scen, n_line)  bool, True = connected
+            trafo_status   : (n_scen, n_trafo) bool, True = connected
+            gen_status     : (n_scen, n_gen)   bool, True = connected
+            shunt_status   : (n_scen, n_shunt) bool, True = connected
+            load_status    : (n_scen, n_load)  bool, True = connected; a disconnected
+                                               load's power leaves the row, so its
+                                               load_p / load_q gradient there is 0
 
         ``None`` means "whatever the grid itself says", in every row. At least one
         input must be given: it is what fixes the number of scenarios.

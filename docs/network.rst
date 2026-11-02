@@ -651,10 +651,13 @@ listed or not. :class:`~lightsim2grid.scenarioSweep.ScenarioSweepCPP` trips them
 
 .. autoclass:: lightsim2grid.network.ContingencyPropagator
     :members:
+    :no-index:
 
 .. autofunction:: lightsim2grid.network.propagate_contingencies
+    :no-index:
 
 .. autofunction:: lightsim2grid.network.group_equivalent_contingencies
+    :no-index:
 
 Detailed documentation
 --------------------------

@@ -404,6 +404,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``LSGrid.set_remote_voltage_control_vm_range`` is removed, and ``init_from_pypowsybl``'s
   ``remote_voltage_control_vm_range`` deprecated (ignored, with a warning): a remote controller at an
   unrealistic voltage is checked against ``ReactiveLimits``' own realistic range.
+- [FIXED] documentation: the Sphinx build has no warning left; a pull request into ``master``
+  now fails if it has one (see ``RELEASE.md``).
+- [IMPROVED] the macOS wheels target macOS 11.0: the Intel ones (macOS 15 before) and the Apple
+  Silicon ones (macOS 14 before) now install on macOS 11 and later.
 
 
 [1.2.0] 2026-10-12
