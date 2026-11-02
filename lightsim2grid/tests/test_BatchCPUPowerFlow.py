@@ -672,6 +672,27 @@ class TestBatchCPUPowerFlowOuterLoops(unittest.TestCase):
             else:
                 self.assertGreater(abs(grad), 1e-4)
 
+    def test_distributed_slack_in_the_newton_redistribute_slack(self):
+        # each row loses what its loads take above the grid's set-points (redistribute_slack):
+        # DistributedSlack shares it before the first solve, which puts the capped unit at its
+        # bound -- held there whatever its set-point, as when the Newton's share parks it
+        gen_p = np.where(self.gen_p == 0., 5., self.gen_p)
+
+        def make():
+            pf = self._make(distributed=True)
+            pf.sweep.redistribute_slack = True
+            return pf
+        pf, tensors = self._check(make, dict(load_p=self.load_p, gen_p=gen_p))
+        p_max = float(self._grid().get_gen_target_p()[0]) + 1.
+        below = gen_p[:, 0] < p_max
+        self.assertTrue(below.any() and (~below).any())
+        for row in range(self.N_SCEN):
+            grad = tensors["gen_p"].grad[row, 0].item()
+            if below[row]:
+                self.assertAlmostEqual(grad, 0., places=12)
+            else:
+                self.assertGreater(abs(grad), 1e-4)
+
     def test_generator_contingency(self):
         gen_status = np.ones((self.N_SCEN, self.gen_p.shape[1]), dtype=bool)
         gen_status[1, 2] = False

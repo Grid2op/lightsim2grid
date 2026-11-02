@@ -169,6 +169,8 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         mutable const OuterSolveCache * solve_units_cache_ = nullptr;
         mutable std::uint64_t solve_units_generation_ = 0;
         std::vector<real_type> current_mw_;
+        // each unit's target in force before the row's lost-power share moved it
+        std::vector<real_type> initial_mw_;
         // around a distributed-slack Newton: the units at a bound, out of its share, and for each
         // whether at its upper one (else its lower one)
         std::vector<char> parked_;

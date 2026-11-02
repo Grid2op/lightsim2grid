@@ -255,6 +255,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   positions of the previous pattern.
 - [ADDED] (C++) ``NRAlgo::request_factorize``, ``NRSystem::set_controller_q`` and ``NRSystem::masked_buses``,
   for a driver that rebuilds the Newton in the middle of a solve.
+- [FIXED] gradients with ``NROuterDist_*`` and ``redistribute_slack``: a unit the share of a row's lost power
+  put at a bound kept its ``gen_p`` gradient; it is held there, as one the Newton's share parks.
 - [FIXED] ``LinearSolverStats`` of the ``*_NICSLU`` algorithms: the factorizations NICSLU runs in place of a
   refactorization (declined or failed) count, as fallbacks. They were counted as refactorizations.
 - [FIXED] ``LSGrid``'s result and target getters (``get_gen_res``, ``get_load_target_p``, ...) returned views

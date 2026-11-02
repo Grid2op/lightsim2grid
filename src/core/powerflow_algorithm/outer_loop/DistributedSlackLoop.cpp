@@ -159,6 +159,7 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
     }
     current_mw_.resize(units_.size());
     for(std::size_t k = 0; k < units_.size(); ++k) current_mw_[k] = units_[k].injection_mw;
+    initial_mw_ = current_mw_;
     lost_p_saturated_.clear();
     _share_lost_p(ctx);
     // every unit takes its share in the Newton to start with, but those a resumed solve kept out,
@@ -458,11 +459,13 @@ void DistributedSlackLoop::_adjoint_terms(OuterAdjointTerms & out) const
     // a unit parked at a bound sits there whatever its set-point (the Newton gives it no
     // share, and the sharing from the initial targets puts it back at the bound) -- unless
     // that "bound" is its own set-point: a unit already beyond a limit is never pulled back
-    // to it (slack_redistribution::distribute), it stays where its target puts it
+    // to it (slack_redistribution::distribute), it stays where its target puts it. Its own:
+    // from before the row's lost-power share, which moves the initial targets (injection_mw)
+    // -- a unit that share put at its bound is held there as well
     if (sn_mva_ > 0.) out.inv_sn = 1. / sn_mva_;
     for (std::size_t k = 0; k < units_.size() && k < parked_.size() && k < unit_solver_bus_.size(); ++k) {
         if (!parked_[k] || units_[k].kind != slack_redistribution::UnitKind::GENERATOR) continue;
-        if (k < current_mw_.size() && current_mw_[k] == units_[k].injection_mw) continue;
+        if (k < current_mw_.size() && k < initial_mw_.size() && current_mw_[k] == initial_mw_[k]) continue;
         out.fixed_p.emplace_back(units_[k].el_id, unit_solver_bus_[k]);
     }
 }
