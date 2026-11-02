@@ -13,6 +13,7 @@ __all__ = ["AlgorithmType",
            "TimerJac",
            "ScalingPolicyType",
            "RefactorPolicyType",
+           "FillReducingOrdering",
            "FDPFMethod",
            "AlgoConfig",
            "AlgoControl",
@@ -44,6 +45,7 @@ from ..lightsim2grid_cpp import LinearSolverStats  # pyright: ignore[reportMissi
 from ..lightsim2grid_cpp import TimerJac  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import ScalingPolicyType  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import RefactorPolicyType  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import FillReducingOrdering  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import FDPFMethod  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import AlgoConfig  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import AlgoControl  # pyright: ignore[reportMissingImports]

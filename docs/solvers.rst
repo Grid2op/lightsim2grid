@@ -271,6 +271,41 @@ the next solve, which analyzes the Jacobian again. The results agree with the or
     config.int_params = int_params
     grid.set_ac_algo_config(config)
 
+**The ordering it starts from: ``fill_reducing_ordering``.** The constrained indices move in a
+fill-reducing order of the Jacobian, AMD's by default. ``fill_reducing_ordering =
+FillReducingOrdering.MinFill`` starts instead from a minimum-fill ordering: each step eliminates
+the index whose elimination creates the fewest new nonzeros (the third scheme of Tinney and
+Walker, [TW1967]_, on the elimination graph of [Rose1972]_). On power-flow Jacobians it usually
+gives somewhat fewer operations per refactorization than AMD, for an analysis that costs more:
+it pays when one analysis serves many refactorizations, as in the batch classes. The results
+agree with AMD's order to round-off, not bit for bit, and the pivots the refactorizations meet
+are not the same, so on a given grid the number of fallbacks can change.
+It is independent of ``constrained_ordering`` (with the latter off, the solver orders with
+minimum fill and no constraint, without KLU's block-triangular preordering), off by default, and
+only the KLU-based algorithms take it. In an :class:`~lightsim2grid.algorithm.AlgoConfig` it is
+bit 1 of the Newton's fifth ``int_params`` entry, ``constrained_ordering`` being bit 0:
+
+.. code-block:: python
+
+    from lightsim2grid.algorithm import NROuter_KLUStaticPivot, FillReducingOrdering
+    solver = NROuter_KLUStaticPivot()
+    solver.fill_reducing_ordering = FillReducingOrdering.MinFill
+
+    # on a grid: constrained ordering (bit 0) and minimum fill (bit 1)
+    int_params[4] = 1 | 2
+    config.int_params = int_params
+    grid.set_ac_algo_config(config)
+
+Building the precedences into the ordering itself, so that an index becomes a candidate only once
+the Vm columns it follows are eliminated, was tried with both minimum degree and minimum fill:
+it did not give less fill than moving the indices afterwards.
+
+.. [TW1967] W. F. Tinney, J. W. Walker, "Direct solutions of sparse network equations by
+   optimally ordered triangular factorization", *Proceedings of the IEEE* 55(11):1801-1809, 1967.
+.. [Rose1972] D. J. Rose, "A graph-theoretic study of the numerical solution of sparse positive
+   definite systems of linear equations", in R. C. Read (ed.), *Graph Theory and Computing*,
+   Academic Press, 1972, pp. 183-217.
+
 Default algorithm selection
 ------------------------------
 
@@ -476,7 +511,8 @@ counterparts for the DC solver) instead, which read/write a serialisable
 
     config = env.backend.get_ac_algo_config()
     # config.int_params  == [ScalingPolicyType, RefactorPolicyType, ls_max_iter, refactor_every_n,
-    #                        constrained_ordering]  (an NROuter_* appends resume_outer_state)
+    #                        ordering flags: constrained_ordering | 2 * (fill_reducing_ordering == MinFill)]
+    #                       (an NROuter_* appends resume_outer_state)
     # config.real_params == [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max,
     #                        rgrowth_threshold]
 

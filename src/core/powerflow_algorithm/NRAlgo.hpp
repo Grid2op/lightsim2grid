@@ -478,6 +478,26 @@ public:
         }
     }
 
+    // The fill-reducing ordering the linear solver starts from (see FillReducingOrdering):
+    // AMD by default, or minimum fill. Independent of the constrained ordering: with both,
+    // the constraints move their indices in the minimum-fill order. Only for a linear solver
+    // that takes ordering constraints (KLU); takes effect on the next solve, which analyzes
+    // again.
+    FillReducingOrdering get_fill_reducing_ordering() const noexcept { return fill_reducing_ordering_; }
+    void set_fill_reducing_ordering(FillReducingOrdering v) {
+        if (v != FillReducingOrdering::AMD && v != FillReducingOrdering::MinFill) {
+            throw std::runtime_error("NRAlgo: unknown fill-reducing ordering");
+        }
+        if (v != FillReducingOrdering::AMD && !SUPPORTS_CONSTRAINED_ORDERING) {
+            throw std::runtime_error("NRAlgo: this linear solver has no choice of fill-reducing ordering "
+                                     "(only the KLU-based ones do)");
+        }
+        if (v != fill_reducing_ordering_) {
+            fill_reducing_ordering_ = v;
+            need_factorize_ = true;
+        }
+    }
+
     // The reciprocal pivot growth below which a refactorization is not trusted, once the
     // refactor fallback is on (a batch, the outer loops): see
     // LinearSolverPolicy::set_fallback_rgrowth_threshold. 0 keeps only a zero pivot.
@@ -494,7 +514,7 @@ public:
                             static_cast<int>(refactor_policy_),
                             ls_max_iter_,
                             refactor_every_n_,
-                            constrained_ordering_ ? 1 : 0 };
+                            _ordering_flags() };
         cfg.real_params = { static_cast<double>(max_dVa_),
                             static_cast<double>(max_dVm_),
                             static_cast<double>(ls_c_),
@@ -516,9 +536,16 @@ public:
         // the 5th is optional (a config saved before it existed keeps the current choice);
         // ignored by a linear solver that cannot order with constraints, as a config may
         // come from another algorithm
-        const bool new_constrained_ordering = cfg.int_params.size() > 4
-            ? (cfg.int_params[4] != 0 && SUPPORTS_CONSTRAINED_ORDERING)
-            : constrained_ordering_;
+        // It holds two flags (see _ordering_flags): bit 0 the constrained ordering, bit 1
+        // minimum fill. A config saved before bit 1 existed reads as it did.
+        const int ordering_flags = cfg.int_params.size() > 4 ? cfg.int_params[4] : _ordering_flags();
+        if (ordering_flags < 0 || ordering_flags > 3) {
+            throw std::runtime_error("NRAlgo::set_config: int_params[4] (the ordering flags) must be in [0, 3]");
+        }
+        const bool new_constrained_ordering = (ordering_flags & 1) != 0 && SUPPORTS_CONSTRAINED_ORDERING;
+        const FillReducingOrdering new_fill_reducing_ordering =
+            ((ordering_flags & 2) != 0 && SUPPORTS_CONSTRAINED_ORDERING) ? FillReducingOrdering::MinFill
+                                                                          : FillReducingOrdering::AMD;
         // the 7th real one too
         const real_type new_rgrowth_threshold = cfg.real_params.size() > 6
             ? _checked_rgrowth_threshold(static_cast<real_type>(cfg.real_params[6]))
@@ -545,6 +572,7 @@ public:
         refactor_policy_ = new_refactor_policy;
         set_scaling_policy(new_scaling_policy);
         set_constrained_ordering(new_constrained_ordering);
+        set_fill_reducing_ordering(new_fill_reducing_ordering);
         set_rgrowth_threshold(new_rgrowth_threshold);
     }
 
@@ -633,6 +661,12 @@ protected:
     // whether the linear solver orders with the system's constraints (see
     // set_constrained_ordering); its own default
     bool constrained_ordering_ = detail::orders_with_constraints_by_default<LinearSolver>::value;
+    FillReducingOrdering fill_reducing_ordering_ = FillReducingOrdering::AMD;
+
+    // int_params[4] of the config: bit 0 the constrained ordering, bit 1 minimum fill
+    int _ordering_flags() const noexcept {
+        return (constrained_ordering_ ? 1 : 0) | (fill_reducing_ordering_ == FillReducingOrdering::MinFill ? 2 : 0);
+    }
 
     // Timers
     double timer_dSbus_;

@@ -111,6 +111,10 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
             [](const Solver & s){ return nr_of(s).get_constrained_ordering(); },
             [](Solver & s, bool v){ nr_of(s).set_constrained_ordering(v); },
             DocSolver::constrained_ordering.c_str())
+        .def_property("fill_reducing_ordering",
+            [](const Solver & s){ return nr_of(s).get_fill_reducing_ordering(); },
+            [](Solver & s, FillReducingOrdering v){ nr_of(s).set_fill_reducing_ordering(v); },
+            DocSolver::fill_reducing_ordering.c_str())
         .def_property("rgrowth_threshold",
             [](const Solver & s){ return nr_of(s).get_rgrowth_threshold(); },
             [](Solver & s, real_type v){ nr_of(s).set_rgrowth_threshold(v); },

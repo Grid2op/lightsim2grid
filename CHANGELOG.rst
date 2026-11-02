@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] ``fill_reducing_ordering`` (KLU-based NR algorithms, part of their config): start the ordering
+  from minimum fill instead of AMD, for cheaper refactorizations in a batch. Off by default.
 - [IMPROVED] ``constrained_ordering``: a voltage-control group of several controllers keeps its Q
   columns in the controllers' order: holding one at a reactive limit forces a fresh factorization
   far less often.

@@ -157,6 +157,7 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
                 // solver that orders with constraints gets the system's first (or none,
                 // see set_constrained_ordering).
                 detail::set_ordering_constraints_impl(_linear_solver, _system, constrained_ordering_, 0);
+                detail::set_fill_reducing_ordering_impl(_linear_solver, fill_reducing_ordering_, 0);
                 err_ = _linear_solver.analyze(_system.J());
                 if (err_ == ErrorType::NoError) {
                     err_ = _linear_solver.factorize(_system.J());

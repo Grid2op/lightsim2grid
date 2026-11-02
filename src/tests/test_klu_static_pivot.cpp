@@ -30,6 +30,7 @@
 #include "linear_solvers/KLUSolver.hpp"
 #include "linear_solvers/KLUStaticPivotSolver.hpp"
 #include "linear_solvers/OrderingConstraints.hpp"
+#include "linear_solvers/MinFillOrdering.hpp"
 #include "powerflow_algorithm/NRSystem.hpp"
 #endif
 
@@ -608,6 +609,89 @@ TEST_CASE("an extension that declares no ordering constraints still composes wit
     CHECK(system.ordering_constraints().empty());
     LinearSolverPolicy<KLULinearSolver> solver;
     ls2g::detail::set_ordering_constraints_impl(solver, system, true, 0);
+}
+
+TEST_CASE("a constrained ordering from minimum fill is min_fill_order's with the follow indices moved after their leads", "[linear_solver][klu][static_pivot][ordering][min_fill]")
+{
+    const SpMat A = with_values(N, jacobian_like_pattern(N), 6);
+    std::vector<int> mf_perm;
+    REQUIRE(ls2g::min_fill_order(N, A.outerIndexPtr(), A.innerIndexPtr(), mf_perm));
+
+    // no constraint: minimum fill's order
+    std::vector<int> perm;
+    REQUIRE(ls2g::constrained_order(N, A.outerIndexPtr(), A.innerIndexPtr(), OrderingConstraints(),
+                                    ls2g::FillReducingOrdering::MinFill, perm));
+    CHECK(perm == mf_perm);
+
+    // constraints that have to move things, as for AMD
+    OrderingConstraints constraints;
+    constraints.push_back(OrderingConstraint{{mf_perm[0], mf_perm[1]}, {mf_perm[N - 1]}});
+    constraints.push_back(OrderingConstraint{{mf_perm[2]}, {mf_perm[3]}});
+    REQUIRE(ls2g::constrained_order(N, A.outerIndexPtr(), A.innerIndexPtr(), constraints,
+                                    ls2g::FillReducingOrdering::MinFill, perm));
+    std::vector<int> sorted = perm;
+    std::sort(sorted.begin(), sorted.end());
+    for(int i = 0; i < N; ++i) REQUIRE(sorted[i] == i);
+    const std::vector<int> pos = positions(perm);
+    CHECK(pos[mf_perm[0]] == pos[mf_perm[N - 1]] + 1);
+    CHECK(pos[mf_perm[1]] == pos[mf_perm[N - 1]] + 2);
+    CHECK(pos[mf_perm[2]] == pos[mf_perm[3]] + 1);
+
+    // AMD stays the default
+    std::vector<int> amd_perm, amd_given;
+    REQUIRE(ls2g::constrained_amd_order(N, A.outerIndexPtr(), A.innerIndexPtr(), constraints, amd_perm));
+    REQUIRE(ls2g::constrained_order(N, A.outerIndexPtr(), A.innerIndexPtr(), constraints,
+                                    ls2g::FillReducingOrdering::AMD, amd_given));
+    CHECK(amd_perm == amd_given);
+}
+
+TEST_CASE("both KLU solvers factorize and refactorize from a minimum-fill ordering", "[linear_solver][klu][static_pivot][ordering][min_fill]")
+{
+    const auto pattern = jacobian_like_pattern(N);
+    const SpMat first = with_values(N, pattern, 1);
+    OrderingConstraints constraints;
+    constraints.push_back(OrderingConstraint{{3, 4}, {20}});
+
+    // with and without constraints: minimum fill applies either way
+    for(const bool with_constraints : {false, true}){
+        KLUStaticPivotLinearSolver sp;
+        KLULinearSolver klu;
+        sp.set_fill_reducing_ordering(ls2g::FillReducingOrdering::MinFill);
+        klu.set_fill_reducing_ordering(ls2g::FillReducingOrdering::MinFill);
+        if(with_constraints){
+            sp.set_ordering_constraints(constraints);
+            klu.set_ordering_constraints(constraints);
+        }
+        REQUIRE(sp.analyze(first) == ErrorType::NoError);
+        REQUIRE(sp.factorize(first) == ErrorType::NoError);
+        REQUIRE(klu.analyze(first) == ErrorType::NoError);
+        REQUIRE(klu.factorize(first) == ErrorType::NoError);
+        for(unsigned k = 0; k < 3; ++k){
+            SpMat next = first;
+            const SpMat delta = with_values(N, pattern, 200 + k);
+            for(int p = 0; p < next.nonZeros(); ++p) next.valuePtr()[p] += 0.05 * delta.valuePtr()[p];
+            REQUIRE(sp.refactorize(next) == ErrorType::NoError);
+            REQUIRE(klu.refactorize(next) == ErrorType::NoError);
+            RealVect x_sp = rhs(N);
+            RealVect x_klu = rhs(N);
+            REQUIRE(sp.solve(x_sp) == ErrorType::NoError);
+            REQUIRE(klu.solve(x_klu) == ErrorType::NoError);
+            CHECK(residual(next, x_sp, rhs(N)) < 1e-12);
+            CHECK(residual(next, x_klu, rhs(N)) < 1e-12);
+        }
+    }
+}
+
+TEST_CASE("the policy forwards the fill-reducing ordering to a KLU solver", "[linear_solver][klu][ordering][min_fill]")
+{
+    LinearSolverPolicy<KLULinearSolver> solver;
+    ls2g::detail::set_fill_reducing_ordering_impl(solver, ls2g::FillReducingOrdering::MinFill, 0);
+    const SpMat A = with_values(N, jacobian_like_pattern(N), 3);
+    REQUIRE(solver.analyze(A) == ErrorType::NoError);
+    REQUIRE(solver.factorize(A) == ErrorType::NoError);
+    RealVect x = rhs(N);
+    REQUIRE(solver.solve(x) == ErrorType::NoError);
+    CHECK(residual(A, x, rhs(N)) < 1e-12);
 }
 
 #endif  // KLU_SOLVER_AVAILABLE

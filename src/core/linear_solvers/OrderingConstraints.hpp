@@ -52,6 +52,15 @@ struct OrderingConstraint
 
 using OrderingConstraints = std::vector<OrderingConstraint>;
 
+/**
+The fill-reducing ordering a KLU-based linear solver starts from, before the ordering
+constraints (if any) move their indices. `AMD`, the default, is KLU's own. `MinFill` is a
+minimum-fill (minimum deficiency) ordering, see min_fill_order: on power-flow Jacobians it
+usually gives somewhat fewer refactorization operations than AMD, for an analysis that costs
+more (it is done once per batch, not once per refactorization).
+**/
+enum class FillReducingOrdering : int { AMD = 0, MinFill = 1 };
+
 namespace detail {
     // whether a linear solver takes ordering constraints (C++14 detection, as for the rgrowth
     // threshold)
@@ -83,6 +92,16 @@ namespace detail {
     }
     template<class Solver, class System>
     void set_ordering_constraints_impl(Solver &, const System &, bool, long) {}
+
+    // a linear solver that takes ordering constraints also takes the fill-reducing ordering to
+    // start from; any other one is left as it is
+    template<class Solver>
+    auto set_fill_reducing_ordering_impl(Solver & solver, FillReducingOrdering ordering, int)
+        -> decltype(solver.set_fill_reducing_ordering(ordering), void()) {
+        solver.set_fill_reducing_ordering(ordering);
+    }
+    template<class Solver>
+    void set_fill_reducing_ordering_impl(Solver &, FillReducingOrdering, long) {}
 }  // namespace detail
 
 } // namespace ls2g

@@ -181,6 +181,12 @@ class LinearSolverPolicy
             -> decltype(std::declval<LS &>().set_ordering_constraints(std::move(constraints)), void()) {
             inner_.set_ordering_constraints(std::move(constraints));
         }
+        // the same, for the fill-reducing ordering the solver starts from
+        template<class LS = LinearSolver>
+        auto set_fill_reducing_ordering(FillReducingOrdering ordering)
+            -> decltype(std::declval<LS &>().set_fill_reducing_ordering(ordering), void()) {
+            inner_.set_fill_reducing_ordering(ordering);
+        }
 
         ErrorType solve(Eigen::Ref<RealVect> b) {
             ++stats_.nb_solve;

@@ -573,8 +573,23 @@ const std::string DocSolver::constrained_ordering = R"mydelimiter(
     control, transformer and shunt voltage control) after the voltage-magnitude columns that keep
     their pivot valid in both forms, so that a switch does not cost a new factorization. Only the
     KLU-based algorithms can: on by default for ``*_KLUStaticPivot``, off for ``*_KLU``, and
-    setting it on another algorithm raises. Part of :func:`get_config`, so a grid copy and the
-    batch classes keep it. Takes effect on the next solve, which analyzes the Jacobian again.
+    setting it on another algorithm raises. Part of :func:`get_config` (bit 0 of the fifth entry
+    of ``int_params``), so a grid copy and the batch classes keep it. Takes effect on the next solve, which analyzes the Jacobian again.
+
+    .. seealso:: :ref:`constrained-ordering`
+
+)mydelimiter";
+
+const std::string DocSolver::fill_reducing_ordering = R"mydelimiter(
+    The fill-reducing ordering the linear solver starts from, a
+    :class:`~lightsim2grid.algorithm.FillReducingOrdering`: ``AMD`` (the default, KLU's own) or
+    ``MinFill``, a minimum-fill ordering that usually makes each refactorization somewhat cheaper
+    for an analysis that costs more, worth it when one analysis serves many refactorizations
+    (the batch classes). Independent of :attr:`constrained_ordering`, which moves its indices in
+    whichever order this gives. Only the KLU-based algorithms take it: setting ``MinFill`` on
+    another algorithm raises. Part of :func:`get_config` (bit 1 of the fifth entry of
+    ``int_params``), so a grid copy and the batch classes keep it. Takes effect on the next solve,
+    which analyzes the Jacobian again.
 
     .. seealso:: :ref:`constrained-ordering`
 
