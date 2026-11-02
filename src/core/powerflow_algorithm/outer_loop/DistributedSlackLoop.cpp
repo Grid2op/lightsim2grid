@@ -113,11 +113,26 @@ void DistributedSlackLoop::_declare(const OuterContext & ctx) const
     ctx.controls->reserve_slack_share(buses);
 }
 
+void DistributedSlackLoop::_solve_units(const OuterContext & ctx) const
+{
+    const OuterSolveCache * cache = ctx.solve_cache;
+    const bool same_solve = cache != nullptr && cache->generation != 0 &&
+                            cache == solve_units_cache_ && cache->generation == solve_units_generation_;
+    if (same_solve) return;
+    solve_units_.clear();
+    solve_unit_bus_.clear();
+    collect_units(ctx.view(), solve_units_, solve_unit_bus_);
+    solve_units_cache_ = (cache != nullptr && cache->generation != 0) ? cache : nullptr;
+    solve_units_generation_ = solve_units_cache_ != nullptr ? cache->generation : 0;
+}
+
 bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
 {
     // a unit off the slack bus to take the mismatch: the slack bus' own units would only take
     // what it already absorbs (see the class comment)
-    return _has_participant(ctx.view(), ctx.slack_bus);
+    _solve_units(ctx);
+    const int skip = ctx.slack_bus;
+    return std::any_of(solve_unit_bus_.begin(), solve_unit_bus_.end(), [skip](int bus){ return bus != skip; });
 }
 
 void DistributedSlackLoop::_initialize(OuterContext & ctx)
@@ -131,9 +146,9 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
             if (parked_[k]) was_parked.emplace_back(std::make_pair(units_[k].kind, units_[k].el_id), parked_high_[k]);
         }
     }
-    units_.clear();
-    unit_solver_bus_.clear();
-    collect_units(ctx.view(), units_, unit_solver_bus_);
+    _solve_units(ctx);
+    units_ = solve_units_;
+    unit_solver_bus_ = solve_unit_bus_;
     sn_mva_ = ctx.grid->get_sn_mva();
     // a unit starts from its target in force: the one a solve resumed from left it at (a batch
     // row from its "n" solve, as OpenLoadFlow's contingencies start from the targetP of the

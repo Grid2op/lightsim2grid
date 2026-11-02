@@ -236,6 +236,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   from minimum fill instead of AMD, for cheaper refactorizations in a batch. Off by default.
 - [IMPROVED] (C++) masked and PV-pinned buses: their Jacobian positions are found again only when a set
   changes, and only on its rows: batches with outer loops spend noticeably less time outside the solver.
+- [IMPROVED] (C++) outer loops: ``TransformerVoltageControl`` and ``DistributedSlack`` work out their groups /
+  participants once per solve instead of at every call. ``OuterSolveCache`` gains a field: rebuild plugins.
 - [IMPROVED] ``constrained_ordering``: a voltage-control group of several controllers keeps its Q
   columns in the controllers' order: holding one at a reactive limit forces a fresh factorization
   far less often.

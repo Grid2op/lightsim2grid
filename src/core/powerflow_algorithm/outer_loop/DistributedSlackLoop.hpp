@@ -121,6 +121,9 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         /// whether some unit of the grid `view` shows takes part in the slack, on another
         /// solver bus than `skip_solver_bus` (-1: anywhere)
         static bool _has_participant(const OuterGridView & view, int skip_solver_bus = -1);
+        /// the participants of the solve's view and their solver buses, collected once per solve
+        /// (see OuterSolveCache): asked by _is_needed then _initialize
+        void _solve_units(const OuterContext & ctx) const;
         /// the row's loss shared on the participants (see lost_p_to_share_mw), their targets
         /// moved and taken as the initial ones; nothing without a loss to share
         void _share_lost_p(OuterContext & ctx);
@@ -144,6 +147,11 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         // (generator convention, MW), and where each one is now
         std::vector<slack_redistribution::Participant> units_;
         std::vector<int> unit_solver_bus_;
+        // _solve_units': the participants of a solve's view, and the solve they belong to
+        mutable std::vector<slack_redistribution::Participant> solve_units_;
+        mutable std::vector<int> solve_unit_bus_;
+        mutable const OuterSolveCache * solve_units_cache_ = nullptr;
+        mutable std::uint64_t solve_units_generation_ = 0;
         std::vector<real_type> current_mw_;
         // around a distributed-slack Newton: the units at a bound, out of its share, and for each
         // whether at its upper one (else its lower one)

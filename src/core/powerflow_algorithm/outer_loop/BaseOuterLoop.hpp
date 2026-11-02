@@ -9,6 +9,8 @@
 #ifndef BASE_OUTER_LOOP_H
 #define BASE_OUTER_LOOP_H
 
+#include <atomic>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
@@ -134,8 +136,21 @@ struct OuterSolveCache
 {
     bool has_bus_q_plan = false;
     bus_q_check::BusQPlan bus_q_plan;  ///< see bus_q_check::solve_bus_q_plan
+    /// which solve the cache stands for: a number of its own for every solve (0 before the
+    /// first). A loop that keeps something of its own computed from the solve's view reuses
+    /// it while this cache and this number are the ones it was computed for.
+    std::uint64_t generation = 0;
 
-    void reset() { has_bus_q_plan = false; }
+    void reset() {
+        has_bus_q_plan = false;
+        generation = _next_generation();
+    }
+
+private:
+    static std::uint64_t _next_generation() {
+        static std::atomic<std::uint64_t> counter(0);
+        return ++counter;
+    }
 };
 
 /**
