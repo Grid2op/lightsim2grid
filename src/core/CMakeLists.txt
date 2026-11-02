@@ -246,18 +246,32 @@ endif()
 set(PATH_CKTSO "$ENV{PATH_CKTSO}" CACHE PATH "Path to CKTSO root directory")
 option(ENABLE_CKTSO "Enable CKTSO solver" OFF)
 if(PATH_CKTSO)
+    # The per-platform folder names change between CKTSO releases (recent ones ship
+    # rocky8 / centos and win7_x64, older ones ubuntu and windows_x64): take the first
+    # candidate that holds the library, newest layout first.
     if(WIN32)
-        set(LIB_MAYBE_CKTSO ${PATH_CKTSO}/windows_x64)
+        set(_CKTSO_CANDIDATES win7_x64 windows_x64)
     else()
-        set(LIB_MAYBE_CKTSO ${PATH_CKTSO}/ubuntu2004_x64_gcc940)
+        set(_CKTSO_CANDIDATES rocky8_x64_gcc850 centos7_x64_gcc485 centos6_x64_gcc482
+                              ubuntu2004_x64_gcc940 ubuntu1804_x64_gcc750)
     endif()
-    find_library(LIB_CKTSO NAMES cktso HINTS ${LIB_MAYBE_CKTSO})
+    # re-resolved at every configure, so a build dir does not keep a stale location
+    unset(LIB_CKTSO CACHE)
+    set(LIB_MAYBE_CKTSO "")
+    foreach(_cktso_dir IN LISTS _CKTSO_CANDIDATES)
+        find_library(LIB_CKTSO NAMES cktso HINTS ${PATH_CKTSO}/${_cktso_dir} NO_DEFAULT_PATH)
+        if(LIB_CKTSO)
+            set(LIB_MAYBE_CKTSO ${PATH_CKTSO}/${_cktso_dir})
+            break()
+        endif()
+    endforeach()
     if(LIB_CKTSO)
         set(ENABLE_CKTSO ON)
         message(STATUS "CKTSO enabled via path: ${LIB_CKTSO}")
     else()
-        message(WARNING "CKTSO disabled: no library found at ${LIB_MAYBE_CKTSO}")
+        message(WARNING "CKTSO disabled: no library found in ${PATH_CKTSO} (looked in: ${_CKTSO_CANDIDATES})")
     endif()
+    unset(_CKTSO_CANDIDATES)
 endif()
 
 

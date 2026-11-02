@@ -408,6 +408,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   now fails if it has one (see ``RELEASE.md``).
 - [IMPROVED] the macOS wheels target macOS 11.0: the Intel ones (macOS 15 before) and the Apple
   Silicon ones (macOS 14 before) now install on macOS 11 and later.
+- [FIXED] building with a recent CKTSO (20261027): its libraries moved to ``rocky8_x64_gcc850`` /
+  ``win7_x64``, so CKTSO was silently disabled. The older folders are still found.
 
 
 [1.2.0] 2026-10-12
