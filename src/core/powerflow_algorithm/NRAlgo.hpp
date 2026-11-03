@@ -128,6 +128,7 @@ public:
     IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
     IntVect  get_controller_q_col()   const override { return _system.controller_q_col(); }
     IntVect  get_group_v_row()        const override { return _system.group_v_row(); }
+    OrderingConstraints get_ordering_constraints() const override { return _system.ordering_constraints(); }
     int      get_slack_col()          const override { return _system.slack_col(); }
     real_type get_slack_absorbed()    const override { return _system.slack_absorbed(); }
 

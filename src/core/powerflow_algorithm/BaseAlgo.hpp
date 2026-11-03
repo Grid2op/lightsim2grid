@@ -23,6 +23,7 @@
 // and to optimize the matrix operations
 #include "Utils.hpp"
 #include "CustTimer.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 #include "BaseConstants.hpp"
 #include "AlgoConfig.hpp"
 #include "linear_solvers/LinearSolverStats.hpp"
@@ -256,6 +257,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual IntVect  get_controller_q_col()   const { return IntVect(); }
         // J row of each voltage-control group's voltage constraint (empty without them)
         virtual IntVect  get_group_v_row()        const { return IntVect(); }
+        // The Newton system's ordering constraints (see OrderingConstraints), whether or not
+        // its linear solver orders with them: J indices to eliminate after others, so that a
+        // row switched by value keeps a valid pivot. Read-only; empty without a Newton system.
+        virtual OrderingConstraints get_ordering_constraints() const { return OrderingConstraints(); }
 
         // MultiSlack: J column of the slack_absorbed unknown (-1 when the
         // distributed-slack-in-Jacobian extension is not active).

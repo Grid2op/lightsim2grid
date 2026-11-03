@@ -212,6 +212,7 @@ public:
     IntVect   get_controller_elem_id() const override { return inner_.algo().get_controller_elem_id(); }
     IntVect   get_controller_q_col()   const override { return inner_.algo().get_controller_q_col(); }
     IntVect   get_group_v_row()        const override { return inner_.algo().get_group_v_row(); }
+    OrderingConstraints get_ordering_constraints() const override { return inner_.algo().get_ordering_constraints(); }
     int       get_slack_col()          const override { return inner_.algo().get_slack_col(); }
     // 0 after a solve: a distributed-slack Newton's share is in the units' targets (see
     // _fold_slack_share), and a single-slack one has none

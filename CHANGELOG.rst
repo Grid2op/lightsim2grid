@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [ADDED] (C++) ``BaseAlgo::get_ordering_constraints()``: the Newton system's ordering constraints,
+  read-only, so an external solver can order J as ``constrained_ordering`` does (gpusim2grid's GPU batch).
 - [ADDED] ``fill_reducing_ordering`` (KLU-based NR algorithms, part of their config): start the ordering
   from minimum fill instead of AMD, for cheaper refactorizations in a batch. Off by default.
 - [IMPROVED] (C++) masked and PV-pinned buses: their Jacobian positions are found again only when a set

@@ -434,6 +434,9 @@ class LS2G_API AlgorithmSelector final
         IntVect get_group_v_row() const {
             return get_prt_solver("get_group_v_row", false)->get_group_v_row();
         }
+        OrderingConstraints get_ordering_constraints() const {
+            return get_prt_solver("get_ordering_constraints", false)->get_ordering_constraints();
+        }
         int get_slack_col() const {
             return get_prt_solver("get_slack_col", false)->get_slack_col();
         }
