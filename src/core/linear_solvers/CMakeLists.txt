@@ -2,6 +2,7 @@ list(APPEND SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/SparseLUSolver.cpp")
 
 if(KLU_SOLVER_FOUND)
     list(APPEND SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/KLUSolver.cpp")
+    list(APPEND SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/KLUStaticPivotSolver.cpp")
 endif()
 
 if(LIB_CKTSO)

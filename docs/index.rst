@@ -59,6 +59,10 @@ This is a work in progress at the moment
    lightsimbackend
    solvers
    algorithm_names
+   outer_loops
+   physical_violations
+   main_component
+   result_views
    time_series
    security_analysis
    scenario_sweep

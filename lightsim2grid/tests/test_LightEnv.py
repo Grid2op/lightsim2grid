@@ -56,9 +56,11 @@ class TestLightEnvActions(unittest.TestCase):
     def tearDown(self) -> None:
         self.env.close()
 
-    def make_light_env(self, thermal_limit_ka=None, max_overflow=99, nb_ts=None) -> LightEnv:
+    def make_light_env(self, thermal_limit_ka=None, max_overflow=99, nb_ts=None,
+                       thermal_limit_ex_ka=None) -> LightEnv:
         """A light env on the grid of the grid2op env, replaying its chronics (the first
-        `nb_ts` steps only if given). By default the protections never trip."""
+        `nb_ts` steps only if given). By default the protections never trip, and the limit
+        of the extremity side is the one of the origin side (converted to its voltage)."""
         env = self.env
         light_env = LightEnv(env.backend._grid)
         data = env.chronics_handler.real_data.data
@@ -79,9 +81,9 @@ class TestLightEnvActions(unittest.TestCase):
             thermal_limit_ka = np.full(env.n_line, 1e9)
         protections = Protections()
         protections.set_thermal_limit_or(thermal_limit_ka.astype(float))
-        protections.set_thermal_limit_ex((thermal_limit_ka *
-                                          env.backend.lines_or_pu_to_kv /
-                                          env.backend.lines_ex_pu_to_kv).astype(float))
+        if thermal_limit_ex_ka is None:
+            thermal_limit_ex_ka = thermal_limit_ka * env.backend.lines_or_pu_to_kv / env.backend.lines_ex_pu_to_kv
+        protections.set_thermal_limit_ex(np.asarray(thermal_limit_ex_ka, dtype=float))
         protections.set_max_line_time_step_overflow(np.full(env.n_line, max_overflow, dtype=np.int32))
         light_env.protections = protections
         light_env.nb_timestep_cooldown_sub = COOLDOWN_SUB
@@ -593,6 +595,81 @@ class TestLightEnvActions(unittest.TestCase):
         cpy.reset()
         self.assertEqual(cpy.max_step, nb_ts)
         self.assertEqual(self.light_env.max_step, data.load_p.shape[0])
+
+    # --- protections: a side without a limit ---
+
+    def test_rho_nan_limit_leaves_side_out(self):
+        """a NaN (or inf) limit on every extremity side gives grid2op's rho = a_or / limit"""
+        th_lim = np.asarray(self.env.get_thermal_limit(), dtype=float) * 1e-3
+        for no_lim in (np.nan, np.inf):
+            light_env = self.make_light_env(thermal_limit_ka=th_lim, nb_ts=3,
+                                            thermal_limit_ex_ka=np.full(self.env.n_line, no_lim))
+            obs, _ = light_env.reset()
+            np.testing.assert_allclose(obs.rho, np.asarray(obs.a_or) / th_lim, rtol=1e-12)
+            obs = light_env.step(0)[0]
+            np.testing.assert_allclose(obs.rho, np.asarray(obs.a_or) / th_lim, rtol=1e-12)
+            self.assertTrue(np.isfinite(obs.rho).all())
+        # and both sides limited: the max of the two
+        th_lim_ex = th_lim * self.env.backend.lines_or_pu_to_kv / self.env.backend.lines_ex_pu_to_kv
+        light_env = self.make_light_env(thermal_limit_ka=th_lim, nb_ts=3)
+        obs, _ = light_env.reset()
+        np.testing.assert_allclose(obs.rho, np.maximum(np.asarray(obs.a_or) / th_lim,
+                                                       np.asarray(obs.a_ex) / th_lim_ex), rtol=1e-12)
+
+    def test_line_without_limit_never_trips(self):
+        """a line with no limit on either side has a rho of 0 and is never disconnected, the
+        side with a limit still trips"""
+        line_id = 0
+        th_lim = np.full(self.env.n_line, 1e9)
+        th_lim[line_id] = np.nan
+        th_lim_ex = np.full(self.env.n_line, 1e9)
+        th_lim_ex[line_id] = np.nan
+        light_env = self.make_light_env(thermal_limit_ka=th_lim, thermal_limit_ex_ka=th_lim_ex,
+                                        max_overflow=0, nb_ts=4)
+        obs, _ = light_env.reset()
+        self.assertEqual(obs.rho[line_id], 0.)
+        for _ in range(3):
+            obs, _, done, _, _ = light_env.step(0)
+            self.assertFalse(done)
+            self.assertEqual(obs.rho[line_id], 0.)
+            self.assertEqual(light_env.protections.lines_disconnected_this_step(), [])
+        # a tiny limit on the extremity side only: that side trips the line at the first step
+        th_lim_ex[line_id] = 1e-6
+        light_env = self.make_light_env(thermal_limit_ka=th_lim, thermal_limit_ex_ka=th_lim_ex,
+                                        max_overflow=0, nb_ts=4)
+        light_env.reset()
+        light_env.step(0)
+        self.assertIn(line_id, light_env.protections.lines_disconnected_this_step())
+
+    # --- time series ---
+
+    def test_time_series_none_is_unchanged(self):
+        """a time series left to None is a matrix of NaN: same episode as passing the NaN"""
+        env = self.env
+        data = env.chronics_handler.real_data.data
+        nb_ts = 5
+        ts = dict(load_p=data.load_p[:nb_ts], load_q=data.load_q[:nb_ts], gen_p=data.prod_p[:nb_ts])
+        envs = []
+        for gen_v in (None, np.full((nb_ts, env.n_gen), np.nan)):
+            light_env = self.make_light_env(nb_ts=nb_ts)
+            light_env.assign_time_series(gen_v=gen_v, **ts)  # everything else left to None
+            light_env.reset()
+            envs.append(light_env)
+        self.assertEqual(envs[0].max_step, nb_ts)
+        for _ in range(nb_ts - 1):
+            obs_none = envs[0].step(0)[0]
+            obs_nan = envs[1].step(0)[0]
+            np.testing.assert_array_equal(obs_none.a_or, obs_nan.a_or)
+            np.testing.assert_array_equal(obs_none.gen_p, obs_nan.gen_p)
+
+    def test_time_series_none_errors(self):
+        nb_ts = 3
+        light_env = self.make_light_env(nb_ts=nb_ts)
+        with self.assertRaises(ValueError):
+            light_env.assign_time_series()  # no number of steps
+        data = self.env.chronics_handler.real_data.data
+        with self.assertRaises(ValueError):
+            light_env.assign_time_series(load_p=data.load_p[:nb_ts], gen_p=data.prod_p[:nb_ts + 1])
 
     # --- reward and end of episode ---
 

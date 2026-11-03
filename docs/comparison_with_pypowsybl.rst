@@ -67,43 +67,51 @@ mismatch is not shared the way the model prescribes -> redistribute it; area int
 / secondary voltage control targets are not met -> adjust), then solve again -- repeating
 until every outer loop is satisfied or a round limit is hit.
 
-**lightsim2grid does not have this.** Its algorithms (Newton-Raphson, Fast-Decoupled,
+**The default lightsim2grid algorithms do not have this.** Its algorithms (Newton-Raphson, Fast-Decoupled,
 Gauss-Seidel, see :ref:`available-powerflow-solvers`) solve a *single*, fixed problem: the
-topology, injections, tap positions and voltage-control targets you hand it are exactly
-what gets solved, once, with nothing adjusted in response to the result. There is no
-generic outer-loop mechanism in the lightsim2grid core.
+topology, injections, tap positions and voltage-control targets you hand them are exactly
+what gets solved, once, with nothing adjusted in response to the result.
+
+The ``NROuter_*`` algorithms are the exception: they run OpenLoadFlow's outer loops themselves, around a
+single-slack Newton-Raphson (distributed slack, reactive limits, hvdc AC emulation limits, voltage monitoring, phase,
+transformer and shunt voltage control). They are opt-in, and described in :ref:`outer_loops`; with them, a grid read
+by ``init_from_pypowsybl`` runs the loops the installed OpenLoadFlow would run (:ref:`outer-loops-pypowsybl`). The rest of
+this page compares the two engines **without** outer loops, the case where the default algorithms are used.
 
 This is not simply "OLF has more features, lightsim2grid has fewer" -- the two
 architectures make a different trade-off, and where a given feature ends up depends on
 that trade-off:
 
-- **Distributed slack is the one outer loop lightsim2grid folds into the inner solve
+- **Distributed slack is the one outer loop the default algorithms fold into the inner solve
   instead of dropping.** ``MultiSlackNRSystem`` adds the slack-participation unknowns and
   their weighting directly into the *same* Newton-Raphson Jacobian as the rest of the
   problem (see ``src/core/powerflow_algorithm/NRSystem.hpp``), instead of an OLF-style
   outer loop that re-solves a single-slack problem and redistributes the mismatch between
   rounds. One solve, one Jacobian, no outer iteration -- faster, at the cost of a larger
-  and more coupled linear system.
-- **Reactive-limit PV<->PQ switching, discrete tap / shunt control, area interchange and
-  secondary voltage control are not implemented at all**, in either form (no outer loop,
-  and no in-Jacobian equivalent). This is precisely the gap :func:`bake_outer_loops`
-  papers over for the sake of comparison: it does not give lightsim2grid these
+  and more coupled linear system. The ``DistributedSlack`` loop of the ``NROuter_*`` algorithms
+  is the OLF-style alternative.
+- **Reactive-limit PV<->PQ switching, discrete tap / shunt control are not done by the default algorithms**, in either
+  form (no outer loop, and no in-Jacobian equivalent); they are the ``ReactiveLimits``, ``PhaseControl``,
+  ``TransformerVoltageControl`` and ``ShuntVoltageControl`` loops of the ``NROuter_*`` algorithms.
+  Area interchange and secondary voltage control are not implemented at all. This is precisely the gap
+  :func:`bake_outer_loops` papers over for the sake of comparing the default algorithms: it does not give them these
   capabilities, it just freezes OLF's already-converged answer for them into fixed
-  inputs, so that what is left is a problem lightsim2grid *can* solve exactly.
+  inputs, so that what is left is a problem they *can* solve exactly.
 
 Whether a given outer loop could instead be folded into the inner NR formulation (like
 distributed slack was) or fundamentally needs iteration around the solve (like discrete
 tap positions, which are not differentiable) is a case-by-case question, and remains
-open for most of OLF's outer loops as far as lightsim2grid is concerned.
+open for most of OLF's outer loops as far as the default algorithms are concerned.
 
 .. seealso::
     ``examples/dist_slack_algorithm/`` is a solver plugin (see
-    :ref:`solver_plugin`) that reimplements distributed slack the *other* way: as an
+    :ref:`solver_plugin`) that reimplements distributed slack as an
     explicit outer loop around a single-slack inner Newton-Raphson solve, mirroring
     OLF's own ``DistributedSlackOuterLoop`` architecture, instead of lightsim2grid's
-    default in-Jacobian ``MultiSlackNRSystem`` extension. It exists to demonstrate (and
+    default in-Jacobian ``MultiSlackNRSystem`` extension. It was written before the ``NROuter_*``
+    algorithms existed, to demonstrate (and
     test) that lightsim2grid's plugin mechanism can express an OLF-style outer loop at
-    all, not to replace the built-in distributed slack -- see the comment at the top of
+    all -- see the comment at the top of
     ``examples/dist_slack_algorithm/NRAlgoDistSlack.hpp`` for the full rationale
     (in short: it was used to investigate a step-damping / convergence interaction
     specific to the in-Jacobian approach).
@@ -306,8 +314,8 @@ Results
 
 The benchmarks were run on:
 
-- date: 2026-10-12 19:54  CEST
-- system: Linux 6.8.0-60-generic
+- date: 2026-11-02 15:46  CET
+- system: Linux 6.8.0-111-generic
 - OS: ubuntu 22.04
 - processor: 13th Gen Intel(R) Core(TM) i7-13700H
 - python version: 3.12.8.final.0 (64 bit)
@@ -316,7 +324,7 @@ The benchmarks were run on:
 - pandapower version: 3.5.4
 - pypowsybl version: 1.16.1
 - grid2op version: 1.12.5.dev0
-- lightsim2grid version: 1.2.0
+- lightsim2grid version: 1.3.0
 - lightsim2grid extra information: 
 
 	- klu_solver_available: True 
@@ -369,7 +377,7 @@ ieee300           4.85e-07          2.73e-07
 
 As we can notice in the tables above, the results match up to the solver precision 
 (set to 1e-06 for lightsim2grid): the largest observed mismatch, across all cases, is 5.11e-04 rad for the voltage angle
- and 1.80e-03 pu for the voltage magnitude. 
+and 1.80e-03 pu for the voltage magnitude. 
 
 On these grids, lightsim2grid and pypowsybl give the same exact results.
 
@@ -390,15 +398,15 @@ Times are expressed in ms.
 ===========  ===============  ===========
 case name      lightsim2grid    pypowsybl
 ===========  ===============  ===========
-ieee9                  0.109         7.09
-ieee14                 0.103         3.01
-ieee30                 0.141         2.46
-ieee57                 0.216         2.97
-ieee118                0.283         4.1
-ieee300                0.768         6.96
+ieee9                  0.13          6.39
+ieee14                 0.13          3.43
+ieee30                 0.147         2.78
+ieee57                 0.21          2.96
+ieee118                0.3           4.18
+ieee300                0.777         8.47
 ===========  ===============  ===========
 
-For this initial computation, lightsim2grid is between **9** and **65** times faster than pypowsybl.
+For this initial computation, lightsim2grid is between **11** and **49** times faster than pypowsybl.
 
 .. warning::
     This is not fair for pypowsybl.
@@ -427,15 +435,15 @@ time it took to perform the 100 powerflows.
 ===========  ===============  ===========
 case name      lightsim2grid    pypowsybl
 ===========  ===============  ===========
-ieee9                0.00642         2.05
-ieee14               0.00993         2.2
-ieee30               0.0165          2.07
-ieee57               0.0315          2.48
-ieee118              0.0508          3.63
-ieee300              0.242           6.36
+ieee9                0.00587         2.22
+ieee14               0.00687         2.44
+ieee30               0.0115          2.17
+ieee57               0.0209          2.48
+ieee118              0.0362          3.92
+ieee300              0.128           6.98
 ===========  ===============  ===========
 
-For successive powerflows, lightsim2grid is between **26** and **320** times faster than pypowsybl.
+For successive powerflows, lightsim2grid is between **55** and **379** times faster than pypowsybl.
 
 
 Computation times security analysis
@@ -455,12 +463,13 @@ compute the flows from the resulting voltages.
 ===========  ===============  ===========
 case name      lightsim2grid    pypowsybl
 ===========  ===============  ===========
-ieee9                 0.0153        1.25
-ieee14                0.0128        0.276
-ieee30                0.0151        0.299
-ieee57                0.0273        0.21
-ieee118               0.0372        0.305
-ieee300               0.134         1.32
+ieee9                 0.0192        0.864
+ieee14                0.0135        0.296
+ieee30                0.0135        0.25
+ieee57                0.0223        0.236
+ieee118               0.0331        0.326
+ieee300               0.0876        1.4
 ===========  ===============  ===========
 
-For the contingency analysis, lightsim2grid is between **8** and **81** times faster than pypowsybl.
+
+For the contingency analysis, lightsim2grid is between **10** and **45** times faster than pypowsybl.

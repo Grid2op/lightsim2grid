@@ -91,7 +91,7 @@ void SbusPolicy::Vary::prepare(const LSGrid & grid_model,
     sn_mva_ = sn_mva;
     nb_buses_solver_ = nb_buses_solver;
     nb_steps_ = nb_steps;
-    sbuses = CplxMat();   // a previous compute()'s matrix, if anyone asked for one
+    sbuses.reset();   // a previous compute()'s matrix, if anyone asked for one
     (void)ac_solver_used;  // kept for signature symmetry with the caller's other prep calls
 }
 
@@ -175,6 +175,18 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
             row(load_bus_[static_cast<size_t>(l)]) += BaseConstants::my_i * cplx_type(q, 0.);
         }
     }
+    // the loads the load contingency mask disconnects: the same, given back (a row
+    // naming a load in both the mask and its action is refused upstream)
+    if(load_off.rows() > 0 && i < load_off.rows()){
+        for(size_t l = 0; l < load_bus_.size(); ++l){
+            const Eigen::Index load_id = static_cast<Eigen::Index>(l);
+            if(load_bus_[l] < 0 || !load_off(i, load_id)) continue;
+            const real_type p = own_load_p ? load_p(i, load_id) : load_target_p_(load_id);
+            const real_type q = own_load_q ? load_q(i, load_id) : load_target_q_(load_id);
+            row(load_bus_[l]) += cplx_type(p, 0.);
+            row(load_bus_[l]) += BaseConstants::my_i * cplx_type(q, 0.);
+        }
+    }
     // ... and the loads it places on a bus (moved, or reconnected): drawn there, as
     // the load passes draw the others
     if(static_cast<size_t>(i) < topo_loads_on.size()){
@@ -241,14 +253,16 @@ real_type SbusPolicy::Vary::row_p_change_mw(Eigen::Index i) const
 
 const SbusPolicy::Vary::CplxMat & SbusPolicy::Vary::materialize() const
 {
-    if(sbuses.rows() == nb_steps_ && sbuses.cols() == nb_buses_solver_ && nb_steps_ > 0) return sbuses;
-    sbuses = CplxMat(nb_steps_, nb_buses_solver_);
+    const CplxMat & cached = sbuses.get();
+    if(cached.rows() == nb_steps_ && cached.cols() == nb_buses_solver_ && nb_steps_ > 0) return cached;
+    CplxMat & res = sbuses.overwrite();
+    res.resize(nb_steps_, nb_buses_solver_);
     CplxVect row;
     for(Eigen::Index i = 0; i < nb_steps_; ++i){
         fill_row(i, row);
-        sbuses.row(i) = row.transpose();
+        res.row(i) = row.transpose();
     }
-    return sbuses;
+    return res;
 }
 
 CplxVect SbusPolicy::Vary::constant_sbus_pu(const LSGrid & grid_model,

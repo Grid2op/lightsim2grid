@@ -81,10 +81,12 @@ void bind_light_env(py::module_& m) {
              "exceeds this value (grid2op NB_TIMESTEP_OVERFLOW_ALLOWED)")
         .def("set_thermal_limit_or", &Protections::set_thermal_limit_or, py::arg("thermal_limit_or"),
              "Set the thermal limits (kA) on the origin side, one per line (powerlines then transformers). "
-             "rho is the max over both sides of current / thermal limit.")
+             "rho is the max over both sides of current / thermal limit; a NaN or infinite limit leaves that "
+             "side out (eg NaN on every extremity side for grid2op's rho = a_or / limit).")
         .def("set_thermal_limit_ex", &Protections::set_thermal_limit_ex, py::arg("thermal_limit_ex"),
              "Set the thermal limits (kA) on the extremity side, one per line (powerlines then transformers). "
-             "rho is the max over both sides of current / thermal limit.")
+             "rho is the max over both sides of current / thermal limit; a NaN or infinite limit leaves that "
+             "side out (eg NaN on every extremity side for grid2op's rho = a_or / limit).")
         .def("set_max_line_time_step_overflow", &Protections::set_max_line_time_step_overflow, py::arg("max_line_time_step_overflow"),
              "Set, for each line (powerlines then transformers), the number of steps it can stay in overflow before "
              "the protections disconnect it (int32 vector)")
@@ -100,7 +102,7 @@ void bind_light_env(py::module_& m) {
         "of the environment or a step ending the episode by a divergence; once done is True the values are not "
         "meaningful. Lines use grid2op numbering (powerlines then transformers, 'or' being a transformer's hv side), "
         "powers are in MW / MVAr, currents in kA (like the thermal limits of Protections).")
-        .def_property_readonly("rho", &LightEnvObservation::get_rho, "For each line, the max over its two sides of current / thermal limit")
+        .def_property_readonly("rho", &LightEnvObservation::get_rho, "For each line, the max over its two sides of current / thermal limit (a side whose limit is NaN or infinite left out, 0 if both are)")
         .def_property_readonly("p_or", &LightEnvObservation::get_p_or, "Active power flow (MW) at the origin side of each line")
         .def_property_readonly("q_or", &LightEnvObservation::get_q_or, "Reactive power flow (MVAr) at the origin side of each line")
         .def_property_readonly("a_or", &LightEnvObservation::get_a_or, "Current flow (kA) at the origin side of each line")
@@ -138,7 +140,7 @@ void bind_light_env(py::module_& m) {
         .def_property_readonly("current_step", &LightEnv::get_current_step, "Current step count for this environment (number of env.step). current_step is 0 at reset and increased by 1 for each env.step.")
         .def_property_readonly("grid", &LightEnv::get_grid, "State of the underlying powergrid (readonly)")
         .def_property("protections", &LightEnv::get_protections, &LightEnv::assign_protections, "The current protections of the env")
-        .def_property("tol", &LightEnv::get_tol, &LightEnv::set_tol, "Tolerance used to compute the powerflows")
+        .def_property("tol", &LightEnv::get_tol, &LightEnv::set_tol, "Tolerance used to compute the powerflows, in MVA (not in per unit), as for LSGrid.ac_pf")
         .def_property("max_iter", &LightEnv::get_max_iter, &LightEnv::set_max_iter, "Maximum number of iterations for the powerflows")
         .def_property("nb_timestep_cooldown_sub", &LightEnv::get_nb_timestep_cooldown_sub, &LightEnv::set_nb_timestep_cooldown_sub,
                       "Number of steps a substation cannot be acted on after an action modified it (grid2op NB_TIMESTEP_COOLDOWN_SUB)")

@@ -16,6 +16,7 @@ from tqdm import tqdm
 import os
 from utils_benchmark import get_env_name_displayed
 from benchmark_solvers import solver_names
+from utils_benchmark import static_pivot_or
 
 try:
     from tabulate import tabulate
@@ -80,6 +81,7 @@ def _run_one_config(env_lightsim, *, init_from_n_powerflow=False,
     if compute_limit_violations:
         _set_benchmark_limits(env_lightsim.backend._grid)
     sa = ContingencyAnalysis(env_lightsim, compute_limit_violations=compute_limit_violations)
+    sa.change_algorithm(static_pivot_or(sa.computer, "NR_KLUStaticPivot", "NR_KLU"))
     for i in range(env_lightsim.n_line):
         sa.add_single_contingency(i)
         if i >= MAX_CONT:
@@ -145,6 +147,8 @@ if __name__ == "__main__":
         for nb_threads in [1, 2, 3, 4, 5, 6, 7, 8]:
             env_lightsim.reset()
             sa = ContingencyAnalysis(env_lightsim)
+            # the batch replaces the grid's algorithm by NR_KLU: pick the static-pivot one explicitly
+            sa.change_algorithm(static_pivot_or(sa.computer, "NR_KLUStaticPivot", "NR_KLU"))
             for i in range(env_lightsim.n_line):
                 sa.add_single_contingency(i)
                 if i >= 1000:
@@ -183,7 +187,9 @@ if __name__ == "__main__":
             # sa_sizes.append(env_lightsim.n_sub)
             cases_by_threads[nb_threads] = computer_sa.total_time() + computer_sa.amps_computation_time()
             # close the env
-            linear_solver_used_str = solver_names[env_lightsim.backend._grid.get_solver_type()]
+            algo_name = sa.computer.get_algo_name()
+            linear_solver_used_str = next((v for k, v in solver_names.items() if str(k).split(".")[-1] == algo_name),
+                                          algo_name)
         for k, v in cases_by_threads.items():
             print(f"{case_name}, nb_threads={k}: {cases_by_threads[1] / v:.1f}x speed-up vs 1 thread")
 

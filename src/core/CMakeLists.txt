@@ -109,6 +109,7 @@ if(NOT KLU_SOLVER_FOUND)
     if(EXISTS "${_KLU_PREBUILT_LIB}" AND EXISTS "${_KLU_PREBUILT_INC}/klu.h")
         message(STATUS "KLU: found pre-built static library in SuiteSparse submodule")
         set(KLU_SOLVER_FOUND TRUE)
+        set(_LS2G_BUNDLED_SUITESPARSE "${_SS}")
         add_library(KLU_submodule STATIC IMPORTED)
         set_target_properties(KLU_submodule PROPERTIES
             IMPORTED_LOCATION "${_KLU_PREBUILT_LIB}"
@@ -189,6 +190,7 @@ if(NOT KLU_SOLVER_FOUND)
             add_library(SuiteSparse::CXSparse_static ALIAS CXSparse_static)
             add_subdirectory(${_SS}/KLU    ${CMAKE_CURRENT_BINARY_DIR}/KLU    EXCLUDE_FROM_ALL)
             set(KLU_SOLVER_FOUND     TRUE)
+            set(_LS2G_BUNDLED_SUITESPARSE "${_SS}")
             set(KLU_LINK_TARGET      KLU_static)
             set(CXSPARSE_LINK_TARGET CXSparse_static)
 
@@ -244,18 +246,32 @@ endif()
 set(PATH_CKTSO "$ENV{PATH_CKTSO}" CACHE PATH "Path to CKTSO root directory")
 option(ENABLE_CKTSO "Enable CKTSO solver" OFF)
 if(PATH_CKTSO)
+    # The per-platform folder names change between CKTSO releases (recent ones ship
+    # rocky8 / centos and win7_x64, older ones ubuntu and windows_x64): take the first
+    # candidate that holds the library, newest layout first.
     if(WIN32)
-        set(LIB_MAYBE_CKTSO ${PATH_CKTSO}/windows_x64)
+        set(_CKTSO_CANDIDATES win7_x64 windows_x64)
     else()
-        set(LIB_MAYBE_CKTSO ${PATH_CKTSO}/ubuntu2004_x64_gcc940)
+        set(_CKTSO_CANDIDATES rocky8_x64_gcc850 centos7_x64_gcc485 centos6_x64_gcc482
+                              ubuntu2004_x64_gcc940 ubuntu1804_x64_gcc750)
     endif()
-    find_library(LIB_CKTSO NAMES cktso HINTS ${LIB_MAYBE_CKTSO})
+    # re-resolved at every configure, so a build dir does not keep a stale location
+    unset(LIB_CKTSO CACHE)
+    set(LIB_MAYBE_CKTSO "")
+    foreach(_cktso_dir IN LISTS _CKTSO_CANDIDATES)
+        find_library(LIB_CKTSO NAMES cktso HINTS ${PATH_CKTSO}/${_cktso_dir} NO_DEFAULT_PATH)
+        if(LIB_CKTSO)
+            set(LIB_MAYBE_CKTSO ${PATH_CKTSO}/${_cktso_dir})
+            break()
+        endif()
+    endforeach()
     if(LIB_CKTSO)
         set(ENABLE_CKTSO ON)
         message(STATUS "CKTSO enabled via path: ${LIB_CKTSO}")
     else()
-        message(WARNING "CKTSO disabled: no library found at ${LIB_MAYBE_CKTSO}")
+        message(WARNING "CKTSO disabled: no library found in ${PATH_CKTSO} (looked in: ${_CKTSO_CANDIDATES})")
     endif()
+    unset(_CKTSO_CANDIDATES)
 endif()
 
 
@@ -373,6 +389,12 @@ if(KLU_SOLVER_FOUND)
     target_link_libraries(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${KLU_LINK_TARGET}>)
     if(DEFINED CXSPARSE_LINK_TARGET)
         target_link_libraries(lightsim2grid_core PUBLIC $<BUILD_INTERFACE:${CXSPARSE_LINK_TARGET}>)
+    endif()
+    # KLU_SOLVER_AVAILABLE makes KLUSolver.hpp include klu.h / cs.h, so the
+    # exported target must also say where those are: see the install rules below.
+    if(DEFINED _LS2G_BUNDLED_SUITESPARSE)
+        target_include_directories(lightsim2grid_core PUBLIC
+            $<INSTALL_INTERFACE:${LS2G_INSTALL_INCLUDEDIR}/suitesparse>)
     endif()
 endif()
 
@@ -501,6 +523,54 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen/Eigen")
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen/Eigen"
         DESTINATION "${LS2G_INSTALL_INCLUDEDIR}"
     )
+    # Eigen is mostly MPL-2.0, with a few files under the other licenses
+    # COPYING.README lists: redistributing its source means shipping them all.
+    set(_eigen "${CMAKE_CURRENT_SOURCE_DIR}/../../eigen")
+    install(FILES
+        "${_eigen}/COPYING.README"
+        "${_eigen}/COPYING.MPL2"
+        "${_eigen}/COPYING.BSD"
+        "${_eigen}/COPYING.APACHE"
+        "${_eigen}/COPYING.MINPACK"
+        DESTINATION "${LS2G_INSTALL_INCLUDEDIR}/licenses/Eigen"
+    )
+    unset(_eigen)
+endif()
+
+# KLU from the submodule is embedded in lightsim2grid_core, and its headers are
+# part of the public interface as soon as KLU_SOLVER_AVAILABLE is defined
+# (KLUSolver.hpp includes klu.h and cs.h, which include the other four). They
+# are installed in their own directory, as cs.h is too generic a name to sit
+# next to the ls2g headers. These are the configured headers KLU was built
+# with: SuiteSparse's configure step writes them into the source tree.
+# A system KLU (strategies 1 and 2) ships its own headers and licenses.
+if(DEFINED _LS2G_BUNDLED_SUITESPARSE)
+    set(_SS "${_LS2G_BUNDLED_SUITESPARSE}")
+    install(FILES
+        "${_SS}/KLU/Include/klu.h"
+        "${_SS}/AMD/Include/amd.h"
+        "${_SS}/COLAMD/Include/colamd.h"
+        "${_SS}/BTF/Include/btf.h"
+        "${_SS}/CXSparse/Include/cs.h"
+        "${_SS}/SuiteSparse_config/SuiteSparse_config.h"
+        DESTINATION "${LS2G_INSTALL_INCLUDEDIR}/suitesparse"
+    )
+    # Their licenses, which cover the embedded binaries too: KLU, BTF and
+    # CXSparse are LGPL-2.1+, AMD and COLAMD BSD-3. SuiteSparse_config (BSD-3)
+    # has no license file of its own: its notice is in its README.
+    set(_ss_licenses "${LS2G_INSTALL_INCLUDEDIR}/licenses/SuiteSparse")
+    foreach(_pkg KLU BTF CXSparse)
+        install(FILES "${_SS}/${_pkg}/Doc/License.txt" "${_SS}/${_pkg}/Doc/lesser.txt"
+            DESTINATION "${_ss_licenses}/${_pkg}")
+    endforeach()
+    foreach(_pkg AMD COLAMD)
+        install(FILES "${_SS}/${_pkg}/Doc/License.txt"
+            DESTINATION "${_ss_licenses}/${_pkg}")
+    endforeach()
+    install(FILES "${_SS}/SuiteSparse_config/README.txt"
+        DESTINATION "${_ss_licenses}/SuiteSparse_config")
+    unset(_ss_licenses)
+    unset(_SS)
 endif()
 
 # Generate and install Config + ConfigVersion files

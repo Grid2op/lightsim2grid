@@ -214,6 +214,30 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         void remove_slackbus(int storage_id, DualAlgoControl & solver_control){
             slack_.remove(storage_id, solver_control);
         }
+        /// add, per bus, the active power (MW, generator convention: what they discharge) the
+        /// connected storage units produce -- see GeneratorContainer::slack_p_per_bus
+        void slack_p_per_bus(std::vector<real_type> & res) const {
+            for(int storage_id = 0; storage_id < nb(); ++storage_id){
+                if(status_[storage_id]) res[bus_id_(storage_id).cast_int()] -= target_p_mw_(storage_id);
+            }
+        }
+        /// put every connected storage unit of `bus` discharging in the slack, weighted by its
+        /// share of `p_per_bus` (see GeneratorContainer::assign_slack_bus); returns the id of the
+        /// connected one discharging the most (-1 if none is connected there)
+        int assign_slack_bus(int bus, const std::vector<real_type> & p_per_bus, DualAlgoControl & solver_control){
+            int res_id = -1;
+            real_type max_p = -1.;
+            for(int storage_id = 0; storage_id < nb(); ++storage_id){
+                if(!status_[storage_id] || bus_id_(storage_id).cast_int() != bus) continue;
+                const real_type p_mw = -target_p_mw_(storage_id);
+                if(p_mw > 0.) add_slackbus(storage_id, p_mw / p_per_bus[bus], solver_control);
+                if(p_mw > max_p || res_id == -1){
+                    res_id = storage_id;
+                    max_p = p_mw;
+                }
+            }
+            return res_id;
+        }
         /// out of the slack while it sits at the limit it saturated at, still able to come back (see SlackParticipation::leave)
         void leave_slackbus(int storage_id, DualAlgoControl & solver_control){
             slack_.leave(storage_id, solver_control);
@@ -227,6 +251,8 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
                                          solver_control, "StorageContainer::rejoin_slackbus_if_able");
         }
         void remove_all_slackbus(){ slack_.remove_all(); }
+        /// every storage unit out of the slack, still flagged "can participate" (see SlackParticipation::leave_all)
+        void leave_all_slackbus(){ slack_.leave_all(); }
         bool is_slack(int storage_id) const {return slack_.is_slack(storage_id);}
         /// the unit's own (un-normalised) share of the distributed slack
         real_type get_slack_weight(int storage_id) const {return slack_.weight(storage_id);}
@@ -249,17 +275,20 @@ class LS2G_API StorageContainer final: public VoltageSourceContainer<StorageCont
         /// when non-null, is a nb()-sized mask of units to leave out on top: a batch row
         /// whose slack pre-pass saturated them, see LSGrid::get_slack_weights_solver_without)
         void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res, const SolverBusIdVect & id_grid_to_solver,
-                                             const std::vector<bool> * storage_off = nullptr) const {
-            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, storage_off, _element_name());
+                                             const std::vector<bool> * storage_off = nullptr,
+                                             bool can_participate = false) const {
+            slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, storage_off, _element_name(),
+                                  can_participate);
         }
         void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
         void slack_summary(bool & any_flagged, bool & any_connected) const {slack_.summary(status_, any_flagged, any_connected);}
         /// write the share of the slack each participating unit absorbed (load convention)
         void set_p_slack(const Eigen::Ref<const RealVect> & node_mismatch,
                          const SolverBusIdVect & id_grid_to_solver,
-                         const Eigen::Ref<const RealVect> & bus_raw_total){
+                         const Eigen::Ref<const RealVect> & bus_raw_total,
+                         bool can_participate = false){
             slack_.split(res_p_, -1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
-                         "StorageContainer::set_p_slack");
+                         "StorageContainer::set_p_slack", can_participate);
         }
 
     protected:

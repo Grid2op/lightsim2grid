@@ -53,26 +53,27 @@ ls2g_match_core_build_flags(dist_slack_algorithm)
 # -----------------------------------------------------------------------
 # KLUSolver.hpp (pulled in transitively via Solvers.hpp) needs SuiteSparse's
 # own headers (cs.h, klu.h, amd.h, colamd.h, btf.h, SuiteSparse_config.h) to
-# parse the KLULinearSolver class declaration -- but neither an installed
-# lightsim2grid_core CMake package nor a plain source-tree checkout exposes
-# those on its public include path (they're a private implementation detail
-# of the core .so, already fully compiled in). We only need the *headers*
-# here (the plugin never re-instantiates/re-links KLU code, see the
-# `extern template` note in NRAlgoDistSlack.hpp) so point at the SuiteSparse
-# submodule directly, header-only, as a repo-relative fallback.
+# parse the KLULinearSolver class declaration. Only the *headers* are needed
+# (the plugin never re-instantiates/re-links KLU code, see the
+# `extern template` note in NRAlgoDistSlack.hpp). An installed
+# lightsim2grid_core puts them on its public include path, which
+# lightsim2grid::core carries; a plain source-tree checkout does not, so point
+# at the SuiteSparse submodule directly there.
 # -----------------------------------------------------------------------
-if(NOT DEFINED SUITESPARSE_SRC)
-    set(SUITESPARSE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../SuiteSparse")
-endif()
-if(EXISTS "${SUITESPARSE_SRC}/KLU/Include/klu.h")
-    target_include_directories(dist_slack_algorithm PRIVATE
-        "${SUITESPARSE_SRC}/KLU/Include"
-        "${SUITESPARSE_SRC}/AMD/Include"
-        "${SUITESPARSE_SRC}/COLAMD/Include"
-        "${SUITESPARSE_SRC}/BTF/Include"
-        "${SUITESPARSE_SRC}/SuiteSparse_config"
-        "${SUITESPARSE_SRC}/CXSparse/Include"
-    )
+if(NOT lightsim2grid_core_FOUND)
+    if(NOT DEFINED SUITESPARSE_SRC)
+        set(SUITESPARSE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../SuiteSparse")
+    endif()
+    if(EXISTS "${SUITESPARSE_SRC}/KLU/Include/klu.h")
+        target_include_directories(dist_slack_algorithm PRIVATE
+            "${SUITESPARSE_SRC}/KLU/Include"
+            "${SUITESPARSE_SRC}/AMD/Include"
+            "${SUITESPARSE_SRC}/COLAMD/Include"
+            "${SUITESPARSE_SRC}/BTF/Include"
+            "${SUITESPARSE_SRC}/SuiteSparse_config"
+            "${SUITESPARSE_SRC}/CXSparse/Include"
+        )
+    endif()
 endif()
 
 if(WIN32)

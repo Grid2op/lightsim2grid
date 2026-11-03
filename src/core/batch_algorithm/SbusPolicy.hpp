@@ -12,6 +12,9 @@
 #include "LSGrid.hpp"
 
 #include <sstream>
+#include <memory>
+
+#include "SharedMat.hpp"
 
 namespace ls2g {
 
@@ -68,7 +71,8 @@ struct LS2G_API SbusPolicy
         // row loop never reads it: it builds each row into its own buffer as it
         // goes (fill_row), so a year of hourly rows on a 9241-bus grid does not
         // hold 1.3 GB of injections that are read once. Mutable: a cache.
-        mutable CplxMat sbuses;
+        // A SharedMat: the array get_sbuses() returns to python co-owns it.
+        mutable SharedMat<CplxMat> sbuses;
 
         // per-step raw injection inputs, as set by the modify_gen_p/modify_sgen_p/
         // modify_load_p/modify_load_q setters (one row per step, one column per grid
@@ -105,6 +109,16 @@ struct LS2G_API SbusPolicy
         // generator of a bus is masked off, that bus turns PQ for the step, which
         // BaseBatchSweep drives through the algorithm's set_pv_pinned_buses.
         BoolMat gen_off;
+
+        // per-step load contingency mask, one row per step, one column per load: true
+        // means "this load is disconnected for this step" (ScenarioSweep only, see
+        // BaseBatchSweep::set_contingency_loads). Empty (0 rows) means "never set". An
+        // injection only: fill_row gives the row's p and q back, nothing to relabel.
+        BoolMat load_off;
+        // whether row i disconnects load l through the mask
+        bool load_off_in(Eigen::Index i, Eigen::Index l) const {
+            return load_off.rows() > 0 && i < load_off.rows() && l < load_off.cols() && load_off(i, l);
+        }
 
         // ---- what a row's topological action disconnects (ScenarioSweep
         // set_topo_actions; filled once per compute() by
@@ -155,9 +169,10 @@ struct LS2G_API SbusPolicy
             gen_p = RealMat(); sgen_p = RealMat(); load_p = RealMat(); load_q = RealMat();
             gen_v = RealMat();
             gen_off = BoolMat();
+            load_off = BoolMat();
             clear_topo();
             storage_pu_ = CplxVect();
-            sbuses = CplxMat();
+            sbuses.reset();
             gen_bus_.clear(); sgen_bus_.clear(); load_bus_.clear(); storage_bus_.clear();
             gen_target_p_ = RealVect(); sgen_target_p_ = RealVect();
             load_target_p_ = RealVect(); load_target_q_ = RealVect();
@@ -199,6 +214,7 @@ struct LS2G_API SbusPolicy
         // the whole matrix, for whoever wants it (get_sbuses()): every row through
         // fill_row, built at most once per prepare().
         const CplxMat & materialize() const;
+        std::shared_ptr<const CplxMat> share_materialized() const { materialize(); return sbuses.share(); }
 
         /**
          * Per-unit injection that the four per-step matrices (gen_p/sgen_p/load_p/

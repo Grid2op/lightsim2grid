@@ -54,6 +54,9 @@ Where the algorithm prefix is:
      - Newton-Raphson with **distributed (multi-) slack**
    * - ``NRSing_``
      - Newton-Raphson with **single slack** (slightly faster when only one slack bus exists)
+   * - ``NROuter_``
+     - Newton-Raphson with single slack **and OpenLoadFlow's outer loops** (string-only, not an
+       :class:`~lightsim2grid.algorithm.AlgorithmType` value, see below and :ref:`outer_loops`)
    * - ``DC_``
      - **DC approximation** (linearised power flow)
    * - ``FDPF_XB_``
@@ -169,6 +172,16 @@ Complete table
        ``NRRefactorRetry_*`` solvers below report, since they were never given their own
        enum value either.
 
+String-only built-in solvers: ``NROuter_*``
+-------------------------------------------
+
+``NROuter_SparseLU``, ``NROuter_KLU``, ``NROuter_KLUStaticPivot``, ``NROuter_NICSLU`` and ``NROuter_CKTSO``
+(the last three only when compiled in) are the Newton-Raphson that runs OpenLoadFlow's outer loops
+(:ref:`outer_loops`). Like the ``NRRefactorRetry_*`` solvers below, they have no ``AlgorithmType`` value and are
+selected by their string name (``grid.change_algorithm("NROuter_KLU")``, or
+:func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type` to keep the choice over ``env.reset()``).
+The suffix is the linear solver, as everywhere else.
+
 String-only built-in solvers: ``NRRefactorRetry_*``
 ----------------------------------------------------
 
@@ -199,6 +212,10 @@ same value reported for an actual plugin solver.
     the persistent :func:`~lightsim2grid.lightSimBackend.LightSimBackend.set_algo_type`
     shown above instead (it works the same for a plain :class:`~lightsim2grid.algorithm.AlgorithmType`
     or a string-only / plugin name).
+
+``NR_KLUStaticPivot``, ``NRSing_KLUStaticPivot`` and ``NROuter_KLUStaticPivot`` (KLU with a
+static-pivot refactorization, see :ref:`static-pivot-refactorization`) are string-only
+built-ins in the same way, as are the ``NROuter_*`` algorithms.
 
 Usage example
 -------------

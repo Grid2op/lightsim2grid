@@ -118,8 +118,9 @@ To use it, you need to:
 And this is it. Lightsim will be able to use this linear solver.
 
 Be carefull though, you require a license file in order to use it. As of now, the best way is to copy paste the license
-file at the same location as the library used when ligthsim2grid is compiled. It should be on `$CKTSO_GIT/ubuntu1804_x64_gcc750`
-on linux and `$CKTSO_GIT/win7_x64` on windows.
+file at the same location as the library used when ligthsim2grid is compiled. With a recent CKTSO it is
+`$CKTSO_GIT/rocky8_x64_gcc850` on linux and `$CKTSO_GIT/win7_x64` on windows (the configure step prints the
+folder it picked, in its "CKTSO enabled via path" line).
 
 .. _other_customization:
 

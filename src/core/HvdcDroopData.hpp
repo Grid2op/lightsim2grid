@@ -51,6 +51,7 @@ struct LS2G_API HvdcDroopSolverData
     // analogous `station.connected` guard for Q-limit masking.
     std::vector<bool> connected1;
     std::vector<bool> connected2;
+    std::vector<int> hvdc_id;  // the line's id in the grid (HvdcLineContainer)
 
     int size() const {return static_cast<int>(bus1.size());}
 
@@ -67,6 +68,7 @@ struct LS2G_API HvdcDroopSolverData
         pmax21 = RealVect();
         connected1.clear();
         connected2.clear();
+        hvdc_id.clear();
     }
 
     /**

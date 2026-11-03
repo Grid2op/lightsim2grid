@@ -298,6 +298,42 @@ class LS2G_API AlgorithmSelector final
             get_prt_solver("set_pv_pinned_buses", false)->set_pv_pinned_buses(solver_bus_ids);
         }
 
+        // OpenLoadFlow-style outer loops (NROuter_*), see BaseAlgo::set_outer_loops
+        bool supports_outer_loops() const {
+            return get_prt_solver("supports_outer_loops", false)->supports_outer_loops();
+        }
+        void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops,
+                             const OuterLoopDriverParams & driver) {
+            get_prt_solver("set_outer_loops", false)->set_outer_loops(loops, driver);
+        }
+        void set_outer_row_view(const OuterRowView * row) {
+            get_prt_solver("set_outer_row_view", false)->set_outer_row_view(row);
+        }
+        OuterLoopStats get_outer_loop_stats() const {
+            return get_prt_solver("get_outer_loop_stats", false)->get_outer_loop_stats();
+        }
+        void get_outer_target_p(std::vector<real_type> & gen_p_mw, std::vector<real_type> & storage_p_mw) const {
+            get_prt_solver("get_outer_target_p", false)->get_outer_target_p(gen_p_mw, storage_p_mw);
+        }
+        void get_outer_hvdc_status(std::vector<int> & status) const {
+            get_prt_solver("get_outer_hvdc_status", false)->get_outer_hvdc_status(status);
+        }
+        void get_outer_phase_tap(std::vector<int> & positions) const {
+            get_prt_solver("get_outer_phase_tap", false)->get_outer_phase_tap(positions);
+        }
+        void get_outer_shunt_sections(std::vector<int> & counts) const {
+            get_prt_solver("get_outer_shunt_sections", false)->get_outer_shunt_sections(counts);
+        }
+        void get_outer_ratio_tap(std::vector<int> & positions) const {
+            get_prt_solver("get_outer_ratio_tap", false)->get_outer_ratio_tap(positions);
+        }
+        std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const {
+            return get_prt_solver("get_outer_resume_point", false)->get_outer_resume_point();
+        }
+        OuterControlLayout get_outer_control_layout() const {
+            return get_prt_solver("get_outer_control_layout", false)->get_outer_control_layout();
+        }
+
         // continuation powerflow primitives (ContinuationSweep) -- NR-based
         // algorithms only, guarded exactly like get_J: both read state the last
         // powerflow left behind, so asking a solver that did not run it is a bug.

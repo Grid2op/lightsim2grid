@@ -166,10 +166,12 @@ class TestHoldFrozenRegulators(unittest.TestCase):
         np.testing.assert_allclose(res[True][0], res[False][0], atol=1e-9, rtol=0, equal_nan=True)
         self.assertEqual(res[True][1], res[False][1])
 
-    def test_pickle_does_not_carry_it(self):
-        """like set_keep_vinit_at_group_controlled_buses: a solver option, not grid data"""
-        grid = _grid(hold=True)
-        self.assertFalse(pickle.loads(pickle.dumps(grid)).get_hold_frozen_regulators())
+    def test_pickle_carries_it(self):
+        """a grid-level setting that copy() keeps, so a grid read back solves as the original
+        does (like set_keep_vinit_at_group_controlled_buses; see LSGrid::StateRes)"""
+        for hold in (False, True):
+            grid = _grid(hold=hold)
+            self.assertEqual(pickle.loads(pickle.dumps(grid)).get_hold_frozen_regulators(), hold)
 
 
 if __name__ == "__main__":

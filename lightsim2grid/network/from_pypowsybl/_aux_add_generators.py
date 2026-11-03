@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from ._aux_common import _aux_get_bus, _aux_reactive_limits_at_target_p, _aux_regulated_bus_view_ids
+from . import _olf_rules
 
 
 def _aux_can_be_pv_flags(can_be_pv, gen_index, other_ids=None):
@@ -43,13 +44,14 @@ def _aux_can_be_pv_flags(can_be_pv, gen_index, other_ids=None):
 
 
 def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bus_per_vl,
-                        can_be_pv=None, can_be_pv_other_ids=None):
+                        can_be_pv=None, can_be_pv_other_ids=None, olf_rules=None):
     """Add every generator of ``net`` to ``model``. Returns ``(df_gen, gen_sub)``:
     ``df_gen`` is reused by the slack-assignment phase (`_aux_add_slack.py`),
     ``gen_sub`` by the final substation-id bookkeeping in `initLSGrid.py`.
     ``can_be_pv`` flags the generators an outer loop pinned at a reactive limit (see
     `_aux_can_be_pv_flags` for what it accepts, ``can_be_pv_other_ids`` being its
-    ``other_ids``)."""
+    ``other_ids``). ``olf_rules`` (an ``OlfLoadingParameters``, or None) applies
+    OpenLoadFlow's loading rules to the voltage control and the target Q."""
     gen_attrs = [
         "connected", "min_p", "max_p", "target_p", "target_v", "target_q", "p",
         "voltage_regulator_on", "regulated_element_id", "voltage_level_id", "bus_id",
@@ -65,13 +67,24 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
     max_float_value = np.finfo(np.float32).max * 1e-4 + 1.
     # the curve at the target P for a CURVE-kind generator, inverted pairs sorted
     min_q_aux, max_q_aux = _aux_reactive_limits_at_target_p(df_gen)
+    if olf_rules is not None:
+        # OpenLoadFlow's: the capability curve at the target P extrapolated past its ends
+        # (pypowsybl clamps it to the end points) -- the limits its ReactiveLimits loop reads
+        lo, hi = _olf_rules.generator_limits_at_target_p(
+            net, _olf_rules.generators(net).reindex(df_gen.index), olf_rules)
+        min_q_aux = lo.to_numpy(float, copy=True)
+        max_q_aux = hi.to_numpy(float, copy=True)
+        # malformed curve data can give min_q > max_q here too (see _aux_reactive_limits_at_target_p)
+        swapped = min_q_aux > max_q_aux
+        min_q_aux[swapped], max_q_aux[swapped] = max_q_aux[swapped], min_q_aux[swapped].copy()
     too_small = min_q_aux < min_float_value
     min_q_aux[too_small] = min_float_value
-    min_q = min_q_aux.astype(np.float32)
+    # (with olf_rules the limits are compared to a fraction of a kvar: no float32 rounding)
+    min_q = min_q_aux if olf_rules is not None else min_q_aux.astype(np.float32)
 
     too_big = np.abs(max_q_aux) > max_float_value
     max_q_aux[too_big] = np.sign(max_q_aux[too_big]) * max_float_value
-    max_q = max_q_aux.astype(np.float32)
+    max_q = max_q_aux if olf_rules is not None else max_q_aux.astype(np.float32)
     min_q[~np.isfinite(min_q)] = min_float_value
     max_q[~np.isfinite(max_q)] = max_float_value
     gen_bus, gen_disco, gen_sub = _aux_get_bus(voltage_levels, bus_df, first_bus_per_vl, "gen", df_gen)
@@ -106,11 +119,18 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
             mask_remote_gen[remote_idx[unresolved]] = False
             gen_reg_bus_view = gen_reg_bus_view[~unresolved]
         vl_reg[mask_remote_gen] = bus_df.loc[gen_reg_bus_view, "voltage_level_id"].values
+    voltage_regulator_on = df_gen["voltage_regulator_on"].to_numpy(bool)
+    target_q = df_gen["target_q"].to_numpy(float)
+    if olf_rules is not None:
+        rules_gen = _olf_rules.generators(net).reindex(df_gen.index)
+        discarded = _olf_rules.generator_voltage_control(net, rules_gen, olf_rules)["discarded"]
+        voltage_regulator_on = voltage_regulator_on & ~discarded.to_numpy(bool)
+        target_q = _olf_rules.generator_target_q(net, rules_gen, olf_rules).to_numpy(float)
     model.init_generators_full(df_gen["target_p"].values,
                             #    df_gen["target_v"].values / voltage_levels.loc[df_gen["voltage_level_id"].values]["nominal_v"].values,
                                df_gen["target_v"].values / voltage_levels.loc[vl_reg]["nominal_v"].values,
-                               df_gen["target_q"].values,
-                               df_gen["voltage_regulator_on"].values,
+                               target_q,
+                               voltage_regulator_on,
                                min_q,
                                max_q,
                                gen_bus
@@ -152,6 +172,26 @@ def _aux_add_generators(model, net, sort_index, voltage_levels, bus_df, first_bu
 
     # how the generators holding one bus share their reactive power: the same key OLF
     # reads (a missing or zero q_percent is no key, the reactive range then decides)
+    if olf_rules is not None:
+        # the reactive power of a bus is split between its units as OpenLoadFlow does
+        model.set_reactive_dispatch_olf(True)
+        model.set_gen_reactive_range_max(
+            _olf_rules.generator_max_reactive_range(net, df_gen.index).to_numpy(float))
+        # their capability curves: the limits follow a target P an outer loop moves
+        try:
+            pts = net.get_reactive_capability_curve_points()
+        except Exception:  # noqa: BLE001 - no curve support in this pypowsybl
+            pts = None
+        if pts is not None and len(pts):
+            pos = pd.Series(np.arange(len(df_gen)), index=df_gen.index)
+            pts = pts.loc[pts.index.get_level_values(0).isin(df_gen.index)]
+            if len(pts):
+                model.set_gen_capability_curves(
+                    pos.loc[pts.index.get_level_values(0)].to_numpy(np.int32), pts["p"].to_numpy(float),
+                    pts["min_q"].to_numpy(float), pts["max_q"].to_numpy(float))
+        if olf_rules.reactive_limits and olf_rules.force_target_q_in_reactive_limits:
+            # the clamp of target_q follows a target P an outer loop moves
+            model.set_gen_raw_target_q(df_gen["target_q"].fillna(0.).to_numpy(float))
     q_percent = _aux_reactive_keys(net, df_gen.index)
     for gen_id in np.flatnonzero(q_percent > 0.):
         model.set_gen_reactive_key(int(gen_id), float(q_percent[gen_id]))

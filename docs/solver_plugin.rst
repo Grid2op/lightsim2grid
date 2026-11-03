@@ -192,6 +192,14 @@ Solve the power-flow problem ``V·(Ybus·V)* = Sbus``.
 | ``tol``           | Convergence tolerance (per-unit mismatch).           |
 +-------------------+------------------------------------------------------+
 
+.. note::
+    Everything ``compute_pf`` receives is in per unit, ``tol`` included: compare your
+    per-unit mismatch with it as is. The ``tol`` a user passes to
+    :func:`lightsim2grid.network.LSGrid.ac_pf`,
+    :class:`lightsim2grid.lightSimBackend.LightSimBackend` or a batch algorithm is in MVA,
+    and lightsim2grid divides it by the grid's ``sn_mva`` before calling your algorithm. Your
+    algorithm has no ``sn_mva`` to convert with, and must not try to.
+
 Return ``true`` on convergence; store results in the protected members
 listed below and set ``err_ = ErrorType::NoError`` (or an appropriate
 error code on failure).
@@ -352,6 +360,47 @@ the same (see the ``lm_algorithm`` and ``dist_slack_algorithm`` examples): witho
 it, a row's ``modify_gen_v`` on a generator that holds a bus remotely is solved at
 the grid's own set-point.
 
+Nothing to do: the outer-loop hooks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``BaseAlgo`` carries the hooks of the ``NROuter_*`` algorithms (see :ref:`outer_loops`). A plugin that does
+not run OpenLoadFlow's outer loops **keeps every default and writes nothing**; but the virtuals are part of the
+interface, so a plugin built against an earlier version **must be rebuilt**.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Hook (default)
+     - Role
+   * - ``bool supports_outer_loops() const noexcept`` (``false``)
+     - Whether the algorithm runs the grid's outer loops. ``LSGrid`` and the batch classes only hand loops to
+       an algorithm that says yes; the other ones reject a non-empty list.
+   * - ``void set_outer_loops(const std::vector<std::shared_ptr<const BaseOuterLoop> > & loops, const OuterLoopDriverParams & driver)``
+       (throws on a non-empty list)
+     - The grid's loops, in order, and its driver parameters, handed over before each solve. The algorithm keeps
+       a clone of each loop.
+   * - ``void set_outer_row_view(const OuterRowView * row)`` (no-op)
+     - What a batch row changes compared with the grid (its labelling, stranded buses, the units it disconnects
+       or moves, the branches it opens), before each row's solve. ``nullptr``: the grid as it is. The caller keeps
+       it alive until the next call. Only an algorithm with loops reads it.
+   * - ``OuterLoopStats get_outer_loop_stats() const`` (empty)
+     - What the last solve's loops did.
+   * - ``get_outer_target_p(std::vector<real_type> & gen_p_mw, std::vector<real_type> & storage_p_mw)``,
+       ``get_outer_hvdc_status(std::vector<int> &)``, ``get_outer_phase_tap(std::vector<int> &)``,
+       ``get_outer_ratio_tap(std::vector<int> &)``, ``get_outer_shunt_sections(std::vector<int> &)`` (clear the vectors)
+     - Read-backs of what the loops settled on, published in the results: the moved active power targets (MW, NaN where
+       unchanged; storage in load convention), the droop regime of each hvdc line, the phase and ratio tap and the section
+       count of each element (grid id; ``INT_MIN`` where the grid's own is kept).
+   * - ``std::shared_ptr<const OuterResumePoint> get_outer_resume_point() const`` (``nullptr``)
+     - Where the last solve's loops ended, for a batch to start other rows from ("n" solve of ``init_from_n_powerflow``,
+       the previous row of a ``TimeSeries``). ``nullptr`` when it did not converge.
+   * - ``OuterControlLayout get_outer_control_layout() const`` (empty layout)
+     - The J rows and columns of the continuous controls (phase shifters, ratio groups, shunt controllers) in the
+       system the last rebuild built, for a solver that poses the same system (see the ``OuterControlLayout`` class in Python).
+
+Only an algorithm that runs outer loops overrides them.
+
 
 Writing a solver plugin
 ------------------------
@@ -383,7 +432,8 @@ hand it to ``LS2G_PLUGIN_ENTRY``, which generates the exported
             int max_iter,
             ls2g::real_type tol) override
         {
-            // ... your algorithm here, starting from the initial guess `V` ...
+            // ... your algorithm here, starting from the initial guess `V`, until the
+            // per-unit mismatch is below `tol` (already in per unit, see above) ...
             ls2g::CplxVect V_solved = V;  // replace with your actual solved voltages
 
             // populate result fields when done:
@@ -411,6 +461,39 @@ hand it to ``LS2G_PLUGIN_ENTRY``, which generates the exported
 The recommended approach uses ``find_package(lightsim2grid_core)`` to locate the
 installed headers and library.  A source-tree fallback is provided for in-repo
 development without a full ``pip install``.
+
+A plugin that includes ``Solvers.hpp`` (or ``KLUSolver.hpp``) also needs KLU's
+headers. The installed package ships them under ``include/suitesparse/`` and
+``lightsim2grid::core`` carries that directory, so nothing is needed there; a
+source-tree build adds the ``SuiteSparse`` submodule's include directories itself,
+as ``examples/lm_algorithm/CMakeLists.txt`` does. Without CMake, the directory is
+``os.path.join(lightsim2grid.get_include(), "suitesparse")``.
+
+.. _plugin-suitesparse-headers:
+
+.. rubric:: What is shipped of SuiteSparse, in the wheel and in the source distribution
+
+- **Wheel (and any installed package).** Six SuiteSparse headers: ``klu.h``, ``amd.h``, ``colamd.h``, ``btf.h``,
+  ``cs.h`` and ``SuiteSparse_config.h``, in ``lightsim2grid/include/suitesparse/``
+  (``include/lightsim2grid/suitesparse/`` for a standalone CMake install of the C++ library, see :doc:`cpp_library`).
+  They are the *configured* headers KLU was built with, and they are in their own directory because ``cs.h`` is too
+  generic a name to sit next to lightsim2grid's headers. Only the **headers** are shipped: the compiled KLU is embedded in
+  ``liblightsim2grid_core`` / the python extension, so a plugin never links KLU itself and must not compile its own copy.
+  The licenses of the bundled code (KLU, BTF and CXSparse are LGPL-2.1+, AMD and COLAMD are BSD-3, ``SuiteSparse_config`` is
+  BSD-3) are installed under ``include/licenses/SuiteSparse/`` and listed in the wheel's license files.
+- **Only when KLU came from the SuiteSparse submodule.** If the build used a system KLU (for example
+  ``libsuitesparse-dev``), nothing of SuiteSparse is installed: the plugin then finds the system headers, and the
+  build machine of the plugin needs them. A build without KLU defines no ``KLU_SOLVER_AVAILABLE``, and
+  ``KLUSolver.hpp`` needs none of this.
+- **Source distribution (``tar.gz``).** It does not contain these installed headers. It contains the sources of the
+  SuiteSparse components lightsim2grid builds KLU from (``SuiteSparse_config``, ``AMD``, ``BTF``, ``COLAMD``, ``CXSparse``
+  and ``KLU``: their ``Source``, ``Include`` and ``Config`` directories and ``CMakeLists.txt``), trimmed of
+  documentation, demos, MATLAB interfaces, build output and the SuiteSparse components it does not use. The license
+  files of the kept components are the only files of their ``Doc/`` directories that remain. Installing the sdist (``pip install``)
+  builds KLU from these sources (this needs CMake >= 3.22, otherwise the build falls back to the Eigen ``SparseLU`` algorithms alone), and the installed result then has the ``include/suitesparse/`` directory above. A plugin
+  should be built against that **installed** package, not against the ``SuiteSparse/`` tree of the sdist (whose
+  headers have not been through SuiteSparse's configure step); only a source-tree build of this repository, with the submodule fetched, adds the
+  submodule's include directories itself (``examples/lm_algorithm/CMakeLists.txt``).
 
 .. code-block:: cmake
 
@@ -568,6 +651,7 @@ Loading and using the plugin from Python
     gm.change_algorithm("MySolver")
 
     # 4. Run a powerflow — lightsim2grid now delegates to MySolver.compute_pf().
+    #    The tolerance here is in MVA: MySolver.compute_pf receives 1e-8 / gm.get_sn_mva().
     Vinit = ...  # complex initial voltage guess, size gm.total_bus()
     V = gm.ac_pf(Vinit, 20, 1e-8)
 

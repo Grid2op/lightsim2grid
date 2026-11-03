@@ -10,6 +10,7 @@
 #define GENERIC_CONTAINER_H
 
 #include <algorithm>  // for std::find
+#include <limits>
 #include <sstream>
 
 #include "Eigen/Core"
@@ -535,6 +536,18 @@ class LS2G_API GenericContainer : public BaseConstants
             return (el_id >= 0) &&
                    (static_cast<std::size_t>(el_id) < solved_by_algo.size()) &&
                    solved_by_algo[static_cast<std::size_t>(el_id)];
+        }
+
+        /**
+        Size a result vector to `nb_el` and fill it with NaN: no result. Its buffer is kept
+        while the size does not change, because the python getters hand the result vectors out
+        as views. `res = RealVect(nb_el)` reallocates: the move assignment takes the temporary's
+        buffer, and the temporary frees the old one, which every such view still reads.
+        **/
+        static void _reset_result(RealVect & res, int nb_el)
+        {
+            if(res.size() != nb_el) res.resize(nb_el);
+            res.setConstant(std::numeric_limits<real_type>::quiet_NaN());
         }
 
         /**

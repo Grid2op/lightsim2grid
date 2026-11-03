@@ -106,7 +106,7 @@ std::vector<real_type>& gen_slack_weight(LSGrid::StateRes & st)
     return std::get<7>(std::get<LSGrid::GEN_ID>(st));
 }
 // AC_ALGO_CONFIG_ID -> tuple<int_params, real_params> (an AlgoConfig)
-// int_params  = {scaling_policy, refactor_policy, ls_max_iter, refactor_every_n}
+// int_params  = {scaling_policy, refactor_policy, ls_max_iter, refactor_every_n, constrained_ordering}
 // real_params = {max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max}
 std::vector<int>& ac_algo_int_params(LSGrid::StateRes & st)
 {

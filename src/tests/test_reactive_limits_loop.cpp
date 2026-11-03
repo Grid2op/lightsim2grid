@@ -1,0 +1,548 @@
+// Copyright (c) 2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+// OpenLoadFlow's ReactiveLimits outer loop (ReactiveLimitsLoop) on buses holding their own
+// voltage: frozen PQ at a reactive limit, the slack bus included, the strongest PV bus kept,
+// on one symbolic analysis. C++14 only.
+
+#include <cmath>
+#include <limits>
+#include <memory>
+#include <tuple>
+#include <vector>
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "LSGrid.hpp"
+#include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
+#include "powerflow_algorithm/outer_loop/VoltageMonitoringLoop.hpp"
+
+using Catch::Approx;
+using ls2g::CplxVect;
+using ls2g::LSGrid;
+using ls2g::OuterLoopStatus;
+using ls2g::RealVect;
+using ls2g::ReactiveLimitsLoop;
+using ls2g::real_type;
+
+namespace {
+
+// buses 0-1-2-3 in a line, a load at bus 3; the slack generator at bus 0 (1.02 pu) and a
+// generator at bus 2 (`v2` pu), with the given reactive ranges
+LSGrid make_grid(real_type v2, real_type min_q0, real_type max_q0, real_type min_q2, real_type max_q2,
+                 bool regulating2 = true, real_type q2 = 0.)
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(4, 1, RealVect::Constant(4, 138.), 0, 0);
+    Eigen::VectorXi from_id(3), to_id(3);
+    from_id << 0, 1, 2;
+    to_id << 1, 2, 3;
+    grid.init_powerlines(RealVect::Constant(3, 0.01), RealVect::Constant(3, 0.08),
+                         CplxVect::Zero(3), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 60.;
+    load_q << 40.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 3;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p(2), gen_v(2), q(2), gen_min_q(2), gen_max_q(2);
+    gen_p << 0., 20.;
+    gen_v << 1.02, v2;
+    q << 0., q2;
+    gen_min_q << min_q0, min_q2;
+    gen_max_q << max_q0, max_q2;
+    Eigen::VectorXi gen_bus(2);
+    gen_bus << 0, 2;
+    grid.init_generators_full(gen_p, gen_v, q, {true, regulating2}, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+    return grid;
+}
+
+CplxVect flat_start(const LSGrid & grid)
+{
+    return CplxVect::Constant(static_cast<Eigen::Index>(grid.total_bus()), {1.0, 0.});
+}
+
+CplxVect solve_outer(LSGrid & grid)
+{
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ReactiveLimitsLoop>());
+    return grid.ac_pf(flat_start(grid), 30, 1e-10);
+}
+
+CplxVect solve_plain(LSGrid & grid)
+{
+    grid.change_algorithm("NRSing_SparseLU");
+    return grid.ac_pf(flat_start(grid), 30, 1e-10);
+}
+
+real_type gen_q(const LSGrid & grid, int gen_id)
+{
+    return std::get<1>(grid.get_gen_res())(gen_id);
+}
+
+}  // namespace
+
+TEST_CASE("a unit beyond its max is frozen there", "[outer][reactive_limits]")
+{
+    // gen 2 would have to produce more than 10 MVar to hold 1.05 pu
+    LSGrid grid = make_grid(1.05, -500., 500., -10., 10.);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 4);
+    const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    REQUIRE(stats.loop_iterations.size() == 1);
+    CHECK(stats.loop_iterations[0].second == 1);
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+    CHECK(gen_q(grid, 1) == Approx(10.).margin(1e-6));
+    CHECK(std::abs(V(2)) < 1.05);
+
+    // the same as the unit injecting 10 MVar
+    LSGrid ref = make_grid(1.05, -500., 500., -10., 10., /*regulating2=*/false, /*q2=*/10.);
+    const CplxVect V_ref = solve_plain(ref);
+    REQUIRE(V_ref.size() == 4);
+    CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-9);
+
+    // a next solve starts again from the PV bus
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 4);
+    CHECK(grid.get_algo().get_outer_loop_stats().loop_iterations[0].second == 1);
+}
+
+TEST_CASE("a unit below its min is frozen there", "[outer][reactive_limits]")
+{
+    // holding 0.85 pu, below what the bus would sit at, gen 2 would have to absorb more
+    // than 5 MVar
+    LSGrid grid = make_grid(0.85, -500., 500., -5., 100.);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 4);
+    CHECK(gen_q(grid, 1) == Approx(-5.).margin(1e-6));
+    CHECK(std::abs(V(2)) > 0.85);
+}
+
+TEST_CASE("inside its limits nothing moves", "[outer][reactive_limits]")
+{
+    LSGrid grid = make_grid(1.02, -500., 500., -500., 500.);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 4);
+    CHECK(grid.get_algo().get_outer_loop_stats().nb_outer_iterations == 0);
+    LSGrid ref = make_grid(1.02, -500., 500., -500., 500.);
+    CHECK((V - solve_plain(ref)).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+TEST_CASE("the slack bus is frozen like any other", "[outer][reactive_limits]")
+{
+    // the slack unit cannot produce what holding 1.02 pu takes; gen 2 can
+    LSGrid grid = make_grid(1.0, -5., 5., -500., 500.);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 4);
+    CHECK(gen_q(grid, 0) == Approx(5.).margin(1e-6));
+    CHECK(std::abs(V(0)) != Approx(1.02).margin(1e-6));
+    CHECK(std::arg(V(0)) == Approx(0.).margin(1e-12));  // still the angle reference
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+}
+
+TEST_CASE("the strongest bus stays PV when every one would switch", "[outer][reactive_limits]")
+{
+    // neither unit can hold its bus: the one with the highest target P (gen 2) stays PV
+    LSGrid grid = make_grid(1.05, -1., 1., -1., 1.);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 4);
+    CHECK(gen_q(grid, 0) == Approx(-1.).margin(1e-6));  // the slack unit has to absorb
+    CHECK(std::abs(V(2)) == Approx(1.05).margin(1e-9));
+}
+
+namespace {
+
+// buses 0-1-2-3-4 in a line, a load at bus 4; the slack generator at bus 0 (1.02 pu), and
+// generators at buses 1 and 3 regulating bus 2 remotely at 1.04 pu (when `regulating`),
+// with the given reactive ranges, or injecting `q` when not
+LSGrid make_group_grid(real_type max_q1, real_type max_q3, bool regulating1 = true, real_type q1 = 0.,
+                       bool with_gen3 = true, real_type min_q1 = std::numeric_limits<real_type>::quiet_NaN())
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(5, 1, RealVect::Constant(5, 138.), 0, 0);
+    Eigen::VectorXi from_id(4), to_id(4);
+    from_id << 0, 1, 2, 3;
+    to_id << 1, 2, 3, 4;
+    grid.init_powerlines(RealVect::Constant(4, 0.01), RealVect::Constant(4, 0.08),
+                         CplxVect::Zero(4), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 60.;
+    load_q << 50.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 4;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p(3), gen_v(3), q(3), gen_min_q(3), gen_max_q(3);
+    gen_p << 0., 10., 10.;
+    gen_v << 1.02, 1.04, 1.04;
+    q << 0., q1, 0.;
+    gen_min_q << -500., std::isnan(min_q1) ? -max_q1 : min_q1, -max_q3;
+    gen_max_q << 500., max_q1, max_q3;
+    Eigen::VectorXi gen_bus(3);
+    gen_bus << 0, 1, 3;
+    grid.init_generators_full(gen_p, gen_v, q, {true, regulating1, with_gen3}, gen_min_q, gen_max_q, gen_bus);
+    grid.set_gen_regulated_bus(1, 2);
+    grid.set_gen_regulated_bus(2, 2);
+    grid.add_gen_slackbus(0, 1.);
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("a remote controller beyond its max is held there", "[outer][reactive_limits]")
+{
+    LSGrid grid = make_group_grid(/*max_q1=*/5., /*max_q3=*/500., true, 0., /*with_gen3=*/false);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 5);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+    CHECK(gen_q(grid, 1) == Approx(5.).margin(1e-6));
+    CHECK(std::abs(V(2)) < 1.04);
+
+    LSGrid ref = make_group_grid(5., 500., /*regulating1=*/false, /*q1=*/5., false);
+    const CplxVect V_ref = solve_plain(ref);
+    REQUIRE(V_ref.size() == 5);
+    CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-9);
+}
+
+TEST_CASE("the first controller of a group is held, the other one regulates on", "[outer][reactive_limits]")
+{
+    // the group shares by reactive range: gen 1 (its first controller) has a wide one, so it
+    // is asked a large share, but it can produce 5 MVar only
+    LSGrid grid = make_group_grid(/*max_q1=*/5., /*max_q3=*/500., true, 0., true, /*min_q1=*/-500.);
+    const CplxVect V = solve_outer(grid);
+    REQUIRE(V.size() == 5);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    CHECK(grid.get_algo().get_linear_solver_stats().nb_analyze == 1);
+    CHECK(gen_q(grid, 1) == Approx(5.).margin(1e-6));
+    CHECK(std::abs(V(2)) == Approx(1.04).margin(1e-9));  // gen 3 still holds it
+
+    // the same as gen 1 injecting 5 MVar, gen 3 regulating alone
+    LSGrid ref = make_group_grid(5., 500., /*regulating1=*/false, /*q1=*/5., true, -500.);
+    const CplxVect V_ref = solve_plain(ref);
+    REQUIRE(V_ref.size() == 5);
+    CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-9);
+    CHECK(gen_q(grid, 2) == Approx(gen_q(ref, 2)).margin(1e-6));
+}
+
+TEST_CASE("a controller frozen at its limit stays frozen while its group holds the bus", "[outer][reactive_limits]")
+{
+    // gen 1 is asked more than its max, gen 3 holds bus 2: the loop driven by hand, so that
+    // the regulated magnitude it reads can be put an ulp past the set-point
+    LSGrid grid = make_group_grid(/*max_q1=*/5., /*max_q3=*/500., true, 0., true, /*min_q1=*/-500.);
+    grid.change_algorithm("NRSing_SparseLU");
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 5);
+    CplxVect V = grid.get_algo().get_V();
+    RealVect Vm = V.cwiseAbs();
+    const CplxVect mismatch = grid.get_algo().get_bus_mismatch();
+    const RealVect ctrl_q = grid.get_controller_q_solver();
+    CplxVect Sbus = CplxVect::Zero(V.size());
+    ls2g::OuterInjections state;
+    state.Sbus = &Sbus;
+    state.Sbus_init = &Sbus;
+    state.Sbus_target = &Sbus;
+    ls2g::OuterContext ctx;
+    ctx.grid = &grid;
+    ctx.V = &V;
+    ctx.Vm = &Vm;
+    ctx.bus_mismatch = &mismatch;
+    ctx.controller_q = &ctrl_q;
+    ctx.injections = &state;
+    ls2g::OuterControls controls;
+    ctx.controls = &controls;
+
+    const ls2g::VoltageControlSolverData & ctrl = grid.get_ac_voltage_control_plan().controllers();
+    REQUIRE(ctrl.n_groups() == 1);
+    int c1 = -1, c3 = -1;
+    for (int c = 0; c < ctrl.n_controllers(); ++c) (ctrl.elem_id(c) == 1 ? c1 : c3) = c;
+    const int reg = ctrl.reg_bus(0);
+    const real_type v_set = ctrl.v_set(0);
+
+    ReactiveLimitsLoop loop;
+    loop.declare(ctx);
+    REQUIRE(controls.controller_hold(c1) != nullptr);
+    REQUIRE(controls.controller_hold(c3) != nullptr);
+    REQUIRE(loop.is_needed(ctx));
+    loop.initialize(ctx);
+    CHECK(loop.check(ctx) == OuterLoopStatus::UNSTABLE);  // gen 1 frozen at its max
+    REQUIRE(controls.is_held(c1));
+
+    // gen 3 holds bus 2 at its set-point: a magnitude an ulp above it is that set-point,
+    // not a voltage gen 1's limit was keeping down
+    Vm(reg) = std::nextafter(v_set, static_cast<real_type>(2.));
+    CHECK(loop.check(ctx) == OuterLoopStatus::STABLE);
+    CHECK(controls.is_held(c1));
+
+    // nobody holds it any more: the magnitude is the Newton's (Vm, not |V|), and above the
+    // set-point it releases gen 1
+    controls.controller_hold(c3)->hold(0.);
+    V(reg) = std::polar(v_set - static_cast<real_type>(1e-3), std::arg(V(reg)));
+    CHECK(loop.check(ctx) == OuterLoopStatus::UNSTABLE);
+    CHECK(!controls.is_held(c1));
+}
+
+namespace {
+
+// buses 0-1-2-3 in a line, a load at bus 3, the slack generator at bus 0; two hvdc lines from
+// bus 1 to bus 3, their side-2 stations holding bus 3, with the reactive ranges
+// [-range_a, range_a] and [-range_b, range_b]
+LSGrid make_two_station_grid(real_type range_a, real_type range_b)
+{
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(4, 1, RealVect::Constant(4, 138.), 0, 0);
+    Eigen::VectorXi from_id(3), to_id(3);
+    from_id << 0, 1, 2;
+    to_id << 1, 2, 3;
+    grid.init_powerlines(RealVect::Constant(3, 0.01), RealVect::Constant(3, 0.08),
+                         CplxVect::Zero(3), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 60.;
+    load_q << 40.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 3;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+    gen_p << 0.;
+    gen_v << 1.02;
+    gen_min_q << -500.;
+    gen_max_q << 500.;
+    Eigen::VectorXi gen_bus(1);
+    gen_bus << 0;
+    grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+
+    Eigen::VectorXi bus1(2), bus2(2);
+    bus1 << 1, 1;
+    bus2 << 3, 3;
+    const std::vector<int> type{0, 0}, mode{0, 0};
+    const std::vector<bool> vreg1{false, false}, vreg2{true, true}, droop_on{false, false};
+    const RealVect zero = RealVect::Zero(2);
+    RealVect vm(2), min_q(2), max_q(2), pf(2), p(2), r(2), vn(2);
+    vm << 1.01, 1.01;
+    min_q << -range_a, -range_b;
+    max_q << range_a, range_b;
+    pf << 1., 1.;
+    p << 10., 10.;
+    r << 0., 0.;
+    vn << 320., 320.;
+    grid.init_hvdc_lines(bus1, bus2, type, type, zero, zero, vreg1, vreg2, vm, vm, zero, zero,
+                         min_q, max_q, min_q, max_q, pf, pf, mode, p, r, vn, droop_on,
+                         zero, zero, zero, zero);
+    grid.set_reactive_dispatch_olf(true);
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("stations holding one bus share it by their widest reactive range", "[reactive_dispatch]")
+{
+    // at their active power the ranges are 1:3; over their whole curves they are equal
+    LSGrid grid = make_two_station_grid(50., 150.);
+    REQUIRE(solve_plain(grid).size() == 4);
+    const RealVect q_at_p = std::get<1>(grid.get_dcline_res2());
+    const real_type total = q_at_p(0) + q_at_p(1);
+    CHECK(std::abs(total) > 1.);
+    CHECK(q_at_p(1) == Approx(3. * q_at_p(0)).epsilon(1e-9));
+
+    RealVect widest(2);
+    widest << 300., 300.;
+    grid.set_station_reactive_range_max(RealVect::Constant(2, std::numeric_limits<real_type>::quiet_NaN()), widest);
+    REQUIRE(solve_plain(grid).size() == 4);
+    const RealVect q_widest = std::get<1>(grid.get_dcline_res2());
+    CHECK(q_widest(0) == Approx(q_widest(1)).epsilon(1e-9));
+    CHECK(q_widest(0) + q_widest(1) == Approx(total).epsilon(1e-9));
+    // copied with the grid
+    LSGrid copy(grid);
+    CHECK(copy.get_station_reactive_range_max(2)(0) == 300.);
+}
+
+TEST_CASE("a resumed solve freezes the same buses again after a topology change", "[outer][reactive_limits]")
+{
+    // buses 0-1-2-3-4 in a line, two busbars per substation (the second ones unused): the
+    // slack generator at 0, a unit at 2 that cannot reach its voltage (frozen at its max), a
+    // unit at 3 with room to spare, a load at 4
+    LSGrid grid;
+    grid.set_sn_mva(100.);
+    grid.set_init_vm_pu(1.0);
+    grid.init_bus(5, 2, RealVect::Constant(10, 138.), 0, 0);
+    Eigen::VectorXi from_id(4), to_id(4);
+    from_id << 0, 1, 2, 3;
+    to_id << 1, 2, 3, 4;
+    grid.init_powerlines(RealVect::Constant(4, 0.01), RealVect::Constant(4, 0.08), CplxVect::Zero(4), from_id, to_id);
+    RealVect load_p(1), load_q(1);
+    load_p << 80.;
+    load_q << 50.;
+    Eigen::VectorXi load_bus(1);
+    load_bus << 4;
+    grid.init_loads(load_p, load_q, load_bus);
+    RealVect gen_p(3), gen_v(3), q(3), gen_min_q(3), gen_max_q(3);
+    gen_p << 0., 20., 20.;
+    gen_v << 1.02, 1.06, 1.03;
+    q << 0., 0., 0.;
+    gen_min_q << -500., -10., -500.;
+    gen_max_q << 500., 10., 500.;
+    Eigen::VectorXi gen_bus(3);
+    gen_bus << 0, 2, 3;
+    grid.init_generators_full(gen_p, gen_v, q, {true, true, true}, gen_min_q, gen_max_q, gen_bus);
+    grid.add_gen_slackbus(0, 1.);
+
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ReactiveLimitsLoop>());
+    ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
+    cfg.int_params.back() = 1;  // resume_outer_state
+    grid.set_ac_algo_config(cfg);
+
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 10);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().nb_outer_iterations == 1);
+    REQUIRE(gen_q(grid, 1) == Approx(10.).margin(1e-6));
+    const real_type q2 = gen_q(grid, 2);
+    // resumed, nothing to do
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 10);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().nb_outer_iterations == 0);
+
+    // substation 1 moved to its second busbar: the same grid, but every bus after it
+    // has another solver id
+    grid.change_bus2_powerline_python(0, 6);
+    grid.change_bus1_powerline_python(1, 6);
+    REQUIRE(grid.ac_pf(flat_start(grid), 30, 1e-10).size() == 10);
+    const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    // it starts with unit 1 frozen and unit 2 regulating, as the solve before left them
+    CHECK(stats.nb_outer_iterations == 0);
+    for (const ls2g::OuterDecision & d : stats.decisions) CHECK_FALSE(d.taken);
+    CHECK(gen_q(grid, 1) == Approx(10.).margin(1e-6));
+    CHECK(gen_q(grid, 2) == Approx(q2).margin(1e-6));
+}
+
+TEST_CASE("a resumed solve reads the previous voltages at the buses they belong to", "[outer][reactive_limits]")
+{
+    // an SVC frozen at its max, whose limit the resumed solve evaluates at the previous
+    // solve's voltage: after a topology change that adds a bus ahead of it, its bus has a
+    // solver id that solve did not have. Not relabelled, that is a read one past the end of
+    // the previous voltages: Eigen's bounds assertion (the assertion builds) stops it; ASan
+    // does not see it, Eigen pads its allocations under ASan
+    const auto make = [](bool split) {
+        LSGrid grid;
+        grid.set_sn_mva(100.);
+        grid.set_init_vm_pu(1.0);
+        grid.init_bus(5, 2, RealVect::Constant(10, 138.), 0, 0);
+        // substation 4 on its second busbar (bus 9), a ring 1-2-3
+        Eigen::VectorXi from_id(5), to_id(5);
+        from_id << 0, 1, 2, 3, 1;
+        to_id << 1, 2, 3, 9, 3;
+        grid.init_powerlines(RealVect::Constant(5, 0.01), RealVect::Constant(5, 0.08), CplxVect::Zero(5), from_id, to_id);
+        RealVect load_p(1), load_q(1);
+        load_p << 60.;
+        load_q << 30.;
+        Eigen::VectorXi load_bus(1);
+        load_bus << 9;
+        grid.init_loads(load_p, load_q, load_bus);
+        RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+        gen_p << 0.;
+        gen_v << 1.02;
+        gen_min_q << -500.;
+        gen_max_q << 500.;
+        Eigen::VectorXi gen_bus(1);
+        gen_bus << 0;
+        grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+        grid.add_gen_slackbus(0, 1.);
+        RealVect target_vm(1), q_set(1), slope(1), b_min(1), b_max(1);
+        target_vm << 1.06;
+        q_set << 0.;
+        slope << 0.;
+        b_min << -0.05;
+        b_max << 0.05;
+        Eigen::VectorXi svc_bus(1);
+        svc_bus << 9;
+        grid.init_svcs({1}, target_vm, q_set, slope, b_min, b_max, svc_bus, svc_bus);
+        grid.change_algorithm("NROuter_SparseLU");
+        grid.clear_outer_loops();
+        grid.add_outer_loop(std::make_shared<ReactiveLimitsLoop>());
+        ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
+        cfg.int_params.back() = 1;  // resume_outer_state
+        grid.set_ac_algo_config(cfg);
+        // the line 1-3 from substation 1's second busbar (bus 6): a sixth solver bus, ahead of bus 9
+        if (split) grid.change_bus1_powerline_python(4, 6);
+        return grid;
+    };
+    LSGrid grid = make(false);
+    const CplxVect V0 = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V0.size() == 10);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    // frozen at its max (evaluated at the voltage of the solve that froze it)
+    REQUIRE(std::get<1>(grid.get_svcs().get_res())(0) == Approx(0.05 * std::norm(V0(9)) * 100.).margin(1e-2));
+
+    grid.change_bus1_powerline_python(4, 6);
+    const CplxVect V = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V.size() == 10);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+
+    // close to that grid solved from the start: not equal, the SVC is frozen at its limit
+    // at another solve's voltage
+    LSGrid ref = make(true);
+    const CplxVect V_ref = ref.ac_pf(flat_start(ref), 30, 1e-10);
+    REQUIRE(V_ref.size() == 10);
+    CHECK((V - V_ref).cwiseAbs().maxCoeff() < 1e-4);
+    CHECK(std::get<1>(grid.get_svcs().get_res())(0) == Approx(std::get<1>(ref.get_svcs().get_res())(0)).margin(1e-2));
+}
+
+TEST_CASE("a resumed solve leaves an idle voltage monitor at the bus of a frozen controller alone",
+          "[outer][reactive_limits][svc]")
+{
+    // gen 1 at bus 1 regulates bus 2 and cannot reach it: frozen at its max. An idle standby
+    // SVC at bus 1 monitors bus 1, so the loop has two entries at that grid bus. Resumed, gen 1
+    // starts frozen again; the monitor, which nothing switched on, stays at Q = 0
+    LSGrid grid = make_group_grid(/*max_q1=*/5., /*max_q3=*/500., true, 0., /*with_gen3=*/false);
+    RealVect target_vm(1), q_set(1), slope(1), b_min(1), b_max(1);
+    target_vm << 1.;
+    q_set << 0.;
+    slope << 0.;
+    b_min << -0.5;
+    b_max << 0.5;
+    Eigen::VectorXi svc_bus(1);
+    svc_bus << 1;
+    grid.init_svcs({0}, target_vm, q_set, slope, b_min, b_max, svc_bus, svc_bus);
+    RealVect low(1), high(1), low_target(1), high_target(1);
+    low << 0.5;
+    high << 1.5;
+    low_target << 0.97;
+    high_target << 1.03;
+    grid.set_svc_standby({true}, low, high, low_target, high_target);
+
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ls2g::VoltageMonitoringLoop>());
+    grid.add_outer_loop(std::make_shared<ReactiveLimitsLoop>());
+    ls2g::AlgoConfig cfg = grid.get_ac_algo_config();
+    cfg.int_params.back() = 1;  // resume_outer_state
+    grid.set_ac_algo_config(cfg);
+    const auto svc_q = [&grid]() { return std::get<1>(grid.get_svcs().get_res())(0); };
+
+    const CplxVect V0 = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V0.size() == 5);
+    REQUIRE(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    REQUIRE(gen_q(grid, 1) == Approx(5.).margin(1e-6));
+    REQUIRE(svc_q() == Approx(0.).margin(1e-9));
+
+    const CplxVect V = grid.ac_pf(flat_start(grid), 30, 1e-10);
+    REQUIRE(V.size() == 5);
+    CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+    CHECK(svc_q() == Approx(0.).margin(1e-9));
+    CHECK(gen_q(grid, 1) == Approx(5.).margin(1e-6));
+    CHECK((V - V0).cwiseAbs().maxCoeff() < 1e-8);
+}

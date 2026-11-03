@@ -322,6 +322,20 @@ class TestStorageSlackOpenLoadFlow(unittest.TestCase):
                 self.assertAlmostEqual(grid_default.get_storages()[0].slack_weight / b1.slack_weight,
                                        300. / 9999., places=9)
 
+    def test_fallback_slack_on_a_battery_flags_no_generator(self):
+        """No generator takes part in the default distributed slack (all at 0 MW): the slack
+        falls back to the most connected producing bus, the battery's, which holds it alone.
+        No generator is then reported as the slack one."""
+        net = _network(bus="B4")
+        gens = net.get_generators()
+        net.update_generators(id=list(gens.index), target_p=[0.] * len(gens))
+        grid, subs = _grid(net, return_sub_id=True)
+        self.assertTrue(grid.get_storages()[0].is_slack)
+        self.assertFalse(any(g.is_slack for g in grid.get_generators()))
+        gen_sub = subs[0]
+        self.assertFalse(gen_sub["desired_slack"].any(),
+                         f"{list(gen_sub.index[gen_sub['desired_slack']])} flagged as the slack")
+
     def test_explicit_slack_leaves_the_batteries_out(self):
         grid = _grid(_network(bus="B4"), gen_slack_id={"B1-G": 1., "B2-G": 1.})
         self.assertFalse(grid.get_storages()[0].is_slack)

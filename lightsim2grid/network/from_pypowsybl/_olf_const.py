@@ -19,9 +19,22 @@ updated once.
 # OpenLoadFlow's own constants, mirrored
 # ---------------------------------------------------------------------------------------
 
-# Tolerance (MW) for deciding an active power target is "zero": mirrors OLF's own
-# POWER_EPSILON_SI = 1e-4 MW (AbstractLfGenerator.checkIfGeneratorStartedForVoltageControl).
+# OLF's per-unit base (PerUnit.SB, MVA).
+_OLF_SB_MVA = 100.0
+
+# OLF's POWER_EPSILON_SI = 1e-4 (AbstractLfGenerator), compared with active powers in MW in
+# checkActivePowerControl (slack participation: a zero target, a degenerate range): the
+# tolerance (MW) for deciding an active power target is "zero" there.
 _ZERO_P_TOL = 1e-4
+
+# The same POWER_EPSILON_SI, but compared with PER-UNIT values in
+# checkIfGeneratorStartedForVoltageControl (``getTargetP()`` / ``getMinP()`` are per unit
+# there): a generator is "not started" for voltage control below 1e-4 pu, ie this many MW.
+_NOT_STARTED_P_TOL_MW = 1e-4 * _OLF_SB_MVA
+
+# OLF's TARGET_V_EPSILON (LfNetworkLoaderImpl), compared with targets in per unit: two units
+# of one bus regulating one bus with targets further apart are inconsistent.
+_TARGET_V_EPSILON_PU = 1e-2
 
 # OLF's own PlausibleValues.MIN_REACTIVE_RANGE (1 MVar): with the default
 # reactiveRangeCheckMode ("MAX"), a generator whose widest reactive range across its
@@ -97,14 +110,3 @@ _HVDC_P_LIMIT_TOL_MW = 1e-4
 # some headroom left, which a contingency may then ask for (or relieve) while the frozen
 # unit cannot follow -- on a stiff bus, by a voltage deviation too small to be reported.
 _Q_SATURATED_HELD_TOL_MVAR = 0.1
-
-# OLF's minRealisticVoltage / maxRealisticVoltage (pu) and the margin its ReactiveLimits
-# loop applies to them (ReactiveLimitsOuterLoop.REALISTIC_VOLTAGE_MARGIN): in its default
-# "robust" remote voltage control mode (voltageRemoteControlRobustMode), a controller bus
-# holding a remote target is switched to PQ at its target reactive power as soon as its own
-# voltage leaves [min * margin, max / margin]. The defaults differ between OLF versions: the
-# ones of the installed OLF are read at run time (`_olf_params._olf_realistic_voltage_range`),
-# these two are only the fallback when pypowsybl does not expose them.
-_OLF_MIN_REALISTIC_VOLTAGE_PU = 0.8
-_OLF_MAX_REALISTIC_VOLTAGE_PU = 1.2
-_OLF_REALISTIC_VOLTAGE_MARGIN = 1.02

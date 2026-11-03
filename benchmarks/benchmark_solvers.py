@@ -59,6 +59,10 @@ ENV_NAME = "rte_case14_realistic"
 DONT_SAVE = "__DONT_SAVE"
 NICSLU_LICENSE_AVAIL = os.path.exists("./nicslu.lic") and os.path.isfile("./nicslu.lic")
 
+# KLU with a static-pivot refactorization: registered by name only, they have no AlgorithmType
+# value (so they are not in `backend.available_default_algorithms` either)
+NR_STATIC_PIVOT = "NR_KLUStaticPivot"
+NRSING_STATIC_PIVOT = "NRSing_KLUStaticPivot"
 solver_names = {AlgorithmType.GaussSeidel: "GS",
                 AlgorithmType.GaussSeidelSynch: "GS synch",
                 AlgorithmType.NR_SparseLU: "NR (SLU)",
@@ -69,6 +73,8 @@ solver_names = {AlgorithmType.GaussSeidel: "GS",
                 AlgorithmType.NRSing_KLU: "NR single (KLU)",
                 AlgorithmType.NRSing_NICSLU: "NR single (NICSLU\\*)",
                 AlgorithmType.NRSing_CKTSO: "NR single (CKTSO\\*)",
+                NR_STATIC_PIVOT: "NR (KLU static pivot)",
+                NRSING_STATIC_PIVOT: "NR single (KLU static pivot)",
                 AlgorithmType.FDPF_XB_SparseLU: "FDPF XB (SLU)",
                 AlgorithmType.FDPF_BX_SparseLU: "FDPF BX (SLU)",
                 AlgorithmType.FDPF_XB_KLU: "FDPF XB (KLU)",
@@ -93,6 +99,8 @@ order_solver_print = [
     AlgorithmType.NR_SparseLU,
     AlgorithmType.NRSing_KLU,
     AlgorithmType.NR_KLU,
+    NRSING_STATIC_PIVOT,
+    NR_STATIC_PIVOT,
     AlgorithmType.NRSing_NICSLU,
     AlgorithmType.NR_NICSLU,
     AlgorithmType.NRSing_CKTSO,
@@ -194,6 +202,19 @@ def generate_narrative(env_name,
                 f"Linear solvers `KLU`, `NICSLU` and `CKTSO` show up to {100. * spread:.0f}% difference in "
                 f"performance in this run."
             )
+
+    static = _get_speed(NR_STATIC_PIVOT)
+    static_single = _get_speed(NRSING_STATIC_PIVOT)
+    for static_speed, klu_ref, label in ((static, klu, "NR (KLU static pivot)"),
+                                         (static_single, _get_speed(AlgorithmType.NRSing_KLU),
+                                          "NR single (KLU static pivot)")):
+        if static_speed is None or klu_ref is None:
+            continue
+        ratio = static_speed / klu_ref
+        speed_paragraphs.append(
+            f"The KLU static-pivot refactorization (row `{label}`) runs at {ratio:.2f}x the speed of the "
+            f"corresponding plain KLU row ({static_speed:.0f} vs {klu_ref:.0f} iterations on the reported runs)."
+        )
 
     single_klu = _get_speed(AlgorithmType.NRSing_KLU)
     if klu is not None and single_klu is not None:
@@ -364,7 +385,9 @@ def main(max_ts,
             time_pypow = env_pypow._time_step
     
     wst = True  # print extra info in the run_env function
-    solver_types = env_lightsim.backend.available_default_algorithms
+    solver_types = list(env_lightsim.backend.available_default_algorithms)
+    avail_names = set(env_lightsim.backend._grid.available_algorithm_names())
+    solver_types += [el for el in (NRSING_STATIC_PIVOT, NR_STATIC_PIVOT) if el in avail_names]
     for solver_type in solver_types:
         if solver_type not in solver_names:
             continue

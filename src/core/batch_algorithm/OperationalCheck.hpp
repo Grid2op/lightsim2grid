@@ -19,6 +19,8 @@
 // isnan / isfinite / sqrt: the C header, not <cmath>. These are used unqualified below
 // (isnan(...), not std::isnan(...)), and only math.h guarantees them in the global
 // namespace across compilers -- cmath only guarantees std::isnan / std::isfinite.
+#include <array>
+#include <utility>
 #include <math.h>
 #include <cmath>
 #include <sstream>
@@ -166,7 +168,10 @@ inline void check_current_violations(
     // _row_branch_overrides_), sorted by branch id, and the offset of this container's
     // ids in that numbering (0 for lines, n_line for trafos); nullptr for none
     const std::vector<BranchBusOverride> * overrides = nullptr,
-    size_t lag_id = 0)
+    size_t lag_id = 0,
+    // the pi block of the elements whose taps an outer loop moved (a transformer's, in this
+    // container's ids, sorted): its current is the one at those taps; nullptr for none
+    const std::vector<std::pair<int, std::array<cplx_type, 4> > > * blocks = nullptr)
 {
     if(limit1.size() == 0 && limit2.size() == 0) return;  // thermal limits never configured
 
@@ -203,6 +208,7 @@ inline void check_current_violations(
         }
     }
 
+    size_t next_block = 0;
     size_t next_override = 0;
     if(overrides != nullptr){
         while(next_override < overrides->size() && (*overrides)[next_override].branch_id < static_cast<int>(lag_id)) ++next_override;
@@ -251,10 +257,18 @@ inline void check_current_violations(
         real_type amps2 = 0.;
         if(ac_solver_used){
             // a branch the row placed itself has both ends closed: its raw block
-            const cplx_type y11 = own_placement ? yac_raw_11(el_idx) : yac_eff_11(el_idx);
-            const cplx_type y12 = own_placement ? yac_raw_12(el_idx) : yac_eff_12(el_idx);
-            const cplx_type y21 = own_placement ? yac_raw_21(el_idx) : yac_eff_21(el_idx);
-            const cplx_type y22 = own_placement ? yac_raw_22(el_idx) : yac_eff_22(el_idx);
+            cplx_type y11 = own_placement ? yac_raw_11(el_idx) : yac_eff_11(el_idx);
+            cplx_type y12 = own_placement ? yac_raw_12(el_idx) : yac_eff_12(el_idx);
+            cplx_type y21 = own_placement ? yac_raw_21(el_idx) : yac_eff_21(el_idx);
+            cplx_type y22 = own_placement ? yac_raw_22(el_idx) : yac_eff_22(el_idx);
+            // ... and a transformer at the taps the outer loops left it at
+            if(blocks != nullptr && !own_placement){
+                while(next_block < blocks->size() && (*blocks)[next_block].first < static_cast<int>(el_id)) ++next_block;
+                if(next_block < blocks->size() && (*blocks)[next_block].first == static_cast<int>(el_id)){
+                    const std::array<cplx_type, 4> & b = (*blocks)[next_block].second;
+                    y11 = b[0]; y12 = b[1]; y21 = b[2]; y22 = b[3];
+                }
+            }
             const cplx_type I_from = std::conj(y11 * Efrom + y12 * Eto);
             const cplx_type S_from = Efrom * I_from;
             amps1 = std::abs(S_from) * sn_mva / (sqrt_3 * v_from_kv);

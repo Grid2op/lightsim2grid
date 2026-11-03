@@ -36,8 +36,19 @@ def get_pypowsybl_parameters(slack_voltage_level=None):
     # forced here for the two engines to solve the same problem (verified on
     # IEEE-300, which has transformers with non-negligible shunt admittance:
     # leaving this at OLF's default desyncs bus voltages by up to ~0.4 pu).
-    return get_pypowsybl_loopfree_parameters(
+    #
+    # The reference is also solved tightly: these tests compare it with a lightsim2grid
+    # solve at 1e-6 and below, and OLF's own stopping criterion (newtonRaphsonConvEpsPerEq,
+    # 1e-4 per equation by default) leaves angle errors above that. Its default is not
+    # forced elsewhere, so a pypowsybl build stopping at it fails these tests for no
+    # difference of model.
+    params = get_pypowsybl_loopfree_parameters(
         slack_bus_ids=slack_voltage_level,
         twt_split_shunt_admittance=True,
     )
+    provider = dict(params.provider_parameters)
+    provider["newtonRaphsonConvEpsPerEq"] = "1e-12"
+    provider["maxNewtonRaphsonIterations"] = "50"
+    params.provider_parameters = provider
+    return params
 

@@ -1,4 +1,4 @@
-export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:../nicslu/nicslu202110/linux/lib_centos6_x64_gcc482_fma/int32/:../cktso/ubuntu2004_x64_gcc940/"
+export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:../nicslu/nicslu202110/linux/lib_centos6_x64_gcc482_fma/int32/:../cktso/rocky8_x64_gcc850/"
 echo "AC Solver..."
 ./benchmarks_ac.sh > res_benchmarks/benchmarks_ac.txt
 echo "... done \n"

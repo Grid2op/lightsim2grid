@@ -11,7 +11,7 @@ as grid2op actions."""
 
 __all__ = ["LightEnv", "LightEnvObservation", "TopoAction", "Protections", "ElementType", "topo_action_from_grid2op"]
 
-from typing import Iterable
+from typing import Iterable, Optional
 
 import numpy as np
 
@@ -97,6 +97,45 @@ class LightEnv(_LightEnvCPP):
 
     def __deepcopy__(self, memo) -> "LightEnv":
         return self.copy()
+
+    def assign_time_series(self,
+                           load_p: Optional[np.ndarray] = None,
+                           load_q: Optional[np.ndarray] = None,
+                           gen_p: Optional[np.ndarray] = None,
+                           gen_v: Optional[np.ndarray] = None,
+                           storage_p: Optional[np.ndarray] = None,
+                           shunt_p: Optional[np.ndarray] = None,
+                           shunt_q: Optional[np.ndarray] = None,
+                           sgen_p: Optional[np.ndarray] = None,
+                           sgen_q: Optional[np.ndarray] = None) -> None:
+        """Give the injections replayed by the episode: one matrix per quantity, one row per
+        step and one column per element (MW, MVAr, ``gen_v`` in pu).
+
+        A NaN leaves the value of the grid unchanged, and a matrix left to ``None`` is a matrix
+        of NaN: that quantity keeps the value of the initial grid for the whole episode (eg
+        ``gen_v=None`` for an environment without a ``prod_v`` time series). At least one
+        matrix must be given, the number of steps is taken from it.
+        """
+        given = {"load_p": load_p, "load_q": load_q, "gen_p": gen_p, "gen_v": gen_v,
+                 "storage_p": storage_p, "shunt_p": shunt_p, "shunt_q": shunt_q,
+                 "sgen_p": sgen_p, "sgen_q": sgen_q}
+        nb_rows = {np.shape(mat)[0] for mat in given.values() if mat is not None}
+        if not nb_rows:
+            raise ValueError("LightEnv.assign_time_series: at least one time series must be given "
+                             "(None everywhere leaves no number of steps).")
+        if len(nb_rows) > 1:
+            raise ValueError("LightEnv.assign_time_series: all the time series must have the same "
+                             f"number of rows (steps), got {sorted(nb_rows)}.")
+        nb_row = nb_rows.pop()
+        grid = self.grid
+        nb_el = {"load_p": len(grid.get_loads()), "load_q": len(grid.get_loads()),
+                 "gen_p": len(grid.get_generators()), "gen_v": len(grid.get_generators()),
+                 "storage_p": len(grid.get_storages()),
+                 "shunt_p": len(grid.get_shunts()), "shunt_q": len(grid.get_shunts()),
+                 "sgen_p": len(grid.get_static_generators()), "sgen_q": len(grid.get_static_generators())}
+        args = [np.full((nb_row, nb_el[name]), np.nan) if mat is None else np.asarray(mat, dtype=float)
+                for name, mat in given.items()]
+        super().assign_time_series(*args)
 
     def init_actions(self, actions: Iterable) -> None:
         """Register the actions the agent can take: ``step(i)`` plays ``actions[i]``.

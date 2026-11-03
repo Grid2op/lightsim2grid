@@ -25,6 +25,13 @@ except ImportError:
     LightSimBackend = None
 
 
+def static_pivot_or(obj, static_pivot_name, fallback):
+    """The KLU static-pivot algorithms are registered by name only (no `AlgorithmType` value):
+    return `static_pivot_name` if `obj` (a grid, or a batch computer) knows it, else `fallback`
+    (eg when KLU is not compiled in)."""
+    return static_pivot_name if static_pivot_name in obj.available_algorithm_names() else fallback
+
+
 def get_env_name_displayed(env_name):
     res = re.sub("^l2rpn_", "", env_name)
     res = re.sub("_small$", "", res)

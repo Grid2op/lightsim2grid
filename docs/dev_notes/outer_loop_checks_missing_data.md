@@ -7,6 +7,13 @@ and `HvdcPCheck.hpp`). It records, loop by loop, what a post-solve
 is missing — so the next piece of this work does not have to re-derive it. It is not part
 of the built documentation (`docs/*.rst`).
 
+**Superseded in part.** The tap changers, shunt sections and their regulation, the capability
+curves and the standby automata were added to the model afterwards, and every loop of the table
+below now exists as an outer loop of the `NROuter_*` algorithms (see
+`outer_loops_fixed_sparsity.md`); the rows marked *absent* describe the state of the model when
+this note was written. The user documentation is `docs/physical_violations.rst` and
+`docs/outer_loops.rst`.
+
 Reference for the outer loops: PowSyBl OpenLoadFlow,
 `src/main/java/com/powsybl/openloadflow/lf/outerloop/config/DefaultAcOuterLoopConfig.java`
 (the registration order *is* the nesting order, innermost first) and the loop classes in
@@ -17,12 +24,12 @@ Reference for the outer loops: PowSyBl OpenLoadFlow,
 | OLF outer loop | Result side | Control side | Post-solve check possible? |
 |---|---|---|---|
 | `ReactiveLimits` | complete | complete | **yes — implemented** for a batch (`compute_physical_violations`), for all three families that hold a bus' voltage; a single solve already publishes `res_q_mvar` |
-| `TransformerVoltageControl` | complete | **absent** | no |
-| `PhaseControl` / `IncrementalPhaseControl` | complete | **absent** | no |
-| `ShuntVoltageControl` | complete | **absent** | no |
+| `TransformerVoltageControl` | complete | ~~absent~~ **done** (`set_trafo_ratio_tap_*`) | yes — `TRANSFORMER_VOLTAGE_DEADBAND` |
+| `PhaseControl` / `IncrementalPhaseControl` | complete | ~~absent~~ **done** for `PhaseControl` (`set_trafo_phase_tap_*`) | yes — `PHASE_CONTROL_P`, `PHASE_LIMITER_CURRENT` |
+| `ShuntVoltageControl` | complete | ~~absent~~ **done** (`set_shunt_section*`) | yes — `SHUNT_VOLTAGE_CONTROL` |
 | `DistributedSlack` | complete | complete (limits optional) | **yes — implemented** for a batch (`compute_physical_violations`): lightsim2grid solves the distribution inside the Newton (`MultiSlack`) by participation factors that ignore limits, so a machine can converge past `min_p_mw` / `max_p_mw` |
 | `HvdcAcEmulationLimits` | complete | complete | **yes — implemented** for a batch (`compute_physical_violations`): `status_droop` is an *input*, so the linear regime is exactly where the trigger lives |
-| `VoltageMonitoring` (SVC stand-by automaton) | complete | partial | `b_min` / `b_max` are now **checked** (as part of the reactive capability above) but still never enforced; the stand-by band itself is not modelled |
+| `VoltageMonitoring` (SVC stand-by automaton) | complete | ~~partial~~ **done** (`set_svc_standby`, `set_svc_b0`) | yes — `LOW_VOLTAGE_SVC_STANDBY` / `HIGH_VOLTAGE_SVC_STANDBY`, and the `VoltageMonitoring` loop switches the SVC on |
 | `SecondaryVoltageControl` | complete | absent | no control zones / pilot points in the model |
 | `AreaInterchangeControl` | complete | absent | no `Area` concept in the model |
 | `AutomationSystem` | complete | absent | no overload-management systems in the model |
@@ -90,7 +97,11 @@ reach at all: the converged solution assumes a set-point that could not be held,
 a statement about the model's assumptions rather than about how the grid is operated. The
 third category, `SOLVER` (`NOT_SIMULATED`, `DIVERGENCE`), is not a limit at all — a
 divergence does not distinguish "no solution exists" from "this algorithm did not find
-one".
+one". The fourth, `CONTROL`, is not a limit either: a control or an automaton the
+solution does not apply — a standby SVC its automaton would switch on, a unit frozen at a
+reactive limit that could hold its set-point again, a saturated droop that would release,
+a slack mismatch, and the tap changers and switched shunts to come. The state is
+reachable; it is not the one the controls would settle in.
 
 What is still missing around it:
 
@@ -138,6 +149,15 @@ limit.
 
 Not answered here: whether an already-saturated line should be *released* — the other half
 of OLF's loop. That is a question about a flow this row never computed.
+
+> **Update (phases 6 and after of `outer_loops_fixed_sparsity.md`).** Sections 3, 4 and 5
+> below describe the model before it had tap changers and shunt sections. It has them now:
+> `TrafoContainer` carries a ratio and a phase tap changer per transformer (step tables,
+> positions, regulation: `LSGrid::set_trafo_ratio_tap_changer`, `..._regulation`), its pi
+> model taken at the taps as OpenLoadFlow takes it, and `ShuntContainer` its sections and
+> their voltage regulation (`LSGrid::set_shunt_sections`). The pypowsybl converter reads all
+> of it; the pandapower one still collapses a tap into a ratio. The checks themselves come
+> with the loops.
 
 ## 3. `TransformerVoltageControl` (RTC) — the control data does not exist
 
@@ -197,9 +217,9 @@ pypowsybl (`_aux_add_shunts.py`) reads `g` / `b` and scales them by the nominal 
 
 `ReactiveLimits`, `HvdcAcEmulationLimits` and `DistributedSlack` are the three OLF loops
 whose trigger is a limit of the equipment rather than a choice of the operator, and all
-three are now detected (`ViolationCategory::PHYSICAL`). Everything below is
-**operational**: a tap that should have moved and did not is a control that was not
-modelled, not an impossible state.
+three are now detected (`ViolationCategory::PHYSICAL`). Everything below is a
+**control** (`ViolationCategory::CONTROL`): a tap that should have moved and did not is a
+set-point not followed, not an impossible state.
 
 `DistributedSlack` is the odd one of the three, because its "control side" was not
 missing — the participation factors are input data (`add_gen_slackbus`) and the solver

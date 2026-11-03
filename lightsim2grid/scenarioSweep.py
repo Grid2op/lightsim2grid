@@ -23,6 +23,7 @@ except ImportError as exc_:  # noqa: F841
     GRID2OP_INSTALLED = False
 
 from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid._batch_defaults import use_default_batch_algorithm
 from .lightsim2grid_cpp import ScenarioSweepCPP
 # reused as-is, not duplicated: both ContingencyAnalysis.run() and ScenarioSweep.run()
 # (below) return these same dataclasses / the same pybind11-bound LimitViolation type,
@@ -104,9 +105,8 @@ class ScenarioSweep:
         self.__computed = False
 
         self.available_default_algorithms = self.computer.available_default_algorithms()
-        if AlgorithmType.NR_KLU in self.available_default_algorithms:
-            # use the faster KLU if available
-            self.computer.change_algorithm(AlgorithmType.NR_KLU)
+        # the faster KLU if available, the grid's own algorithm if it runs outer loops
+        use_default_batch_algorithm(self.computer, self.grid2op_env.backend._grid)
 
     @property
     def nb_thread(self):
@@ -132,7 +132,10 @@ class ScenarioSweep:
     def init_from_n_powerflow(self):
         """Whether to initialize the complex voltages of **each** simulation with the results
         of a "n" powerflow (a powerflow with no injection change and no contingency) instead of
-        the vector given to ``compute``. Default: ``False``. Must be set before ``compute()``
+        the vector given to ``compute``. Default: ``False``. With an ``NROuter_*`` algorithm,
+        each simulation's outer loops also start from where the "n" ones ended (frozen buses,
+        taps, sections, and the targets ``DistributedSlack`` moved where the simulation does
+        not set its own), not from the grid. Must be set before ``compute()``
         actually runs.
         """
         return self.computer.init_from_n_powerflow
@@ -196,7 +199,9 @@ class ScenarioSweep:
         injection: the change in the losses it causes is left to the powerflow.
         Default: ``False``. Needs ``LSGrid.set_gen_p_limits`` / ``set_storage_p_limits`` to
         clamp anything. Needs an algorithm with a distributed slack: ``compute`` refuses it
-        with a single-slack one (``NRSing_*``, Gauss-Seidel). Same name/semantics as
+        with a single-slack one (``NRSing_*``, Gauss-Seidel). With outer loops (``NROuter_*``),
+        the ``DistributedSlack`` loop shares the loss itself before the row's first solve, from
+        the targets in force, as OpenLoadFlow's security analysis does. Same name/semantics as
         :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
         """
         return self.computer.redistribute_slack
@@ -478,6 +483,41 @@ class ScenarioSweep:
         self.computer.set_contingency_gens(mask)
         self.__computed = False
 
+    def set_contingency_shunts(self, mask):
+        """Per-step shunt contingency mask, shape ``(n_simul, n_shunt)``, dtype bool.
+        ``True`` means "disconnect this shunt for this simulation".
+
+        A shunt is an admittance: the step loses its diagonal coefficient of the
+        admittance matrix (in DC its active part leaves the injection), as
+        :func:`set_contingency_lines` edits it for a powerline. :func:`compute` raises
+        with an algorithm running outer loops if the mask names a shunt that regulates a
+        voltage (the ShuntVoltageControl loop owns its sections).
+        """
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        n_shunt = len(self.grid2op_env.backend._grid.get_shunts())
+        if mask.shape[1] != n_shunt:
+            raise RuntimeError(f"The number of shunts on the grid ({n_shunt}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        self.computer.set_contingency_shunts(mask)
+        self.__computed = False
+
+    def set_contingency_loads(self, mask):
+        """Per-step load contingency mask, shape ``(n_simul, n_load)``, dtype bool.
+        ``True`` means "disconnect this load for this simulation".
+
+        An injection only: the step's own load (:func:`modify_load_p` /
+        :func:`modify_load_q`, or the grid's) leaves its injection, and the distributed
+        slack makes up the balance (``redistribute_slack`` shares it OLF-like before the
+        solve). A step naming a load in both this mask and its topological action
+        (:func:`set_topo_actions`) is refused.
+        """
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        if mask.shape[1] != self.grid2op_env.n_load:
+            raise RuntimeError(f"The number of loads on the grid ({self.grid2op_env.n_load}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        self.computer.set_contingency_loads(mask)
+        self.__computed = False
+
     def set_topo_actions(self, actions):
         """One topological action per row, played by that row on top of its injections
         and contingency masks.
@@ -534,7 +574,8 @@ class ScenarioSweep:
         ``modify_*`` / ``set_contingency_*`` setters. Raises if nothing was ever set.
 
         ``max_iter`` / ``tol`` default to the backend's own values
-        (``self.grid2op_env.backend.max_it`` / ``.tol``) when not given.
+        (``self.grid2op_env.backend.max_it`` / ``.tol``) when not given. ``tol`` is in MVA
+        (not in per unit), as for :attr:`lightsim2grid.lightSimBackend.LightSimBackend.tol`.
         """
         if v_init is None:
             v_init_comp = self.grid2op_env.backend.V
@@ -556,7 +597,7 @@ class ScenarioSweep:
         """Complex voltage, at each bus, for each simulation. Must be called after ``compute()``."""
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute() has been successfully called")
-        return self.computer.get_voltages().copy()
+        return self.computer.get_voltages()
 
     def compute_A(self):
         """
@@ -577,7 +618,7 @@ class ScenarioSweep:
         """
         if not self.__computed:
             raise RuntimeError("This function can only be used if compute() has been successfully called")
-        mws = 1. * self.computer.compute_power_flows()  # If I don't copy, lazy eval may break stuff...
+        mws = self.computer.compute_power_flows()
         return mws
 
     def get_flows(self, v_init=None, max_iter=None, tol=None, ignore_errors=False):
@@ -626,7 +667,8 @@ class ScenarioSweep:
         direction it is frozen in (a flagged frozen line whose droop would ask for less than
         its limit, ``value`` / ``limit`` in MW), or ``element_type`` ``GENERATOR`` /
         ``STORAGE`` with ``LOW_P`` / ``HIGH_P`` (the distributed slack). Every entry has
-        ``category == ViolationCategory.PHYSICAL``.
+        ``category == ViolationCategory.PHYSICAL``, or ``ViolationCategory.CONTROL`` for a
+        control the solution does not apply (the flagged unit and the standby SVC).
 
         A row that did not converge has an **empty** entry, not a sentinel (unlike
         :func:`get_violations`) -- use ``self.computer.converged_mask()`` to tell that from
@@ -641,6 +683,16 @@ class ScenarioSweep:
         that solve did not converge. Requires :attr:`compute_physical_violations` to be
         ``True``."""
         return self.computer.get_physical_violations_n()
+
+    def get_outer_results(self):
+        """Per row of the last computation, what the outer loops did (a list of
+        ``OuterRowResult``: status, iteration counts, and the targets, hvdc regimes, taps and
+        sections the loops settled on where they differ from the grid). Only when the batch
+        runs outer loops -- the grid's algorithm is an ``NROuter_*`` one, kept by the batch --
+        empty otherwise. A row its loops leave ``UNSTABLE`` or ``FAILED`` did not converge; its
+        ``converged`` is the row's outcome, ``status`` being the loops' own (``STABLE`` too on a
+        row whose Newton diverged, or that was never solved)."""
+        return self.computer.get_outer_results()
 
     @staticmethod
     def _row_converged(limit_violations) -> bool:
@@ -666,7 +718,8 @@ class ScenarioSweep:
         else a ``RuntimeError`` is raised. ``physical_violations`` is filled as well when
         :attr:`compute_physical_violations` is on, and is an empty list otherwise -- it is
         kept apart from ``limit_violations`` because those are PHYSICAL statements (the
-        solution is unreachable) rather than operational ones.
+        solution is unreachable) or CONTROL ones (a control it does not apply) rather than
+        operational ones.
 
         Unlike :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.run`,
         rows are already in caller-set order here (no dedup / reordering concept,

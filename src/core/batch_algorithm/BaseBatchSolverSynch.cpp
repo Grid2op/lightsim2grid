@@ -102,9 +102,10 @@ bool BaseBatchSolverSynch::warmup_solver(
     AlgoControl & control,
     const Eigen::Ref<const CplxVect> & Vinit_solver,
     int max_iter,
-    real_type tol)
+    real_type tol,
+    bool reset)
 {
-    algo.reset();
+    if(reset) algo.reset();
     control.tell_all_changed();
     algo.tell_solver_control(control);
     bool conv;
@@ -142,6 +143,7 @@ std::unique_ptr<AlgorithmSelector> BaseBatchSolverSynch::make_thread_algo() cons
     res->set_lsgrid(&_grid_model);
     res->change_algorithm(get_algo_name());  // by name, see the declaration
     res->set_config(_algo.get_config());     // match the member solver's configuration
+    _install_outer_loops(*res);
     return res;
 }
 
@@ -157,7 +159,7 @@ void BaseBatchSolverSynch::split_range(size_t nb_items, int nb_thread, int t,
 
 void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
 {
-    if (_voltages.size() == 0 && _thetas.size() == 0)
+    if (_voltages.get().size() == 0 && _thetas.size() == 0)
     {
         std::ostringstream exc_;
         exc_ << "BaseMultiplePowerflow::compute_flows_from_Vs: cannot compute the flows as the voltages are not set. Have you called compute(...) ? ";
@@ -175,8 +177,9 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
     // _thetas (real, no .arg() needed) + the small _dc_* reconstruction inputs
     const bool dc_lazy = !is_ac && _dc_lazy_storage_used_;
 
-    // the result, reset: reallocated only if its shape changed
-    RealMat & out = amps ? _amps_flows : _active_power_flows;
+    // the result, reset: reallocated only if its shape changed, or if an array still
+    // holds the previous one (which keeps it, see SharedMat::overwrite)
+    RealMat & out = amps ? _amps_flows.overwrite() : _active_power_flows.overwrite();
     if(out.rows() != nb_steps || out.cols() != static_cast<Eigen::Index>(n_total_)){
         out.resize(nb_steps, static_cast<Eigen::Index>(n_total_));
     }
@@ -188,7 +191,7 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
     const auto & trafos = _grid_model.get_trafos_as_data();
     RealVect vm_scratch;
     for(Eigen::Index i = 0; i < nb_steps; ++i){
-        const cplx_type * V_row = dc_lazy ? nullptr : _voltages.row(i).data();
+        const cplx_type * V_row = dc_lazy ? nullptr : _voltages.get().row(i).data();
         const real_type * theta_row = dc_lazy ? _thetas.row(i).data() : nullptr;
         const RealVect * vm_row = dc_lazy ? &_dc_vm_row_grid(i, vm_scratch) : nullptr;
         _flows_of_row(lines, i, 0, false, amps, is_ac, sn_mva, V_row, theta_row, vm_row, out);
@@ -201,7 +204,7 @@ void BaseBatchSolverSynch::compute_flows_from_Vs(bool amps)
 
 void BaseBatchSolverSynch::compute_branch_results_from_Vs()
 {
-    if (_voltages.size() == 0 && _thetas.size() == 0)
+    if (_voltages.get().size() == 0 && _thetas.size() == 0)
     {
         std::ostringstream exc_;
         exc_ << "BaseMultiplePowerflow::compute_branch_results_from_Vs: cannot compute the flows as the voltages are not set. Have you called compute(...) ? ";
@@ -221,7 +224,7 @@ void BaseBatchSolverSynch::compute_branch_results_from_Vs()
     const auto & lines = _grid_model.get_powerlines_as_data();
     const auto & trafos = _grid_model.get_trafos_as_data();
     for(Eigen::Index i = 0; i < nb_steps; ++i){
-        const cplx_type * V_row = dc_lazy ? nullptr : _voltages.row(i).data();
+        const cplx_type * V_row = dc_lazy ? nullptr : _voltages.get().row(i).data();
         const real_type * theta_row = dc_lazy ? _thetas.row(i).data() : nullptr;
         _branch_results_of_row(lines, i, 0, false, is_ac, sn_mva, V_row, theta_row);
         _branch_results_of_row(trafos, i, n_line_, true, is_ac, sn_mva, V_row, theta_row);

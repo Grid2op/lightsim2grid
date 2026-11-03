@@ -15,7 +15,13 @@ __all__ = ["init",
            "get_pypowsybl_loopfree_distributed_slack_parameters",
            "compare_baked",
            "ComparisonResult",
-           "LightsimResultNetwork"]
+           "LightsimResultNetwork",
+           "OlfLoadingParameters",
+           "olf_outer_loops",
+           "set_olf_outer_loops",
+           "ContingencyPropagator",
+           "propagate_contingencies",
+           "group_equivalent_contingencies"]
 
 from .initLSGrid import init
 from ._aux_add_buses import dangling_line_boundary_bus
@@ -27,3 +33,7 @@ from ._olf_params import (
 )
 from ._olf_compare import compare_baked, ComparisonResult
 from ._result_network import LightsimResultNetwork
+from ._olf_rules import OlfLoadingParameters
+from ._olf_outer_loops import olf_outer_loops, set_olf_outer_loops
+from ._propagate_contingencies import (ContingencyPropagator, propagate_contingencies,
+                                       group_equivalent_contingencies)

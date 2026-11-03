@@ -1,0 +1,324 @@
+// Copyright (c) 2026, RTE (https://www.rte-france.com)
+// See AUTHORS.txt
+// This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+// If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+// you can obtain one at http://mozilla.org/MPL/2.0/.
+// SPDX-License-Identifier: MPL-2.0
+// This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+#ifndef BASE_OUTER_LOOP_H
+#define BASE_OUTER_LOOP_H
+
+#include <limits>
+#include <memory>
+#include <string>
+#include <utility>
+#include <set>
+#include <utility>
+#include <vector>
+
+#include "Utils.hpp"
+#include "TaggedIdVec.hpp"
+#include "AlgoConfig.hpp"
+#include "batch_algorithm/LimitViolation.hpp"
+#include "batch_algorithm/BusQPlan.hpp"
+#include "OuterControls.hpp"
+#include "OuterRowView.hpp"
+
+#include "Eigen/Core"
+
+namespace ls2g {
+
+class LSGrid;
+struct OuterLoopDriverParams;
+
+/**
+ * What an outer loop's check() concluded, as OpenLoadFlow's OuterLoopStatus:
+ *  - STABLE: nothing to change, the loop is done for this pass;
+ *  - UNSTABLE: the loop changed something, the Newton has to run again;
+ *  - FAILED: the loop cannot go on (eg the slack could not be distributed); the whole
+ *    solve stops there and is reported as failed.
+ */
+enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
+
+/**
+ * The injections the outer loops edit between two solves, all of it private to the algorithm
+ * (the grid is never modified), whatever the inner algorithm. What a loop switches in the solve
+ * itself goes through its controls (OuterControls). Absent in detection mode.
+ *
+ * `Sbus` is the injection the next Newton solve reads (solver numbering, pu, generation
+ * positive); `Sbus_init` the one the grid handed in, untouched by any loop; `Sbus_target`
+ * that one with the units' targets a loop moved (DistributedSlack's target P, and the target
+ * Q that follows it, see LSGrid::set_gen_raw_target_q): a unit's own output, not a residual.
+ */
+struct LS2G_API OuterInjections
+{
+    CplxVect * Sbus = nullptr;
+    const CplxVect * Sbus_init = nullptr;
+    CplxVect * Sbus_target = nullptr;
+    /// the active power target (MW) a loop set for each generator / storage unit, NaN where
+    /// it kept the grid's; empty until a loop sizes it. Storage units in the load convention,
+    /// as the grid stores them. Published by LSGrid::compute_results.
+    std::vector<real_type> gen_target_p;
+    std::vector<real_type> storage_target_p;
+
+    /// the unit's active target in force, MW: the one a loop set, the row's or the grid's
+    /// otherwise (storage units in the load convention)
+    real_type gen_target_p_in_force(const OuterGridView & view, int gen_id) const;
+    real_type storage_target_p_in_force(const OuterGridView & view, int storage_id) const;
+
+    /// move the unit's active target to `mw`, and its injection at solver bus `bus_solver`
+    /// with it -- for a generator that does not regulate, its reactive target too, which
+    /// follows its limits at the new P (forceTargetQInReactiveLimits, see
+    /// LSGrid::gen_target_q_at_outer_target). Returns how much its injection moved, MW
+    /// (generator convention for both).
+    real_type move_gen_target_p(const OuterGridView & view, int gen_id, int bus_solver, real_type mw);
+    real_type move_storage_target_p(const OuterGridView & view, int storage_id, int bus_solver, real_type mw);
+
+    private:
+        void _add_injection(int bus_solver, const cplx_type & ds);
+};
+
+
+/**
+ * One decision of an outer loop in a check: what it acted on, or a test it ran and did not act
+ * on, with the two numbers it compared. Two runs that part ways show it here first, with the
+ * margin that decided it (OuterLoopStats::decisions).
+ *
+ * The element and the reason use LimitViolation's conventions: a grid-model bus id for BUS,
+ * the element's own id otherwise, -1 for GRID; `value` / `limit` in the unit of `reason`
+ * (see LimitViolation), except where an action says otherwise. The actions:
+ *
+ * - DistributedSlack: DISTRIBUTE (every check: the slack mismatch, MW, against the threshold),
+ *   UNITS_MOVED (how much the units moved, MW, against what counts as a move), FAIL_RESIDUE;
+ *   SHARE_LOST_P (at initialize, outer iteration 0: the row's loss shared before the first
+ *   solve, MW, see OuterRowView::lost_p_mw).
+ * - ReactiveLimits, on a controller bus: PV_TO_PQ (PV_TO_PQ_UNREALISTIC, the robust mode's),
+ *   KEPT_PV_STRONGEST; PQ_TO_PV, KEPT_PQ_MAX_SWITCH, and, every check for every frozen bus,
+ *   KEPT_PQ / KEPT_PQ_GROUP_HOLDS (the release test that did not trigger: the regulated voltage
+ *   the solve gave and the set-point, kV; GROUP_HOLDS when another controller of the group
+ *   settled it); LIMIT_MOVED (the new limit and the one it was frozen at, MVar).
+ * - AcHvdcAcEmulationLimits: SATURATE, RELEASE. VoltageMonitoring: SWITCH_ON.
+ * - PhaseControl: ROUND_TAP (the shift and its tap's, rad), MOVE_TAP / KEPT_TAP (the current,
+ *   A, against the limiter's). TransformerVoltageControl: SWITCH_ON (|target - v| against the
+ *   half deadband, pu), ROUND_TO_RANGE (the ratio and the end it left), ROUND_TAP (the ratio and
+ *   the tap position). ShuntVoltageControl: ROUND_SECTIONS (the susceptance solved for, pu).
+ */
+struct LS2G_API OuterDecision
+{
+    std::string loop;           ///< the loop's name (filled by the driver)
+    int outer_iteration = 0;    ///< OuterLoopStats::nb_outer_iterations at the check
+    std::string action;         ///< what the test decides, eg "PV_TO_PQ" (see each loop)
+    bool taken = true;          ///< whether the loop acted on it
+    ViolationElementType element_type = ViolationElementType::GRID;
+    int element_id = -1;
+    LimitViolationType reason = LimitViolationType::NOT_SIMULATED;
+    real_type value = std::numeric_limits<real_type>::quiet_NaN();
+    real_type limit = std::numeric_limits<real_type>::quiet_NaN();
+};
+
+/**
+ * What several loops of one solve read alike, built on the first loop's use and shared
+ * from there (see OuterContext::solve_cache). Each depends on the solve's view only (the
+ * grid, the row): the driver empties it at the start of every solve.
+ */
+struct OuterSolveCache
+{
+    bool has_bus_q_plan = false;
+    bus_q_check::BusQPlan bus_q_plan;  ///< see bus_q_check::solve_bus_q_plan
+
+    void reset() { has_bus_q_plan = false; }
+};
+
+/**
+ * Everything a loop sees, after a Newton solve. Built by the outer-loop algorithm between
+ * two solves (with `state`), or by the grid after any AC solve for detection (`state` is
+ * then null: a loop reports what it WOULD do, from the grid and the solve alone).
+ *
+ * Solver bus numbering for the vectors; `grid` gives the element data and the
+ * grid <-> solver bus maps.
+ */
+struct OuterContext
+{
+    const LSGrid * grid = nullptr;
+    /// the outer-loop driver's parameters of the solve (null: the grid's,
+    /// LSGrid::get_outer_loop_driver_params, as in a detection); read through driver_params()
+    const OuterLoopDriverParams * driver = nullptr;
+    const OuterLoopDriverParams & driver_params() const;
+    const CplxVect * V = nullptr;              ///< complex voltages, pu
+    const RealVect * Va = nullptr;             ///< the angles, rad (a DC solve's are only here)
+    /// the magnitudes, pu, as the Newton holds them (its own unknowns): read through vm(),
+    /// not as |V|, which rebuilds them through cos / sin / hypot and can land an ulp away --
+    /// enough to flip a strict comparison with the set-point a bus is held at, differently
+    /// from one CPU to the next. Null outside a Newton solve (a detection, a batch).
+    const RealVect * Vm = nullptr;
+    const CplxVect * bus_mismatch = nullptr;   ///< see BaseAlgo::get_bus_mismatch
+    const RealVect * controller_q = nullptr;   ///< see BaseAlgo::get_controller_q
+    int slack_bus = -1;                        ///< solver id of the slack bus, -1 when several
+    /// the distributed slack's unknown, pu (see BaseAlgo::get_slack_absorbed): 0 for a
+    /// single-slack Newton, where the slack bus' mismatch carries the whole imbalance
+    real_type slack_absorbed = 0.;
+    /// the tolerance of a detection, MW (the caller's, eg compute_physical_violations'; 0
+    /// in the outer-loop mode, where OpenLoadFlow compares strictly)
+    real_type tol_mw = 0.;
+    /// the same for a voltage comparison, pu (0 in the outer-loop mode)
+    real_type tol_vm_pu = 0.;
+    /// whether the voltage magnitudes are the solve's: false after a DC solve, or in a
+    /// batch whose algorithm cannot feed the reactive checks
+    bool vm_checks = true;
+    /// whether the solve is an AC one: false after a DC solve, whose state is its angles
+    /// (Va) and whose flows are the DC model's
+    bool ac = true;
+    /// what the solved row changes compared with the grid -- a batch row's overrides, its
+    /// labelling, its stranded buses -- (null: the grid as it is, solved in its AC labelling).
+    /// Read the per-row element state through view(), never off `grid` directly.
+    const OuterRowView * row = nullptr;
+    /// initialize() only: start from the state the previous solve left this loop in (see
+    /// OuterLoopDriverParams::resume_outer_state) -- re-apply its switches to the new solve --
+    /// rather than from the grid's. V / Va / Vm are then the previous solve's.
+    bool resume = false;
+    /// how many times THIS loop was unstable so far in the solve (OpenLoadFlow's
+    /// `context.getIteration()`: 0 means it has not changed anything yet)
+    int iteration = 0;
+    /// the injections the loops edit (null in detection)
+    OuterInjections * injections = nullptr;
+    /// what the loops reserve and act through (null in detection)
+    OuterControls * controls = nullptr;
+    /// where a check records its decisions (null: not recorded, eg in detection)
+    std::vector<OuterDecision> * trace = nullptr;
+    /// what the loops of this solve share (null: each builds its own, eg in detection)
+    OuterSolveCache * solve_cache = nullptr;
+    /// detection only: the buses (solver ids) the transformer voltage controls of the loops
+    /// listed before regulate, what OuterControls::ratio_group_buses gives a solve (see
+    /// outer_detect; null: none)
+    const std::set<int> * detect_ratio_group_buses = nullptr;
+
+    bool is_detection() const { return injections == nullptr; }
+    /// the grid as this solve sees it (see OuterGridView)
+    OuterGridView view() const { return OuterGridView(*grid, row); }
+    /// the voltage magnitude of solver bus `bus`, pu: Vm's, |V| when there is none
+    real_type vm(int bus) const { return Vm != nullptr ? (*Vm)(bus) : std::abs((*V)(bus)); }
+
+    /// record a decision in `trace` (nothing without one)
+    void record(const char * action, bool taken, ViolationElementType element_type, int element_id,
+                LimitViolationType reason, real_type value, real_type limit) const
+    {
+        if (trace == nullptr) return;
+        OuterDecision d;
+        d.action = action;
+        d.taken = taken;
+        d.element_type = element_type;
+        d.element_id = element_id;
+        d.reason = reason;
+        d.value = value;
+        d.limit = limit;
+        trace->push_back(d);
+    }
+    /// the same for a bus given by its SOLVER id (recorded as its grid-model id)
+    void record_bus(const char * action, bool taken, int solver_bus, LimitViolationType reason,
+                    real_type value, real_type limit) const;
+};
+
+/**
+ * What the last outer-loop solve did, for tests and diagnostics.
+ */
+struct LS2G_API OuterLoopStats
+{
+    /// final status: STABLE, or UNSTABLE when the iteration cap was reached, or FAILED
+    OuterLoopStatus status = OuterLoopStatus::STABLE;
+    /// name of the loop that failed, empty otherwise
+    std::string failed_loop;
+    /// whether the unrealistic-voltage check failed (status is then FAILED)
+    bool unrealistic_state = false;
+    int nb_outer_iterations = 0;   ///< over every loop, capped by max_outer_iterations
+    int nb_passes = 0;
+    /// (loop name, number of UNSTABLE results), in the order of the loop list
+    std::vector<std::pair<std::string, int> > loop_iterations;
+    /// Newton iterations of every inner solve, the first solve included
+    std::vector<int> nr_iterations;
+    /// every decision the loops took, and the tests they ran without acting, in order
+    std::vector<OuterDecision> decisions;
+
+    void clear() {
+        status = OuterLoopStatus::STABLE;
+        failed_loop.clear();
+        unrealistic_state = false;
+        nb_outer_iterations = 0;
+        nb_passes = 0;
+        loop_iterations.clear();
+        nr_iterations.clear();
+        decisions.clear();
+    }
+};
+
+/**
+ * One OpenLoadFlow outer loop.
+ *
+ * Same contract as the element containers (GenericContainer): the public entry points are
+ * non-virtual and never overridden, each forwards to one protected `_xxx` hook. A loop
+ * carries its own per-solve state, (re)set by initialize(); the algorithm holds a clone per
+ * instance, so a loop object is never shared between two solves running at once.
+ *
+ * The trigger of a loop is computed in ONE place, `_detect`: check() acts on what it
+ * reports, and the grid's detection mode (no outer loop run) calls it as is.
+ */
+class LS2G_API BaseOuterLoop
+{
+    public:
+        virtual ~BaseOuterLoop() = default;
+
+        /// the OpenLoadFlow name of the loop
+        std::string name() const { return _name(); }
+
+        /// reserve, in ctx.controls, every control any state of this loop may use (and so
+        /// every slot of the solve it needs). Called when the solver input is (re)built, with
+        /// the grid data known; the controls live until the next call.
+        void declare(const OuterContext & ctx) const { _declare(ctx); }
+
+        /// OpenLoadFlow's isNeeded: whether the loop has anything to do on this grid
+        bool is_needed(const OuterContext & ctx) const { return _is_needed(ctx); }
+
+        /// before the first Newton solve
+        void initialize(OuterContext & ctx) { _initialize(ctx); }
+
+        /// the trigger, as violations; nothing is modified
+        void detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const { _detect(ctx, out); }
+
+        /// detect, then act on the algorithm's state
+        OuterLoopStatus check(OuterContext & ctx) { return _check(ctx); }
+
+        /// after the last Newton solve; called in the reverse order of the loop list
+        void cleanup(OuterContext & ctx) { _cleanup(ctx); }
+
+        /// whether this loop can bring an unrealistic voltage back (OpenLoadFlow's
+        /// canFixUnrealisticState): the check is deferred until after the last such loop
+        bool can_fix_unrealistic_state() const { return _can_fix_unrealistic_state(); }
+
+        /// whether this loop needs the idle standby SVCs held in their voltage-control
+        /// groups (VoltageControlPlan::build_controllers' `hold_monitors`): read by the grid
+        /// when it builds the solver input, before any declaration
+        bool holds_svc_monitors() const { return _holds_svc_monitors(); }
+
+        std::unique_ptr<BaseOuterLoop> clone() const { return _clone(); }
+
+        /// the loop's parameters, flattened like an AlgoConfig (what tells two loop lists
+        /// apart). A loop's parameters are set at construction and never change afterwards.
+        AlgoConfig get_params() const { return _get_params(); }
+
+    protected:
+        virtual std::string _name() const = 0;
+        virtual void _declare(const OuterContext & /*ctx*/) const {}
+        virtual bool _is_needed(const OuterContext & /*ctx*/) const { return true; }
+        virtual void _initialize(OuterContext & /*ctx*/) {}
+        virtual void _detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const = 0;
+        virtual OuterLoopStatus _check(OuterContext & ctx) = 0;
+        virtual void _cleanup(OuterContext & /*ctx*/) {}
+        virtual bool _can_fix_unrealistic_state() const { return false; }
+        virtual bool _holds_svc_monitors() const { return false; }
+        virtual std::unique_ptr<BaseOuterLoop> _clone() const = 0;
+        virtual AlgoConfig _get_params() const { return AlgoConfig(); }
+};
+
+}  // namespace ls2g
+
+#endif  // BASE_OUTER_LOOP_H

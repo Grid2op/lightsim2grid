@@ -221,6 +221,35 @@ TEST_CASE("a diverging AC powerflow returns an empty vector, not garbage", "[LSG
     CHECK(grid.get_algo().get_error() != ls2g::ErrorType::NoError);
 }
 
+TEST_CASE("a diverging powerflow resets the results in the buffers they were in", "[LSGrid]")
+{
+    // python hands these buffers out as views: a reset that reallocated them would leave every
+    // such view reading freed memory. Only the addresses are compared, nothing reads a buffer
+    // that may be gone.
+    LSGrid grid = make_three_bus_grid();
+    REQUIRE(solve_ac(grid).size() == 3);
+    const real_type * gen_p = std::get<0>(grid.get_gen_res()).data();
+    const real_type * line_a = std::get<3>(grid.get_line_res1()).data();
+    const real_type * load_theta = grid.get_load_theta().data();
+
+    grid.change_p_load(0, 1e5);
+    REQUIRE(solve_ac(grid).size() == 0);
+    CHECK(std::get<0>(grid.get_gen_res()).data() == gen_p);
+    CHECK(std::get<3>(grid.get_line_res1()).data() == line_a);
+    CHECK(grid.get_load_theta().data() == load_theta);
+    // no result: NaN, rather than the previous solve's values
+    CHECK(std::isnan(std::get<0>(grid.get_gen_res())(0)));
+    CHECK(std::isnan(std::get<3>(grid.get_line_res1())(1)));
+    CHECK(std::isnan(grid.get_load_theta()(0)));
+
+    // and the next powerflow writes into them again
+    grid.change_p_load(0, 50.);
+    REQUIRE(solve_ac(grid).size() == 3);
+    CHECK(std::get<0>(grid.get_gen_res()).data() == gen_p);
+    CHECK(std::isfinite(std::get<0>(grid.get_gen_res())(0)));
+    CHECK(std::isfinite(grid.get_load_theta()(0)));
+}
+
 TEST_CASE("changing setpoints takes effect on the next solve", "[LSGrid]")
 {
     LSGrid grid = make_three_bus_grid();

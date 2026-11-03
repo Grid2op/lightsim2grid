@@ -56,15 +56,23 @@ def make_g2op_env(env_name, test):
     return env
 
 
-def make_light_env(env, actions):
+def make_light_env(env, actions, rho_both_sides=False):
     """a light env on the grid of `env` (at the start of an episode) with the same thermal
-    limits, protections and cooldowns"""
+    limits, protections and cooldowns.
+
+    grid2op's rho only looks at the origin side of each line, so by default the extremity side
+    has no limit (NaN) and both play the same episodes. With `rho_both_sides` the light env
+    limits both sides, which reads higher on high-charging lines and can trip lines grid2op
+    keeps."""
     light_env = LightEnv(env.backend._grid)
     param = env.parameters
     th_lim_ka = env.get_thermal_limit().astype(float) * 1e-3  # grid2op: A, light env: kA
     protections = Protections()
     protections.set_thermal_limit_or(th_lim_ka)
-    protections.set_thermal_limit_ex(th_lim_ka * env.backend.lines_or_pu_to_kv / env.backend.lines_ex_pu_to_kv)
+    if rho_both_sides:
+        protections.set_thermal_limit_ex(th_lim_ka * env.backend.lines_or_pu_to_kv / env.backend.lines_ex_pu_to_kv)
+    else:
+        protections.set_thermal_limit_ex(np.full(env.n_line, np.nan))  # left out of rho
     protections.set_max_line_time_step_overflow(np.full(env.n_line, param.NB_TIMESTEP_OVERFLOW_ALLOWED,
                                                         dtype=np.int32))
     light_env.protections = protections
@@ -79,16 +87,15 @@ def assign_chronic(light_env, env, max_ts):
     """give the light env the injections of the chronic `env` is currently playing"""
     data = env.chronics_handler.real_data.data
     nb_row = min(data.load_p.shape[0], max_ts + 1)
+    # some environments (eg l2rpn_idf_2023) have no prod_v: None keeps the set-points of the grid
+    gen_v = None
+    if data.prod_v is not None:
+        gen_v = data.prod_v[:nb_row] / env.backend.prod_pu_to_kv  # the light env wants pu
     light_env.assign_time_series(
-        data.load_p[:nb_row].astype(float),
-        data.load_q[:nb_row].astype(float),
-        data.prod_p[:nb_row].astype(float),
-        (data.prod_v[:nb_row] / env.backend.prod_pu_to_kv).astype(float),  # the light env wants pu
-        np.full((nb_row, env.n_storage), np.nan),
-        np.full((nb_row, env.n_shunt), np.nan),
-        np.full((nb_row, env.n_shunt), np.nan),
-        np.full((nb_row, 0), np.nan),
-        np.full((nb_row, 0), np.nan),
+        load_p=data.load_p[:nb_row],
+        load_q=data.load_q[:nb_row],
+        gen_p=data.prod_p[:nb_row],
+        gen_v=gen_v,
     )
 
 
@@ -228,7 +235,7 @@ def print_table(title, rows):
 
 
 def main(env_name=ENV_NAME, test=True, max_ts=10_000, nb_chronics=3, act_every=10, nb_episode_topo=50,
-         nb_candidates=10, seed=0):
+         nb_candidates=10, seed=0, rho_both_sides=False):
     env = make_g2op_env(env_name, test)
     env.seed(seed)
     env.reset()  # the grid of the backend is the initial state of the episode
@@ -238,7 +245,7 @@ def main(env_name=ENV_NAME, test=True, max_ts=10_000, nb_chronics=3, act_every=1
 
     # do nothing first, then the unitary topologies (only set_bus: what the light env models)
     g2op_actions = [env.action_space()] + list(env.action_space.get_all_unitary_topologies_set(env.action_space))
-    light_env = make_light_env(env, g2op_actions)
+    light_env = make_light_env(env, g2op_actions, rho_both_sides=rho_both_sides)
     print(f"{env_name} ({'test' if test else 'full'} chronics): {len(chron_ids)} chronics, "
           f"{len(g2op_actions)} actions (do nothing + unitary set_bus)")
 
@@ -283,7 +290,10 @@ if __name__ == "__main__":
     parser.add_argument("--nb_candidates", type=int, default=10,
                         help="lookahead workload: number of actions evaluated at every step")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--rho_both_sides", type=str2bool, nargs="?", const=True, default=False,
+                        help="the light env limits both sides of each line (default: the origin side "
+                             "only, like grid2op, so both play the same episodes)")
     args = parser.parse_args()
     main(env_name=args.env_name, test=not args.no_test, max_ts=args.max_ts, nb_chronics=args.nb_chronics,
          act_every=args.act_every, nb_episode_topo=args.nb_episode_topo,
-         nb_candidates=args.nb_candidates, seed=args.seed)
+         nb_candidates=args.nb_candidates, seed=args.seed, rho_both_sides=args.rho_both_sides)

@@ -61,7 +61,11 @@ enum class ErrorType {NoError,
                       SolverSolve,
                       NotInitError,
                       LicenseError,
-                      NotImplemented};
+                      NotImplemented,
+                      // the outer loops (NROuter_*): one of them failed (eg the slack could
+                      // not be distributed), or a voltage stayed outside the realistic band
+                      OuterLoopFailed,
+                      UnrealisticState};
 std::ostream& operator<<(std::ostream& out, const ErrorType & error_type);
 
 // Escape (and truncate to 64 chars) a string of untrusted origin -- read from a

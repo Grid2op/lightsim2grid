@@ -19,6 +19,7 @@ from grid2op.Parameters import Parameters
 from grid2op.Chronics import GridStateFromFileWithForecastsWithoutMaintenance
 import warnings
 from lightsim2grid import LightSimBackend, TimeSerie
+from utils_benchmark import static_pivot_or
 
 env_name = "l2rpn_neurips_2020_track2"  # use "l2rpn_neurips_2020_track2_small" if `test=True`
 test = True
@@ -55,6 +56,9 @@ env_pp = multi_mix_env_pp[key_env]
 
 # Run the environment on a scenario using the TimeSerie module
 time_serie = TimeSerie(env)
+# TimeSerie replaces the backend's algorithm by NR_KLU: pick the KLU static-pivot one explicitly
+# (distributed slack, like NR_KLU) when it is available
+time_serie.computer.change_algorithm(static_pivot_or(time_serie.computer, "NR_KLUStaticPivot", "NR_KLU"))
 time_serie.compute_V(scenario_id=scenario_id)
 a_or = time_serie.compute_A()
 p_or = time_serie.compute_P()
