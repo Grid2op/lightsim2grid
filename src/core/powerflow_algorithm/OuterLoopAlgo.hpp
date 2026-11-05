@@ -293,6 +293,10 @@ private:
     OuterLoopStats stats_;
     int total_nr_iterations_ = 0;
     bool unrealistic_ = false;
+    // whether the last solve's per-bus residuals differ from the solve before it: a solve of
+    // zero Newton iterations that did not move them was given nothing to do (see compute_pf)
+    bool residual_moved_ = true;
+    CplxVect prev_mis_bus_;
 
     // private copies the loops edit; the inner algorithm reads Sbus_ and Ybus_ through a
     // pointer, so they must not move during a solve (they are only reassigned before setup)

@@ -78,15 +78,16 @@ LSGrid make_grid(bool pv_gen = false)
 
 // a loop that answers its check() calls from a script (its last entry repeats), logs
 // "<name>.<call>" for every call, and on UNSTABLE nudges every injection so that the next
-// Newton solve has something to do
+// Newton solve has something to do; `nudge` is how much, relative (0: nothing changes; a tiny
+// one: a change that leaves every bus within tolerance, so the next solve takes no step)
 class ScriptedLoop final : public BaseOuterLoop
 {
     public:
         ScriptedLoop(std::string name, std::vector<OuterLoopStatus> script,
                      std::shared_ptr<std::vector<std::string> > log,
-                     bool needed = true, bool fixes_unrealistic = false):
+                     bool needed = true, bool fixes_unrealistic = false, real_type nudge = 0.01):
             name_(std::move(name)), script_(std::move(script)), log_(std::move(log)),
-            needed_(needed), fixes_unrealistic_(fixes_unrealistic) {}
+            needed_(needed), fixes_unrealistic_(fixes_unrealistic), nudge_(nudge) {}
 
     protected:
         std::string _name() const override { return name_; }
@@ -101,7 +102,7 @@ class ScriptedLoop final : public BaseOuterLoop
             const std::size_t pos = std::min(calls_, script_.size() - 1);
             ++calls_;
             const OuterLoopStatus res = script_[pos];
-            if (res == OuterLoopStatus::UNSTABLE) *ctx.injections->Sbus *= 1.01;
+            if (res == OuterLoopStatus::UNSTABLE) *ctx.injections->Sbus *= 1. + nudge_;
             return res;
         }
         void _cleanup(OuterContext &) override { log_->push_back(name_ + ".cleanup"); }
@@ -116,6 +117,7 @@ class ScriptedLoop final : public BaseOuterLoop
         std::shared_ptr<std::vector<std::string> > log_;
         bool needed_;
         bool fixes_unrealistic_;
+        real_type nudge_;
         std::size_t calls_ = 0;
 };
 
@@ -255,6 +257,86 @@ TEST_CASE("the outer iterations are capped", "[outer_loop]")
     CHECK(solve(grid).size() == 0);
     CHECK(grid.get_algo().get_outer_loop_stats().nb_outer_iterations == 7);
     CHECK(grid.get_algo().get_error() == ErrorType::TooManyIterations);
+}
+
+TEST_CASE("a change re-solved in zero Newton iterations is done", "[outer_loop]")
+{
+    // A reports a change on every check, but its change leaves every bus within tolerance (a
+    // move spread so thinly that no bus exceeds it): the re-solve takes no step and V does not
+    // move. Checked again on that same state, A would find what made it act and act again,
+    // until the iteration cap. Its change is done: it is not checked again until V moves.
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{U}, log, true, false, 1e-12));
+    REQUIRE(solve(grid).size() == 3);
+
+    const std::vector<std::string> expected{"A.initialize", "A.check0", "A.cleanup"};
+    CHECK(*log == expected);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    CHECK(stats.nb_outer_iterations == 1);
+    REQUIRE(stats.nr_iterations.size() == 2);
+    CHECK(stats.nr_iterations[0] > 0);
+    CHECK(stats.nr_iterations[1] == 0);
+    // the driver says why A was not checked again
+    REQUIRE_FALSE(stats.decisions.empty());
+    CHECK(stats.decisions.back().loop == "A");
+    CHECK(stats.decisions.back().action == "SETTLED");
+    CHECK(stats.decisions.back().outer_iteration == 1);
+}
+
+TEST_CASE("a loop that says unstable without changing anything is checked again", "[outer_loop]")
+{
+    // PhaseControl's first check asks for a second one and changes nothing: the re-solve has
+    // nothing to do either, and the second check is the loop's next step, not a repeat
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{U, S}, log, true, false, 0.));
+    REQUIRE(solve(grid).size() == 3);
+
+    const std::vector<std::string> expected{"A.initialize", "A.check0", "A.check1", "A.cleanup"};
+    CHECK(*log == expected);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    REQUIRE(stats.nr_iterations.size() == 2);
+    CHECK(stats.nr_iterations[1] == 0);
+    for (const auto & d : stats.decisions) CHECK(d.action != "SETTLED");
+}
+
+TEST_CASE("a loop whose change was done is checked again once V moves", "[outer_loop]")
+{
+    // A's change re-solves in zero iterations, B's moves V: on that new state A is checked
+    // again (and acts again, re-solved in zero iterations once more)
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{U}, log, true, false, 1e-12));
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("B", std::vector<OuterLoopStatus>{U, S}, log));
+    REQUIRE(solve(grid).size() == 3);
+
+    // pass 1: A acts (0 iterations: done), B acts (V moves), B stable;
+    // pass 2: A on the new state acts (0 iterations: done), then B (stable);
+    // pass 3 (pass 2 re-solved) stops before A, the last loop that changed something
+    const std::vector<std::string> expected{
+        "A.initialize", "B.initialize",
+        "A.check0", "B.check0", "B.check1",
+        "A.check1",
+        "B.check1",
+        "B.cleanup", "A.cleanup"};
+    CHECK(*log == expected);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    CHECK(stats.nb_outer_iterations == 3);
+    CHECK(stats.nb_passes == 3);
+    REQUIRE(stats.nr_iterations.size() == 4);
+    CHECK(stats.nr_iterations[1] == 0);
+    CHECK(stats.nr_iterations[2] > 0);
+    CHECK(stats.nr_iterations[3] == 0);
 }
 
 TEST_CASE("a failed loop stops the solve", "[outer_loop]")

@@ -128,6 +128,20 @@ bool OuterLoopAlgo<Inner>::compute_pf(
 
     bool solver_ok = _solve(max_iter, tol, need_init, check_unrealistic);
 
+    // A change that a re-solve meets with no Newton step at all left every bus within
+    // tolerance: V did not move, and the change still sits in the residuals of the buses it
+    // touched (a move spread so thinly that no bus exceeds the tolerance). Checked again on
+    // that state, the loop that made it would read what made it act as if nothing had been
+    // done, and act again -- DistributedSlack moving its units a second time for the same
+    // mismatch. Its change is done: that loop is not checked again until a solve moves V.
+    // A loop that says UNSTABLE without changing anything (PhaseControl's first check, which
+    // only asks for its next one) leaves the residuals exactly as they were: that is not a
+    // change, and the loop is checked again as usual.
+    // `v_version` counts the solves that moved V, `done_at[i]` is the version on which loop
+    // i's change was done (-1: none).
+    int v_version = 0;
+    std::vector<int> done_at(active.size(), -1);
+
     OuterLoopStatus last_status = OuterLoopStatus::STABLE;
     std::string last_name;
     const BaseOuterLoop * last_unstable = nullptr;
@@ -144,8 +158,8 @@ bool OuterLoopAlgo<Inner>::compute_pf(
                     break;
                 }
                 // runOuterLoop: re-solve until this loop is stable
-                OuterLoopStatus status;
-                do {
+                OuterLoopStatus status = OuterLoopStatus::STABLE;
+                if (done_at[i] != v_version) do {
                     OuterContext ctx = _context();
                     ctx.iteration = stats_.loop_iterations[i].second;
                     const std::size_t first_decision = stats_.decisions.size();
@@ -161,6 +175,18 @@ bool OuterLoopAlgo<Inner>::compute_pf(
                         solver_ok = _solve(max_iter, tol, need_init, check_unrealistic);
                         ++stats_.nb_outer_iterations;
                         ++stats_.loop_iterations[i].second;
+                        if (nr_iter_ > 0) {
+                            ++v_version;
+                        } else if (solver_ok && residual_moved_) {
+                            done_at[i] = v_version;
+                            status = OuterLoopStatus::STABLE;
+                            last_status = status;
+                            OuterContext done_ctx = _context();
+                            done_ctx.record("SETTLED", true, ViolationElementType::GRID, -1,
+                                            LimitViolationType::NOT_SIMULATED, 0., 0.);
+                            stats_.decisions.back().loop = loop->name();
+                            stats_.decisions.back().outer_iteration = stats_.nb_outer_iterations;
+                        }
                     }
                 } while (status == OuterLoopStatus::UNSTABLE && solver_ok &&
                          stats_.nb_outer_iterations < params_.max_outer_iterations);
@@ -234,6 +260,7 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
     V_ = inner_.algo().get_V();
     Va_ = inner_.algo().get_Va();
     Vm_ = inner_.algo().get_Vm();
+    prev_mis_bus_.swap(mis_bus_);
     mis_bus_ = inner_.algo().get_bus_mismatch();
     err_ = inner_.algo().get_error();
     _fold_slack_share();
@@ -248,6 +275,7 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
             if (dq != 0.) mis_bus_(b) += cplx_type(0., dq);
         }
     }
+    residual_moved_ = !(prev_mis_bus_.size() == mis_bus_.size() && prev_mis_bus_ == mis_bus_);
     stats_.nr_iterations.push_back(nr_iter_);
     // OpenLoadFlow's Newton tests convergence only after a step, so a solve is at least one
     // iteration there, and "a pass added Newton iterations" (whether another pass runs)

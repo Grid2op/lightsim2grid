@@ -113,6 +113,9 @@ struct LS2G_API OuterInjections
  *   A, against the limiter's). TransformerVoltageControl: SWITCH_ON (|target - v| against the
  *   half deadband, pu), ROUND_TO_RANGE (the ratio and the end it left), ROUND_TAP (the ratio and
  *   the tap position). ShuntVoltageControl: ROUND_SECTIONS (the susceptance solved for, pu).
+ * - The driver, under the loop it is about: SETTLED (the loop's change was re-solved in zero
+ *   Newton iterations, so V did not move: the change is done, and the loop is not checked
+ *   again until a solve moves V; value and limit 0).
  */
 struct LS2G_API OuterDecision
 {

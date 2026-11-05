@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [FIXED] outer loops: a loop's change re-solved in zero Newton iterations is done, not redone on the same
+  state (``DistributedSlack`` oscillated on a thinly spread move). Recorded as ``SETTLED``. Issue #264.
 - [ADDED] (C++) ``BaseAlgo::get_ordering_constraints()``: the Newton system's ordering constraints,
   read-only, so an external solver can order J as ``constrained_ordering`` does (gpusim2grid's GPU batch).
 - [ADDED] ``fill_reducing_ordering`` (KLU-based NR algorithms, part of their config): start the ordering
