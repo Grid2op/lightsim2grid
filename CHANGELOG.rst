@@ -238,14 +238,14 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] Outer loops and ``OuterLoopDriverParams`` pickle and deep-copy; ``make_outer_loop`` and
   ``BaseOuterLoop.get_params`` rebuild a loop.
 - [FIXED] ``init_from_pandapower``: a shunt draws ``q_mvar * step * (vn_bus / vn_kv) ** 2``, as in
-  pandapower (``step`` and ``vn_kv`` were ignored).
+  pandapower: ``step`` and ``vn_kv`` were ignored (#273).
 - [ADDED] ``init_from_pandapower`` accepts ``tap_neutral != 0``, gives transformers their ratio tap
   changer (``tap_min`` .. ``tap_max``) and shunts their sections (``max_step``), and reads the
-  regulation of pandapower's tap and shunt controllers, for the ``NROuter_*`` outer loops.
+  regulation of pandapower's tap and shunt controllers, for the ``NROuter_*`` outer loops (#273).
 - [ADDED] ``init_from_pandapower(slack_weight_can_participate=True)`` (and the backend's
-  ``loader_kwargs``): generators with a ``slack_weight`` can participate in the ``DistributedSlack`` loop.
+  ``loader_kwargs``): generators with a ``slack_weight`` can participate in the ``DistributedSlack`` loop (#273).
 - [ADDED] ``LightSimBackend`` warns when an ``NROuter_*`` algorithm's ``DistributedSlack`` loop has no
-  unit off the slack bus to act on.
+  unit off the slack bus to act on (#273).
 
 
 [1.3.0] 2026-11-03
