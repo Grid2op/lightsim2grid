@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.0] 2026-xx-xx
 --------------------
+- [FIXED] batches with outer loops: a voltage-control group losing a controller to an island, its other
+  controllers held at a reactive limit, no longer fails: the islanded controller is gone, the regulated bus free.
 - [FIXED] ``DistributedSlack`` with ``redistribute_slack``: after sharing a contingency's lost power,
   the loop shares the rest from the row's own targets, as OpenLoadFlow: a unit the share put at a bound stays there.
 - [FIXED] outer loops: a loop's change re-solved in zero Newton iterations is done, not redone on the same

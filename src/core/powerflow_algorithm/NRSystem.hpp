@@ -1175,7 +1175,10 @@ class LS2G_API VoltageControl
         // its controllers stranded needs nothing: its voltage row is held by the live
         // ones (their bus Q rows), the sharing rows still give every Q_c a value, and
         // the stranded ones' land on masked rows, so the live controllers share among
-        // themselves as if the others were gone. A regulated bus stranded while some
+        // themselves as if the others were gone. With the outer loops (may_hold_), a masked
+        // controller is never the group's reference and is pinned at 0: once an outer loop
+        // holds every live one at a reactive limit, nobody regulates and the regulated bus is
+        // free, as in a single solve of the grid without the island. A regulated bus stranded while some
         // controllers stay live cannot be solved (its masked magnitude cannot reach
         // v_set): the batch skips such a row before the solve (see
         // BaseBatchSweep::_skip_rows_stranding_regulated_bus).
@@ -1437,12 +1440,18 @@ class LS2G_API VoltageControl
         // the first one); otherwise the voltage row, and the sharing taken against the first
         // ACTIVE controller `ref` -- the row of `ref` itself, which it does not need, pins
         // the first controller when that one is held.
+        //
+        // A controller on a bus the contingency masks is gone (ctrl_masked_): never the
+        // reference, pinned at 0. So when every live controller is held (an outer loop froze
+        // them at a reactive limit), nobody regulates even though a masked one is not held:
+        // the regulated bus is free, as in a powerflow of the grid without the island.
+        bool _masked_ctrl(int j) const {
+            return static_cast<std::size_t>(j) < ctrl_masked_.size() && ctrl_masked_[static_cast<std::size_t>(j)];
+        }
         int _ref_active(int g) const {
             const int first = data_.grp_start(g);
             const int cnt = data_.grp_count(g);
-            const bool stranded = !group_stranded_.empty() && group_stranded_[g];
-            if (stranded) return -1;
-            for (int off = 0; off < cnt; ++off) if (!_held(first + off)) return off;
+            for (int off = 0; off < cnt; ++off) if (!_held(first + off) && !_masked_ctrl(first + off)) return off;
             return -1;
         }
         void _fill_feature_values_holding(FeatureWriter& writer) const
@@ -1464,7 +1473,7 @@ class LS2G_API VoltageControl
                 if (h_vm_[g] >= 0) writer.add(h_vm_[g], ref >= 0 ? static_cast<real_type>(1.) : static_cast<real_type>(0.));
                 for (int k = 0; k < cnt - 1; ++k) {
                     const int m = k + 1;  // the controller this row is the sharing row of
-                    if (ref < 0 || _held(first + m)) {
+                    if (ref < 0 || _held(first + m) || _masked_ctrl(first + m)) {
                         if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], static_cast<real_type>(1.));
                     } else if (m == ref) {
                         // the first controller is held: this row pins it
@@ -1488,8 +1497,8 @@ class LS2G_API VoltageControl
                 const int cnt   = data_.grp_count(g);
                 const int ref = _ref_active(g);
                 auto Qt = [&](int off) { return q_(first + off) + dx(q_cols_[first + off]); };
-                const bool stranded = !group_stranded_.empty() && group_stranded_[g];
-                auto held_q = [&](int off) { return stranded ? static_cast<real_type>(0.) : _held_q(first + off); };
+                // a masked controller is pinned at 0, a live held one at its held output
+                auto held_q = [&](int off) { return _masked_ctrl(first + off) ? static_cast<real_type>(0.) : _held_q(first + off); };
                 if (ref < 0) {
                     res(v_rows_[g]) -= Qt(0) - held_q(0);
                 } else {
@@ -1501,7 +1510,7 @@ class LS2G_API VoltageControl
                 }
                 for (int k = 0; k < cnt - 1; ++k) {
                     const int m = k + 1;
-                    if (ref < 0 || _held(first + m)) {
+                    if (ref < 0 || _held(first + m) || _masked_ctrl(first + m)) {
                         res(share_rows_[g][k]) -= Qt(m) - held_q(m);
                     } else if (m == ref) {
                         res(share_rows_[g][k]) -= Qt(0) - held_q(0);
@@ -1628,6 +1637,7 @@ class LS2G_API VoltageControl
             h_shareB_.clear();
             masked_buses_.clear();
             group_stranded_.clear();
+            ctrl_masked_.clear();
         }
 
         // number of controllers of the current solve (valid after update_state)
@@ -1658,7 +1668,12 @@ class LS2G_API VoltageControl
         {
             const int ng = data_.n_groups();
             group_stranded_.assign(ng, 0);
+            ctrl_masked_.assign(static_cast<std::size_t>(data_.n_controllers()), 0);
             if (masked_buses_.empty()) return;
+            for (int j = 0; j < data_.n_controllers(); ++j) {
+                ctrl_masked_[static_cast<std::size_t>(j)] =
+                    std::find(masked_buses_.begin(), masked_buses_.end(), data_.bus(j)) != masked_buses_.end() ? 1 : 0;
+            }
             for (int g = 0; g < ng; ++g) {
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
@@ -1708,6 +1723,7 @@ class LS2G_API VoltageControl
         std::vector<std::vector<int> > h_shareA_;    // handle (share_row, q_col_{k+1}) per group
         std::vector<std::vector<int> > h_shareB_;    // handle (share_row, q_col_1) per group
         std::vector<int>               masked_buses_;    // last set_masked_buses() argument, verbatim
+        std::vector<char>              ctrl_masked_;     // per controller: 1 iff its bus is masked (same source)
         std::vector<char>              group_stranded_;  // per group: 1 iff the bus of each of its
                                                            // controllers is masked; derived from
                                                            // masked_buses_ by _recompute_group_stranded(),
