@@ -683,7 +683,25 @@ class LS2G_API LSGrid final
          * reads them again. Same "recount whenever there is nothing to protect" rule
          * set_state / load_binary use.
          */
-        void _elements_replaced_wholesale(){ substations_.reset_bus_element_counts(); }
+        void _elements_replaced_wholesale(){
+            substations_.reset_bus_element_counts();
+            _has_just_been_init = true;
+        }
+
+        /**
+         * Run check_grid() if an init_* (or init_bus) has been called since the last
+         * successful one, so a grid built by hand is validated before anything is
+         * computed on it: an out-of-range bus id, for one, is otherwise only
+         * dereferenced by the powerflow (crash, empty result, or the element silently
+         * ignored). Called by ac_pf, dc_pf, check_solution and the batch algorithms
+         * (once, on their copy). Not at the end of each init_*: the grid is incomplete
+         * between two of them, and check_grid() needs all of it. A grid that went
+         * through a loader or set_state is already checked, so this costs nothing
+         * there.
+         */
+        void check_grid_if_just_init(){
+            if(_has_just_been_init) check_grid();
+        }
 
         void init_powerlines(const Eigen::Ref<const RealVect> & branch_r,
                              const Eigen::Ref<const RealVect> & branch_x,
@@ -1098,7 +1116,8 @@ class LS2G_API LSGrid final
         // out-of-bounds read/write during a powerflow), and exposed to Python so the
         // grid loaders (pandapower / pypowsybl / matpower / powermodels) can call it
         // right after building a grid. Runs in O(number of elements), off the solver
-        // hot path.
+        // hot path. Also run, once, at the first powerflow after an init_* (see
+        // check_grid_if_just_init).
         void check_grid() const;
 
     private:
@@ -3486,6 +3505,9 @@ class LS2G_API LSGrid final
         bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
         bool hold_frozen_regulators_;  // see set_hold_frozen_regulators
         real_type sn_mva_;
+        // An init_* / init_bus was called since the last successful check_grid() (see
+        // check_grid_if_just_init). Mutable: check_grid() is const and clears it.
+        mutable bool _has_just_been_init = false;
 
         // powersystem representation
         // 1. bus
