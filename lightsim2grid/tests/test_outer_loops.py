@@ -656,6 +656,38 @@ class TestReactiveLimits(unittest.TestCase):
                 compared += 1
         self.assertGreater(compared, 50)
 
+    def test_resumed_solve_from_its_own_solution(self):
+        # issue #258: with resume_outer_state, solving again from the voltages the previous
+        # solve returned, nothing changed, takes no Newton iteration. The buses frozen at a
+        # limit start from their solved magnitude, not from the set-point the grid seeds them at
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        net = self._net()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, sort_index=False, buses_for_sub=False,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits())
+        cfg = grid.get_ac_algo_config()
+        ints = list(cfg.int_params)
+        ints[5] = 1  # resume_outer_state
+        cfg.int_params = ints
+        grid.set_ac_algo_config(cfg)
+        tol = 1e-8
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, tol)
+        self.assertGreater(V.shape[0], 0)
+        # some buses end frozen, which is what the re-solve has to resume
+        self.assertGreater(grid.get_algo().get_outer_loop_stats().nb_outer_iterations, 0)
+        for _ in range(2):
+            V2 = grid.ac_pf(V, 30, tol)
+            self.assertGreater(V2.shape[0], 0)
+            stats = grid.get_algo().get_outer_loop_stats()
+            self.assertEqual(stats.nb_outer_iterations, 0)
+            self.assertEqual(list(stats.nr_iterations), [0])
+            self.assertLess(np.abs(V2 - V).max(), 1e-12)
+            V = V2
+
     def test_detection_is_olf_first_round(self):
         # a plain solve reports exactly the buses OpenLoadFlow switches PV -> PQ first
         import re
