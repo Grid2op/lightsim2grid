@@ -15,6 +15,8 @@
 #include <set>
 #include <map>
 #include <string>
+#include <sstream>
+#include <stdexcept>
 #include <tuple>
 #include <stdio.h>
 #include <cstdint> // for int32
@@ -675,6 +677,18 @@ class LS2G_API LSGrid final
         static void check_positive_finite(real_type value, const char * name);
 
         /**
+         * Throws std::out_of_range unless every entry of `bus_id` is a grid bus id
+         * (in [0, total_bus())) or `_deactivated_bus_id` (-1, an element a converter
+         * passes as disconnected and deactivates right after). Called by every
+         * init_* before it touches its container, so a bad id leaves the grid as it
+         * was instead of being dereferenced later by the powerflow. `caller` and
+         * `arg_name` only go into the message. Needs init_bus to have been called.
+         */
+        void _check_init_bus_ids(const Eigen::Ref<const Eigen::VectorXi> & bus_id,
+                                 const char * caller,
+                                 const char * arg_name) const;
+
+        /**
          * A whole element container has just been replaced (the init_* below).
          *
          * Nothing tracked that -- the +1 / -1 bookkeeping only sees the mutators --
@@ -691,6 +705,8 @@ class LS2G_API LSGrid final
                              const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
                              const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                              ){
+            _check_init_bus_ids(branch_from_id, "LSGrid::init_powerlines", "branch_from_id");
+            _check_init_bus_ids(branch_to_id, "LSGrid::init_powerlines", "branch_to_id");
             powerlines_.init(branch_r, branch_x, branch_h, branch_from_id, branch_to_id);
             _elements_replaced_wholesale();
         }
@@ -701,6 +717,8 @@ class LS2G_API LSGrid final
                                   const Eigen::Ref<const Eigen::VectorXi> & branch_from_id,
                                   const Eigen::Ref<const Eigen::VectorXi> & branch_to_id
                              ){
+            _check_init_bus_ids(branch_from_id, "LSGrid::init_powerlines_full", "branch_from_id");
+            _check_init_bus_ids(branch_to_id, "LSGrid::init_powerlines_full", "branch_to_id");
             powerlines_.init(branch_r, branch_x, branch_h1,
                              branch_h2, branch_from_id, 
                              branch_to_id);
@@ -710,6 +728,7 @@ class LS2G_API LSGrid final
         void init_shunt(const Eigen::Ref<const RealVect> & shunt_p_mw,
                         const Eigen::Ref<const RealVect> & shunt_q_mvar,
                         const Eigen::Ref<const Eigen::VectorXi> & shunt_bus_id){
+            _check_init_bus_ids(shunt_bus_id, "LSGrid::init_shunt", "shunt_bus_id");
             shunts_.init(shunt_p_mw, shunt_q_mvar, shunt_bus_id);
             _elements_replaced_wholesale();
         }
@@ -724,6 +743,8 @@ class LS2G_API LSGrid final
                                    const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                                    bool ignore_tap_side_for_shift
                                    ){
+            _check_init_bus_ids(bus1_id, "LSGrid::init_trafo_pandapower", "bus1_id");
+            _check_init_bus_ids(bus2_id, "LSGrid::init_trafo_pandapower", "bus2_id");
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_tap_step_pct, trafo_tap_pos, trafo_shift_degree,
                          trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
             _elements_replaced_wholesale();
@@ -738,6 +759,8 @@ class LS2G_API LSGrid final
                         const Eigen::Ref<const Eigen::VectorXi> & bus2_id,
                         bool ignore_tap_side_for_shift
                            ){
+            _check_init_bus_ids(bus1_id, "LSGrid::init_trafo", "bus1_id");
+            _check_init_bus_ids(bus2_id, "LSGrid::init_trafo", "bus2_id");
             trafos_.init(trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift_degree,
                          trafo_tap_hv, bus1_id, bus2_id, ignore_tap_side_for_shift);
             _elements_replaced_wholesale();
@@ -770,6 +793,7 @@ class LS2G_API LSGrid final
                              const Eigen::Ref<const RealVect> & generators_min_q,
                              const Eigen::Ref<const RealVect> & generators_max_q,
                              const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id){
+            _check_init_bus_ids(generators_bus_id, "LSGrid::init_generators", "generators_bus_id");
             generators_.init(generators_p, generators_v, generators_min_q, generators_max_q, generators_bus_id);
             _elements_replaced_wholesale();
         }
@@ -780,6 +804,7 @@ class LS2G_API LSGrid final
                                   const Eigen::Ref<const RealVect> & generators_min_q,
                                   const Eigen::Ref<const RealVect> & generators_max_q,
                                   const Eigen::Ref<const Eigen::VectorXi> & generators_bus_id){
+            _check_init_bus_ids(generators_bus_id, "LSGrid::init_generators_full", "generators_bus_id");
             generators_.init_full(generators_p, generators_v, generators_q, voltage_regulator_on,
                                   generators_min_q, generators_max_q, generators_bus_id);
             _elements_replaced_wholesale();
@@ -787,6 +812,7 @@ class LS2G_API LSGrid final
         void init_loads(const Eigen::Ref<const RealVect> & loads_p,
                         const Eigen::Ref<const RealVect> & loads_q,
                         const Eigen::Ref<const Eigen::VectorXi> & loads_bus_id){
+            _check_init_bus_ids(loads_bus_id, "LSGrid::init_loads", "loads_bus_id");
             loads_.init(loads_p, loads_q, loads_bus_id);
             _elements_replaced_wholesale();
         }
@@ -797,6 +823,7 @@ class LS2G_API LSGrid final
                         const Eigen::Ref<const RealVect> & sgen_qmin,
                         const Eigen::Ref<const RealVect> & sgen_qmax,
                         const Eigen::Ref<const Eigen::VectorXi> & sgen_bus_id){
+            _check_init_bus_ids(sgen_bus_id, "LSGrid::init_sgens", "sgen_bus_id");
             sgens_.init(sgen_p, sgen_q, sgen_pmin, sgen_pmax, sgen_qmin, sgen_qmax, sgen_bus_id);
             _elements_replaced_wholesale();
         }
@@ -808,6 +835,8 @@ class LS2G_API LSGrid final
                        const Eigen::Ref<const RealVect> & b_max,
                        const Eigen::Ref<const Eigen::VectorXi> & regulated_bus_id,
                        const Eigen::Ref<const Eigen::VectorXi> & svc_bus_id){
+            _check_init_bus_ids(svc_bus_id, "LSGrid::init_svcs", "svc_bus_id");
+            _check_init_bus_ids(regulated_bus_id, "LSGrid::init_svcs", "regulated_bus_id");
             svcs_.init(regulation_mode, target_vm_pu, q_setpoint_mvar, slope_pu,
                        b_min, b_max, regulated_bus_id, svc_bus_id);
             _elements_replaced_wholesale();
@@ -815,6 +844,7 @@ class LS2G_API LSGrid final
         void init_storages(const Eigen::Ref<const RealVect> & storages_p,
                            const Eigen::Ref<const RealVect> & storages_q,
                            const Eigen::Ref<const Eigen::VectorXi> & storages_bus_id){
+            _check_init_bus_ids(storages_bus_id, "LSGrid::init_storages", "storages_bus_id");
             storages_.init(storages_p, storages_q, storages_bus_id);
             _elements_replaced_wholesale();
         }
@@ -825,6 +855,7 @@ class LS2G_API LSGrid final
                                 const Eigen::Ref<const RealVect> & storages_min_q,
                                 const Eigen::Ref<const RealVect> & storages_max_q,
                                 const Eigen::Ref<const Eigen::VectorXi> & storages_bus_id){
+            _check_init_bus_ids(storages_bus_id, "LSGrid::init_storages_full", "storages_bus_id");
             storages_.init_full(storages_p, storages_q, voltage_regulator_on, storages_target_vm_pu,
                                 storages_min_q, storages_max_q, storages_bus_id);
             _elements_replaced_wholesale();
@@ -840,6 +871,8 @@ class LS2G_API LSGrid final
                           const Eigen::Ref<const RealVect> & max_q1,
                           const Eigen::Ref<const RealVect> & min_q2,
                           const Eigen::Ref<const RealVect> & max_q2){
+            _check_init_bus_ids(branch_from_id, "LSGrid::init_dclines", "branch_from_id");
+            _check_init_bus_ids(branch_to_id, "LSGrid::init_dclines", "branch_to_id");
             hvdc_lines_.init_legacy(branch_from_id, branch_to_id, p_mw,
                                     loss_percent, loss_mw, vm1_pu, vm2_pu,
                                     min_q1, max_q1, min_q2, max_q2);
@@ -876,6 +909,8 @@ class LS2G_API LSGrid final
                              const Eigen::Ref<const RealVect> & droop_mw_per_deg,
                              const Eigen::Ref<const RealVect> & pmax_1to2_mw,
                              const Eigen::Ref<const RealVect> & pmax_2to1_mw){
+            _check_init_bus_ids(bus1_id, "LSGrid::init_hvdc_lines", "bus1_id");
+            _check_init_bus_ids(bus2_id, "LSGrid::init_hvdc_lines", "bus2_id");
             const RealVect no_legacy_loss = RealVect::Zero(bus1_id.size());
             hvdc_lines_.init(bus1_id, bus2_id, type1, type2,
                              loss_factor1, loss_factor2, vreg1_on, vreg2_on,

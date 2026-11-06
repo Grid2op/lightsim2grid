@@ -163,15 +163,16 @@ class TestPoisonedState(unittest.TestCase):
 
     def test_out_of_range_svc_regulated_bus_from_init_svcs_is_rejected(self):
         # the same hole with no serialization involved: this is what
-        # init_from_pypowsybl does with the bus ids it reads from the source grid
+        # init_from_pypowsybl does with the bus ids it reads from the source grid.
+        # init_svcs refuses it before storing anything (issue #259).
         grid = build_exotic_elements_case_grid()
-        grid.init_svcs([1],
-                       np.array([1.0]), np.array([0.0]), np.array([0.0]),
-                       np.array([-0.03]), np.array([0.03]),
-                       np.array([BIG], dtype=np.int32),   # regulated bus, out of range
-                       np.array([5], dtype=np.int32))
         with self.assertRaises(IndexError):
-            grid.check_grid()
+            grid.init_svcs([1],
+                           np.array([1.0]), np.array([0.0]), np.array([0.0]),
+                           np.array([-0.03]), np.array([0.03]),
+                           np.array([BIG], dtype=np.int32),   # regulated bus, out of range
+                           np.array([5], dtype=np.int32))
+        self.assertIsNone(grid.check_grid())
 
     # ------------------------------------------------------------------
     # pos_topo_vect on an element that is not in the grid2op topology vector.

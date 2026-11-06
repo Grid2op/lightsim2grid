@@ -861,6 +861,25 @@ void LSGrid::set_ls_to_orig_internal(const Eigen::Ref<const IntVect> & ls_to_ori
     }
 }
 
+void LSGrid::_check_init_bus_ids(const Eigen::Ref<const Eigen::VectorXi> & bus_id,
+                                 const char * caller,
+                                 const char * arg_name) const
+{
+    const int n_bus = static_cast<int>(total_bus());
+    for(Eigen::Index el_id = 0; el_id < bus_id.size(); ++el_id){
+        const int bus = bus_id(el_id);
+        if(bus == BaseConstants::_deactivated_bus_id) continue;
+        if(bus >= 0 && bus < n_bus) continue;
+        std::ostringstream exc_;
+        exc_ << caller << ": `" << arg_name << "` of element " << el_id << " is " << bus
+             << ", but a bus id should be >= 0 and < " << n_bus
+             << " (the number of buses of the grid, see `total_bus()`), or "
+             << BaseConstants::_deactivated_bus_id << " for a disconnected element.";
+        if(n_bus == 0) exc_ << " The grid has no bus yet: call `init_bus` first.";
+        throw std::out_of_range(exc_.str());
+    }
+}
+
 //init
 void LSGrid::init_bus(unsigned int n_sub,
                          unsigned int n_busbar_per_sub,
