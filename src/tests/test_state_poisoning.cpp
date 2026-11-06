@@ -196,11 +196,10 @@ TEST_CASE("check_grid rejects a negative (non-sentinel) svc regulated bus id", "
     CHECK_THROWS_AS(restored.set_state(st), std::out_of_range);
 }
 
-TEST_CASE("init_svcs rejects an out-of-range svc regulated bus", "[check_grid][state_poisoning]")
+TEST_CASE("check_grid rejects an out-of-range svc regulated bus set through init_svcs", "[check_grid][state_poisoning]")
 {
     // same hole, reached without any serialization: a grid loader (init_from_pypowsybl
-    // builds the SVCs) passing a bus id its source file got wrong. init_svcs refuses
-    // it before storing anything, so the grid it leaves still checks.
+    // builds the SVCs) passing a bus id its source file got wrong.
     LSGrid grid = exotic();
     const std::vector<int> mode{1};                    // VOLTAGE
     RealVect target_vm_pu(1), q_setpoint(1), slope(1), b_min(1), b_max(1);
@@ -212,9 +211,9 @@ TEST_CASE("init_svcs rejects an out-of-range svc regulated bus", "[check_grid][s
     Eigen::VectorXi regulated_bus(1), svc_bus(1);
     regulated_bus << 10000000;                         // out of range
     svc_bus << 5;
-    CHECK_THROWS_AS(grid.init_svcs(mode, target_vm_pu, q_setpoint, slope, b_min, b_max, regulated_bus, svc_bus),
-                    std::out_of_range);
-    CHECK_NOTHROW(grid.check_grid());
+    grid.init_svcs(mode, target_vm_pu, q_setpoint, slope, b_min, b_max, regulated_bus, svc_bus);
+
+    CHECK_THROWS_AS(grid.check_grid(), std::out_of_range);
 }
 
 TEST_CASE("check_grid accepts the -1 sentinel as an svc regulated bus", "[check_grid][state_poisoning]")

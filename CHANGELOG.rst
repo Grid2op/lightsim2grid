@@ -246,9 +246,6 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``loader_kwargs``): generators with a ``slack_weight`` can participate in the ``DistributedSlack`` loop (#273).
 - [ADDED] ``LightSimBackend`` warns when an ``NROuter_*`` algorithm's ``DistributedSlack`` loop has no
   unit off the slack bus to act on (#273).
-- [FIXED] The ``LSGrid.init_*`` methods check their bus ids and raise (``IndexError`` in Python)
-  on one outside ``[0, total_bus())``, instead of a crash or a wrong result in the powerflow.
-  ``-1`` (disconnected) is still accepted. See issue #259.
 
 
 [1.3.0] 2026-11-03
