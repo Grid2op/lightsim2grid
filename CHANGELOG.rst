@@ -230,6 +230,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
+[1.3.1] 20xx-xx-xx
+--------------------
+
+
 [1.3.0] 2026-11-03
 --------------------
 - [BREAKING] The ``*_solver`` getters of ``LSGrid`` and an algorithm's ``get_V`` / ``get_Va`` /
