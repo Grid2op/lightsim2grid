@@ -423,7 +423,8 @@ docstrings for the exact conventions):
    * - ``set_dc_distribute_slack_on_can_participate``
      - makes ``dc_pf`` share the imbalance like the ``DistributedSlack`` loop (for the starting angles)
 
-The converters of :mod:`lightsim2grid.network` fill what their source provides.
+The converters of :mod:`lightsim2grid.network` fill what their source provides (for pandapower, see
+:ref:`outer-loops-pandapower`).
 
 Reading what the loops did
 --------------------------
@@ -500,6 +501,55 @@ pypowsybl:
     set_olf_outer_loops(grid, params)           # clear_outer_loops + add_outer_loop for each + set_outer_loop_driver_params
 
 See :doc:`comparison_with_pypowsybl` for how the results compare with pypowsybl's.
+
+.. _outer-loops-pandapower:
+
+From pandapower
+---------------
+
+``init_from_pandapower`` (what :class:`~lightsim2grid.lightSimBackend.LightSimBackend` uses by default) fills
+part of the data, from the element tables and from the controllers of ``net.controller``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Loop
+     - What the converter gives it
+   * - ``TransformerVoltageControl``
+     - a ratio tap changer per transformer with integer ``tap_min`` .. ``tap_max`` and a non-zero ``tap_step_percent``:
+       each step is the transformer the converter builds with ``tap_pos`` at that position (ratio, r, x and magnetising
+       admittance). The regulation comes from an in-service ``DiscreteTapControl`` (target: the middle of
+       ``[vm_lower_pu, vm_upper_pu]``, deadband: that band) or ``ContinuousTapControl`` (``vm_set_pu``, a deadband of
+       twice ``tol``), on the transformer's own ``side`` bus. As in pandapower, a transformer whose regulated bus has an
+       ext_grid does not regulate.
+   * - ``ShuntVoltageControl``
+     - one section per step, ``1`` .. ``max_step``, and the regulation of a ``DiscreteShuntController`` (``vm_set_pu``, a
+       deadband of twice ``tol``, its ``controlled_bus``).
+   * - ``DistributedSlack``
+     - the slack participants only, by default. With ``slack_weight_can_participate=True`` (also a ``loader_kwargs`` key of
+       the backend), every generator with a positive ``slack_weight`` can participate, with that weight, ``slack=True`` or
+       not and for both ``pp_orig_file``. Storage units and static generators never do (pandapower has no weight for them).
+   * - ``ReactiveLimits``
+     - ``min_q_mvar`` / ``max_q_mvar`` of the generators (no capability curve), and ``min_p_mw`` / ``max_p_mw`` as active limits.
+
+Not converted: phase tap changers (a transformer with a non-zero ``tap_step_degree`` keeps a fixed ratio and
+shift), tabular tap changers and shunts (``tap_dependency_table`` / ``step_dependency_table``), the controllers
+of three-winding transformers, and every other controller.
+
+pandapower's discrete tap controller stops at the first tap that brings the voltage within its band, while the loop
+solves the ratio continuously and rounds it to the closest tap: both end within the band, not always on the same tap.
+
+On a single-slack pandapower grid (one ``slack=True`` generator or one ext_grid) no unit off the slack bus can
+participate, so ``DistributedSlack`` has nothing to do and the slack bus takes all of the imbalance. The backend
+warns about it when it runs an ``NROuter_*`` algorithm.
+
+.. warning::
+
+    A generator flagged "can participate in the slack" without being a slack participant joins the (Newton) slack
+    as soon as its set-point is changed within its active limits (``change_p_gen``, which grid2op calls at each
+    step). With ``slack_weight_can_participate=True``, the other algorithms therefore end up distributing the slack
+    on these generators as well. This is why the option is off by default.
 
 Performance and the linear solver
 ---------------------------------

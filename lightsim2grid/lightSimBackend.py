@@ -100,6 +100,7 @@ class LightSimBackend(Backend):
     
     KEYS_PANDAPOWER_LOADER = {
         "pp_orig_file",
+        "slack_weight_can_participate",
         # "grid"
     }
     
@@ -655,6 +656,17 @@ class LightSimBackend(Backend):
         real_algo_type = self._check_suitable_solver_type(algo_type)
         self.__current_algo_type = copy.deepcopy(real_algo_type)
         self._aux_change_algorithm(self.__current_algo_type)
+        self._warn_if_outer_loops_idle()
+
+    def _warn_if_outer_loops_idle(self) -> None:
+        """Warn when an ``NROuter_*`` algorithm has a ``DistributedSlack`` outer loop with no
+        unit to act on, see :func:`lightsim2grid.algorithm._outer_loop_checks.distributed_slack_is_idle`.
+        Not with ``dist_slack_non_renew``, whose slack participants are only set when an
+        action is applied."""
+        if self._dist_slack_non_renew:
+            return
+        from lightsim2grid.algorithm._outer_loop_checks import warn_if_distributed_slack_idle
+        warn_if_distributed_slack_idle(self._grid)
 
     @staticmethod
     def _aux_algo_config_to_state(config: AlgoConfig) -> Tuple[list, list]:
@@ -855,6 +867,7 @@ class LightSimBackend(Backend):
         self.__current_outer_loops = self._aux_outer_loops_to_state(loops)
         if self._grid is not None:
             self._aux_apply_outer_loops(self._grid)
+            self._warn_if_outer_loops_idle()
         self._aux_update_my_kwargs()
 
     def reset_outer_loops(self) -> None:
@@ -1623,6 +1636,7 @@ class LightSimBackend(Backend):
         # the outer-loop configuration given before the grid was loaded (kwargs or setters)
         self._aux_apply_outer_loops(self._grid)
         self._aux_apply_resume_outer_state()
+        self._warn_if_outer_loops_idle()
                     
         # handle multiple busbar per substations
         if hasattr(type(self), "can_handle_more_than_2_busbar") and not self._grid_laid_out_by_loader:
@@ -1710,10 +1724,12 @@ class LightSimBackend(Backend):
                 
         if "pp_orig_file" in loader_kwargs and str(loader_kwargs["pp_orig_file"]) == loader_kwargs["pp_orig_file"]:
             pp_orig_file = str(loader_kwargs["pp_orig_file"])
+        slack_weight_can_participate = bool(loader_kwargs.get("slack_weight_can_participate", False))
         self._grid = init_from_pandapower(self._init_pp_backend._grid,
                                           self._init_pp_backend.n_sub,
                                           self.n_busbar_per_sub,
                                           pp_orig_file=pp_orig_file,
+                                          slack_weight_can_participate=slack_weight_can_participate,
                                           # grid2op's own pandapower backend is what says
                                           # what a substation is on this path, and has been
                                           # for as long as it has existed:
