@@ -34,7 +34,8 @@ __all__ = ["AlgorithmType",
            "PhaseControl",
            "TransformerVoltageControl",
            "ShuntVoltageControl",
-           "OuterLoopDriverParams"]
+           "OuterLoopDriverParams",
+           "make_outer_loop"]
 
 from ..lightsim2grid_cpp import AlgorithmType  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import ErrorType  # pyright: ignore[reportMissingImports]
@@ -66,6 +67,7 @@ from ..lightsim2grid_cpp import PhaseControl  # pyright: ignore[reportMissingImp
 from ..lightsim2grid_cpp import TransformerVoltageControl  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import ShuntVoltageControl  # pyright: ignore[reportMissingImports]
 from ..lightsim2grid_cpp import OuterLoopDriverParams  # pyright: ignore[reportMissingImports]
+from ..lightsim2grid_cpp import make_outer_loop  # pyright: ignore[reportMissingImports]
 
 try:
     from ..lightsim2grid_cpp import NR_KLU  # AlgorithmType.NR_KLU  # pyright: ignore[reportMissingImports]  # noqa: F401

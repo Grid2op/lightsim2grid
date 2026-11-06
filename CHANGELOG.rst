@@ -232,6 +232,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [ADDED] ``LightSimBackend`` keeps an outer-loop configuration over ``reset()`` / ``copy()``: ``set_outer_loops``,
+  ``set_outer_loop_driver_params``, ``set_resume_outer_state``, ``set_olf_outer_loops``, and the matching
+  constructor kwargs (#272).
+- [ADDED] Outer loops and ``OuterLoopDriverParams`` pickle and deep-copy; ``make_outer_loop`` and
+  ``BaseOuterLoop.get_params`` rebuild a loop.
 
 
 [1.3.0] 2026-11-03

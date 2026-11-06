@@ -8,7 +8,7 @@
 
 import os
 import copy
-from typing import Any, Dict, Tuple, Optional, Union
+from typing import Any, Dict, List, Tuple, Optional, Sequence, Union
 from packaging import version
 
 # NOT `from lightsim2grid.solver import SolverType`: lightsim2grid.solver is itself
@@ -59,7 +59,8 @@ try:
 except ImportError:
     from typing_extensions import Literal
     
-from lightsim2grid.algorithm import AlgorithmType, AlgoConfig
+from lightsim2grid.algorithm import (AlgorithmType, AlgoConfig, BaseOuterLoop,
+                                      OuterLoopDriverParams, make_outer_loop)
 
 LOADER_KWARGS_TYPING = Dict[str, Any]  # TODO improve this
 grid2op_min_cls_attr_ver = version.parse("1.6.4")
@@ -125,6 +126,9 @@ class LightSimBackend(Backend):
                  stop_if_storage_disco : Optional[bool] = None,
                  automatically_disconnect : bool = False,
                  gen_slack_id=None,
+                 outer_loops: Optional[Sequence[BaseOuterLoop]] = None,
+                 outer_loop_driver_params: Optional[OuterLoopDriverParams] = None,
+                 resume_outer_state: Optional[bool] = None,
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
         #: if the solver has not converge after this, it will
@@ -144,6 +148,21 @@ class LightSimBackend(Backend):
         #: every `env.reset()` and preserved by `backend.copy()`.
         self.__current_ac_algo_config = None
         self.__current_dc_algo_config = None
+
+        #: outer-loop configuration of the NROuter_* algorithms, set with the kwargs
+        #: `outer_loops`, `outer_loop_driver_params`, `resume_outer_state` or with
+        #: :func:`set_outer_loops` (and friends). ``None``: never customized, the grid keeps
+        #: what its loader put. Kept as plain (picklable) states and re-applied after
+        #: `load_grid`, every `env.reset()` and `backend.copy()`.
+        self.__current_outer_loops = None
+        self.__current_outer_driver_params = None
+        self.__current_resume_outer_state = None
+        if outer_loops is not None:
+            self.__current_outer_loops = self._aux_outer_loops_to_state(outer_loops)
+        if outer_loop_driver_params is not None:
+            self.__current_outer_driver_params = self._aux_driver_params_to_state(outer_loop_driver_params)
+        if resume_outer_state is not None:
+            self.__current_resume_outer_state = bool(resume_outer_state)
 
         #: does the "turned off" generators (including when p=0)
         #: are pv buses
@@ -267,7 +286,8 @@ class LightSimBackend(Backend):
                              stop_if_gen_disco,
                              stop_if_storage_disco,
                              automatically_disconnect,
-                             gen_slack_id)
+                             gen_slack_id,
+                             **self._aux_outer_kwargs())
         
         #: whether or not to run a routine to detect the islanding
         #: before computing the powerflow (this routine should
@@ -500,7 +520,8 @@ class LightSimBackend(Backend):
                         stop_if_gen_disco,
                         stop_if_storage_disco,
                         automatically_disconnect,
-                        gen_slack_id):
+                        gen_slack_id,
+                        **outer_kwargs):
         try:
             # for grid2Op >= 1.7.1
             Backend.__init__(self,
@@ -519,6 +540,7 @@ class LightSimBackend(Backend):
                              stop_if_storage_disco=stop_if_storage_disco,
                              automatically_disconnect=automatically_disconnect,
                              gen_slack_id=gen_slack_id,
+                             **outer_kwargs
                              )
         except TypeError as exc_:
             warnings.warn("Please use grid2op >= 1.7.1: with older grid2op versions, "
@@ -632,7 +654,7 @@ class LightSimBackend(Backend):
             raise BackendError("Impossible to change the algorithm type to None. Please enter a valid algorithm type.")
         real_algo_type = self._check_suitable_solver_type(algo_type)
         self.__current_algo_type = copy.deepcopy(real_algo_type)
-        self._grid.change_algorithm(self.__current_algo_type)
+        self._aux_change_algorithm(self.__current_algo_type)
 
     @staticmethod
     def _aux_algo_config_to_state(config: AlgoConfig) -> Tuple[list, list]:
@@ -674,6 +696,7 @@ class LightSimBackend(Backend):
             raise BackendError("Impossible to set an AlgoConfig before a powergrid has been loaded.")
         self.__current_ac_algo_config = self._aux_algo_config_to_state(config)
         self._grid.set_ac_algo_config(config)
+        self._aux_apply_resume_outer_state()
 
     def get_ac_algo_config(self) -> AlgoConfig:
         """Return the :class:`~lightsim2grid.algorithm.AlgoConfig` currently used by the AC algorithm."""
@@ -689,6 +712,231 @@ class LightSimBackend(Backend):
     def get_dc_algo_config(self) -> AlgoConfig:
         """Same as :func:`LightSimBackend.get_ac_algo_config`, for the DC algorithm."""
         return self._grid.get_dc_algo_config()
+
+    # ---- outer loops (NROuter_* algorithms) ----
+    #: the state of a loop list put back to OpenLoadFlow's default one (:func:`reset_outer_loops`)
+    _OUTER_LOOPS_DEFAULT = "default"
+    #: where an NROuter_* algorithm keeps `resume_outer_state` in its AC AlgoConfig: after the
+    #: Newton's own integer parameters
+    _RESUME_OUTER_STATE_IDX = 5
+
+    @staticmethod
+    def _aux_outer_loops_to_state(loops: Sequence[BaseOuterLoop]) -> List[Tuple[str, list, list]]:
+        # The loop objects are not kept: a grid clones its loops on copy and they hold
+        # per-solve state, so the backend keeps each loop's name and parameters (what
+        # LSGrid's own pickling keeps) and builds fresh loops whenever it applies them.
+        if isinstance(loops, BaseOuterLoop):
+            raise BackendError("`outer_loops` should be a list of outer loops, not a single loop.")
+        state = []
+        names = set()
+        for loop in loops:
+            if not isinstance(loop, BaseOuterLoop):
+                raise BackendError(f"Every outer loop should be a lightsim2grid.algorithm.BaseOuterLoop "
+                                   f"(eg ReactiveLimits()), found {type(loop)}.")
+            if loop.name() in names:
+                raise BackendError(f"The list of outer loops holds the '{loop.name()}' loop twice.")
+            names.add(loop.name())
+            params = loop.get_params()
+            state.append((loop.name(), list(params.int_params), list(params.real_params)))
+        return state
+
+    @staticmethod
+    def _aux_outer_loops_from_state(state: List[Tuple[str, list, list]]) -> List[BaseOuterLoop]:
+        return [make_outer_loop(name, list(int_params), list(real_params))
+                for name, int_params, real_params in state]
+
+    @staticmethod
+    def _aux_driver_params_to_state(params: OuterLoopDriverParams) -> tuple:
+        if not isinstance(params, OuterLoopDriverParams):
+            raise BackendError(f"`outer_loop_driver_params` should be a "
+                               f"lightsim2grid.algorithm.OuterLoopDriverParams, found {type(params)}.")
+        return (int(params.max_outer_iterations),
+                bool(params.voltage_remote_control_robust_mode),
+                float(params.min_realistic_voltage),
+                float(params.max_realistic_voltage),
+                float(params.min_nominal_voltage_realistic_check))
+
+    @staticmethod
+    def _aux_driver_params_from_state(state: tuple) -> OuterLoopDriverParams:
+        return OuterLoopDriverParams(*state)
+
+    def _aux_outer_kwargs(self) -> Dict[str, Any]:
+        # what the constructor needs to build a backend with the same outer-loop
+        # configuration: kept in grid2op's `_my_kwargs`, which is what grid2op builds a
+        # backend from when it does not copy one (runner, `observation_backend_kwargs`, ...)
+        loops = self.__current_outer_loops
+        if loops is None or loops == type(self)._OUTER_LOOPS_DEFAULT:
+            # nothing to pass for the default list: a fresh grid starts from it already
+            # (unless its loader put another one, which a fresh backend also does)
+            loops_kwarg = None
+        else:
+            loops_kwarg = self._aux_outer_loops_from_state(loops)
+        driver = self.__current_outer_driver_params
+        return {"outer_loops": loops_kwarg,
+                "outer_loop_driver_params": None if driver is None else self._aux_driver_params_from_state(driver),
+                "resume_outer_state": self.__current_resume_outer_state}
+
+    def _aux_update_my_kwargs(self) -> None:
+        if hasattr(self, "_my_kwargs"):
+            # older grid2op versions do not have it
+            self._my_kwargs.update(self._aux_outer_kwargs())
+
+    def _aux_apply_outer_loops(self, grid) -> None:
+        """Put the stored list of outer loops and the driver's parameters on `grid`."""
+        loops = self.__current_outer_loops
+        if loops is not None:
+            if loops == type(self)._OUTER_LOOPS_DEFAULT:
+                grid.reset_outer_loops()
+            else:
+                grid.clear_outer_loops()
+                for loop in self._aux_outer_loops_from_state(loops):
+                    grid.add_outer_loop(loop)
+        if self.__current_outer_driver_params is not None:
+            grid.set_outer_loop_driver_params(
+                self._aux_driver_params_from_state(self.__current_outer_driver_params))
+
+    def _aux_apply_resume_outer_state(self) -> None:
+        """Put the stored `resume_outer_state` on the AC algorithm, if it runs outer loops.
+
+        It is part of the algorithm's AC AlgoConfig: a change of algorithm or of AlgoConfig
+        drops it, so it is applied again after each of them."""
+        if self.__current_resume_outer_state is None or self._grid is None:
+            return
+        if not self._grid.get_algo().supports_outer_loops():
+            return
+        config = self._grid.get_ac_algo_config()
+        int_params = list(config.int_params)
+        idx = type(self)._RESUME_OUTER_STATE_IDX
+        value = 1 if self.__current_resume_outer_state else 0
+        if len(int_params) > idx and int_params[idx] != value:
+            int_params[idx] = value
+            config.int_params = int_params
+            self._grid.set_ac_algo_config(config)
+
+    def _aux_change_algorithm(self, algo_type) -> None:
+        self._grid.change_algorithm(algo_type)
+        self._aux_apply_resume_outer_state()
+
+    def set_outer_loops(self, loops: Sequence[BaseOuterLoop]) -> None:
+        """
+        Change the list of outer loops an ``NROuter_*`` algorithm runs, in the order they are
+        checked in, and remember it so it is applied again after every `env.reset()` and
+        preserved by `backend.copy()` (and so by the backend of `obs.simulate`).
+
+        Unlike ``env.backend._grid.clear_outer_loops()`` + ``add_outer_loop(...)``, which is
+        silently reverted on the next `env.reset()`, this is the persistent way to choose the
+        outer loops. It can be called before the grid is loaded (the list is then applied when
+        it is), or given to the constructor: ``LightSimBackend(outer_loops=[...])``.
+
+        It has no effect on an algorithm without outer loops (only ``NROuter_*`` run them).
+
+        Parameters
+        ----------
+        loops: list of :class:`~lightsim2grid.algorithm.BaseOuterLoop`
+            The loops, eg ``[DistributedSlack(), ReactiveLimits(max_pq_pv_switch=5)]``. An
+            empty list means a single-slack Newton-Raphson without any outer loop.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            import grid2op
+            from lightsim2grid import LightSimBackend
+            from lightsim2grid.algorithm import ReactiveLimits, OuterLoopDriverParams
+
+            env = grid2op.make("l2rpn_case14_sandbox",
+                               backend=LightSimBackend(algo_type="NROuter_KLU"))
+            env.backend.set_outer_loops([ReactiveLimits(max_pq_pv_switch=5)])
+            env.backend.set_outer_loop_driver_params(OuterLoopDriverParams(max_outer_iterations=30))
+            env.reset()  # the loops above are kept
+
+        """
+        self.__current_outer_loops = self._aux_outer_loops_to_state(loops)
+        if self._grid is not None:
+            self._aux_apply_outer_loops(self._grid)
+        self._aux_update_my_kwargs()
+
+    def reset_outer_loops(self) -> None:
+        """Back to OpenLoadFlow's default list of outer loops, and remember it (see
+        :func:`set_outer_loops`). The driver's parameters are not changed."""
+        self.__current_outer_loops = type(self)._OUTER_LOOPS_DEFAULT
+        if self._grid is not None:
+            self._grid.reset_outer_loops()
+        self._aux_update_my_kwargs()
+
+    def get_outer_loops(self) -> List[BaseOuterLoop]:
+        """The outer loops an ``NROuter_*`` algorithm runs, in the order they are checked in.
+
+        Before the grid is loaded, those given to :func:`set_outer_loops` (or the constructor),
+        ``None`` if none were."""
+        if self._grid is not None:
+            return self._grid.get_outer_loops()
+        loops = self.__current_outer_loops
+        if loops is None or loops == type(self)._OUTER_LOOPS_DEFAULT:
+            return None
+        return self._aux_outer_loops_from_state(loops)
+
+    def set_outer_loop_driver_params(self, params: OuterLoopDriverParams) -> None:
+        """
+        Change the parameters of the outer-loop driver (maximum number of outer iterations,
+        realistic voltage check, see :class:`~lightsim2grid.algorithm.OuterLoopDriverParams`)
+        and remember them, as :func:`set_outer_loops` does for the loops.
+        """
+        self.__current_outer_driver_params = self._aux_driver_params_to_state(params)
+        if self._grid is not None:
+            self._grid.set_outer_loop_driver_params(params)
+        self._aux_update_my_kwargs()
+
+    def get_outer_loop_driver_params(self) -> OuterLoopDriverParams:
+        """The parameters of the outer-loop driver (see :func:`set_outer_loop_driver_params`).
+
+        Before the grid is loaded, those given to :func:`set_outer_loop_driver_params` (or the
+        constructor), ``None`` if none were."""
+        if self._grid is not None:
+            return self._grid.get_outer_loop_driver_params()
+        if self.__current_outer_driver_params is None:
+            return None
+        return self._aux_driver_params_from_state(self.__current_outer_driver_params)
+
+    def set_olf_outer_loops(self, parameters=None) -> None:
+        """
+        Run the outer loops OpenLoadFlow would run with the pypowsybl load flow `parameters`,
+        with the same driver parameters (see :func:`lightsim2grid.network.olf_outer_loops`),
+        and remember them as :func:`set_outer_loops` and :func:`set_outer_loop_driver_params`
+        do. ``None`` (default): the defaults of the installed pypowsybl. Needs pypowsybl.
+        """
+        try:
+            from lightsim2grid.network import olf_outer_loops
+        except ImportError as exc_:
+            raise BackendError("set_olf_outer_loops needs pypowsybl to be installed.") from exc_
+        loops, driver = olf_outer_loops(parameters)
+        self.set_outer_loops(loops)
+        self.set_outer_loop_driver_params(driver)
+
+    def set_resume_outer_state(self, value: bool) -> None:
+        """
+        Whether a solve of an ``NROuter_*`` algorithm starts its loops from where the last
+        converged solve left them (buses frozen PQ, controllers held, taps, sections...)
+        rather than from the grid: what a sequence of `env.step` of a time series wants. Off by
+        default (as in OpenLoadFlow). Remembered, as :func:`set_outer_loops` is: it survives
+        `env.reset()`, `backend.copy()` and a change of algorithm (:func:`set_algo_type`).
+
+        It does not carry the loops' state itself over a `reset()` or a `copy()`: the first
+        solve after either starts from the grid.
+        """
+        self.__current_resume_outer_state = bool(value)
+        self._aux_apply_resume_outer_state()
+        self._aux_update_my_kwargs()
+
+    def get_resume_outer_state(self) -> bool:
+        """See :func:`set_resume_outer_state`."""
+        if self._grid is not None and self._grid.get_algo().supports_outer_loops():
+            int_params = self._grid.get_ac_algo_config().int_params
+            idx = type(self)._RESUME_OUTER_STATE_IDX
+            if len(int_params) > idx:
+                return bool(int_params[idx])
+        return bool(self.__current_resume_outer_state)
 
     def _aux_merge_solver_type_algo_type(
         self,
@@ -1371,6 +1619,10 @@ class LightSimBackend(Backend):
             # check that the solver type provided is installed with lightsim2grid
             self._check_suitable_solver_type(self.__current_algo_type)
             self._grid.change_algorithm(self.__current_algo_type)
+
+        # the outer-loop configuration given before the grid was loaded (kwargs or setters)
+        self._aux_apply_outer_loops(self._grid)
+        self._aux_apply_resume_outer_state()
                     
         # handle multiple busbar per substations
         if hasattr(type(self), "can_handle_more_than_2_busbar") and not self._grid_laid_out_by_loader:
@@ -2090,7 +2342,7 @@ class LightSimBackend(Backend):
                 my_exc_ = BackendError(f"Converted the error of type {type(my_exc_)}, message was: {my_exc_}")
             if is_dc:
                 # set back the solver to its previous state
-                self._grid.change_algorithm(self.__current_algo_type)
+                self._aux_change_algorithm(self.__current_algo_type)
             self._grid.tell_solver_need_reset()
             self._grid.reactivate_result_computation()
             if self._automatically_disconnect:
@@ -2249,7 +2501,8 @@ class LightSimBackend(Backend):
                             self._stop_if_gen_disco,
                             self._stop_if_storage_disco,
                             self._automatically_disconnect,
-                            self._gen_slack_id)
+                            self._gen_slack_id,
+                            **self._aux_outer_kwargs())
         
         # for backward compat (attribute was not necessarily present in early grid2op)
         if not hasattr(res, "_can_be_copied"):
@@ -2263,6 +2516,9 @@ class LightSimBackend(Backend):
         res.__current_algo_type = self.__current_algo_type  # forced here because of special `__`
         res.__current_ac_algo_config = copy.deepcopy(self.__current_ac_algo_config)
         res.__current_dc_algo_config = copy.deepcopy(self.__current_dc_algo_config)
+        res.__current_outer_loops = copy.deepcopy(self.__current_outer_loops)
+        res.__current_outer_driver_params = copy.deepcopy(self.__current_outer_driver_params)
+        res.__current_resume_outer_state = self.__current_resume_outer_state
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
         res.cst_1 = dt_float(1.0)
@@ -2333,7 +2589,8 @@ class LightSimBackend(Backend):
 
         # handle the most complicated
         if mygrid is not None:
-            res._grid = mygrid.copy()
+            res._grid = mygrid.copy()  # keeps the grid's outer loops and driver parameters
+            res._aux_apply_resume_outer_state()  # no-op when the copy kept it, cheap otherwise
             # res._fill_nans()  # don't do this, data are copied from ref
             res._reset_res_pointers()
             res._fetch_grid_data()
@@ -2422,6 +2679,8 @@ class LightSimBackend(Backend):
             self._grid.set_ac_algo_config(self._aux_algo_config_from_state(self.__current_ac_algo_config))
         if self.__current_dc_algo_config is not None:
             self._grid.set_dc_algo_config(self._aux_algo_config_from_state(self.__current_dc_algo_config))
+        self._aux_apply_outer_loops(self._grid)
+        self._aux_apply_resume_outer_state()
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.
