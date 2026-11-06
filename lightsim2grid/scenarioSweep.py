@@ -201,7 +201,8 @@ class ScenarioSweep:
         clamp anything. Needs an algorithm with a distributed slack: ``compute`` refuses it
         with a single-slack one (``NRSing_*``, Gauss-Seidel). With outer loops (``NROuter_*``),
         the ``DistributedSlack`` loop shares the loss itself before the row's first solve, from
-        the targets in force, as OpenLoadFlow's security analysis does. Same name/semantics as
+        the targets in force, and what is left afterwards from those same targets (the result is
+        the whole imbalance shared at once), as OpenLoadFlow's security analysis does. Same name/semantics as
         :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
         """
         return self.computer.redistribute_slack

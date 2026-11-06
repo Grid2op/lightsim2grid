@@ -43,9 +43,11 @@ class LSGrid;
  * HIGH_P.
  * A batch row whose contingency loses active power (OuterRowView::lost_p_mw, a batch's
  * `redistribute_slack`) has it shared on the participants before its first solve, the same
- * way, and those targets are the initial ones the loop then starts from: OpenLoadFlow's
- * security analysis (its Default ContingencyActivePowerLossDistribution) before its
- * post-contingency load flow. Without it, the first solve puts the whole loss on the slack bus.
+ * way: OpenLoadFlow's security analysis (its Default ContingencyActivePowerLossDistribution)
+ * before its post-contingency load flow. Without it, the first solve puts the whole loss on the
+ * slack bus. The initial targets stay the row's own: the checks share the cumulative mismatch,
+ * that share included, from them, as OpenLoadFlow resets its units to their initialTargetP. A
+ * unit the share put at a bound therefore stays there when what follows has the other sign.
  *
  * UNSTABLE when the targets moved, FAILED when some of the mismatch could not be shared
  * (every unit at a bound) and `Params::fail_on_residue` (OpenLoadFlow's FAIL behaviour; off, its

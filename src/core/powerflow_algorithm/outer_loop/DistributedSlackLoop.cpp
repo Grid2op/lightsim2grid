@@ -295,7 +295,8 @@ void DistributedSlackLoop::_share_lost_p(OuterContext & ctx)
         } else {
             state.move_storage_target_p(view, units_[k].el_id, unit_solver_bus_[k], -new_mw[k]);
         }
-        units_[k].injection_mw = new_mw[k];
+        // the base (units_[k].injection_mw) stays the targets the row started from: the checks
+        // share the cumulative mismatch from there, as OpenLoadFlow resets to initialTargetP
         current_mw_[k] = new_mw[k];
     }
     ctx.record("SHARE_LOST_P", true, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
@@ -460,8 +461,8 @@ void DistributedSlackLoop::_adjoint_terms(OuterAdjointTerms & out) const
     // share, and the sharing from the initial targets puts it back at the bound) -- unless
     // that "bound" is its own set-point: a unit already beyond a limit is never pulled back
     // to it (slack_redistribution::distribute), it stays where its target puts it. Its own:
-    // from before the row's lost-power share, which moves the initial targets (injection_mw)
-    // -- a unit that share put at its bound is held there as well
+    // from before the row's lost-power share (initial_mw_, the same as injection_mw, which that
+    // share does not move) -- a unit that share put at its bound is held there as well
     if (sn_mva_ > 0.) out.inv_sn = 1. / sn_mva_;
     for (std::size_t k = 0; k < units_.size() && k < parked_.size() && k < unit_solver_bus_.size(); ++k) {
         if (!parked_[k] || units_[k].kind != slack_redistribution::UnitKind::GENERATOR) continue;

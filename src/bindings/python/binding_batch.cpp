@@ -1161,7 +1161,8 @@ void bind_batch(py::module_& m) {
                       "Off by default; compute() refuses it with a single-slack algorithm "
                       "(NRSing_*, Gauss-Seidel). With outer loops (NROuter_*), the DistributedSlack "
                       "loop shares the loss itself before the row's first solve, from the targets in "
-                      "force. Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
+                      "force, and what is left afterwards from those same targets: the result is the "
+                      "whole imbalance shared at once. Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
                       "clamp anything: without limits the converged state is unchanged. Same as "
                       "LSGrid.redistribute_active_power, row by row.")
         .def_property("handle_disconnected_grid",
@@ -1315,7 +1316,9 @@ void bind_batch(py::module_& m) {
                       "a single-slack algorithm (NRSing_*, Gauss-Seidel). With outer loops "
                       "(NROuter_*), the DistributedSlack loop shares the loss itself before the "
                       "contingency's first solve, from the targets in force (the \"n\" solve's with "
-                      "init_from_n_powerflow), as OpenLoadFlow's security analysis does. Needs "
+                      "init_from_n_powerflow), and what is left afterwards from those same targets "
+                      "(the result is the whole imbalance shared at once), as OpenLoadFlow's security "
+                      "analysis does. Needs "
                       "LSGrid.set_gen_p_limits / set_storage_p_limits to clamp anything: without "
                       "limits the converged state is unchanged. Same as "
                       "LSGrid.consider_only_main_component(redistribute_slack=True), contingency "
