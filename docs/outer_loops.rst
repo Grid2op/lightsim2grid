@@ -343,6 +343,46 @@ frozen PQ, controllers held, standby SVCs switched on, hvdc regimes, taps, secti
 the grid. Use it for a sequence of ``ac_pf`` calls following each other (a time series). It is
 not OpenLoadFlow's. The batch classes do the same on their own for a ``TimeSeries``.
 
+.. _outer-loops-backend:
+
+With grid2op: ``LightSimBackend``
+---------------------------------
+
+``LightSimBackend.reset()`` rebuilds its grid from the one it loaded, and grid2op copies the
+backend (for ``obs.simulate``, the runner, the mixes of a ``MultiMixEnv``...). Changes made on
+``env.backend._grid`` directly are therefore lost at the next ``env.reset()``. The backend's own
+setters are kept: they are applied again after ``load_grid``, every ``reset()`` and every
+``copy()``, and survive pickling.
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import LightSimBackend
+    from lightsim2grid.algorithm import ReactiveLimits, DistributedSlack, OuterLoopDriverParams
+
+    # in the constructor: in place before the first powerflow, and on every copy grid2op makes
+    backend = LightSimBackend(algo_type="NROuter_KLU",
+                              outer_loops=[DistributedSlack(), ReactiveLimits(max_pq_pv_switch=5)],
+                              outer_loop_driver_params=OuterLoopDriverParams(max_outer_iterations=30),
+                              resume_outer_state=True)
+    env = grid2op.make("l2rpn_case14_sandbox", backend=backend)
+
+    # or later, on the backend
+    env.backend.set_outer_loops([ReactiveLimits()])
+    env.backend.set_outer_loop_driver_params(OuterLoopDriverParams(max_outer_iterations=20))
+    env.backend.set_resume_outer_state(False)
+    env.backend.set_olf_outer_loops(lf_parameters)   # what OpenLoadFlow would run (needs pypowsybl)
+    env.backend.reset_outer_loops()                  # back to OpenLoadFlow's default list
+
+Nothing set: the grid keeps what its loader put. A setter called after ``env`` was made
+changes ``env.backend`` (and what grid2op rebuilds a backend from), not the copies made before
+it, such as the backend of ``obs.simulate``: give the configuration to the constructor for
+those. ``resume_outer_state`` resumes from the previous ``env.step``; the first solve after a
+``reset()`` or a ``copy()`` starts from the grid.
+
+A loop is rebuilt from its name and its parameters (``loop.name()``, ``loop.get_params()``,
+``make_outer_loop``), which is also how loops pickle and deep-copy.
+
 What the loops read on the grid
 -------------------------------
 
