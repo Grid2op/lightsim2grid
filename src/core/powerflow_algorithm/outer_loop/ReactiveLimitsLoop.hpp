@@ -172,6 +172,8 @@ class LS2G_API ReactiveLimitsLoop final : public BaseOuterLoop
         /// freeze / release a local bus in the algorithm's state
         void _freeze(OuterContext & ctx, ControllerBus & bus, real_type q_mvar, int state) const;
         void _release(OuterContext & ctx, ControllerBus & bus) const;
+        // a resumed solve: the buses frozen again start from the previous solve's magnitude
+        void _restart_frozen_vm(OuterContext & ctx) const;
         /// the robust mode of this solve, and the band out of which a remote controller's own
         /// voltage is unrealistic (the margin applied): the loop's own where set, the driver's
         /// otherwise (OuterContext::driver_params)
