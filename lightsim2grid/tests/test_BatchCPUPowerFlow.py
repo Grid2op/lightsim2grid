@@ -742,6 +742,32 @@ class TestBatchCPUPowerFlowOuterLoops(unittest.TestCase):
         np.testing.assert_allclose(flows.p_or_mw.detach().numpy(), pf.sweep.compute_power_flows(),
                                    rtol=1e-9, atol=1e-9)
 
+    def test_flows_of_some_rows_at_the_taps_the_loops_settled_on(self):
+        try:
+            from test_outer_batch import _tap_grid
+            import pypowsybl  # noqa: F401
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        grid = _tap_grid()
+        pf = self._cls.init_from_grid(grid, algorithm=self._outer, tol=self.TOL, max_iter=30)
+        lp = np.tile(np.asarray(grid.get_load_target_p()), (3, 1))
+        lp[1] *= 1.05
+        lp[2] *= 0.95
+        V = pf(load_p=torch.tensor(lp))
+        self.assertTrue(pf.converged().all())
+        rows, _, _ = pf.sweep.get_outer_trafo_admittances()
+        self.assertGreater(len(rows), 0)       # a tap did move
+        every_row = pf.compute_flows(V).p_or_mw.detach().numpy()
+        # V holds fewer rows than the forward, every branch said connected: which rows they are
+        # is unknown, so the taps the loops left in each cannot be told apart. Refusing is
+        # fine; the grid's taps are not
+        connected = torch.ones((2, pf.n_branch), dtype=torch.bool)
+        try:
+            some_rows = pf.compute_flows(V[1:], connected=connected).p_or_mw.detach().numpy()
+        except ValueError:
+            return
+        np.testing.assert_allclose(some_rows, every_row[1:], rtol=1e-9, atol=1e-9)
+
 
 class TestTorchStaysOptional(unittest.TestCase):
     """torch is an optional dependency, and the only thing that may break if it is

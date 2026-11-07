@@ -292,16 +292,24 @@ class BatchCPUPowerFlow:
         Returns a :class:`BranchFlows`. By default a branch is taken as connected
         where the last :func:`forward` had it connected; pass ``connected``
         ``(n_scen, n_branch)`` to say otherwise. A transformer whose tap the outer
-        loops of the last :func:`forward` moved in a row is taken at that tap there.
+        loops of the last :func:`forward` moved in a row is taken at that tap there:
+        ``V`` then has to hold every row of that forward, in its order (index the flows
+        afterwards for some of them), since nothing else says which row is which.
         """
         torch = _torch()
+        if (self._trafo_moved is not None and len(self._trafo_moved[1]) > 0
+                and V.shape[0] != self._n_scen):
+            raise ValueError(
+                f"`V` holds {V.shape[0]} rows, the last forward {self._n_scen}, whose outer "
+                f"loops moved transformer taps in some rows: the flows would be taken at the "
+                f"wrong taps. Pass the forward's whole `V` and index the flows afterwards.")
         if connected is None:
             connected = self._last_connected
             if connected is None:
                 connected = torch.ones((V.shape[0], self.n_branch), dtype=torch.bool)
         connected = connected & torch.as_tensor(self._branch_alive).unsqueeze(0)
         ys = (self._y_11, self._y_12, self._y_21, self._y_22)
-        if self._trafo_moved is not None and V.shape[0] == self._n_scen:
+        if self._trafo_moved is not None:
             ys = branch_admittances(*ys, V.shape[0], self.n_line, *self._trafo_moved)
         return compute_branch_flows(V, *ys, self._branch_or, self._branch_ex, self._bus_vn_kv,
                                     self.sn_mva, connected)
