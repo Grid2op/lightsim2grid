@@ -305,7 +305,9 @@ The driver follows OpenLoadFlow's engine:
 2. first solve of the Newton-Raphson; the loops only run if it converged;
 3. *passes*: each loop, in order, repeats its check, re-solving after each ``UNSTABLE`` result, until it is
    stable, a solve diverges, or the global cap on outer iterations is reached. Passes are repeated while
-   a pass re-solved;
+   a pass re-solved. A re-solve that takes no Newton step leaves V where it was: the loop's change is
+   then done (``SETTLED``), unless the loop said ``CHECK_AGAIN`` (a loop working in steps, as
+   ``PhaseControl`` and ``TransformerVoltageControl``), which is checked again;
 4. a loop that returns ``FAILED`` stops everything;
 5. the unrealistic-voltage check runs after the last loop able to fix it;
 6. the loops are cleaned up in reverse order.

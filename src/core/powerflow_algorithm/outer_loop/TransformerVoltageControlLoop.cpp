@@ -503,7 +503,7 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
         _freeze_generators(ctx, _limit(ctx.view()), closed);
         _fix_controls(ctx, closed);
         step_ = Step::CONTROL;
-        return OuterLoopStatus::UNSTABLE;
+        return OuterLoopStatus::CHECK_AGAIN;  // the next check is the next step
     }
 
     // CONTROL: the ratios out of their range rounded to their extreme tap
@@ -549,8 +549,8 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
         _release_generators(ctx);
         step_ = Step::COMPLETE;
     }
-    // in any case, the loop must run again
-    return OuterLoopStatus::UNSTABLE;
+    // in any case, the loop must run again: its next check is its next step
+    return OuterLoopStatus::CHECK_AGAIN;
 }
 
 void TransformerVoltageControlLoop::_detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const

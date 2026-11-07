@@ -231,6 +231,7 @@ void bind_solvers(py::module_& m) {
         .value("STABLE", OuterLoopStatus::STABLE)
         .value("UNSTABLE", OuterLoopStatus::UNSTABLE)
         .value("FAILED", OuterLoopStatus::FAILED)
+        .value("CHECK_AGAIN", OuterLoopStatus::CHECK_AGAIN)
         .export_values();
 
     py::class_<OuterDecision>(m, "OuterDecision", DocSolver::OuterDecision.c_str())

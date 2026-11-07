@@ -914,7 +914,8 @@ const std::string DocSolver::OuterLoopStatus = R"mydelimiter(
     What an outer loop concluded after a Newton solve, or the final status of a solve's
     outer loops: STABLE (nothing left to change), UNSTABLE (the cap on outer iterations
     was reached while a loop still had something to change) or FAILED (a loop could not
-    go on).
+    go on). CHECK_AGAIN is only a loop's answer, never a final status: re-solve and check
+    the loop again whatever that solve does (a loop working in steps).
 
 )mydelimiter";
 

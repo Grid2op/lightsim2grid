@@ -37,11 +37,18 @@ struct OuterLoopDriverParams;
 /**
  * What an outer loop's check() concluded, as OpenLoadFlow's OuterLoopStatus:
  *  - STABLE: nothing to change, the loop is done for this pass;
- *  - UNSTABLE: the loop changed something, the Newton has to run again;
+ *  - UNSTABLE: the loop changed something, the Newton has to run again. If that solve takes
+ *    no step (the change left every bus within tolerance) the change is done, and the loop
+ *    is not checked again until a solve moves V: checked on the same state, a loop that
+ *    reads its trigger off V would act again for what it already did;
  *  - FAILED: the loop cannot go on (eg the slack could not be distributed); the whole
- *    solve stops there and is reported as failed.
+ *    solve stops there and is reported as failed;
+ *  - CHECK_AGAIN: the Newton has to run again and the loop be checked after it whatever that
+ *    solve does, as after UNSTABLE in OpenLoadFlow: a loop working in steps (PhaseControl,
+ *    TransformerVoltageControl), whose next check is its next step, changed or not. Never
+ *    the final status of a solve (OuterLoopStats::status).
  */
-enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
+enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED, CHECK_AGAIN };
 
 /**
  * The injections the outer loops edit between two solves, all of it private to the algorithm
@@ -113,9 +120,9 @@ struct LS2G_API OuterInjections
  *   A, against the limiter's). TransformerVoltageControl: SWITCH_ON (|target - v| against the
  *   half deadband, pu), ROUND_TO_RANGE (the ratio and the end it left), ROUND_TAP (the ratio and
  *   the tap position). ShuntVoltageControl: ROUND_SECTIONS (the susceptance solved for, pu).
- * - The driver, under the loop it is about: SETTLED (the loop's change was re-solved in zero
- *   Newton iterations, so V did not move: the change is done, and the loop is not checked
- *   again until a solve moves V; value and limit 0).
+ * - The driver, under the loop it is about: SETTLED (the loop said UNSTABLE and its change was
+ *   re-solved in zero Newton iterations, so V did not move: the change is done, and the loop is
+ *   not checked again until a solve moves V; value and limit 0).
  */
 struct LS2G_API OuterDecision
 {

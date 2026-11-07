@@ -141,8 +141,9 @@ OuterLoopStatus PhaseControlLoop::_check(OuterContext & ctx)
             ctx.record("ROUND_TAP", true, ViolationElementType::TRAFO, s.trafo, LimitViolationType::PHASE_CONTROL_P,
                        a, ptc.alpha_at(s.trafo, best));
         }
-        // OpenLoadFlow re-solves whenever there is a phase shifter, limiters included
-        return OuterLoopStatus::UNSTABLE;
+        // OpenLoadFlow re-solves whenever there is a phase shifter, limiters included; the
+        // next check (the limiters') runs whatever this one moved
+        return OuterLoopStatus::CHECK_AGAIN;
     }
     // the current limiters above their limit move one tap, the way that lowers the current
     bool moved = false;

@@ -238,6 +238,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   the loop shares the rest from the row's own targets, as OpenLoadFlow: a unit the share put at a bound stays there.
 - [FIXED] outer loops: a loop's change re-solved in zero Newton iterations is done, not redone on the same
   state (``DistributedSlack`` oscillated on a thinly spread move). Recorded as ``SETTLED``. Issue #264.
+- [BREAKING] (C++) ``OuterLoopStatus::CHECK_AGAIN``: what a loop working in steps returns for its next check.
+  ``UNSTABLE`` now always means a change, settled by a re-solve that takes no Newton step.
 - [ADDED] (C++) ``BaseAlgo::get_ordering_constraints()``: the Newton system's ordering constraints,
   read-only, so an external solver can order J as ``constrained_ordering`` does (gpusim2grid's GPU batch).
 - [ADDED] ``fill_reducing_ordering`` (KLU-based NR algorithms, part of their config): start the ordering
