@@ -3890,8 +3890,11 @@ const std::string DocLSGrid::check_grid = R"mydelimiter(
 
     This is called automatically when a grid is loaded (from a pickle or from the
     fast binary format), and by the grid loaders (from pandapower, pypowsybl,
-    matpower or powermodels). You normally do not need to call it yourself; it is
-    exposed so you can validate a grid you built or modified by hand.
+    matpower or powermodels). After an ``init_*`` (a grid built by hand), it is also
+    run once by the next :func:`LSGrid.ac_pf`, :func:`LSGrid.dc_pf`,
+    :func:`LSGrid.check_solution` or batch algorithm built on the grid. You normally do
+    not need to call it yourself; it is exposed so you can validate a grid you built
+    or modified by hand as soon as it is complete.
 
     Raises
     ------
@@ -3976,6 +3979,15 @@ const std::string DocLSGrid::get_algo_type = R"mydelimiter(
 )mydelimiter";
 const std::string DocLSGrid::get_dc_algo_type = R"mydelimiter(
     Return the type of the solver currently used to compute DC powerflow.
+
+)mydelimiter";
+const std::string DocLSGrid::get_algo_name = R"mydelimiter(
+    Return the registry name of the solver currently used (for example ``"NR_KLU"``), the name
+    :func:`lightsim2grid.network.LSGrid.change_algorithm` accepts.
+
+    Unlike :func:`lightsim2grid.network.LSGrid.get_algo_type`, it also names the algorithms that have
+    no :class:`lightsim2grid.algorithm.AlgorithmType` value (plugins, and built-ins registered by
+    name only, such as ``NRSing_KLUStaticPivot``), which all read ``AlgorithmType.Custom`` there.
 
 )mydelimiter";
 const std::string DocLSGrid::get_algo = R"mydelimiter(

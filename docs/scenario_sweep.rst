@@ -454,6 +454,7 @@ Detailed usage
 .. automodule:: lightsim2grid.scenarioSweep
     :members:
     :autosummary:
+    :exclude-members: LimitViolation, LimitViolationType, ViolationElementType
 
 * :ref:`genindex`
 * :ref:`modindex`

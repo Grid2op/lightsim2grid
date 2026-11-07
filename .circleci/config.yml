@@ -56,7 +56,9 @@ jobs:
                   command: |    # setuptools~=80.10 => otherwise problem with pkg_resources (imported in oldest grid2op version)
                       source venv_test/bin/activate
                       uv pip install setuptools~=80.10
-                      uv pip install --upgrade pip gym "numpy<2" scipy 
+                      # pip<26.3: from 26.3 on, pip refuses grid2op 1.9.0 / 1.9.1 even with --no-deps
+                      # (their metadata declares a direct-URL ChroniX2Grid dependency under the "test" extra)
+                      uv pip install --upgrade "pip<26.3" gym "numpy<2" scipy
                       uv pip install "pandapower<3" grid2op==1.0.0 "pandas<3"
                       git submodule update --init
                       pip freeze

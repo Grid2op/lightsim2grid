@@ -41,6 +41,7 @@ LSGrid::LSGrid(const LSGrid & other)
     keep_vinit_group_controlled_ = other.keep_vinit_group_controlled_;
     hold_frozen_regulators_ = other.hold_frozen_regulators_;
     sn_mva_ = other.sn_mva_;
+    _has_just_been_init = other._has_just_been_init;
     compute_results_ = other.compute_results_;
     ac_cache_.allow_reuse = other.ac_cache_.allow_reuse;
     dc_cache_.allow_reuse = other.dc_cache_.allow_reuse;
@@ -726,6 +727,8 @@ void LSGrid::check_grid() const
     // from a file, which is set_state's reason for calling this -- should hear it here
     // rather than at the next powerflow.
     _check_vm_targets_agree();
+
+    _has_just_been_init = false;  // reached only when every check passed
 }
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {
@@ -879,6 +882,7 @@ void LSGrid::init_bus(unsigned int n_sub,
     substations_.init_bus(n_sub_, max_nb_bus_per_sub_,  bus_vn_kv);
     _orig_to_ls = IntVect();
     _ls_to_orig = IntVect();
+    _has_just_been_init = true;
 }
 
 void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
@@ -927,6 +931,7 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
                           real_type tol)
 {
     auto timer = CustTimer();
+    check_grid_if_just_init();
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
@@ -1484,6 +1489,7 @@ void LSGrid::check_solution_q_values(Eigen::Ref<CplxVect> res, bool check_q_limi
 
 CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, bool check_q_limits)
 {
+    check_grid_if_just_init();
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     const int nb_bus = static_cast<int>(V_proposed.size());
     bool is_ac = true;
@@ -3218,6 +3224,7 @@ CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
     // ie fake the action of generators to adjust Sbus such that sum(Sbus) = 0
     // and the slack contribution factors are met.
     auto timer = CustTimer();
+    check_grid_if_just_init();
 
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     if(Vinit.size() != nb_bus){

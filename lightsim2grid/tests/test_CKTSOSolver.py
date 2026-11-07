@@ -86,7 +86,6 @@ class MakeTests(unittest.TestCase):
         pvpq = np.r_[pv, pq]
 
         comp_val = np.abs(J - J_pp)  # J already remapped to pandapower [pvpq | pq] order in solver_aux
-        comp_val = comp_val
         assert np.sum(np.abs(comp_val[:len(pvpq), :len(pvpq)])) <= self.tol_test, "J11 (dS_dVa_r) are not equal"
         assert np.sum(np.abs(comp_val[len(pvpq):, :len(pvpq)])) <= self.tol_test, "J21 (dS_dVa_i) are not equal"
         assert np.sum(np.abs(comp_val[:len(pvpq), len(pvpq):])) <= self.tol_test, "J12 (dS_dVm_r) are not equal"

@@ -351,7 +351,7 @@ void bind_batch_shared(py::class_<T> & cls)
              "its set-point at all (this takes its P row back off). ``lambda_`` is what "
              "solve_JT() returned.")
         .def("solve_JT", &T::solve_JT, py::arg("xbar"),
-             "Solve the adjoint system `J_i^T . lambda_i = xbar_i` of every row, and return "
+             "Solve the adjoint system ``J_i^T lambda_i = xbar_i`` of every row, and return "
              "lambda. Requires `keep_jacobian` to have been True during compute().\n\n"
              "`xbar` has shape (nb_rows, k * dim_J): one row per simulation, holding k "
              "cotangents of dim_J coefficients laid end to end. Differentiating a scalar loss "
@@ -572,7 +572,7 @@ void bind_batch_sweep_common(py::class_<T> & cls)
              "Per-step generator target voltage magnitude, shape (n_simul, n_gen), in pu "
              "(vm_pu), NOT kV. "
              "Unlike modify_gen_p/modify_sgen_p/modify_load_p/modify_load_q, this does NOT "
-             "feed the injection (Sbus) -- it only re-seeds |V| at each voltage-regulating "
+             "feed the injection (Sbus) -- it only re-seeds ``|V|`` at each voltage-regulating "
              "generator's regulated bus before that step's solve. See modify_gen_p() for "
              "the shared row-count-lock behavior.\n\n"
              "A bus has ONE voltage magnitude, so a row cannot ask one bus for two. Two "
@@ -628,8 +628,11 @@ void bind_legacy_compute_vs(py::class_<T> & cls)
 {
     cls
         .def("compute_Vs", &T::template compute_Vs<>, py::call_guard<py::gil_scoped_release>(),
-             (DocTimeSeries::compute_Vs + " DEPRECATED: prefer modify_gen_p / modify_sgen_p / "
-              "modify_load_p / modify_load_q + compute() instead.").c_str())
+             // Indented as the rest of the docstring: a line indented differently changes how
+             // it is dedented, and the numpydoc sections are then no longer recognised.
+             (DocTimeSeries::compute_Vs + "    .. warning::\n"
+              "        Deprecated: prefer modify_gen_p / modify_sgen_p / modify_load_p / modify_load_q "
+              "+ compute() instead.\n").c_str())
         .def("get_sbuses", [](const T & self){ return shared_mat_to_array(self.template share_sbuses<>()); }, DocTimeSeries::get_sbuses.c_str());
 }
 

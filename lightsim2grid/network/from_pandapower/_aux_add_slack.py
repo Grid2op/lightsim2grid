@@ -139,3 +139,28 @@ def _aux_add_slack(
         model.add_gen_slackbus(slack_gen_id, slack_coeff[gid])
 
     return added_gen_bus
+
+
+def _aux_add_can_participate_slack(model, pp_net):
+    """
+    Flag every generator of ``pp_net.gen`` with a finite, positive ``slack_weight`` "can
+    participate in the slack" (``LSGrid.set_gen_can_participate_slack``), with that weight:
+    the units the ``DistributedSlack`` outer loop shares the imbalance on, whatever the
+    pandapower version and whether or not the unit is ``slack=True``. The slack
+    participants ``_aux_add_slack`` registered keep their own weight, and so do the
+    generators it added for the ext_grids (they have no row in ``pp_net.gen``).
+
+    Called after ``_aux_add_slack`` and ``_aux_add_gen_p_limits``.
+    """
+    if "slack_weight" not in pp_net.gen or pp_net.gen.shape[0] == 0:
+        return
+    nb_gen = len(model.get_generators())
+    nb_pp_gen = pp_net.gen.shape[0]
+    weights = np.zeros(nb_gen)
+    raw = pp_net.gen["slack_weight"].to_numpy(dtype=float).copy()
+    raw[~np.isfinite(raw)] = 0.
+    weights[:nb_pp_gen] = raw[:nb_pp_gen]
+    flags = weights > 0.
+    if not flags.any():
+        return
+    model.set_gen_can_participate_slack(list(flags), np.where(flags, weights, 0.))

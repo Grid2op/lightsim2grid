@@ -343,6 +343,46 @@ frozen PQ, controllers held, standby SVCs switched on, hvdc regimes, taps, secti
 the grid. Use it for a sequence of ``ac_pf`` calls following each other (a time series). It is
 not OpenLoadFlow's. The batch classes do the same on their own for a ``TimeSeries``.
 
+.. _outer-loops-backend:
+
+With grid2op: ``LightSimBackend``
+---------------------------------
+
+``LightSimBackend.reset()`` rebuilds its grid from the one it loaded, and grid2op copies the
+backend (for ``obs.simulate``, the runner, the mixes of a ``MultiMixEnv``...). Changes made on
+``env.backend._grid`` directly are therefore lost at the next ``env.reset()``. The backend's own
+setters are kept: they are applied again after ``load_grid``, every ``reset()`` and every
+``copy()``, and survive pickling.
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import LightSimBackend
+    from lightsim2grid.algorithm import ReactiveLimits, DistributedSlack, OuterLoopDriverParams
+
+    # in the constructor: in place before the first powerflow, and on every copy grid2op makes
+    backend = LightSimBackend(algo_type="NROuter_KLU",
+                              outer_loops=[DistributedSlack(), ReactiveLimits(max_pq_pv_switch=5)],
+                              outer_loop_driver_params=OuterLoopDriverParams(max_outer_iterations=30),
+                              resume_outer_state=True)
+    env = grid2op.make("l2rpn_case14_sandbox", backend=backend)
+
+    # or later, on the backend
+    env.backend.set_outer_loops([ReactiveLimits()])
+    env.backend.set_outer_loop_driver_params(OuterLoopDriverParams(max_outer_iterations=20))
+    env.backend.set_resume_outer_state(False)
+    env.backend.set_olf_outer_loops(lf_parameters)   # what OpenLoadFlow would run (needs pypowsybl)
+    env.backend.reset_outer_loops()                  # back to OpenLoadFlow's default list
+
+Nothing set: the grid keeps what its loader put. A setter called after ``env`` was made
+changes ``env.backend`` (and what grid2op rebuilds a backend from), not the copies made before
+it, such as the backend of ``obs.simulate``: give the configuration to the constructor for
+those. ``resume_outer_state`` resumes from the previous ``env.step``; the first solve after a
+``reset()`` or a ``copy()`` starts from the grid.
+
+A loop is rebuilt from its name and its parameters (``loop.name()``, ``loop.get_params()``,
+``make_outer_loop``), which is also how loops pickle and deep-copy.
+
 What the loops read on the grid
 -------------------------------
 
@@ -383,7 +423,8 @@ docstrings for the exact conventions):
    * - ``set_dc_distribute_slack_on_can_participate``
      - makes ``dc_pf`` share the imbalance like the ``DistributedSlack`` loop (for the starting angles)
 
-The converters of :mod:`lightsim2grid.network` fill what their source provides.
+The converters of :mod:`lightsim2grid.network` fill what their source provides (for pandapower, see
+:ref:`outer-loops-pandapower`).
 
 Reading what the loops did
 --------------------------
@@ -460,6 +501,55 @@ pypowsybl:
     set_olf_outer_loops(grid, params)           # clear_outer_loops + add_outer_loop for each + set_outer_loop_driver_params
 
 See :doc:`comparison_with_pypowsybl` for how the results compare with pypowsybl's.
+
+.. _outer-loops-pandapower:
+
+From pandapower
+---------------
+
+``init_from_pandapower`` (what :class:`~lightsim2grid.lightSimBackend.LightSimBackend` uses by default) fills
+part of the data, from the element tables and from the controllers of ``net.controller``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Loop
+     - What the converter gives it
+   * - ``TransformerVoltageControl``
+     - a ratio tap changer per transformer with integer ``tap_min`` .. ``tap_max`` and a non-zero ``tap_step_percent``:
+       each step is the transformer the converter builds with ``tap_pos`` at that position (ratio, r, x and magnetising
+       admittance). The regulation comes from an in-service ``DiscreteTapControl`` (target: the middle of
+       ``[vm_lower_pu, vm_upper_pu]``, deadband: that band) or ``ContinuousTapControl`` (``vm_set_pu``, a deadband of
+       twice ``tol``), on the transformer's own ``side`` bus. As in pandapower, a transformer whose regulated bus has an
+       ext_grid does not regulate.
+   * - ``ShuntVoltageControl``
+     - one section per step, ``1`` .. ``max_step``, and the regulation of a ``DiscreteShuntController`` (``vm_set_pu``, a
+       deadband of twice ``tol``, its ``controlled_bus``).
+   * - ``DistributedSlack``
+     - the slack participants only, by default. With ``slack_weight_can_participate=True`` (also a ``loader_kwargs`` key of
+       the backend), every generator with a positive ``slack_weight`` can participate, with that weight, ``slack=True`` or
+       not and for both ``pp_orig_file``. Storage units and static generators never do (pandapower has no weight for them).
+   * - ``ReactiveLimits``
+     - ``min_q_mvar`` / ``max_q_mvar`` of the generators (no capability curve), and ``min_p_mw`` / ``max_p_mw`` as active limits.
+
+Not converted: phase tap changers (a transformer with a non-zero ``tap_step_degree`` keeps a fixed ratio and
+shift), tabular tap changers and shunts (``tap_dependency_table`` / ``step_dependency_table``), the controllers
+of three-winding transformers, and every other controller.
+
+pandapower's discrete tap controller stops at the first tap that brings the voltage within its band, while the loop
+solves the ratio continuously and rounds it to the closest tap: both end within the band, not always on the same tap.
+
+On a single-slack pandapower grid (one ``slack=True`` generator or one ext_grid) no unit off the slack bus can
+participate, so ``DistributedSlack`` has nothing to do and the slack bus takes all of the imbalance. The backend
+warns about it when it runs an ``NROuter_*`` algorithm.
+
+.. warning::
+
+    A generator flagged "can participate in the slack" without being a slack participant joins the (Newton) slack
+    as soon as its set-point is changed within its active limits (``change_p_gen``, which grid2op calls at each
+    step). With ``slack_weight_can_participate=True``, the other algorithms therefore end up distributing the slack
+    on these generators as well. This is why the option is off by default.
 
 Performance and the linear solver
 ---------------------------------

@@ -17,6 +17,7 @@
 #include "powerflow_algorithm/outer_loop/TransformerVoltageControlLoop.hpp"
 #include "powerflow_algorithm/outer_loop/ShuntVoltageControlLoop.hpp"
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
+#include "powerflow_algorithm/outer_loop/DefaultOuterLoops.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
 #include "sparse_helpers.hpp"
@@ -208,6 +209,14 @@ void bind_solvers(py::module_& m) {
                    a.max_realistic_voltage == b.max_realistic_voltage &&
                    a.min_nominal_voltage_realistic_check == b.min_nominal_voltage_realistic_check;
         })
+        // picklable (and deepcopy-able) through its constructor; resume_outer_state is the
+        // algorithm's, not part of these parameters (see LSGrid.set_outer_loop_driver_params)
+        .def("__reduce__", [](const OuterLoopDriverParams & self){
+            return py::make_tuple(py::type::of<OuterLoopDriverParams>(),
+                                  py::make_tuple(self.max_outer_iterations, self.voltage_remote_control_robust_mode,
+                                                 self.min_realistic_voltage, self.max_realistic_voltage,
+                                                 self.min_nominal_voltage_realistic_check));
+        })
         .def("__repr__", [](const OuterLoopDriverParams & self){
             std::ostringstream out;
             out << "OuterLoopDriverParams(max_outer_iterations=" << self.max_outer_iterations
@@ -307,8 +316,29 @@ void bind_solvers(py::module_& m) {
         });
 
     // abstract: the loops themselves are bound with their parameters next to it
+    // A loop is rebuilt from its name and its flattened parameters, as LSGrid::set_state does:
+    // that is also what pickles it (and copy.deepcopy), for every loop type at once.
+    m.def("make_outer_loop",
+          [](const std::string & name, const std::vector<int> & int_params, const std::vector<double> & real_params){
+              AlgoConfig cfg;
+              cfg.int_params = int_params;
+              cfg.real_params = real_params;
+              return make_outer_loop(name, cfg);
+          },
+          py::arg("name"), py::arg("int_params") = std::vector<int>(), py::arg("real_params") = std::vector<double>(),
+          "The outer loop called `name` (BaseOuterLoop.name()) with the parameters `get_params()` gives: "
+          "what a saved loop list is restored from. Raises on an unknown name or parameters the loop refuses.");
+
     py::class_<BaseOuterLoop, std::shared_ptr<BaseOuterLoop> >(m, "BaseOuterLoop", DocSolver::BaseOuterLoop.c_str())
         .def("name", &BaseOuterLoop::name)
+        .def("get_params", &BaseOuterLoop::get_params,
+             "The loop's parameters, flattened as an AlgoConfig (int_params, real_params): with name(), "
+             "what make_outer_loop rebuilds the loop from")
+        .def("__reduce__", [](const BaseOuterLoop & self){
+            const AlgoConfig cfg = self.get_params();
+            py::object factory = py::module_::import("lightsim2grid.lightsim2grid_cpp").attr("make_outer_loop");
+            return py::make_tuple(factory, py::make_tuple(self.name(), cfg.int_params, cfg.real_params));
+        })
         .def("__repr__", [](const BaseOuterLoop & self){ return self.name() + "()"; });
 
     py::class_<DistributedSlackLoop, BaseOuterLoop, std::shared_ptr<DistributedSlackLoop> >(
