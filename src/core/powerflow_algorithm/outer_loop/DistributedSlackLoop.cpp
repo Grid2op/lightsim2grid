@@ -176,6 +176,7 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
         }
         _set_newton_weights(ctx);
     }
+    _mark_solved();  // the first solve runs with these
 }
 
 real_type DistributedSlackLoop::_bound(std::size_t k, bool high) const
@@ -386,6 +387,9 @@ OuterLoopStatus DistributedSlackLoop::_check_in_newton(OuterContext & ctx)
 {
     // where the solve left the units: the driver moved their targets by their share
     _targets_in_force(ctx, current_mw_);
+    // the solve just checked ran with the units parked as the last check left them: the driver
+    // checks this loop again only after a solve
+    _mark_solved();
     // the same cumulative sharing from the initial targets as around a single-slack Newton; what
     // the reference bus kept is not nothing only when every unit is parked
     real_type mismatch = _mismatch_mw(ctx);
@@ -442,6 +446,9 @@ OuterLoopStatus DistributedSlackLoop::_check_in_newton(OuterContext & ctx)
                    unsolved_q, threshold);
         unstable = true;
     }
+    // re-solved with the new weights; a STABLE check's change is not (unless another loop's
+    // re-solve comes after, and this loop is then checked again)
+    if (unstable) _mark_solved();
     return unstable ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
 }
 
@@ -464,9 +471,11 @@ void DistributedSlackLoop::_adjoint_terms(OuterAdjointTerms & out) const
     // from before the row's lost-power share (initial_mw_, the same as injection_mw, which that
     // share does not move) -- a unit that share put at its bound is held there as well
     if (sn_mva_ > 0.) out.inv_sn = 1. / sn_mva_;
-    for (std::size_t k = 0; k < units_.size() && k < parked_.size() && k < unit_solver_bus_.size(); ++k) {
-        if (!parked_[k] || units_[k].kind != slack_redistribution::UnitKind::GENERATOR) continue;
-        if (k < current_mw_.size() && k < initial_mw_.size() && current_mw_[k] == initial_mw_[k]) continue;
+    // As the last Newton solve had them: a unit parked by a check that did not re-solve still
+    // shared the slack in that solve.
+    for (std::size_t k = 0; k < units_.size() && k < solved_parked_.size() && k < unit_solver_bus_.size(); ++k) {
+        if (!solved_parked_[k] || units_[k].kind != slack_redistribution::UnitKind::GENERATOR) continue;
+        if (k < solved_mw_.size() && k < initial_mw_.size() && solved_mw_[k] == initial_mw_[k]) continue;
         out.fixed_p.emplace_back(units_[k].el_id, unit_solver_bus_[k]);
     }
 }

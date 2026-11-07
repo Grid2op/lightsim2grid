@@ -206,5 +206,54 @@ class TestGridPowerFlow(unittest.TestCase):
         np.testing.assert_allclose(p_or[pf.n_line:], np.asarray(pf.grid.get_trafo_res1()[0]), rtol=1e-9, atol=1e-8)
 
 
+
+@unittest.skipUnless(TORCH_AVAILABLE and PP_AVAILABLE, "needs pytorch and pandapower")
+class TestGridPowerFlowParkedAtTheLastCheck(unittest.TestCase):
+    """NROuterDist_*: a unit DistributedSlack parks at a check whose move is too small to
+    re-solve (below moved_fraction * p_residue_eps_mw) still shared the slack in the Newton
+    whose Jacobian the backward reads: its set-point reaches the voltages, as every other
+    unit's does, and the gradient is that of this solve"""
+
+    TOL = 1e-12
+
+    @staticmethod
+    def _grid():
+        from test_outer_dist_batch import _Dist
+        from lightsim2grid.algorithm import DistributedSlack
+        grid = _Dist()._grid()
+        grid.clear_outer_loops()
+        # no move is large enough to re-solve: the first check parks the capped unit and stops
+        grid.add_outer_loop(DistributedSlack(moved_fraction=1e9))
+        return grid
+
+    def _make(self):
+        from lightsim2grid.differentiable import GridPowerFlow
+        return GridPowerFlow(self._grid(), tol=self.TOL, max_iter=30)
+
+    _loss = staticmethod(TestGridPowerFlow._loss)
+
+    def test_gen_p_gradient(self):
+        from test_outer_dist_batch import CAPPED_GEN
+        warnings.filterwarnings("ignore")
+        pf = self._make()
+        gen_p0 = np.asarray(pf.grid.get_gen_target_p()).copy()
+        gen_p = torch.tensor(gen_p0, requires_grad=True)
+        V = pf(gen_p=gen_p)
+        self.assertTrue(pf.converged())
+        stats = pf.grid.get_algo().get_outer_loop_stats()
+        self.assertTrue(any(d.action == "PARK" and d.element_id == CAPPED_GEN for d in stats.decisions))
+        self.assertEqual(stats.nb_outer_iterations, 0)
+        self._loss(V).backward()
+        delta = 1e-4
+        for k in range(gen_p0.shape[0]):
+            out = []
+            for sign in (+1., -1.):
+                x = gen_p0.copy()
+                x[k] += sign * delta
+                out.append(float(self._loss(self._make()(gen_p=torch.tensor(x)))))
+            fd = (out[0] - out[1]) / (2. * delta)
+            self.assertAlmostEqual(gen_p.grad[k].item(), fd, places=6,
+                                   msg=f"gen_p[{k}]: adjoint {gen_p.grad[k].item()} vs fd {fd}")
+
 if __name__ == "__main__":
     unittest.main()

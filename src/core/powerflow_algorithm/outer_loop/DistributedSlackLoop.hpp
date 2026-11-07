@@ -152,6 +152,8 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         void _targets_in_force(const OuterContext & ctx, std::vector<real_type> & out) const;
         /// hand the Newton the units' weights, 0 for the parked ones
         void _set_newton_weights(OuterContext & ctx) const;
+        // what the next (or the last) Newton solve runs with: parked_ and current_mw_, now
+        void _mark_solved() { solved_parked_ = parked_; solved_mw_ = current_mw_; }
         /// unit k's upper (`high`) or lower bound, MW, as slack_redistribution::distribute has it
         /// (0 MW on the side of 0 its initial target is not on); NaN without one
         real_type _bound(std::size_t k, bool high) const;
@@ -177,6 +179,11 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         // whether at its upper one (else its lower one)
         std::vector<char> parked_;
         std::vector<char> parked_high_;
+        // parked_ and current_mw_ as the last Newton solve had them, which its Jacobian (and so
+        // the adjoint, _adjoint_terms) holds: a check that parks a unit with too small a move to
+        // re-solve changes parked_ for no solve
+        std::vector<char> solved_parked_;
+        std::vector<real_type> solved_mw_;
         // the units the row's lost-power share (_share_lost_p) put at a bound, and on which side
         std::vector<char> lost_p_saturated_;
         bool lost_p_high_ = false;
