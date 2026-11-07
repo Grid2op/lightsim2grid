@@ -196,6 +196,40 @@ TEST_CASE("an outer-loop solve without any loop is the single-slack Newton's", "
     CHECK(stats.nr_iterations.size() == 1);
 }
 
+TEST_CASE("NROuterDist with no grid leaves the slack on the reference bus, as a single slack does", "[outer_loop]")
+{
+    // the solver inputs of the radial grid, handed to algorithms that have no grid behind them
+    // (the C++ library used on its own): no loop can run, the Newton shares the slack on the
+    // reference bus alone
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NRSing_SparseLU");
+    REQUIRE(solve(grid).size() == 3);
+    const Eigen::SparseMatrix<ls2g::cplx_type> Ybus = grid.get_Ybus_solver();
+    const CplxVect Sbus = grid.get_Sbus_solver();
+    const ls2g::IntVect pv = grid.get_pv_solver_numpy();
+    const ls2g::IntVect pq = grid.get_pq_solver_numpy();
+    const ls2g::IntVect slack_ids = grid.get_slack_ids_solver_numpy();
+    const RealVect slack_weights = grid.get_slack_weights_solver();
+    REQUIRE(slack_ids.size() == 1);
+    const int ref_bus = slack_ids(0);
+    // a flat start, the slack bus at its generator's magnitude (which LSGrid seeds, not the algorithm)
+    CplxVect V0 = CplxVect::Constant(Ybus.rows(), ls2g::cplx_type(1., 0.));
+    V0(ref_bus) = std::abs(grid.get_V_solver()(ref_bus));
+
+    ls2g::NRSing_SparseLU ref;
+    REQUIRE(ref.compute_pf(Ybus, V0, Sbus, slack_ids, slack_weights, pv, pq, 30, 1e-10));
+    const ls2g::cplx_type mis_ref = ref.get_bus_mismatch()(ref_bus);
+    REQUIRE(std::abs(mis_ref.real()) > 0.1);  // the slack takes the load and the losses
+
+    ls2g::NROuterDist_SparseLU algo;
+    REQUIRE(algo.compute_pf(Ybus, V0, Sbus, slack_ids, slack_weights, pv, pq, 30, 1e-10));
+    CHECK((algo.get_V() - ref.get_V()).cwiseAbs().maxCoeff() < 1e-9);
+    // what the slack took is in the reference bus' mismatch, or still reported as absorbed:
+    // in one place or the other, not lost
+    CHECK(algo.get_bus_mismatch()(ref_bus).real() == Approx(mis_ref.real()).margin(1e-8));
+    CHECK(algo.get_slack_absorbed() == Approx(ref.get_slack_absorbed()).margin(1e-8));
+}
+
 TEST_CASE("the loops run in passes, as OpenLoadFlow's engine runs them", "[outer_loop]")
 {
     auto log = std::make_shared<std::vector<std::string> >();

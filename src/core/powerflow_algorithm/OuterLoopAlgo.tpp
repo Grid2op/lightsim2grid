@@ -303,10 +303,12 @@ void OuterLoopAlgo<Inner>::_fold_slack_share()
     // The share enters the mismatch only through `+ slack_absorbed * weight`, so moving it into
     // the injection leaves the mismatch where it is.
     const real_type sa = inner_.take_slack_absorbed();
-    if (sa == 0. || lsgrid_ptr_ == nullptr) return;
+    if (sa == 0.) return;
     const SlackShareControl * share = inner_.controls().slack_share();
     const real_type total = share != nullptr ? share->total_weight() : 0.;
-    if (total > 0.) {
+    // the units' targets are the grid's: with no grid (the algorithm used on its own) there is
+    // no unit to give a share to, and the reference bus keeps it all, as below
+    if (total > 0. && lsgrid_ptr_ != nullptr) {
         const OuterGridView view(*lsgrid_ptr_, row_);
         const real_type sn_mva = view.sn_mva();
         for (const auto & unit : share->units()) {
