@@ -156,6 +156,38 @@ class TestGridPowerFlow(unittest.TestCase):
         V.real.nan_to_num(0.).sum().backward()
         self.assertTrue((load_p.grad == 0.).all())
 
+    def _resuming_tap_grid(self):
+        """test_outer_batch's tap grid, its solves set to start the loops from where the
+        previous one left them (resume_outer_state): a tap resumed inside its dead band stays
+        where another solve put it"""
+        try:
+            from test_outer_batch import _tap_grid, _resume_on
+            import pypowsybl  # noqa: F401
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        return _resume_on(_tap_grid())
+
+    def test_a_call_does_not_depend_on_the_previous_one_when_the_grid_resumes(self):
+        pf = self._make(self._resuming_tap_grid())
+        load_p = np.asarray(pf.grid.get_load_target_p()).copy()
+        V0 = pf(load_p=torch.tensor(load_p))
+        self.assertTrue(pf.converged())
+        pf(load_p=torch.tensor(1.5 * load_p))
+        V2 = pf(load_p=torch.tensor(load_p))
+        self.assertTrue(pf.converged())
+        np.testing.assert_allclose(V2.numpy(), V0.numpy(), rtol=0., atol=1e-10)
+
+    def test_backward_of_an_older_forward_when_the_grid_resumes(self):
+        pf = self._make(self._resuming_tap_grid())
+        load_p0 = np.asarray(pf.grid.get_load_target_p()).copy()
+        load_p = torch.tensor(load_p0, requires_grad=True)
+        loss_first = self._loss(pf(load_p=load_p))
+        pf(load_p=torch.tensor(1.5 * load_p0))
+        loss_first.backward()   # its powerflow run again, from the same start
+        ref = torch.tensor(load_p0, requires_grad=True)
+        self._loss(self._make(self._resuming_tap_grid())(load_p=ref)).backward()
+        np.testing.assert_allclose(load_p.grad.numpy(), ref.grad.numpy(), rtol=1e-10, atol=1e-12)
+
     def test_flows_at_the_taps_the_loops_settled_on(self):
         try:
             from test_outer_batch import _tap_grid

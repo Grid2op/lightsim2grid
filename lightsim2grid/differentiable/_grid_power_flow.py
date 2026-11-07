@@ -37,13 +37,19 @@ from ._batch_cpu_power_flow import _torch
 
 __all__ = ["GridPowerFlow"]
 
+#: where an NROuter_* algorithm keeps `resume_outer_state` in its AC AlgoConfig (after the
+#: Newton's own integer parameters), as LightSimBackend reads it
+_RESUME_OUTER_STATE_IDX = 5
+
 
 class GridPowerFlow:
     """One AC powerflow, differentiable with respect to the grid's injections and
     generator set-points. See the module docstring.
 
     The grid is copied: the forward writes its inputs into the copy, never into the
-    grid it was given.
+    grid it was given. Each forward starts the outer loops from the grid, even when the
+    grid's algorithm resumes them from its previous solve (``resume_outer_state``): a
+    forward depends on its inputs only.
     """
 
     def __init__(self, grid, *, algorithm=None, max_iter=10, tol=1e-8, v_init=None):
@@ -51,6 +57,7 @@ class GridPowerFlow:
         self._grid = grid.copy()
         if algorithm is not None:
             self._grid.change_algorithm(algorithm)
+        self._solve_afresh()
         self.max_iter = int(max_iter)
         self.tol = float(tol)
         self.sn_mva = float(self._grid.get_sn_mva())
@@ -158,6 +165,20 @@ class GridPowerFlow:
         return self._grid
 
     # ----------------------------------------------------------------- helpers
+    def _solve_afresh(self):
+        """Every forward starts its outer loops from the grid, never from the previous
+        forward (`resume_outer_state`, which the copy keeps from the grid it was given):
+        resumed, a call would depend on the one before it, and the powerflow of an older
+        graph, run again for its backward, would not land where its forward did."""
+        if not self._grid.get_algo().supports_outer_loops():
+            return
+        config = self._grid.get_ac_algo_config()
+        int_params = list(config.int_params)
+        if len(int_params) > _RESUME_OUTER_STATE_IDX and int_params[_RESUME_OUTER_STATE_IDX] != 0:
+            int_params[_RESUME_OUTER_STATE_IDX] = 0
+            config.int_params = int_params
+            self._grid.set_ac_algo_config(config)
+
     def _as_input(self, x, n_cols, name):
         torch = _torch()
         if x is None:
