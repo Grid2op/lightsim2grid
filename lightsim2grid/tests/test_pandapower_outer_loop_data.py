@@ -236,6 +236,10 @@ class TestSlackParticipation(unittest.TestCase):
         self.assertTrue(any("DistributedSlack" in str(el.message) for el in w))
         p = self._solve(grid)
         self.assertAlmostEqual(p[1], 10.)
+        # asked to run anyway (#269): not idle
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack(run_without_participant=True))
+        self.assertFalse(distributed_slack_is_idle(grid))
 
     def test_no_warning_with_another_algorithm(self):
         grid = _convert(_slack_net(), pp_orig_file="pandapower_v2")

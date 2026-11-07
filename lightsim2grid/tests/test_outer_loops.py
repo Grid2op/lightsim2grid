@@ -331,6 +331,39 @@ class TestDistributedSlack(unittest.TestCase):
         p_ref = np.array([gen.res_p_mw for gen in ref.get_generators()])
         self.assertLess(np.abs(p - p_ref).max(), 2e-3)
 
+    def test_run_without_participant(self):
+        """No unit takes part but the slack one (#269): with run_without_participant the loop runs
+        anyway and, as OpenLoadFlow with distributedSlack on, fails at its first check when the
+        slack bus' mismatch is above the threshold; without it the single slack is kept."""
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
+        net = self._net()
+        net.update_loads(id="B3-L", p0=150.)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, gen_slack_id=0)
+        n_gen = len(grid.get_generators())
+        grid.set_gen_can_participate_slack([False] * n_gen, np.ones(n_gen))
+        for algo in (OUTER, DIST):
+            for run, fail, expected in ((False, True, OuterLoopStatus.STABLE),
+                                        (True, False, OuterLoopStatus.STABLE),
+                                        (True, True, OuterLoopStatus.FAILED)):
+                with self.subTest(algo=algo, run=run, fail=fail):
+                    loop = DistributedSlack(slack_bus_p_max_mismatch_mw=1., fail_on_residue=fail,
+                                            run_without_participant=run)
+                    self.assertEqual(loop.run_without_participant, run)
+                    self.assertEqual(pickle.loads(pickle.dumps(loop)).run_without_participant, run)
+                    grid.change_algorithm(algo)
+                    grid.clear_outer_loops()
+                    grid.add_outer_loop(loop)
+                    V = _solve(grid)
+                    stats = grid.get_algo().get_outer_loop_stats()
+                    self.assertEqual(stats.status, expected)
+                    self.assertEqual(V.shape[0] > 0, expected == OuterLoopStatus.STABLE)
+                    if expected == OuterLoopStatus.FAILED:
+                        self.assertEqual(grid.get_algo().get_error(), ErrorType.OuterLoopFailed)
+                        self.assertEqual(stats.failed_loop, "DistributedSlack")
+                        self.assertEqual(stats.nb_outer_iterations, 0)
+
     def test_changed_target_shared_as_a_loaded_one(self):
         """A unit's target changed on the grid (change_p_gen, what the grid2op backend does every
         step) is shared like the same target loaded from the network: the unit, flagged "can
@@ -418,18 +451,27 @@ class TestDistributedSlack(unittest.TestCase):
         self.assertEqual(len(found), 1)
         slack_gen = grid.get_generators()[0]
         self.assertAlmostEqual(found[0].value, slack_gen.res_p_mw - slack_gen.target_p_mw, places=6)
-        # a single slack set up on purpose, with no unit flagged to share it, is not reported
+        # no unit flagged to share it: reported with OpenLoadFlow's loops (distributedSlack on,
+        # its loop runs whatever the participants, #269)...
         grid.set_gen_can_participate_slack([False] * len(list(grid.get_generators())),
                                            np.zeros(len(list(grid.get_generators()))))
         grid.set_storage_can_participate_slack([], np.zeros(0))
+        self.assertTrue(next(loop for loop in grid.get_outer_loops()
+                             if loop.name() == "DistributedSlack").run_without_participant)
         self.assertGreater(_solve(grid).shape[0], 0)
+        self.assertEqual(len([v for v in grid.get_physical_violations()
+                              if v.violation_type == LimitViolationType.SLACK_MISMATCH]), 1)
+        # ... but a single slack set up on purpose (the loop's default) is not
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack())
         self.assertFalse([v for v in grid.get_physical_violations()
                           if v.violation_type == LimitViolationType.SLACK_MISMATCH])
 
     def test_detection_slack_unit_alone_past_its_limit(self):
         """The slack unit, the only one left to share the slack, absorbs enough to leave its
         active range: sharing the mismatch on itself would change nothing, so it is no
-        SLACK_MISMATCH -- the unit past its limit is a LOW_P of its own."""
+        SLACK_MISMATCH -- the unit past its limit is a LOW_P of its own. Unless the loop runs
+        without a participant, as OpenLoadFlow's (#269): the whole mismatch is then reported."""
         from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
         from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationElementType
         net = self._net()
@@ -444,6 +486,10 @@ class TestDistributedSlack(unittest.TestCase):
         grid.set_gen_can_participate_slack([False] * nb_gen, np.zeros(nb_gen))
         grid.set_storage_can_participate_slack([], np.zeros(0))
         self.assertGreater(_solve(grid).shape[0], 0)
+        self.assertEqual(len([v for v in grid.get_physical_violations()
+                              if v.violation_type == LimitViolationType.SLACK_MISMATCH]), 1)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack())
         violations = grid.get_physical_violations()
         self.assertFalse([v for v in violations if v.violation_type == LimitViolationType.SLACK_MISMATCH])
         low_p = [v for v in violations if v.violation_type == LimitViolationType.LOW_P]

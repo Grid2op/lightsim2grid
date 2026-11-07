@@ -40,7 +40,10 @@ class LSGrid;
  * slack unit keeps its flag, see SlackParticipation::set_can_participate) are the same case:
  * they would only take what that bus already absorbs, the same solution, so the loop neither
  * runs nor fails on their limits -- such a unit past its active range is GenPCheck's LOW_P /
- * HIGH_P.
+ * HIGH_P. `Params::run_without_participant` runs it on such a grid all the same, as OpenLoadFlow
+ * does with distributedSlack on, with no participant at all (the slack bus' units are left out:
+ * a slack unit keeps its flag, so the grid cannot tell whether OpenLoadFlow would count it). A
+ * mismatch above the threshold is then all residue: FAILED with `fail_on_residue`.
  * A batch row whose contingency loses active power (OuterRowView::lost_p_mw, a batch's
  * `redistribute_slack`) has it shared on the participants before its first solve, the same
  * way: OpenLoadFlow's security analysis (its Default ContingencyActivePowerLossDistribution)
@@ -84,6 +87,12 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
             /// OpenLoadFlow's PreviousStateInfo.moved: the units moved when they moved by more
             /// than this fraction of p_residue_eps_mw (its margin against rounding)
             real_type moved_fraction = 0.9;
+            /// run (is_needed, and detection mode) even without a unit off the slack bus taking
+            /// part: OpenLoadFlow with distributedSlack on, whose loop exists whatever the
+            /// participants. The slack bus' own units are then no participant (see the class
+            /// comment): with `fail_on_residue`, a mismatch above the threshold fails the solve at
+            /// the first check. Off (the default), such a grid keeps its single slack.
+            bool run_without_participant = false;
         };
 
         DistributedSlackLoop();
@@ -140,6 +149,8 @@ class LS2G_API DistributedSlackLoop final : public BaseOuterLoop
         /// whether some unit of the grid `view` shows takes part in the slack, on another
         /// solver bus than `skip_solver_bus` (-1: anywhere)
         static bool _has_participant(const OuterGridView & view, int skip_solver_bus = -1);
+        /// whether some of these solver buses is not `slack_solver_bus` (-1: any one)
+        static bool _off_slack_bus(const std::vector<int> & solver_bus, int slack_solver_bus);
         /// the participants of the solve's view and their solver buses, collected once per solve
         /// (see OuterSolveCache): asked by _is_needed then _initialize
         void _solve_units(const OuterContext & ctx) const;

@@ -241,6 +241,64 @@ TEST_CASE("without any unit flagged, the loop has nothing to do", "[outer_loop][
     CHECK(gen_p(grid)(1) == Approx(40.));
 }
 
+TEST_CASE("run without a participant: the whole mismatch is residue (#269)", "[outer_loop][distributed_slack]")
+{
+    // OpenLoadFlow with distributedSlack on and no unit to share the slack on: its loop runs and
+    // fails at the first check. The slack unit keeps its flag, but on the slack bus it is none.
+    const auto run = [](bool in_newton, bool fail_on_residue, real_type threshold_mw){
+        LSGrid grid = make_grid({1., 2., 3.});
+        grid.set_gen_can_participate_slack({false, false, false}, RealVect::Zero(3));
+        grid.change_algorithm(in_newton ? "NROuterDist_SparseLU" : "NROuter_SparseLU");
+        grid.clear_outer_loops();
+        DistributedSlackLoop::Params params;
+        params.slack_bus_p_max_mismatch_mw = threshold_mw;
+        params.fail_on_residue = fail_on_residue;
+        params.run_without_participant = true;
+        grid.add_outer_loop(std::make_shared<DistributedSlackLoop>(params));
+        return grid;
+    };
+    for (bool in_newton : {false, true}) {
+        DYNAMIC_SECTION("fail_on_residue, in the Newton: " << (in_newton ? "yes" : "no")) {
+            LSGrid grid = run(in_newton, true, 1.);
+            CHECK(solve(grid).size() == 0);
+            CHECK(grid.get_algo().get_error() == ErrorType::OuterLoopFailed);
+            const ls2g::OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+            CHECK(stats.failed_loop == "DistributedSlack");
+            CHECK(stats.nb_outer_iterations == 0);  // at the first check
+        }
+        DYNAMIC_SECTION("leave it on the slack bus, in the Newton: " << (in_newton ? "yes" : "no")) {
+            LSGrid grid = run(in_newton, false, 1.);
+            REQUIRE(solve(grid).size() == 4);
+            CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+            const RealVect p = gen_p(grid);
+            CHECK(p(1) == Approx(40.));
+            CHECK(p(2) == Approx(60.));
+        }
+        DYNAMIC_SECTION("below the threshold, in the Newton: " << (in_newton ? "yes" : "no")) {
+            LSGrid grid = run(in_newton, true, 1e6);
+            REQUIRE(solve(grid).size() == 4);
+            CHECK(grid.get_algo().get_outer_loop_stats().status == OuterLoopStatus::STABLE);
+        }
+    }
+}
+
+TEST_CASE("run without a participant, with one off the slack bus: as without the switch", "[outer_loop][distributed_slack]")
+{
+    LSGrid ref = make_grid({1., 2., 3.});
+    use_loop(ref, 1e-6, true);
+    REQUIRE(solve(ref).size() == 4);
+    LSGrid grid = make_grid({1., 2., 3.});
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    DistributedSlackLoop::Params params;
+    params.slack_bus_p_max_mismatch_mw = 1e-6;
+    params.run_without_participant = true;
+    grid.add_outer_loop(std::make_shared<DistributedSlackLoop>(params));
+    REQUIRE(solve(grid).size() == 4);
+    const RealVect p = gen_p(grid), p_ref = gen_p(ref);
+    for (int i = 0; i < 3; ++i) CHECK(p(i) == Approx(p_ref(i)).margin(1e-9));
+}
+
 TEST_CASE("only the slack unit flagged: the loop leaves it past its limit, no failure", "[outer_loop][distributed_slack]")
 {
     // the slack generator keeps its flag (it is in the slack) but has nothing to share with:

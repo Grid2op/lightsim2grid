@@ -26,14 +26,17 @@ def distributed_slack_is_idle(grid) -> bool:
     Whether the ``DistributedSlack`` outer loop is in the outer loops of ``grid`` but has
     nothing to act on: no connected unit flagged "can participate in the slack" stands off
     the slack bus, so the slack bus takes all of the active power imbalance. The loop is then
-    dropped at run time, which says nothing on its own.
+    dropped at run time, which says nothing on its own (unless built with
+    ``run_without_participant``: it then runs, and is not idle).
 
     This is what a single-slack grid looks like (one ``slack=True`` generator or one ext_grid
     of a pandapower grid): see ``init_from_pandapower(slack_weight_can_participate=True)``
     or ``LSGrid.set_gen_can_participate_slack`` to give it units to share on.
     """
     from lightsim2grid.algorithm import DistributedSlack
-    if not any(isinstance(loop, DistributedSlack) for loop in grid.get_outer_loops()):
+    loops = [loop for loop in grid.get_outer_loops() if isinstance(loop, DistributedSlack)]
+    # run_without_participant: the loop runs (and may fail) whatever the units
+    if not loops or any(loop.run_without_participant for loop in loops):
         return False
     slack_bus = _slack_bus(grid)
     if slack_bus is None:

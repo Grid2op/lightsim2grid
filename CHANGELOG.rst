@@ -308,6 +308,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   crashing or being silently ignored (#259).
 - [ADDED] ``LSGrid.set_resume_outer_state`` / ``get_resume_outer_state``: a shortcut for the
   ``resume_outer_state`` flag of the ``NROuter_*`` AC algorithm (#258).
+- [ADDED] ``DistributedSlack(run_without_participant=True)``: the loop runs, and with ``fail_on_residue``
+  fails, without a unit off the slack bus, as OpenLoadFlow does. ``olf_outer_loops``, hence every grid
+  ``init_from_pypowsybl`` builds, sets it (#269).
 
 
 [1.3.0] 2026-11-03

@@ -120,10 +120,9 @@ void DistributedSlackLoop::_solve_units(const OuterContext & ctx) const
 bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
 {
     // a unit off the slack bus to take the mismatch: the slack bus' own units would only take
-    // what it already absorbs (see the class comment)
+    // what it already absorbs (see the class comment). Unless asked to run anyway.
     _solve_units(ctx);
-    const int skip = ctx.slack_bus;
-    return std::any_of(solve_unit_bus_.begin(), solve_unit_bus_.end(), [skip](int bus){ return bus != skip; });
+    return params_.run_without_participant || _off_slack_bus(solve_unit_bus_, ctx.slack_bus);
 }
 
 void DistributedSlackLoop::_initialize(OuterContext & ctx)
@@ -136,6 +135,12 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
     _solve_units(ctx);
     units_ = solve_units_;
     unit_solver_bus_ = solve_unit_bus_;
+    // run without a unit off the slack bus: no participant, its own units would only take what
+    // it already absorbs (and a slack unit keeps its flag: the grid cannot say it takes no part)
+    if (!_off_slack_bus(unit_solver_bus_, ctx.slack_bus)) {
+        units_.clear();
+        unit_solver_bus_.clear();
+    }
     sn_mva_ = ctx.grid->get_sn_mva();
     // a unit starts from its target in force: the one a solve resumed from left it at (a batch
     // row from its "n" solve, as OpenLoadFlow's contingencies start from the targetP of the
@@ -318,9 +323,15 @@ void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitVi
     real_type mismatch = 0.;
     if(!_triggered(ctx, mismatch)) return;
     // the same rule as is_needed; the outer-loop mode never gets here otherwise
-    if(ctx.is_detection() && !_has_participant(ctx.view(), ctx.slack_bus)) return;
+    if(ctx.is_detection() && !params_.run_without_participant && !_has_participant(ctx.view(), ctx.slack_bus)) return;
     out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::SLACK_MISMATCH,
                                  mismatch, params_.slack_bus_p_max_mismatch_mw, std::string()});
+}
+
+bool DistributedSlackLoop::_off_slack_bus(const std::vector<int> & solver_bus, int slack_solver_bus)
+{
+    return std::any_of(solver_bus.begin(), solver_bus.end(),
+                       [slack_solver_bus](int bus){ return bus != slack_solver_bus; });
 }
 
 bool DistributedSlackLoop::_has_participant(const OuterGridView & view, int skip_solver_bus)
@@ -328,13 +339,14 @@ bool DistributedSlackLoop::_has_participant(const OuterGridView & view, int skip
     std::vector<slack_redistribution::Participant> units;
     std::vector<int> solver_bus;
     collect_units(view, units, solver_bus);
-    return std::any_of(solver_bus.begin(), solver_bus.end(),
-                       [skip_solver_bus](int bus){ return bus != skip_solver_bus; });
+    return _off_slack_bus(solver_bus, skip_solver_bus);
 }
 
 OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
 {
-    if (_in_newton(ctx)) return _check_in_newton(ctx);
+    // with no unit at all, the Newton shares nothing: the reference bus' mismatch is checked
+    // against the threshold as around a single-slack Newton
+    if (_in_newton(ctx) && !units_.empty()) return _check_in_newton(ctx);
     real_type mismatch = 0.;
     const bool triggered = _triggered(ctx, mismatch);
     ctx.record("DISTRIBUTE", triggered, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
@@ -446,7 +458,7 @@ OuterLoopStatus DistributedSlackLoop::_check_in_newton(OuterContext & ctx)
 AlgoConfig DistributedSlackLoop::_get_params() const
 {
     AlgoConfig cfg;
-    cfg.int_params = {params_.fail_on_residue ? 1 : 0};
+    cfg.int_params = {params_.fail_on_residue ? 1 : 0, params_.run_without_participant ? 1 : 0};
     cfg.real_params = {static_cast<double>(params_.slack_bus_p_max_mismatch_mw),
                        static_cast<double>(params_.p_residue_eps_mw),
                        static_cast<double>(params_.moved_fraction)};
