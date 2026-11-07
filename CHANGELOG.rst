@@ -277,6 +277,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] the ``gen_v`` gradient of a generator whose bus a batch row keeps pinned PV was 0.
 - [BREAKING] (C++ / plugins) ``BaseAlgo::get_adjoint_solve_info``, and ``BaseOuterLoop::adjoint_terms``:
   plugins must be rebuilt.
+- [BREAKING] batch classes: ``get_gen_v_target_bus`` / ``get_gen_v_share`` now include generators on buses a
+  row may switch PQ, and ``gen_v_indirect_grad`` is weighted per row: weight the direct half by
+  ``get_gen_v_share_rows``.
 - [ADDED] ``NROuterDist_*`` algorithms: the outer loops around a Newton that shares the slack itself.
   ``DistributedSlack`` only caps the units pushed past ``min_p`` / ``max_p`` / 0 MW, out of the share.
 - [FIXED] ``ContingencyPropagator``: breakers right at a terminal whose other switches are breakers stay
