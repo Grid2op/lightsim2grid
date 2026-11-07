@@ -43,6 +43,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _amps_flows(),
             _active_power_flows()
             {
+                // a grid built by hand with init_* is validated once, here, and not
+                // before every row (see LSGrid::check_grid_if_just_init)
+                _grid_model.check_grid_if_just_init();
                 // give the internal solvers access to the (copied) grid: the
                 // hvdc angle-droop data flows through this pointer (the member
                 // _grid_model has a stable address, the class is not copyable)
