@@ -28,6 +28,11 @@ Take each suspected bug through these steps on its own:
    - Python goes in `lightsim2grid/tests/`, using `unittest`, in the file that
      already covers that area if one exists. C++-only behaviour goes in `src/tests/`
      (Catch2). Use the smallest grid that shows the problem.
+   - Give the test a docstring or comment that a reviewer can check against the bug
+     report. It names the issue if there is one (`# issue #258: ...`, as the
+     existing tests do) or the PR it belongs to, and says in a sentence or two what
+     was wrong and what the test checks. Describe the behaviour, not numbers
+     measured while investigating (see `CLAUDE.md`).
    - Run it against the **unfixed** code and check that it fails, and that it fails
      **for the reason claimed**. That means an assertion on the wrong value or a
      wrong exception, not an `ImportError`, a missing data file or a typo in the test.
