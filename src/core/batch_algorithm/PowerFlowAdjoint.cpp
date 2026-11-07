@@ -161,5 +161,16 @@ IntVect bus_map_to_grid(const SolverBusLayout & layout, const IntVect & solver_k
     return res;
 }
 
+IntVect target_bus_to_grid(const SolverBusLayout & layout, const IntVect & target_bus)
+{
+    const auto solver_to_me = layout.id_solver_to_me.as_eigen();
+    IntVect res = IntVect::Constant(target_bus.size(), -1);
+    for(Eigen::Index g = 0; g < res.size(); ++g){
+        const int b = target_bus[g];
+        if(b >= 0 && b < solver_to_me.size()) res[g] = solver_to_me[b];
+    }
+    return res;
+}
+
 }  // namespace power_flow_adjoint
 }  // namespace ls2g

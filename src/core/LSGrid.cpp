@@ -1155,14 +1155,7 @@ RealVect LSGrid::gen_p_indirect_grad(const Eigen::Ref<const RealVect> & lambda)
 IntVect LSGrid::get_gen_v_target_bus()
 {
     const AdjointPrep & prep = _prepare_adjoint("get_gen_v_target_bus");
-    const power_flow_adjoint::GenVLayout & layout = prep.layout;
-    const auto solver_to_me = ac_cache_.id_solver_to_me.as_eigen();
-    IntVect res = IntVect::Constant(layout.target_bus.size(), -1);
-    for(Eigen::Index g = 0; g < res.size(); ++g){
-        const int b = layout.target_bus[g];
-        if(b >= 0 && b < solver_to_me.size()) res[g] = solver_to_me[b];
-    }
-    return res;
+    return power_flow_adjoint::target_bus_to_grid(ac_cache_, prep.layout.target_bus);
 }
 
 RealVect LSGrid::get_gen_v_share()

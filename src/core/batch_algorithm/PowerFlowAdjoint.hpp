@@ -90,6 +90,9 @@ void gen_p_indirect(const AdjointSolveInfo & info, const real_type * lambda, rea
 /** A solver-bus-keyed map re-keyed on grid buses, -1 where the bus is not solved. */
 IntVect bus_map_to_grid(const SolverBusLayout & layout, const IntVect & solver_keyed);
 
+/** GenVLayout::target_bus (solver buses) as grid buses, -1 where a generator has none. */
+IntVect target_bus_to_grid(const SolverBusLayout & layout, const IntVect & target_bus);
+
 }  // namespace power_flow_adjoint
 
 }  // namespace ls2g

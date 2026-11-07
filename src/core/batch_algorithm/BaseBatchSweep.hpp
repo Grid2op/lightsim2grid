@@ -1236,14 +1236,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // target too: its set-point reaches a row while the bus is pinned PV there, and
         // nothing while it is PQ -- which get_gen_v_share_rows says, row by row.
         IntVect get_gen_v_target_bus() const {
-            const power_flow_adjoint::GenVLayout layout = _gen_v_layout();
-            const auto solver_to_me = active_layout().id_solver_to_me.as_eigen();
-            IntVect res = IntVect::Constant(layout.target_bus.size(), -1);
-            for(Eigen::Index g = 0; g < res.size(); ++g){
-                const int b = layout.target_bus[g];
-                if(b >= 0 && b < solver_to_me.size()) res[g] = solver_to_me[b];
-            }
-            return res;
+            return power_flow_adjoint::target_bus_to_grid(active_layout(), _gen_v_layout().target_bus);
         }
 
         // How much of its bus' derivative each generator carries: 1 where it is the only
