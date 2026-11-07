@@ -887,6 +887,7 @@ void LSGrid::init_bus(unsigned int n_sub,
 
 void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 {
+    _invalidate_adjoint();
     // A family's solver-side data is ONE object, so "reset the AC side" is one
     // call. What clear() deliberately leaves alone is the two policy flags:
     // `allow_reuse` is the caller's standing choice and a reset is not a request
@@ -931,6 +932,7 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
                           real_type tol)
 {
     auto timer = CustTimer();
+    _invalidate_adjoint();  // whatever happens below, the algorithm's last solve is not the one it was
     check_grid_if_just_init();
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     if(Vinit.size() != nb_bus){
@@ -1027,7 +1029,7 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
 
 // ---- reverse-mode differentiation of the last AC powerflow ----------------------------
 
-void LSGrid::_prepare_adjoint(const char * fun_name, AdjointSolveInfo & info, std::vector<int> & vm_buses)
+const LSGrid::AdjointPrep & LSGrid::_prepare_adjoint(const char * fun_name)
 {
     if(!_algo.supports_jacobian()){
         std::ostringstream exc_;
@@ -1054,56 +1056,50 @@ void LSGrid::_prepare_adjoint(const char * fun_name, AdjointSolveInfo & info, st
                 "again right before asking for the gradient.";
         throw std::runtime_error(exc_.str());
     }
-    _algo.refresh_J_at_solution();
-    vm_buses = power_flow_adjoint::gen_v_layout(*this, ac_cache_, ac_cache_.voltage_control).vm_buses;
-    _algo.get_adjoint_solve_info(vm_buses, info);
+    // the checks above are made at every call; what follows depends on the solve alone (the
+    // grid unchanged, the algorithm untouched since: see _invalidate_adjoint)
+    if(!adjoint_prep_.valid){
+        _algo.refresh_J_at_solution();
+        adjoint_prep_.layout = power_flow_adjoint::gen_v_layout(*this, ac_cache_, ac_cache_.voltage_control);
+        _algo.get_adjoint_solve_info(adjoint_prep_.layout.vm_buses, adjoint_prep_.info);
+        adjoint_prep_.valid = true;
+    }
+    return adjoint_prep_;
 }
 
 int LSGrid::dim_J()
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("dim_J", info, vm_buses);
+    _prepare_adjoint("dim_J");
     return static_cast<int>(_algo.get_J().rows());
 }
 
 IntVect LSGrid::get_theta_col_of_bus()
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("get_theta_col_of_bus", info, vm_buses);
+    _prepare_adjoint("get_theta_col_of_bus");
     return power_flow_adjoint::bus_map_to_grid(ac_cache_, _algo.get_theta_to_J_col_python());
 }
 
 IntVect LSGrid::get_vm_col_of_bus()
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("get_vm_col_of_bus", info, vm_buses);
+    _prepare_adjoint("get_vm_col_of_bus");
     return power_flow_adjoint::bus_map_to_grid(ac_cache_, _algo.get_vm_to_J_col_python());
 }
 
 IntVect LSGrid::get_p_row_of_bus()
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("get_p_row_of_bus", info, vm_buses);
+    _prepare_adjoint("get_p_row_of_bus");
     return power_flow_adjoint::bus_map_to_grid(ac_cache_, _algo.get_p_to_J_row_python());
 }
 
 IntVect LSGrid::get_q_row_of_bus()
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("get_q_row_of_bus", info, vm_buses);
+    _prepare_adjoint("get_q_row_of_bus");
     return power_flow_adjoint::bus_map_to_grid(ac_cache_, _algo.get_q_to_J_row_python());
 }
 
 LSGrid::AdjointMat LSGrid::solve_JT(const Eigen::Ref<const AdjointMat> & xbar)
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("solve_JT", info, vm_buses);
+    const AdjointPrep & prep = _prepare_adjoint("solve_JT");
     const Eigen::Ref<const Eigen::SparseMatrix<real_type> > J = _algo.get_J();
     const Eigen::Index dim = J.rows();
     if(xbar.cols() != dim || xbar.rows() == 0){
@@ -1118,7 +1114,7 @@ LSGrid::AdjointMat LSGrid::solve_JT(const Eigen::Ref<const AdjointMat> & xbar)
     adjoint.allocate(1, J);
     adjoint.store_row(0, J);
     std::vector<std::vector<int> > identity(1);
-    power_flow_adjoint::identity_rows(info, nullptr, _algo.get_p_to_J_row_python(), _algo.get_q_to_J_row_python(), identity[0]);
+    power_flow_adjoint::identity_rows(prep.info, nullptr, _algo.get_p_to_J_row_python(), _algo.get_q_to_J_row_python(), identity[0]);
     const AdjointMat flat = Eigen::Map<const AdjointMat>(AdjointMat(xbar).data(), 1, xbar.rows() * dim);
     std::vector<char> ok;
     const AdjointMat lambda = adjoint.solve_JT(flat, identity, 1, ok);
@@ -1131,41 +1127,35 @@ LSGrid::AdjointMat LSGrid::solve_JT(const Eigen::Ref<const AdjointMat> & xbar)
 
 RealVect LSGrid::gen_v_indirect_grad(const Eigen::Ref<const RealVect> & lambda)
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("gen_v_indirect_grad", info, vm_buses);
+    const AdjointPrep & prep = _prepare_adjoint("gen_v_indirect_grad");
     if(lambda.size() != _algo.get_J().rows()){
         throw std::runtime_error("LSGrid::gen_v_indirect_grad: lambda must have dim_J entries: pass what solve_JT returned.");
     }
-    const power_flow_adjoint::GenVLayout layout = power_flow_adjoint::gen_v_layout(*this, ac_cache_, ac_cache_.voltage_control);
+    const power_flow_adjoint::GenVLayout & layout = prep.layout;
     RealVect res = RealVect::Zero(layout.share.size());
     const RealVect lam = lambda;
-    power_flow_adjoint::gen_v_indirect(layout, info, _algo.get_vm_to_J_col_python(), _algo.get_group_v_row(),
+    power_flow_adjoint::gen_v_indirect(layout, prep.info, _algo.get_vm_to_J_col_python(), _algo.get_group_v_row(),
                                        lam.data(), res.data());
     return res;
 }
 
 RealVect LSGrid::gen_p_indirect_grad(const Eigen::Ref<const RealVect> & lambda)
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("gen_p_indirect_grad", info, vm_buses);
+    const AdjointPrep & prep = _prepare_adjoint("gen_p_indirect_grad");
     if(lambda.size() != _algo.get_J().rows()){
         throw std::runtime_error("LSGrid::gen_p_indirect_grad: lambda must have dim_J entries: pass what solve_JT returned.");
     }
     const Eigen::Index nb_gen = static_cast<Eigen::Index>(generators_.nb());
     RealVect res = RealVect::Zero(nb_gen);
     const RealVect lam = lambda;
-    power_flow_adjoint::gen_p_indirect(info, lam.data(), res.data(), nb_gen);
+    power_flow_adjoint::gen_p_indirect(prep.info, lam.data(), res.data(), nb_gen);
     return res;
 }
 
 IntVect LSGrid::get_gen_v_target_bus()
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("get_gen_v_target_bus", info, vm_buses);
-    const power_flow_adjoint::GenVLayout layout = power_flow_adjoint::gen_v_layout(*this, ac_cache_, ac_cache_.voltage_control);
+    const AdjointPrep & prep = _prepare_adjoint("get_gen_v_target_bus");
+    const power_flow_adjoint::GenVLayout & layout = prep.layout;
     const auto solver_to_me = ac_cache_.id_solver_to_me.as_eigen();
     IntVect res = IntVect::Constant(layout.target_bus.size(), -1);
     for(Eigen::Index g = 0; g < res.size(); ++g){
@@ -1177,13 +1167,11 @@ IntVect LSGrid::get_gen_v_target_bus()
 
 RealVect LSGrid::get_gen_v_share()
 {
-    AdjointSolveInfo info;
-    std::vector<int> vm_buses;
-    _prepare_adjoint("get_gen_v_share", info, vm_buses);
-    const power_flow_adjoint::GenVLayout layout = power_flow_adjoint::gen_v_layout(*this, ac_cache_, ac_cache_.voltage_control);
+    const AdjointPrep & prep = _prepare_adjoint("get_gen_v_share");
+    const power_flow_adjoint::GenVLayout & layout = prep.layout;
     const IntVect vm_col = _algo.get_vm_to_J_col_python();
     RealVect res = RealVect::Zero(layout.share.size());
-    for(Eigen::Index g = 0; g < res.size(); ++g) res[g] = power_flow_adjoint::share_in_solve(layout, info, vm_col, g);
+    for(Eigen::Index g = 0; g < res.size(); ++g) res[g] = power_flow_adjoint::share_in_solve(layout, prep.info, vm_col, g);
     return res;
 }
 

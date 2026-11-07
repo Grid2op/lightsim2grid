@@ -51,6 +51,7 @@
 
 // import newton raphson solvers using different linear algebra solvers
 #include "AlgorithmSelector.hpp"
+#include "batch_algorithm/PowerFlowAdjoint.hpp"
 
 namespace ls2g {
 
@@ -356,6 +357,7 @@ class LS2G_API LSGrid final
                 _dc_algo.change_algorithm(type);
                 algo_controler_.dc_algo_controler().tell_all_changed();
             } else {
+                _invalidate_adjoint();
                 _algo.change_algorithm(type);
                 algo_controler_.ac_algo_controler().tell_all_changed();
             }
@@ -367,6 +369,7 @@ class LS2G_API LSGrid final
             // Peek at IS_AC to decide which slot to update.
             std::unique_ptr<BaseAlgo> tmp = AlgorithmRegistry::instance().make(name);
             if (tmp->IS_AC) {
+                _invalidate_adjoint();
                 _algo.change_algorithm(name);
                 // Same courtesy as the enum overload above, and it used to be missing
                 // here: a fast-decoupled solve reads Bp / Bpp, which only
@@ -1153,7 +1156,7 @@ class LS2G_API LSGrid final
         // algo config (scaling/refactor policy params) — also part of StateRes,
         // see LSGrid::get_state()/set_state()
         [[nodiscard]] AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
-        void set_ac_algo_config(const AlgoConfig& cfg) { _algo.set_config(cfg); }
+        void set_ac_algo_config(const AlgoConfig& cfg) { _invalidate_adjoint(); _algo.set_config(cfg); }
         [[nodiscard]] AlgoConfig get_dc_algo_config() const { return _dc_algo.get_config(); }
         void set_dc_algo_config(const AlgoConfig& cfg) { _dc_algo.set_config(cfg); }
         template<class T>
@@ -3147,10 +3150,21 @@ class LS2G_API LSGrid final
         }
     
     protected:
+        // What the reverse-mode entry points work from, out of the last AC solve: the
+        // Jacobian refreshed at the solution, the gen_v layout and the solve's own
+        // description. Worked out once per solve (a backward reads it several times).
+        struct AdjointPrep {
+            bool valid = false;
+            power_flow_adjoint::GenVLayout layout;
+            AdjointSolveInfo info;
+        };
         // The checks every reverse-mode entry point makes (an AC Newton-Raphson, converged,
-        // the grid unchanged since), then the Jacobian refreshed at the solution and the
-        // solve's own description read: what solve_JT and friends work from.
-        void _prepare_adjoint(const char * fun_name, AdjointSolveInfo & info, std::vector<int> & vm_buses);
+        // the grid unchanged since), then the AdjointPrep of the last solve.
+        const AdjointPrep & _prepare_adjoint(const char * fun_name);
+        // the AC algorithm may hold another solve, or another state of it: work the
+        // AdjointPrep out again on the next read (every ac_pf, change of algorithm, of its
+        // config, reset)
+        void _invalidate_adjoint() { adjoint_prep_.valid = false; }
 
         /**
          * THE BUILD. Everything a solver family needs, assembled out of this grid
@@ -3636,6 +3650,7 @@ class LS2G_API LSGrid final
 
         // to solve the newton raphson
         AlgorithmSelector _algo;
+        AdjointPrep adjoint_prep_;  // see _prepare_adjoint; a copy starts without one
         AlgorithmSelector _dc_algo;
         // see set_dc_distribute_slack_on_can_participate; whether the DC cache's weights are
         // the "can participate" ones (the option is on and some unit is flagged)
