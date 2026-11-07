@@ -219,5 +219,39 @@ class TestDistLostPowerParksTheUnitsItSaturates(unittest.TestCase):
         np.testing.assert_allclose(shares, shares[0], rtol=0., atol=1e-6)
         self.assertGreater(shares.sum() + (self.C_MAX_P - p_n[self.UNIT_C]), p_n[self.UNIT_B])
 
+
+class TestDistAdjointOfALoopLeftOut(_Dist, unittest.TestCase):
+    """the adjoint of a solve reads the loops that took part in it: a loop left out of a solve
+    (OpenLoadFlow's isNeeded said no) is not initialized, and still holds what an earlier solve
+    left in it -- here the unit DistributedSlack parked -- which says nothing of this solve"""
+
+    SLACK_GEN = 4  # case14's slack unit, on the reference bus
+
+    def _only_the_slack_unit_participates(self, grid):
+        nb_gen = len(grid.get_generators())
+        grid.set_gen_can_participate_slack([g == self.SLACK_GEN for g in range(nb_gen)], np.full(nb_gen, 300.))
+
+    def test_gen_p_terms_of_a_loop_left_out(self):
+        grid = self._grid()
+        self.assertGreater(grid.ac_pf(tob._v0(grid), tob.MAX_IT, tob.TOL).size, 0)
+        stats = grid.get_algo().get_outer_loop_stats()
+        self.assertTrue(any(d.action == "PARK" and d.element_id == CAPPED_GEN for d in stats.decisions))
+        # the slack unit alone shares the slack: DistributedSlack has nothing to do
+        self._only_the_slack_unit_participates(grid)
+        V = grid.ac_pf(tob._v0(grid), tob.MAX_IT, tob.TOL)
+        self.assertGreater(V.size, 0)
+        stats = grid.get_algo().get_outer_loop_stats()
+        self.assertNotIn("DistributedSlack", [name for name, _ in stats.loop_iterations])
+
+        # the same solve on a grid that never ran the loop
+        ref = self._grid()
+        self._only_the_slack_unit_participates(ref)
+        V_ref = ref.ac_pf(tob._v0(ref), tob.MAX_IT, tob.TOL)
+        np.testing.assert_allclose(V, V_ref, rtol=0., atol=1e-12)
+        self.assertEqual(grid.dim_J(), ref.dim_J())
+        lam = 1. + 0.1 * np.arange(grid.dim_J())
+        np.testing.assert_allclose(grid.gen_p_indirect_grad(lam), ref.gen_p_indirect_grad(lam), rtol=0., atol=1e-12)
+
+
 if __name__ == "__main__":
     unittest.main()

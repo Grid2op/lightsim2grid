@@ -32,6 +32,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     total_nr_iterations_ = 0;
     unrealistic_ = false;
     solve_cache_.reset();  // a new solve: a new view (the row, its grid)
+    in_last_solve_.assign(loops_.size(), 0);
 
     // the loops edit these, never the grid's
     Sbus_init_ = Sbus;
@@ -105,8 +106,10 @@ bool OuterLoopAlgo<Inner>::compute_pf(
             ctx.Va = nullptr;
             ctx.Vm = nullptr;
         }
-        for (auto & loop : loops_) {
-            if (loop->is_needed(ctx)) active.push_back(loop.get());
+        for (std::size_t k = 0; k < loops_.size(); ++k) {
+            if (!loops_[k]->is_needed(ctx)) continue;
+            active.push_back(loops_[k].get());
+            in_last_solve_[k] = 1;
         }
         for (BaseOuterLoop * loop : active) {
             const std::size_t first_decision = stats_.decisions.size();
@@ -500,7 +503,9 @@ void OuterLoopAlgo<Inner>::get_adjoint_solve_info(const std::vector<int> & vm_bu
 {
     inner_.algo().get_adjoint_solve_info(vm_buses, out);
     OuterAdjointTerms terms;
-    for(const auto & loop : loops_) loop->adjoint_terms(terms);
+    for(std::size_t k = 0; k < loops_.size() && k < in_last_solve_.size(); ++k){
+        if(in_last_solve_[k]) loops_[k]->adjoint_terms(terms);
+    }
     if(terms.q_slopes.empty() && terms.fixed_p.empty()) return;
     const IntVect p_row = inner_.algo().get_p_to_J_row_python();
     const IntVect q_row = inner_.algo().get_q_to_J_row_python();

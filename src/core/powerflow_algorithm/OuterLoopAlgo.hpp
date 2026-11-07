@@ -85,6 +85,7 @@ public:
         for(const auto & loop : loops) signature.push_back(_signature(*loop));
         if(signature == signature_) return;  // same list: keep the loops (and the sparsity)
         loops_.clear();
+        in_last_solve_.clear();
         has_carry_ = false;  // new loops: nothing to resume from
         loops_.reserve(loops.size());
         for(const auto & loop : loops) loops_.push_back(loop->clone());
@@ -288,6 +289,10 @@ private:
     Inner inner_;
 
     std::vector<std::unique_ptr<BaseOuterLoop> > loops_;
+    // which of loops_ took part in the last solve (OpenLoadFlow's isNeeded): a loop left out
+    // was not initialized and still holds an earlier solve's state, which the adjoint of this
+    // one must not read
+    std::vector<char> in_last_solve_;
     std::vector<std::string> signature_;
     OuterLoopDriverParams params_;
     OuterLoopStats stats_;
