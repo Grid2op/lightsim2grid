@@ -321,8 +321,10 @@ class BatchCPUPowerFlow:
         return self._sweep
 
     def adjoint_memory_bytes(self):
-        """Bytes the kept Jacobians of the last call occupy. Grows as
-        ``n_scenarios * nnz(J)``: worth watching before scaling a batch up."""
+        """Bytes the values of the kept Jacobians of the last call occupy:
+        ``n_scenarios * nnz(J)`` floats, worth watching before scaling a batch up.
+        What each row keeps besides its Jacobian for the gradient (the ``dF/d|V|``
+        column of every generator's target bus, ...) comes on top, usually a fraction of it."""
         return self._sweep.adjoint_memory_bytes()
 
     # ----------------------------------------------------------------- helpers

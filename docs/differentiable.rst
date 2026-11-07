@@ -82,7 +82,10 @@ already had:
 The price is memory: the converged Jacobian of every row is kept, which is
 ``n_scenarios * nnz(J)`` floats. On a large grid with a large batch that is
 gigabytes -- :func:`BatchCPUPowerFlow.adjoint_memory_bytes` reports it, and it
-is worth reading before scaling a batch up.
+is worth reading before scaling a batch up. Each row also keeps what its gradient
+reads besides the Jacobian (the ``dF/d|V|`` column of every generator's target bus,
+the rows pinned, the ``gen_p`` corrections), which that figure leaves out: it grows
+with the number of voltage-regulated buses and is usually a fraction of the Jacobians.
 
 One grid
 --------

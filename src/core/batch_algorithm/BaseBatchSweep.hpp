@@ -1158,10 +1158,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // injection of every row.
 
         // Keep each row's converged Jacobian during compute(), so solve_JT() can run
-        // afterwards. Off by default: it costs nb_rows * nnz_J reals (see
+        // afterwards. Off by default: it costs nb_rows * nnz_J reals for the Jacobians (see
         // adjoint_memory_bytes(), answerable before compute() through
-        // BatchAdjoint::memory_bytes) plus one Jacobian fill per row, and a caller
-        // who only wants flows should pay neither. Only the Newton-Raphson family of
+        // BatchAdjoint::memory_bytes), each row's AdjointSolveInfo on top, and one
+        // Jacobian fill per row, and a caller who only wants flows should pay none of it. Only the Newton-Raphson family of
         // AC algorithms has a Jacobian to keep; compute() raises if this is on with
         // any other.
         void set_keep_jacobian(bool val) {
@@ -1173,7 +1173,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         bool get_keep_jacobian() const { return _keep_jacobian_; }
 
-        // Bytes the kept Jacobians occupy after a compute() (0 when none were kept).
+        // Bytes the values of the kept Jacobians occupy after a compute() (0 when none were
+        // kept). Not counted: each row's AdjointSolveInfo (_adjoint_info_), which grows with
+        // the number of voltage-regulated buses and is usually a fraction of a Jacobian.
         std::size_t adjoint_memory_bytes() const { return _adjoint_.memory_bytes(); }
 
         // Dimension of the augmented Newton-Raphson system: the length of one

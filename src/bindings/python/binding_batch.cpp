@@ -247,17 +247,22 @@ void bind_batch_shared(py::class_<T> & cls)
                       "transposed solve per row turns a loss's sensitivity to the voltages into "
                       "its gradient with respect to every injection of every row (the adjoint "
                       "method / the implicit function theorem).\n\n"
-                      "It costs `nb_rows * nnz(J)` floats -- see adjoint_memory_bytes(), and mind "
-                      "that on a large grid with many rows this is gigabytes -- plus one extra "
-                      "Jacobian evaluation per row (the Newton-Raphson loop stops on the Jacobian "
-                      "of its previous iterate, which is not quite the one at the solution). Only "
+                      "It costs `nb_rows * nnz(J)` floats for the Jacobians -- adjoint_memory_bytes() "
+                      "reports them, and on a large grid with many rows this is gigabytes -- plus, "
+                      "per row, what the gradient reads besides J (see adjoint_memory_bytes()), and "
+                      "one extra Jacobian evaluation per row (the Newton-Raphson loop stops on the "
+                      "Jacobian of its previous iterate, which is not quite the one at the solution). Only "
                       "the AC Newton-Raphson algorithms build a Jacobian at all (NR_*, and "
                       "NROuter_* / NROuterDist_* with outer loops: the Jacobian of their last "
                       "Newton solve, every decision of the loops held); compute() raises with "
                       "any other.")
         .def("adjoint_memory_bytes", &T::adjoint_memory_bytes,
-             "Bytes the kept Jacobians occupy after a compute() (0 when none were kept). "
-             "Grows as nb_rows * nnz(J): worth reading before scaling a batch up.")
+             "Bytes the values of the kept Jacobians occupy after a compute() (0 when none "
+             "were kept): nb_rows * nnz(J) floats, worth reading before scaling a batch up.\n\n"
+             "Not counted: what each row keeps besides its Jacobian for the gradient -- the "
+             "dF/d|V| column of every generator's target bus, the rows pinned, the gen_p "
+             "corrections. It grows with the number of voltage-regulated buses and is "
+             "usually a fraction of the Jacobians.")
         .def("dim_J", &T::dim_J,
              "Dimension of the augmented Newton-Raphson system -- the length of one "
              "cotangent handed to solve_JT, and of one row of its result. 0 until a "
