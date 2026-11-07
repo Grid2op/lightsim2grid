@@ -240,6 +240,40 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             _limits(ctx, bus, q_min, q_max);
             _freeze(ctx, bus, bus.realistic ? bus.target_q : (state < 0 ? q_min : q_max), state);
         }
+        _restart_frozen_vm(ctx);
+    }
+}
+
+void ReactiveLimitsLoop::_restart_frozen_vm(OuterContext & ctx) const
+{
+    // The solve starts from a voltage whose regulated buses LSGrid (or the batch) snapped
+    // to their set-points -- right for a bus that regulates, not for one this solve holds at
+    // a limit: there the previous solve left another magnitude, and starting from the
+    // set-point costs Newton iterations to move back to it, even with nothing changed. So
+    // a bus frozen again starts from the magnitude the previous solve left it at: its own
+    // for a local bus, the regulated one for a group no controller of which regulates any
+    // more. A bus still regulating keeps the set-point (its magnitude is pinned).
+    if (ctx.Vm == nullptr || ctx.controls == nullptr) return;
+    const RealVect & vm = *ctx.Vm;
+    const Eigen::Index nb_bus = static_cast<Eigen::Index>(ctx.view().id_solver_to_me().size());
+    if (vm.size() != nb_bus) return;  // not the buses of this solve
+    const VoltageControlSolverData & ctrl = ctx.view().layout().voltage_control.controllers();
+    for (const ControllerBus & bus : buses_) {
+        if (bus.state == 0) continue;
+        int b = -1;
+        if (bus.local) {
+            b = bus.bus_solver;
+        } else if (bus.group >= 0 && bus.group < ctrl.n_groups()) {
+            bool all_held = true;
+            const int first = ctrl.grp_start(bus.group);
+            for (int c = first; all_held && c < first + ctrl.grp_count(bus.group); ++c) {
+                all_held = ctx.controls->is_held(c);
+            }
+            if (all_held) b = bus.reg_bus_solver;
+        }
+        if (b < 0 || b >= nb_bus) continue;
+        const real_type v = vm(b);
+        if (std::isfinite(v) && v > 0.) ctx.controls->reset_vm(b, v);
     }
 }
 

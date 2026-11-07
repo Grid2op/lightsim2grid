@@ -345,6 +345,18 @@ frozen PQ, controllers held, standby SVCs switched on, hvdc regimes, taps, secti
 the grid. Use it for a sequence of ``ac_pf`` calls following each other (a time series). It is
 not OpenLoadFlow's. The batch classes do the same on their own for a ``TimeSeries``.
 
+.. code-block:: python
+
+    grid.change_algorithm("NROuter_KLU")
+    grid.set_resume_outer_state(True)
+    V = grid.ac_pf(V0, 30, 1e-8)
+    for step in steps:
+        ...                             # change the injections
+        V = grid.ac_pf(V, 30, 1e-8)     # its loops start from the previous solve's
+
+It is the algorithm's setting: ``copy()`` and a pickle keep it, ``change_algorithm`` starts the new
+algorithm from its own (off).
+
 .. _outer-loops-backend:
 
 With grid2op: ``LightSimBackend``

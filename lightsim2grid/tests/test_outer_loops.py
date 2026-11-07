@@ -229,6 +229,37 @@ class TestNROuter(unittest.TestCase):
         np.testing.assert_array_equal(solve(from_file), V)
         np.testing.assert_array_equal(from_file.get_gen_res()[1], grid.get_gen_res()[1])
 
+    def test_resume_outer_state_from_the_grid(self):
+        # issue #258: set without going through int_params of the AC AlgoConfig
+        grid = _grid(SING)
+        self.assertFalse(grid.get_resume_outer_state())
+        with self.assertRaises(RuntimeError):
+            grid.set_resume_outer_state(True)
+        grid.change_algorithm(OUTER)
+        self.assertFalse(grid.get_resume_outer_state())
+        cfg_before = grid.get_ac_algo_config()
+        grid.set_resume_outer_state(True)
+        self.assertTrue(grid.get_resume_outer_state())
+        # the algorithm's own flag, the Newton's parameters untouched
+        cfg = grid.get_ac_algo_config()
+        self.assertEqual(list(cfg.int_params[:-1]), list(cfg_before.int_params[:-1]))
+        self.assertEqual(list(cfg.real_params), list(cfg_before.real_params))
+        self.assertEqual(cfg.int_params[-1], 1)
+        # kept with the algorithm's configuration
+        self.assertTrue(grid.copy().get_resume_outer_state())
+        self.assertTrue(pickle.loads(pickle.dumps(grid)).get_resume_outer_state())
+        grid.set_resume_outer_state(False)
+        self.assertFalse(grid.get_resume_outer_state())
+        self.assertEqual(grid.get_ac_algo_config().int_params[-1], 0)
+        # the algorithm's configuration is what the grid reads
+        cfg = grid.get_ac_algo_config()
+        cfg.int_params = list(cfg.int_params[:-1]) + [1]
+        grid.set_ac_algo_config(cfg)
+        self.assertTrue(grid.get_resume_outer_state())
+        # a change of algorithm starts from the new one's (off)
+        grid.change_algorithm(SING)
+        self.assertFalse(grid.get_resume_outer_state())
+
     def test_standalone_algorithm(self):
         from lightsim2grid import algorithm
         algo = getattr(algorithm, OUTER)()
@@ -733,6 +764,34 @@ class TestReactiveLimits(unittest.TestCase):
                 self.assertAlmostEqual(g.res_q_mvar, -olf_q[g.name], places=4)
                 compared += 1
         self.assertGreater(compared, 50)
+
+    def test_resumed_solve_from_its_own_solution(self):
+        # issue #258: with resume_outer_state, solving again from the voltages the previous
+        # solve returned, nothing changed, takes no Newton iteration. The buses frozen at a
+        # limit start from their solved magnitude, not from the set-point the grid seeds them at
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        net = self._net()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, sort_index=False, buses_for_sub=False,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits())
+        grid.set_resume_outer_state(True)
+        tol = 1e-8
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, tol)
+        self.assertGreater(V.shape[0], 0)
+        # some buses end frozen, which is what the re-solve has to resume
+        self.assertGreater(grid.get_algo().get_outer_loop_stats().nb_outer_iterations, 0)
+        for _ in range(2):
+            V2 = grid.ac_pf(V, 30, tol)
+            self.assertGreater(V2.shape[0], 0)
+            stats = grid.get_algo().get_outer_loop_stats()
+            self.assertEqual(stats.nb_outer_iterations, 0)
+            self.assertEqual(list(stats.nr_iterations), [0])
+            self.assertLess(np.abs(V2 - V).max(), 1e-12)
+            V = V2
 
     def test_detection_is_olf_first_round(self):
         # a plain solve reports exactly the buses OpenLoadFlow switches PV -> PQ first

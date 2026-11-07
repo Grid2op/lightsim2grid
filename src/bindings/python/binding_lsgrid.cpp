@@ -132,6 +132,10 @@ void bind_gridmodel(py::module_& m) {
              DocLSGrid::set_outer_loop_driver_params.c_str())
         .def("get_outer_loop_driver_params", &LSGrid::get_outer_loop_driver_params,
              "The parameters of the outer-loop driver, see set_outer_loop_driver_params")
+        .def("set_resume_outer_state", &LSGrid::set_resume_outer_state, py::arg("resume"),
+             DocLSGrid::set_resume_outer_state.c_str())
+        .def("get_resume_outer_state", &LSGrid::get_resume_outer_state,
+             DocLSGrid::get_resume_outer_state.c_str())
         // deprecated method
         .def("change_solver", py::overload_cast<const AlgorithmType&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
         .def("change_solver", py::overload_cast<const std::string&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")

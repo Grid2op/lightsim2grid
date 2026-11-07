@@ -6536,6 +6536,37 @@ const std::string DocLSGrid::set_outer_loop_driver_params = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::set_resume_outer_state = R"mydelimiter(
+    Whether a solve of the AC algorithm, an ``NROuter_*`` one, starts its outer loops from
+    where the last converged solve left them (buses frozen PQ, controllers held, standby SVCs
+    switched on, hvdc regimes, taps, sections) rather than from the grid. Use it for a sequence
+    of :func:`ac_pf` calls following each other, each from the previous solution (a time
+    series). Off by default, as in OpenLoadFlow, where each run starts its loops from the
+    network.
+
+    It is a setting of the algorithm, not of the grid: the ``resume_outer_state`` property of a
+    standalone ``NROuter_*`` algorithm, which the grid keeps as the last integer of
+    :func:`get_ac_algo_config`. It is copied and pickled with the grid's algorithm
+    configuration; :func:`change_algorithm` starts from the new algorithm's own (off).
+
+    Parameters
+    ----------
+    resume: ``bool``
+        Whether to resume
+
+    Raises
+    ------
+    RuntimeError
+        If the AC algorithm runs no outer loop (it is not an ``NROuter_*`` one).
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_resume_outer_state = R"mydelimiter(
+    Get the value set by :func:`set_resume_outer_state`: ``False`` when the AC algorithm runs
+    no outer loop.
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_keep_vinit_at_group_controlled_buses = R"mydelimiter(
     Get the value set by :func:`set_keep_vinit_at_group_controlled_buses` (``False`` by default).
 

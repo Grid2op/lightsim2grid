@@ -144,6 +144,27 @@ bool LSGrid::_holds_svc_monitors(bool runs_outer_loops) const
     return false;
 }
 
+void LSGrid::set_resume_outer_state(bool resume)
+{
+    // OuterLoopAlgo's AlgoConfig: the inner algorithm's integers, then this flag
+    AlgoConfig cfg = _algo.supports_outer_loops() ? get_ac_algo_config() : AlgoConfig();
+    if (cfg.int_params.empty()) {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::set_resume_outer_state: the AC algorithm ('" << _algo.get_name()
+             << "') runs no outer loop. Select an NROuter_* algorithm first (change_algorithm).";
+        throw std::runtime_error(exc_.str());
+    }
+    cfg.int_params.back() = resume ? 1 : 0;
+    set_ac_algo_config(cfg);
+}
+
+bool LSGrid::get_resume_outer_state() const
+{
+    if (!_algo.supports_outer_loops()) return false;
+    const AlgoConfig cfg = get_ac_algo_config();
+    return !cfg.int_params.empty() && cfg.int_params.back() != 0;
+}
+
 std::vector<std::shared_ptr<BaseOuterLoop> > LSGrid::get_outer_loops() const
 {
     if (outer_loops_default_) return make_default_outer_loops(*this);
