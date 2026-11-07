@@ -667,8 +667,11 @@ void bind_batch(py::module_& m) {
         .def_readonly("shunt_sections", &OuterRowResult::shunt_sections,
                       "(shunt id, section count) ShuntVoltageControl settled on.")
         .def_readonly("decisions_taken", &OuterRowResult::decisions_taken,
-                      "(\"loop/ACTION\", count) of every decision the loops acted on, sorted: how "
-                      "many switches the row took, by kind (eg \"ReactiveLimits/PV_TO_PQ\").")
+                      "(\"loop/ACTION\", count) of the row's trace entries marked taken, sorted by "
+                      "name. Not only switches (eg \"ReactiveLimits/PV_TO_PQ\"): also checks that asked "
+                      "for a re-solve without switching anything (\"DistributedSlack/UNITS_MOVED\"), "
+                      "failures (\"FAIL_RESIDUE\") and the driver's \"SETTLED\", filed under the loop "
+                      "it is about. To count switches, select their actions.")
         .def("__repr__", [](const OuterRowResult & self){
             std::ostringstream out;
             out << "OuterRowResult(converged=" << (self.converged ? "True" : "False")

@@ -253,7 +253,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``LS2G_PLUGIN_PATH`` or in ``examples/*/build`` of an editable install.
 - [ADDED] ``examples/build_plugins.py``: builds all the example plugins at once, on any OS.
 - [ADDED] batch classes: ``get_row_linear_solver_stats``, ``get_row_J_dim`` / ``get_row_J_nnz``, and
-  ``OuterRowResult.decisions_taken``: each row's linear solver work, Jacobian size and loop switches.
+  ``OuterRowResult.decisions_taken``: each row's linear solver work, Jacobian size and loop decisions.
 - [ADDED] ``rgrowth_threshold`` of the refactor fallback (NR algorithms, part of their config) and
   ``LinearSolverStats.min_rgrowth``, the smallest pivot growth a solve accepted (KLU, KLU static pivot).
 - [BREAKING] (C++ / plugins) ``LinearSolverStats`` has a new field: plugins must be rebuilt.

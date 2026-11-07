@@ -96,8 +96,11 @@ struct LS2G_API OuterRowResult
     std::vector<std::pair<int, int> > phase_tap;
     std::vector<std::pair<int, int> > ratio_tap;
     std::vector<std::pair<int, int> > shunt_sections;
-    /// ("loop/ACTION", count) of every decision the loops acted on (OuterDecision::taken),
-    /// sorted: how many switches the row took, by kind (eg "ReactiveLimits/PV_TO_PQ")
+    /// ("loop/ACTION", count) of the row's trace entries marked taken (OuterDecision::taken),
+    /// sorted by name. Not only switches ("ReactiveLimits/PV_TO_PQ"): also checks that asked
+    /// for a re-solve without switching anything ("DistributedSlack/UNITS_MOVED"), failures
+    /// ("FAIL_RESIDUE") and the driver's "SETTLED", filed under the loop it is about (see
+    /// OuterDecision::action for each loop's). To count switches, select their actions.
     std::vector<std::pair<std::string, int> > decisions_taken;
 };
 
