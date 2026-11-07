@@ -58,15 +58,6 @@ void collect_units(const OuterGridView & view,
     }
 }
 
-// the solver bus of grid bus `bus_me` in the solve's labelling, -1 when it is not solved
-int solver_bus_of(const OuterGridView & view, int bus_me)
-{
-    const SolverBusIdVect & to_solver = view.id_me_to_solver();
-    if (bus_me < 0 || bus_me >= static_cast<int>(to_solver.size())) return -1;
-    const int bus = to_solver[bus_me].cast_int();
-    return bus == BaseConstants::_deactivated_bus_id ? -1 : bus;
-}
-
 }  // namespace
 
 DistributedSlackLoop::DistributedSlackLoop() : DistributedSlackLoop(Params()) {}
@@ -102,12 +93,12 @@ void DistributedSlackLoop::_declare(const OuterContext & ctx) const
     const auto add = [&buses](int bus){ if (bus >= 0) buses.push_back(bus); };
     for (int el_id = 0; el_id < gens.nb(); ++el_id) {
         if (!(gens.get_can_participate_slack_weight(el_id) > 0.)) continue;
-        add(solver_bus_of(view, gens.get_bus_id()(el_id).cast_int()));
+        add(view.bus_solver(gens.get_bus_id()(el_id).cast_int()));
         add(view.gen_bus_solver(el_id));
     }
     for (int el_id = 0; el_id < storages.nb(); ++el_id) {
         if (!(storages.get_can_participate_slack_weight(el_id) > 0.)) continue;
-        add(solver_bus_of(view, storages.get_bus_id()(el_id).cast_int()));
+        add(view.bus_solver(storages.get_bus_id()(el_id).cast_int()));
         add(view.storage_bus_solver(el_id));
     }
     ctx.controls->reserve_slack_share(buses);
