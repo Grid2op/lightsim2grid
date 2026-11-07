@@ -3837,8 +3837,11 @@ const std::string DocLSGrid::check_grid = R"mydelimiter(
 
     This is called automatically when a grid is loaded (from a pickle or from the
     fast binary format), and by the grid loaders (from pandapower, pypowsybl,
-    matpower or powermodels). You normally do not need to call it yourself; it is
-    exposed so you can validate a grid you built or modified by hand.
+    matpower or powermodels). After an ``init_*`` (a grid built by hand), it is also
+    run once by the next :func:`LSGrid.ac_pf`, :func:`LSGrid.dc_pf`,
+    :func:`LSGrid.check_solution` or batch algorithm built on the grid. You normally do
+    not need to call it yourself; it is exposed so you can validate a grid you built
+    or modified by hand as soon as it is complete.
 
     Raises
     ------
