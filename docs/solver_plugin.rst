@@ -250,6 +250,19 @@ only when ``supports_jacobian()`` is true. The base implementation leaves it emp
 algorithm built on ``NRAlgo`` inherits a complete one; a plugin wrapping one (as
 ``examples/dist_slack_algorithm`` does) forwards it with ``get_J``.
 
+``get_ordering_constraints`` *(virtual — override only for algorithms built on an ``NRSystem``)*
+
+.. code-block:: cpp
+
+    virtual OrderingConstraints get_ordering_constraints() const;
+
+The Jacobian indices the system's linear solver must eliminate after the others, so that a
+row switched by value keeps a valid pivot (``OrderingConstraints.hpp``). Read-only: it says
+what the system asks for, whether or not the linear solver orders with it. The base
+implementation returns none. ``NRAlgo`` returns its system's; a plugin owning an
+``NRSystem`` returns ``ordering_constraints()`` of it, one wrapping an algorithm forwards
+it (both as the examples do).
+
 ``get_theta_to_J_col_python`` / ``get_vm_to_J_col_python`` / ``get_q_to_J_col_python`` *(virtual — override only for Newton-Raphson algorithms)*
 
 .. code-block:: cpp

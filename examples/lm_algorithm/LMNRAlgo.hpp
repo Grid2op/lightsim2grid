@@ -103,6 +103,7 @@ public:
     IntVect  get_controller_q_col()     const override { return _system.controller_q_col(); }
     int      get_slack_col()            const override { return _system.slack_col(); }
     real_type get_slack_absorbed()      const override { return _system.slack_absorbed(); }
+    OrderingConstraints get_ordering_constraints() const override { return _system.ordering_constraints(); }
 
     TimerJac get_timers_jacobian() const override
     {

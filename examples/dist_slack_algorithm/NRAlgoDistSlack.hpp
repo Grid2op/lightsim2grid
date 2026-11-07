@@ -77,6 +77,7 @@ public:
     void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const override {
         inner_.get_adjoint_solve_info(vm_buses, out);
     }
+    OrderingConstraints get_ordering_constraints() const override { return inner_.get_ordering_constraints(); }
 
     // No in-Jacobian slack column (that's the whole point) -- but there IS a
     // meaningful total: the accumulated active power redistributed by the outer
