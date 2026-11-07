@@ -345,8 +345,9 @@ void bind_solvers(py::module_& m) {
     py::class_<DistributedSlackLoop, BaseOuterLoop, std::shared_ptr<DistributedSlackLoop> >(
             m, "DistributedSlack", DocSolver::DistributedSlackLoop.c_str())
         .def(py::init([](real_type slack_bus_p_max_mismatch_mw, bool fail_on_residue, real_type p_residue_eps_mw,
-                         real_type moved_fraction){
+                         real_type moved_fraction, bool run_without_participant){
                  DistributedSlackLoop::Params params;
+                 params.run_without_participant = run_without_participant;
                  params.slack_bus_p_max_mismatch_mw = slack_bus_p_max_mismatch_mw;
                  params.fail_on_residue = fail_on_residue;
                  params.p_residue_eps_mw = p_residue_eps_mw;
@@ -356,7 +357,12 @@ void bind_solvers(py::module_& m) {
              py::arg("slack_bus_p_max_mismatch_mw") = DistributedSlackLoop::Params().slack_bus_p_max_mismatch_mw,
              py::arg("fail_on_residue") = DistributedSlackLoop::Params().fail_on_residue,
              py::arg("p_residue_eps_mw") = DistributedSlackLoop::Params().p_residue_eps_mw,
-             py::arg("moved_fraction") = DistributedSlackLoop::Params().moved_fraction)
+             py::arg("moved_fraction") = DistributedSlackLoop::Params().moved_fraction,
+             py::arg("run_without_participant") = DistributedSlackLoop::Params().run_without_participant)
+        .def_property_readonly("run_without_participant",
+                               [](const DistributedSlackLoop & self){ return self.params().run_without_participant; },
+                               "Run even without a unit off the slack bus taking part (OpenLoadFlow with distributedSlack on): "
+                               "with fail_on_residue, a mismatch above the threshold then fails the solve")
         .def_property_readonly("slack_bus_p_max_mismatch_mw",
                                [](const DistributedSlackLoop & self){ return self.params().slack_bus_p_max_mismatch_mw; },
                                "OpenLoadFlow's slackBusPMaxMismatch, MW: below it the slack bus keeps what it absorbed")

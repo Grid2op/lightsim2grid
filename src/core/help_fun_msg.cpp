@@ -937,8 +937,12 @@ const std::string DocSolver::DistributedSlackLoop = R"mydelimiter(
 
     Every parameter is a keyword argument of the constructor, OpenLoadFlow's value by default,
     and read-only afterwards: ``slack_bus_p_max_mismatch_mw``, ``fail_on_residue``,
-    ``p_residue_eps_mw`` (what is left to share below it is nothing) and ``moved_fraction``
-    (the units moved when they moved by more than this fraction of ``p_residue_eps_mw``).
+    ``p_residue_eps_mw`` (what is left to share below it is nothing), ``moved_fraction``
+    (the units moved when they moved by more than this fraction of ``p_residue_eps_mw``) and
+    ``run_without_participant`` (run even when no unit off the slack bus takes part, as
+    OpenLoadFlow does with ``distributedSlack`` on; with ``fail_on_residue`` the solve then fails
+    when the slack mismatch is above the threshold. Off by default: such a grid keeps its single
+    slack).
 
 )mydelimiter";
 

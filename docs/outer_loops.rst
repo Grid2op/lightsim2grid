@@ -141,7 +141,7 @@ reaches a bound leaves the sharing for this solve. The loop reports ``FAILED`` w
 .. code-block:: python
 
     DistributedSlack(slack_bus_p_max_mismatch_mw=1., fail_on_residue=True,
-                     p_residue_eps_mw=1e-3, moved_fraction=0.9)
+                     p_residue_eps_mw=1e-3, moved_fraction=0.9, run_without_participant=False)
 
 - ``slack_bus_p_max_mismatch_mw``: OpenLoadFlow's ``slackBusPMaxMismatch``. Below it the slack bus
   keeps what it absorbed.
@@ -150,8 +150,12 @@ reaches a bound leaves the sharing for this solve. The loop reports ``FAILED`` w
 - ``p_residue_eps_mw``: what is left to share below it counts as nothing.
 - ``moved_fraction``: a unit counts as moved when it moved by more than this fraction of
   ``p_residue_eps_mw``.
+- ``run_without_participant``: run the loop even when no unit off the slack bus takes part, as
+  OpenLoadFlow does with ``distributedSlack`` on. The units of the slack bus then count as no
+  participant (a slack generator always keeps its flag), so with ``fail_on_residue`` a mismatch
+  above ``slack_bus_p_max_mismatch_mw`` fails the solve at the first check.
 
-The loop only exists on a grid where at least one unit is flagged "can participate in the slack".
+Unless ``run_without_participant`` is set, the loop only exists on a grid where at least one unit is flagged "can participate in the slack".
 On a grid with none, the single slack generator absorbs everything, as OpenLoadFlow does with its
 ``distributedSlack`` parameter off. The moved targets are published in the results (generator and
 storage ``P``), and in the batch results (``OuterRowResult.gen_target_p``).
