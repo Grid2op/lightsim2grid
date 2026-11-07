@@ -39,6 +39,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<FDPF_BX_SparseLU>(); });
     add_builtin("NROuter_SparseLU",
         []{ return std::make_unique<NROuter_SparseLU>(); });
+    add_builtin("NROuterDist_SparseLU",
+        []{ return std::make_unique<NROuterDist_SparseLU>(); });
 
 #ifdef KLU_SOLVER_AVAILABLE
     add_builtin("NR_KLU",
@@ -55,12 +57,16 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<NRRefactorRetry_KLU>(); });
     add_builtin("NROuter_KLU",
         []{ return std::make_unique<NROuter_KLU>(); });
+    add_builtin("NROuterDist_KLU",
+        []{ return std::make_unique<NROuterDist_KLU>(); });
     add_builtin("NR_KLUStaticPivot",
         []{ return std::make_unique<NR_KLUStaticPivot>(); });
     add_builtin("NRSing_KLUStaticPivot",
         []{ return std::make_unique<NRSing_KLUStaticPivot>(); });
     add_builtin("NROuter_KLUStaticPivot",
         []{ return std::make_unique<NROuter_KLUStaticPivot>(); });
+    add_builtin("NROuterDist_KLUStaticPivot",
+        []{ return std::make_unique<NROuterDist_KLUStaticPivot>(); });
 #endif // KLU_SOLVER_AVAILABLE
 
 #ifdef NICSLU_SOLVER_AVAILABLE
@@ -78,6 +84,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<NRRefactorRetry_NICSLU>(); });
     add_builtin("NROuter_NICSLU",
         []{ return std::make_unique<NROuter_NICSLU>(); });
+    add_builtin("NROuterDist_NICSLU",
+        []{ return std::make_unique<NROuterDist_NICSLU>(); });
 #endif // NICSLU_SOLVER_AVAILABLE
 
 #ifdef CKTSO_SOLVER_AVAILABLE
@@ -95,6 +103,8 @@ void register_builtin_solvers(AlgorithmRegistry& reg) {
         []{ return std::make_unique<NRRefactorRetry_CKTSO>(); });
     add_builtin("NROuter_CKTSO",
         []{ return std::make_unique<NROuter_CKTSO>(); });
+    add_builtin("NROuterDist_CKTSO",
+        []{ return std::make_unique<NROuterDist_CKTSO>(); });
 #endif // CKTSO_SOLVER_AVAILABLE
 }
 

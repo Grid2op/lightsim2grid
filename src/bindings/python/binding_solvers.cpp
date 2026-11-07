@@ -112,6 +112,14 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
             [](const Solver & s){ return nr_of(s).get_constrained_ordering(); },
             [](Solver & s, bool v){ nr_of(s).set_constrained_ordering(v); },
             DocSolver::constrained_ordering.c_str())
+        .def_property("fill_reducing_ordering",
+            [](const Solver & s){ return nr_of(s).get_fill_reducing_ordering(); },
+            [](Solver & s, FillReducingOrdering v){ nr_of(s).set_fill_reducing_ordering(v); },
+            DocSolver::fill_reducing_ordering.c_str())
+        .def_property("rgrowth_threshold",
+            [](const Solver & s){ return nr_of(s).get_rgrowth_threshold(); },
+            [](Solver & s, real_type v){ nr_of(s).set_rgrowth_threshold(v); },
+            DocSolver::rgrowth_threshold.c_str())
         // AlgoConfig serialization (the solver's own: an NROuter_* appends the driver's)
         .def("get_config", &Solver::get_config, DocSolver::get_config.c_str())
         .def("set_config", &Solver::set_config, py::arg("config"), DocSolver::set_config.c_str())
@@ -537,6 +545,7 @@ void bind_solvers(py::module_& m) {
         .def_readonly("timer_solve_transpose",          &LinearSolverStats::timer_solve_transpose_,
                       "Time spent in the transposed solves, apart from the plain ones (see "
                       "nb_solve_transpose).")
+        .def_readonly("min_rgrowth",                    &LinearSolverStats::min_rgrowth_, DocSolver::min_rgrowth.c_str())
         .def("__repr__", [](const LinearSolverStats& s) {
             return "LinearSolverStats(nb_factorize=" + std::to_string(s.nb_factorize) +
                    ", nb_refactorize=" + std::to_string(s.nb_refactorize) +
@@ -562,6 +571,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NROuter_SparseLU>(m, "NROuter_SparseLU", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
+        auto cls = py::class_<NROuterDist_SparseLU>(m, "NROuterDist_SparseLU", DocSolver::NROuterDist.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
@@ -640,6 +657,14 @@ void bind_solvers(py::module_& m) {
         bind_outer_algo(cls);
     }
     {
+        auto cls = py::class_<NROuterDist_KLU>(m, "NROuterDist_KLU", DocSolver::NROuterDist.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
         auto cls = py::class_<NR_KLUStaticPivot>(m, "NR_KLUStaticPivot", DocSolver::NR_KLUStaticPivot.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
@@ -655,6 +680,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NROuter_KLUStaticPivot>(m, "NROuter_KLUStaticPivot", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
+        auto cls = py::class_<NROuterDist_KLUStaticPivot>(m, "NROuterDist_KLUStaticPivot", DocSolver::NROuterDist.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
@@ -711,6 +744,14 @@ void bind_solvers(py::module_& m) {
         bind_linear_solver_stats(cls);
         bind_outer_algo(cls);
     }
+    {
+        auto cls = py::class_<NROuterDist_NICSLU>(m, "NROuterDist_NICSLU", DocSolver::NROuterDist.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
 #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -755,6 +796,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NROuter_CKTSO>(m, "NROuter_CKTSO", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
+        auto cls = py::class_<NROuterDist_CKTSO>(m, "NROuterDist_CKTSO", DocSolver::NROuterDist.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);

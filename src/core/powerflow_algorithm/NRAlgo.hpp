@@ -9,6 +9,7 @@
 #ifndef NR_ALGO_H
 #define NR_ALGO_H
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>     // std::isfinite (policy parameter validation)
 #include <sstream>
@@ -127,6 +128,7 @@ public:
     IntVect  get_controller_elem_id() const override { return _system.controller_elem_id(); }
     IntVect  get_controller_q_col()   const override { return _system.controller_q_col(); }
     IntVect  get_group_v_row()        const override { return _system.group_v_row(); }
+    OrderingConstraints get_ordering_constraints() const override { return _system.ordering_constraints(); }
     int      get_slack_col()          const override { return _system.slack_col(); }
     real_type get_slack_absorbed()    const override { return _system.slack_absorbed(); }
 
@@ -207,7 +209,8 @@ public:
                BeforeInitTopology               && before_init_topology);
 
     // The Newton iterations, from whatever state the system holds. Always factorizes on
-    // its first iteration: analyze + factorize if `need_init`, refactorize otherwise.
+    // its first iteration: analyze + factorize if `need_init`, factorize if asked
+    // (request_factorize), refactorize otherwise.
     bool newton(int max_iter, real_type tol, bool need_init);
 
     // Publish the voltages (get_V, ...) and fold the system's timers.
@@ -216,6 +219,12 @@ public:
     // Rebuild the topology (ledger, sparsity of J, symbolic analysis) on the next setup,
     // eg because what a driver reserves in it changed.
     void request_rebuild() { need_factorize_ = true; }
+
+    // Factorize (numerically, the symbolic analysis kept) instead of refactorizing on the
+    // first iteration of the next newton, eg because the values of J changed in a way the
+    // pivot sequence of the last factorization should not be trusted with. A rebuild
+    // (request_rebuild) already does more, and clears it.
+    void request_factorize() { need_numeric_factorize_ = true; }
 
     // The system the Newton solves, for a driver editing it between two newton calls.
     NRSystem & system() { return _system; }
@@ -233,6 +242,19 @@ public:
     void refresh_J_at_solution() override {
         _system.fill_internal_variables();
         _system.fill_J();
+    }
+
+    void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const override {
+        out.clear();
+        out.pinned_buses = _system.pv_pinned_buses();
+        std::sort(out.pinned_buses.begin(), out.pinned_buses.end());   // looked up by bisection
+        _system.groups_without_v_set(out.vset_lost_groups);             // in group order already
+        out.vm_col_start.push_back(0);
+        for (int bus : vm_buses) {
+            out.vm_col_bus.push_back(bus);
+            _system.vm_column(bus, out.vm_col_row, out.vm_col_val);
+            out.vm_col_start.push_back(static_cast<int>(out.vm_col_row.size()));
+        }
     }
 
     void set_masked_buses(const std::vector<int> & solver_bus_ids) override {
@@ -362,6 +384,14 @@ public:
         }
         return v;
     }
+    static real_type _checked_rgrowth_threshold(real_type v) {
+        if (!std::isfinite(v) || v < 0.) {
+            std::ostringstream exc_;
+            exc_ << "NRAlgo: rgrowth_threshold must be a finite number >= 0, got " << v << ".";
+            throw std::runtime_error(exc_.str());
+        }
+        return v;
+    }
     static int _checked_non_negative(int v, const char * name) {
         if (v < 0) {
             std::ostringstream exc_;
@@ -449,6 +479,34 @@ public:
         }
     }
 
+    // The fill-reducing ordering the linear solver starts from (see FillReducingOrdering):
+    // AMD by default, or minimum fill. Independent of the constrained ordering: with both,
+    // the constraints move their indices in the minimum-fill order. Only for a linear solver
+    // that takes ordering constraints (KLU); takes effect on the next solve, which analyzes
+    // again.
+    FillReducingOrdering get_fill_reducing_ordering() const noexcept { return fill_reducing_ordering_; }
+    void set_fill_reducing_ordering(FillReducingOrdering v) {
+        if (v != FillReducingOrdering::AMD && v != FillReducingOrdering::MinFill) {
+            throw std::runtime_error("NRAlgo: unknown fill-reducing ordering");
+        }
+        if (v != FillReducingOrdering::AMD && !SUPPORTS_CONSTRAINED_ORDERING) {
+            throw std::runtime_error("NRAlgo: this linear solver has no choice of fill-reducing ordering "
+                                     "(only the KLU-based ones do)");
+        }
+        if (v != fill_reducing_ordering_) {
+            fill_reducing_ordering_ = v;
+            need_factorize_ = true;
+        }
+    }
+
+    // The reciprocal pivot growth below which a refactorization is not trusted, once the
+    // refactor fallback is on (a batch, the outer loops): see
+    // LinearSolverPolicy::set_fallback_rgrowth_threshold. 0 keeps only a zero pivot.
+    real_type get_rgrowth_threshold() const noexcept { return _linear_solver.fallback_rgrowth_threshold(); }
+    void set_rgrowth_threshold(real_type v) {
+        _linear_solver.set_fallback_rgrowth_threshold(_checked_rgrowth_threshold(v));
+    }
+
     // ----- AlgoConfig serialization -------------------------------------------
 
     AlgoConfig get_config() const override {
@@ -457,13 +515,14 @@ public:
                             static_cast<int>(refactor_policy_),
                             ls_max_iter_,
                             refactor_every_n_,
-                            constrained_ordering_ ? 1 : 0 };
+                            _ordering_flags() };
         cfg.real_params = { static_cast<double>(max_dVa_),
                             static_cast<double>(max_dVm_),
                             static_cast<double>(ls_c_),
                             static_cast<double>(ls_rho_),
                             static_cast<double>(iw_mu_min_),
-                            static_cast<double>(iw_mu_max_) };
+                            static_cast<double>(iw_mu_max_),
+                            static_cast<double>(get_rgrowth_threshold()) };
         return cfg;
     }
 
@@ -478,9 +537,20 @@ public:
         // the 5th is optional (a config saved before it existed keeps the current choice);
         // ignored by a linear solver that cannot order with constraints, as a config may
         // come from another algorithm
-        const bool new_constrained_ordering = cfg.int_params.size() > 4
-            ? (cfg.int_params[4] != 0 && SUPPORTS_CONSTRAINED_ORDERING)
-            : constrained_ordering_;
+        // It holds two flags (see _ordering_flags): bit 0 the constrained ordering, bit 1
+        // minimum fill. A config saved before bit 1 existed reads as it did.
+        const int ordering_flags = cfg.int_params.size() > 4 ? cfg.int_params[4] : _ordering_flags();
+        if (ordering_flags < 0 || ordering_flags > 3) {
+            throw std::runtime_error("NRAlgo::set_config: int_params[4] (the ordering flags) must be in [0, 3]");
+        }
+        const bool new_constrained_ordering = (ordering_flags & 1) != 0 && SUPPORTS_CONSTRAINED_ORDERING;
+        const FillReducingOrdering new_fill_reducing_ordering =
+            ((ordering_flags & 2) != 0 && SUPPORTS_CONSTRAINED_ORDERING) ? FillReducingOrdering::MinFill
+                                                                          : FillReducingOrdering::AMD;
+        // the 7th real one too
+        const real_type new_rgrowth_threshold = cfg.real_params.size() > 6
+            ? _checked_rgrowth_threshold(static_cast<real_type>(cfg.real_params[6]))
+            : get_rgrowth_threshold();
         // NB an AlgoConfig is part of the serialized grid state, so these values
         // can come straight from a pickle or a binary file: validate them exactly
         // like the setters do (see the note on _checked_refactor_every_n).
@@ -503,6 +573,8 @@ public:
         refactor_policy_ = new_refactor_policy;
         set_scaling_policy(new_scaling_policy);
         set_constrained_ordering(new_constrained_ordering);
+        set_fill_reducing_ordering(new_fill_reducing_ordering);
+        set_rgrowth_threshold(new_rgrowth_threshold);
     }
 
     // ----- debug ---------------------------------------------------------------
@@ -561,6 +633,7 @@ protected:
     NRSystem     _system;
 
     bool need_factorize_;
+    bool need_numeric_factorize_ = false;  // see request_factorize
     // number of non zero coefficients of the Ybus the sparsity of J was last built for. Only
     // read by a debug (no NDEBUG) check in solve. The member itself is not conditional on NDEBUG,
     // so the layout of the class is the same in every translation unit
@@ -589,6 +662,12 @@ protected:
     // whether the linear solver orders with the system's constraints (see
     // set_constrained_ordering); its own default
     bool constrained_ordering_ = detail::orders_with_constraints_by_default<LinearSolver>::value;
+    FillReducingOrdering fill_reducing_ordering_ = FillReducingOrdering::AMD;
+
+    // int_params[4] of the config: bit 0 the constrained ordering, bit 1 minimum fill
+    int _ordering_flags() const noexcept {
+        return (constrained_ordering_ ? 1 : 0) | (fill_reducing_ordering_ == FillReducingOrdering::MinFill ? 2 : 0);
+    }
 
     // Timers
     double timer_dSbus_;

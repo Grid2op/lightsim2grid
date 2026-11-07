@@ -239,6 +239,7 @@ BatchAdjoint::RealMatRM BatchAdjoint::solve_JT(
         stats_.timer_factor_ += s.timer_factor_;
         stats_.timer_refactor_ += s.timer_refactor_;
         stats_.timer_solve_transpose_ += s.timer_solve_transpose_;
+        detail::merge_min_rgrowth(stats_.min_rgrowth_, s.min_rgrowth_);
     }
     return lambda;
 }

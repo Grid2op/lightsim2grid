@@ -203,7 +203,7 @@ class TestAlgoConfigRoundTrip(unittest.TestCase):
 
     def test_config_real_params_length(self):
         cfg = self.s.get_config()
-        self.assertEqual(len(cfg.real_params), 6)
+        self.assertEqual(len(cfg.real_params), 7)
 
     def test_round_trip_scaling_policy(self):
         self._configure()
@@ -288,13 +288,43 @@ class TestAlgoConfigRoundTrip(unittest.TestCase):
     def test_config_real_params_encoding(self):
         self._configure()
         cfg = self.s.get_config()
-        # real_params: [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max]
+        # real_params: [max_dVa, max_dVm, ls_c, ls_rho, iw_mu_min, iw_mu_max, rgrowth_threshold]
         self.assertAlmostEqual(cfg.real_params[0], 0.3)
         self.assertAlmostEqual(cfg.real_params[1], 0.05)
         self.assertAlmostEqual(cfg.real_params[2], 2e-4, places=10)
         self.assertAlmostEqual(cfg.real_params[3], 0.6)
         self.assertAlmostEqual(cfg.real_params[4], 5e-4, places=10)
         self.assertAlmostEqual(cfg.real_params[5], 0.95)
+
+    def test_rgrowth_threshold_default_is_olf_one(self):
+        self.assertEqual(self.s.rgrowth_threshold, 1e-10)
+        self.assertEqual(self.s.get_config().real_params[6], 1e-10)
+
+    def test_round_trip_rgrowth_threshold(self):
+        self.s.rgrowth_threshold = 1e-6
+        cfg = self.s.get_config()
+        self.assertEqual(cfg.real_params[6], 1e-6)
+        s2 = NR_SparseLU()
+        s2.set_config(cfg)
+        self.assertEqual(s2.rgrowth_threshold, 1e-6)
+
+    def test_config_without_rgrowth_threshold_keeps_it(self):
+        # a config saved before the 7th real parameter existed
+        self.s.rgrowth_threshold = 1e-6
+        cfg = self.s.get_config()
+        cfg.real_params = list(cfg.real_params)[:6]
+        self.s.set_config(cfg)
+        self.assertEqual(self.s.rgrowth_threshold, 1e-6)
+
+    def test_rgrowth_threshold_rejects_negative_and_nan(self):
+        for bad in (-1e-3, float("nan"), float("inf")):
+            with self.assertRaises(RuntimeError):
+                self.s.rgrowth_threshold = bad
+            cfg = self.s.get_config()
+            cfg.real_params = list(cfg.real_params)[:6] + [bad]
+            with self.assertRaises(RuntimeError):
+                self.s.set_config(cfg)
+        self.assertEqual(self.s.rgrowth_threshold, 1e-10)
 
 
 class TestConvergenceWithPolicies(unittest.TestCase):

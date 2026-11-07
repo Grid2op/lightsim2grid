@@ -232,6 +232,55 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [FIXED] batches with outer loops: a voltage-control group losing a controller to an island, its other
+  controllers held at a reactive limit, no longer fails: the islanded controller is gone, the regulated bus free.
+- [FIXED] ``DistributedSlack`` with ``redistribute_slack``: after sharing a contingency's lost power,
+  the loop shares the rest from the row's own targets, as OpenLoadFlow: a unit the share put at a bound stays there.
+- [FIXED] outer loops: a loop's change re-solved in zero Newton iterations is done, not redone on the same
+  state (``DistributedSlack`` oscillated on a thinly spread move). Recorded as ``SETTLED``. Issue #264.
+- [ADDED] (C++) ``BaseAlgo::get_ordering_constraints()``: the Newton system's ordering constraints,
+  read-only, so an external solver can order J as ``constrained_ordering`` does (gpusim2grid's GPU batch).
+- [ADDED] ``fill_reducing_ordering`` (KLU-based NR algorithms, part of their config): start the ordering
+  from minimum fill instead of AMD, for cheaper refactorizations in a batch. Off by default.
+- [IMPROVED] (C++) masked and PV-pinned buses: their Jacobian positions are found again only when a set
+  changes, and only on its rows: batches with outer loops spend noticeably less time outside the solver.
+- [IMPROVED] (C++) outer loops: ``TransformerVoltageControl`` and ``DistributedSlack`` work out their groups /
+  participants once per solve instead of at every call. ``OuterSolveCache`` gains a field: rebuild plugins.
+- [IMPROVED] ``constrained_ordering``: a voltage-control group of several controllers keeps its Q
+  columns in the controllers' order: holding one at a reactive limit forces a fresh factorization
+  far less often.
+- [ADDED] ``load_algorithm_plugin`` takes a plugin's name, found by ``find_algorithm_plugin`` in
+  ``LS2G_PLUGIN_PATH`` or in ``examples/*/build`` of an editable install.
+- [ADDED] ``examples/build_plugins.py``: builds all the example plugins at once, on any OS.
+- [ADDED] batch classes: ``get_row_linear_solver_stats``, ``get_row_J_dim`` / ``get_row_J_nnz``, and
+  ``OuterRowResult.decisions_taken``: each row's linear solver work, Jacobian size and loop switches.
+- [ADDED] ``rgrowth_threshold`` of the refactor fallback (NR algorithms, part of their config) and
+  ``LinearSolverStats.min_rgrowth``, the smallest pivot growth a solve accepted (KLU, KLU static pivot).
+- [BREAKING] (C++ / plugins) ``LinearSolverStats`` has a new field: plugins must be rebuilt.
+- [ADDED] example plugin ``examples/rebuild_outer_algorithm`` (``NROuterRebuild_*``): the outer loops on a
+  Jacobian rebuilt and analyzed again whenever the active equations change, as OpenLoadFlow does.
+- [FIXED] (C++) a Jacobian rebuilt while buses are masked or pinned kept their identity rows at the
+  positions of the previous pattern.
+- [ADDED] (C++) ``NRAlgo::request_factorize``, ``NRSystem::set_controller_q`` and ``NRSystem::masked_buses``,
+  for a driver that rebuilds the Newton in the middle of a solve.
+- [FIXED] gradients with ``NROuterDist_*`` and ``redistribute_slack``: a unit the share of a row's lost power
+  put at a bound kept its ``gen_p`` gradient; it is held there, as one the Newton's share parks.
+- [FIXED] ``LinearSolverStats`` of the ``*_NICSLU`` algorithms: the factorizations NICSLU runs in place of a
+  refactorization (declined or failed) count, as fallbacks. They were counted as refactorizations.
+- [FIXED] ``LSGrid``'s result and target getters (``get_gen_res``, ``get_load_target_p``, ...) returned views
+  that did not keep the grid alive: read after the grid was collected, they read freed memory.
+- [ADDED] gradients with the outer loops (``NROuter_*``, ``NROuterDist_*``): ``keep_jacobian`` in the batch
+  classes, ``solve_JT`` and the bus maps on ``LSGrid``. The last Newton's Jacobian, the loops' decisions held.
+- [ADDED] ``lightsim2grid.differentiable.GridPowerFlow``: one grid's powerflow as a pytorch operation.
+- [ADDED] ``gen_p_indirect_grad``, ``get_gen_v_share_rows`` and ``get_outer_trafo_admittances`` (batch
+  classes and ``LSGrid``); ``compute_flows`` of the pytorch operations uses the taps the loops settled on.
+- [FIXED] the ``gen_v`` gradient of a generator whose bus a batch row keeps pinned PV was 0.
+- [BREAKING] (C++ / plugins) ``BaseAlgo::get_adjoint_solve_info``, and ``BaseOuterLoop::adjoint_terms``:
+  plugins must be rebuilt.
+- [ADDED] ``NROuterDist_*`` algorithms: the outer loops around a Newton that shares the slack itself.
+  ``DistributedSlack`` only caps the units pushed past ``min_p`` / ``max_p`` / 0 MW, out of the share.
+- [FIXED] ``ContingencyPropagator``: breakers right at a terminal whose other switches are breakers stay
+  closed, and a node holding only breakers is walked through, as in OpenLoadFlow.
 - [ADDED] ``LightSimBackend`` keeps an outer-loop configuration over ``reset()`` / ``copy()``: ``set_outer_loops``,
   ``set_outer_loop_driver_params``, ``set_resume_outer_state``, ``set_olf_outer_loops``, and the matching
   constructor kwargs (#272).

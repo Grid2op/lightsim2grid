@@ -64,7 +64,7 @@ ErrorType NICSLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
 
 ErrorType NICSLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
     // solver.FactorizeMatrix(ax, 0); //use all created threads
-    int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);
+    int ret = factorize_matrix(J);
     if (ret < 0){
         // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
         return ErrorType::SolverFactor;
@@ -73,13 +73,28 @@ ErrorType NICSLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
 }
 
 ErrorType NICSLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
-    int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
+    int ret = factorize_matrix(J);  // TODO maybe 0 instead of nb_thread_ here, see https://github.com/chenxm1986/nicslu/blob/master/nicslu202110/demo/demo2.cpp
     if(ret < 0){
         // std::cout << "NICSLULinearSolver::refactor solver_.FactorizeMatrix error: " << ret << std::endl;
         // https://github.com/chenxm1986/nicslu/blob/master/nicslu202103/include/nicslu.h for error info
         return ErrorType::SolverReFactor;
     }
     return ErrorType::NoError;
+}
+
+int NICSLULinearSolver::factorize_matrix(const EigenRefConstRealSpMat & J){
+    // stat[14] / stat[15]: the factorizations / refactorizations NICSLU performed. Read
+    // around the call, so that whether Analyze restarts them does not matter. No
+    // statistics without a successful Initialize (a missing licence): nothing ran either.
+    last_nb_factorize_ = 0;
+    last_nb_refactorize_ = 0;
+    if(solver_.info == nullptr) return solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);
+    const double nb_fact = solver_.GetInformation(14);
+    const double nb_refact = solver_.GetInformation(15);
+    int ret = solver_.FactorizeMatrix(J.valuePtr(), nb_thread_);
+    last_nb_factorize_ = static_cast<std::size_t>(solver_.GetInformation(14) - nb_fact);
+    last_nb_refactorize_ = static_cast<std::size_t>(solver_.GetInformation(15) - nb_refact);
+    return ret;
 }
 
 ErrorType NICSLULinearSolver::solve(Eigen::Ref<RealVect> b){

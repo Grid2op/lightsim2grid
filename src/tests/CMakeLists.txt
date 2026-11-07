@@ -93,6 +93,7 @@ add_executable(lightsim2grid_unit_tests
     test_hvdc_ac_emulation_limits_loop.cpp
     test_klu_rgrowth.cpp
     test_klu_static_pivot.cpp
+    test_min_fill_ordering.cpp
     test_voltage_monitoring_loop.cpp
     test_reactive_limits_loop.cpp
     test_tap_changers.cpp
@@ -109,6 +110,7 @@ add_executable(lightsim2grid_unit_tests
     test_base_case_reuse.cpp
     test_slack_redistribution.cpp
     test_outer_row_view.cpp
+    test_outer_adjoint.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

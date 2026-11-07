@@ -175,7 +175,7 @@ class TestPickle(unittest.TestCase):
 
         ac_cfg = grid.get_ac_algo_config()
         ac_cfg.int_params = [1, 2, 3, 4, 0]  # the last, constrained_ordering
-        ac_cfg.real_params = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+        ac_cfg.real_params = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 1e-8]  # the last, rgrowth_threshold
         grid.set_ac_algo_config(ac_cfg)
         # DC solver (DC_SparseLU) does not populate AlgoConfig at all (only the
         # NRAlgo family does): get_config()/set_config() are BaseAlgo's no-op.

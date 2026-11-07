@@ -100,6 +100,8 @@ class LS2G_API NRLedger
         }
 
         // ---- lookups ---------------------------------------------------------
+        // the size of the bus-keyed maps (the n_bus of the last reset)
+        int n_bus()            const { return static_cast<int>(p_row_of_bus_.size()); }
         int p_row(int bus)     const { return p_row_of_bus_[bus]; }
         int q_row(int bus)     const { return q_row_of_bus_[bus]; }
         int theta_col(int bus) const { return theta_col_of_bus_[bus]; }

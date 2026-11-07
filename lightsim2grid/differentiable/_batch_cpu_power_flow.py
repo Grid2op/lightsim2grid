@@ -85,6 +85,12 @@ nothing about the assembly (a generator contingency re-weighting the distributed
 slack, a bus released from PV to PQ) has to be mirrored in python -- it stays in
 the C++ that the forward already runs.
 
+With outer loops (``algorithm`` one of ``NROuter_*`` / ``NROuterDist_*``, the loops the
+grid's own, see :func:`LSGrid.set_outer_loops`), each row's Jacobian is that of its last
+Newton solve, on the system the loops left -- a bus switched PQ, a unit held at a limit,
+a tap moved -- and the gradient holds every one of those decisions. See
+:ref:`differentiable` for what that does and does not cover.
+
 A row that did not converge -- it diverged, or a contingency islanded it -- comes
 back as NaN and gets a zero gradient; see :func:`converged`.
 """
@@ -94,7 +100,8 @@ import numpy as np
 from lightsim2grid.lightsim2grid_cpp import ScenarioSweepCPP
 from lightsim2grid.algorithm import AlgorithmType
 
-from ._flows import compute_branch_flows, BranchFlows
+from ._flows import compute_branch_flows, branch_admittances, BranchFlows
+from . import _adjoint
 
 __all__ = ["BatchCPUPowerFlow"]
 
@@ -181,6 +188,7 @@ class BatchCPUPowerFlow:
         self._load_off = None
         self._gen_v_set = False
         self._last_connected = None      # (n_scen, n_branch) bool, for compute_flows
+        self._trafo_moved = None         # the taps the loops settled on, for compute_flows
         self._converged = None
 
     # ------------------------------------------------------------------- build
@@ -193,7 +201,8 @@ class BatchCPUPowerFlow:
         The grid does not have to be solved first: every batch begins with its own
         "n" warm-up powerflow. ``algorithm`` defaults to the fastest Newton-Raphson
         the build has (KLU when it was compiled in); it must be one of the AC NR
-        family, since the adjoint is a solve against that Jacobian.
+        family, since the adjoint is a solve against that Jacobian: ``NR_*``, or
+        ``NROuter_*`` / ``NROuterDist_*`` to run the grid's outer loops in every row.
         """
         sweep = ScenarioSweepCPP(grid)
         if algorithm is None:
@@ -282,7 +291,8 @@ class BatchCPUPowerFlow:
 
         Returns a :class:`BranchFlows`. By default a branch is taken as connected
         where the last :func:`forward` had it connected; pass ``connected``
-        ``(n_scen, n_branch)`` to say otherwise.
+        ``(n_scen, n_branch)`` to say otherwise. A transformer whose tap the outer
+        loops of the last :func:`forward` moved in a row is taken at that tap there.
         """
         torch = _torch()
         if connected is None:
@@ -290,8 +300,10 @@ class BatchCPUPowerFlow:
             if connected is None:
                 connected = torch.ones((V.shape[0], self.n_branch), dtype=torch.bool)
         connected = connected & torch.as_tensor(self._branch_alive).unsqueeze(0)
-        return compute_branch_flows(V, self._y_11, self._y_12, self._y_21, self._y_22,
-                                    self._branch_or, self._branch_ex, self._bus_vn_kv,
+        ys = (self._y_11, self._y_12, self._y_21, self._y_22)
+        if self._trafo_moved is not None and V.shape[0] == self._n_scen:
+            ys = branch_admittances(*ys, V.shape[0], self.n_line, *self._trafo_moved)
+        return compute_branch_flows(V, *ys, self._branch_or, self._branch_ex, self._bus_vn_kv,
                                     self.sn_mva, connected)
 
     @property
@@ -438,6 +450,7 @@ def _make_op(torch):
 
             converged = np.asarray(sweep.converged_mask(), dtype=bool)
             pf._converged = converged
+            pf._trafo_moved = sweep.get_outer_trafo_admittances()
             V = torch.as_tensor(np.array(sweep.get_voltages()))
             # a row that was never solved holds zeros, which is indistinguishable from
             # a genuine result: NaN says "there is nothing here" out loud, and
@@ -452,88 +465,41 @@ def _make_op(torch):
         @staticmethod
         def backward(ctx, grad_V):
             pf = ctx.pf
-            sweep = pf._sweep
             V, = ctx.saved_tensors
-            n_scen, n_bus = V.shape
-            dim_J = sweep.dim_J()
-
-            theta_col = np.asarray(sweep.get_theta_col_of_bus())
-            vm_col = np.asarray(sweep.get_vm_col_of_bus())
-            p_row = np.asarray(sweep.get_p_row_of_bus())
-            q_row = np.asarray(sweep.get_q_row_of_bus())
-
-            # NaN rows (never solved) carry no cotangent, and must not put a NaN into
-            # the system either
-            finite = torch.isfinite(V.real) & torch.isfinite(V.imag)
-            gV = torch.where(finite, grad_V, torch.zeros_like(grad_V))
-            Vs = torch.where(finite, V, torch.ones_like(V))
-
-            # project the loss's sensitivity to V onto the Newton-Raphson unknowns:
-            # an angle unknown takes Im(conj(V) . gV), a magnitude one
-            # Re(conj(V/|V|) . gV) -- the two halves of dL/dV in polar coordinates
-            xbar = torch.zeros(n_scen, dim_J, dtype=torch.float64)
-            th_bus = np.flatnonzero(theta_col >= 0)
-            vm_bus = np.flatnonzero(vm_col >= 0)
-            if th_bus.size:
-                xbar[:, torch.as_tensor(theta_col[th_bus])] = \
-                    (torch.conj(Vs[:, th_bus]) * gV[:, th_bus]).imag
-            if vm_bus.size:
-                v_hat = Vs[:, vm_bus] / Vs[:, vm_bus].abs()
-                xbar[:, torch.as_tensor(vm_col[vm_bus])] = (torch.conj(v_hat) * gV[:, vm_bus]).real
-
-            lam = torch.as_tensor(sweep.solve_JT(np.ascontiguousarray(xbar.numpy())))
-
-            # lambda is the gradient with respect to the per-unit bus injection; an
-            # element's own is that, times how it enters its bus
-            def element_grad(bus_of_element, row_of_bus, sign):
-                grad = torch.zeros(n_scen, bus_of_element.shape[0], dtype=torch.float64)
-                rows = np.where(bus_of_element >= 0, row_of_bus[np.clip(bus_of_element, 0, None)], -1)
-                sel = np.flatnonzero(rows >= 0)   # an element off the grid, or on a bus
-                if sel.size:                      # with no such equation, keeps its zero
-                    grad[:, torch.as_tensor(sel)] = sign * lam[:, torch.as_tensor(rows[sel])] / pf.sn_mva
-                return grad
-
-            wants_lp, wants_lq, wants_gp, wants_sp, wants_gv = ctx.needs
-            grad_load_p = element_grad(pf._load_bus, p_row, -1.) if wants_lp else None
-            grad_load_q = element_grad(pf._load_bus, q_row, -1.) if wants_lq else None
-            grad_gen_p = element_grad(pf._gen_bus, p_row, +1.) if wants_gp else None
-            grad_sgen_p = element_grad(pf._sgen_bus, p_row, +1.) if wants_sp else None
+            grads = _adjoint.input_grads(torch, _SweepSolver(pf._sweep), V, grad_V, ctx.needs,
+                                         pf.sn_mva, pf._load_bus, pf._gen_bus, pf._sgen_bus)
+            grad_load_p, grad_load_q, grad_gen_p, grad_sgen_p, grad_gen_v = grads
             # an element a row disconnects is out of that row's injection: its value
             # there changes nothing
             for grad, off in ((grad_load_p, pf._load_off), (grad_load_q, pf._load_off),
                               (grad_gen_p, pf._gen_off)):
                 if grad is not None and off is not None:
                     grad[torch.as_tensor(off)] = 0.
-
-            # gen_v is not an injection: it FIXES the magnitude of the bus it regulates,
-            # which the Newton-Raphson therefore does not solve for. So lambda is not
-            # its gradient, and the two halves have to be put together by hand:
-            #
-            #   indirect  -lambda^T dF/dv, the dS/dVm column the Jacobian does not store
-            #             for such a bus -- from the sweep, where Ybus is;
-            #   direct    the loss's own dependence on V_k = v_k . exp(j.theta_k) at
-            #             fixed unknowns, which is Re(conj(V_k/|V_k|) . gV_k) -- the very
-            #             quantity a PQ bus contributes to xbar above. A bus whose
-            #             magnitude is an unknown hands it to the adjoint; a bus whose
-            #             magnitude is a set-point hands it to that set-point.
-            grad_gen_v = None
-            if wants_gv:
-                grad_gen_v = torch.as_tensor(
-                    sweep.gen_v_indirect_grad(np.ascontiguousarray(lam.numpy())))
-                target = np.asarray(sweep.get_gen_v_target_bus())
-                share = np.asarray(sweep.get_gen_v_share())
-                live = np.flatnonzero(target >= 0)   # a generator whose set-point never
-                if live.size:                        # reaches the solve keeps its zero
-                    bus = torch.as_tensor(target[live])
-                    v_hat = Vs[:, bus] / Vs[:, bus].abs()
-                    # weighted by the same share the indirect half already carries: where
-                    # several generators regulate one bus their set-points are tied, so
-                    # each holds a share of the one derivative that exists rather than a
-                    # partial of its own (see get_gen_v_share)
-                    grad_gen_v[:, torch.as_tensor(live)] += (
-                        (torch.conj(v_hat) * gV[:, bus]).real
-                        * torch.as_tensor(share[live]))
-
             return grad_load_p, grad_load_q, grad_gen_p, grad_sgen_p, grad_gen_v, None
 
     return _Op
+
+
+class _SweepSolver:
+    """What :func:`_adjoint.input_grads` reads of a batch: one adjoint system per row."""
+
+    def __init__(self, sweep):
+        self._sweep = sweep
+        self.dim_J = sweep.dim_J()
+        self.theta_col = np.asarray(sweep.get_theta_col_of_bus())
+        self.vm_col = np.asarray(sweep.get_vm_col_of_bus())
+        self.p_row = np.asarray(sweep.get_p_row_of_bus())
+        self.q_row = np.asarray(sweep.get_q_row_of_bus())
+        self.gen_v_target_bus = np.asarray(sweep.get_gen_v_target_bus())
+
+    def solve_JT(self, xbar):
+        return np.asarray(self._sweep.solve_JT(xbar))
+
+    def gen_v_indirect_grad(self, lam):
+        return np.asarray(self._sweep.gen_v_indirect_grad(lam))
+
+    def gen_p_indirect_grad(self, lam):
+        return np.asarray(self._sweep.gen_p_indirect_grad(lam))
+
+    def gen_v_share(self):
+        return np.asarray(self._sweep.get_gen_v_share_rows())

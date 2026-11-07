@@ -653,6 +653,45 @@ class TestSubObjectGettersKeepGridAlive(unittest.TestCase):
         self.assertIsNotNone(vn.base)          # a parent object keeps it alive
         self.assertTrue(np.all(np.asarray(vn) > 0.))
 
+    def test_every_view_getter_keeps_the_grid_alive(self):
+        # Every argument-free getter of a solved grid, swept: whatever comes back as a numpy
+        # view into the grid (or a tuple of them, as the *_res getters give) must hold a
+        # reference to what owns its memory -- the grid. A view with no base at all reads
+        # freed memory once the grid is collected. (A vector returned by value comes back
+        # with its own copy as base, which is fine.) A getter added later is covered
+        # without being listed here.
+        import gc
+        import weakref
+
+        def bare_views(res):
+            items = res if isinstance(res, tuple) else (res,)
+            return [el for el in items
+                    if isinstance(el, np.ndarray) and not el.flags.owndata and el.base is None]
+
+        def call(grid, name):
+            try:
+                return getattr(grid, name)()
+            except (TypeError, RuntimeError, ValueError):
+                return None   # needs arguments, or nothing to give on this grid
+
+        grid = build_exotic_elements_case_grid()
+        grid.ac_pf(np.ones(grid.total_bus(), dtype=complex), 30, 1e-8)
+        dangling = [name for name in dir(grid) if name.startswith("get_") and bare_views(call(grid, name))]
+        self.assertEqual(dangling, [], "views that do not keep their grid alive: %s" % dangling)
+
+        # and the grid does outlive such a view: the result getters, the case that bit
+        grid = build_exotic_elements_case_grid()
+        grid.ac_pf(np.ones(grid.total_bus(), dtype=complex), 30, 1e-8)
+        alive = weakref.ref(grid)
+        p_mw = grid.get_gen_res()[0]
+        target_p = grid.get_gen_target_p()
+        expected = target_p.copy()
+        del grid
+        gc.collect()
+        _ = [bytearray(b"\x41" * 8192) for _ in range(2000)]
+        self.assertIsNotNone(alive())
+        np.testing.assert_array_equal(target_p, expected)
+        self.assertTrue(np.all(np.isfinite(p_mw)))
 
 if __name__ == "__main__":
     unittest.main()

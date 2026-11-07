@@ -138,7 +138,7 @@ public:
 
     // ----- AlgoConfig: the inner algorithm's parameters, then whether to resume --------
     // int_params:  [the Newton's 5], resume_outer_state
-    // real_params: [the Newton's 6]
+    // real_params: [the Newton's 7]
     // The driver's OpenLoadFlow parameters are the grid's (LSGrid::set_outer_loop_driver_params),
     // handed over with the loops before each solve: not part of the algorithm's configuration.
     AlgoConfig get_config() const override {
@@ -212,8 +212,11 @@ public:
     IntVect   get_controller_elem_id() const override { return inner_.algo().get_controller_elem_id(); }
     IntVect   get_controller_q_col()   const override { return inner_.algo().get_controller_q_col(); }
     IntVect   get_group_v_row()        const override { return inner_.algo().get_group_v_row(); }
+    OrderingConstraints get_ordering_constraints() const override { return inner_.algo().get_ordering_constraints(); }
     int       get_slack_col()          const override { return inner_.algo().get_slack_col(); }
-    real_type get_slack_absorbed()     const override { return inner_.algo().get_slack_absorbed(); }
+    // 0 after a solve: a distributed-slack Newton's share is in the units' targets (see
+    // _fold_slack_share), and a single-slack one has none
+    real_type get_slack_absorbed()     const override { return inner_.published_slack_absorbed(); }
 
     // the inner algorithm's timers, over every solve of the last compute_pf, with the
     // driver's total
@@ -227,6 +230,8 @@ public:
     bool supports_bus_masking() const override { return inner_.algo().supports_bus_masking(); }
     bool supports_jacobian() const override { return inner_.algo().supports_jacobian(); }
     void refresh_J_at_solution() override { inner_.algo().refresh_J_at_solution(); }
+    // the inner Newton's, plus how the loops' last state changes the way gen_p reaches it
+    void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const override;
     void set_masked_buses(const std::vector<int> & solver_bus_ids) override { inner_.algo().set_masked_buses(solver_bus_ids); }
     void set_may_mask_voltage_control(bool val) override { inner_.algo().set_may_mask_voltage_control(val); }
     void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override { inner_.algo().set_voltage_control_v_set(v_set); }
@@ -254,6 +259,8 @@ private:
     bool _solve(int max_iter, real_type tol, bool & need_init, bool check_unrealistic);
     // the loops' reservations, on a rebuild of the topology (see Inner::setup)
     void _declare();
+    // the slack a distributed-slack Newton shared, moved into the units' targets (see the .tpp)
+    void _fold_slack_share();
     // Ybus_ = Ybus (see compute_pf)
     void _copy_ybus(const EigenRefConstCplxSpMat & Ybus);
     // OuterContext on the algorithm's current state
@@ -286,6 +293,10 @@ private:
     OuterLoopStats stats_;
     int total_nr_iterations_ = 0;
     bool unrealistic_ = false;
+    // whether the last solve's per-bus residuals differ from the solve before it: a solve of
+    // zero Newton iterations that did not move them was given nothing to do (see compute_pf)
+    bool residual_moved_ = true;
+    CplxVect prev_mis_bus_;
 
     // private copies the loops edit; the inner algorithm reads Sbus_ and Ybus_ through a
     // pointer, so they must not move during a solve (they are only reassigned before setup)

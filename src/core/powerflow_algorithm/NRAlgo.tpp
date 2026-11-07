@@ -118,7 +118,7 @@ bool NRAlgo<LinearSolver, NRSystem>::setup(
 // The Newton iterations, from whatever state the system holds: the one setup put it in,
 // or -- for an outer loop resuming the solve -- the one the previous call left, possibly
 // edited by value. Always factorizes on its first iteration: analyze + factorize if
-// `need_init`, refactorize otherwise.
+// `need_init`, factorize if asked (request_factorize), refactorize otherwise.
 template<class LinearSolver, class NRSystem>
 bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool need_init)
 {
@@ -157,15 +157,19 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
                 // solver that orders with constraints gets the system's first (or none,
                 // see set_constrained_ordering).
                 detail::set_ordering_constraints_impl(_linear_solver, _system, constrained_ordering_, 0);
+                detail::set_fill_reducing_ordering_impl(_linear_solver, fill_reducing_ordering_, 0);
                 err_ = _linear_solver.analyze(_system.J());
                 if (err_ == ErrorType::NoError) {
                     err_ = _linear_solver.factorize(_system.J());
                 }
                 need_init = false;
                 need_factorize_ = false;
+            } else if (need_numeric_factorize_) {
+                err_ = _linear_solver.factorize(_system.J());
             } else {
                 err_ = _linear_solver.refactorize(_system.J());
             }
+            need_numeric_factorize_ = false;
             if (err_ != ErrorType::NoError) { res = false; break; }
             need_factorize = false;
         }
@@ -266,6 +270,7 @@ void NRAlgo<LinearSolver, NRSystem>::reset()
     BaseAlgo::reset();
     _system.clear_jacobian();
     need_factorize_ = true;
+    need_numeric_factorize_ = false;
     n_ = -1;
     ErrorType reset_status = _linear_solver.reset();
     if (reset_status != ErrorType::NoError) err_ = reset_status;
