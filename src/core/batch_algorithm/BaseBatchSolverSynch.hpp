@@ -308,21 +308,11 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
     public:
 
         // field-wise +=, so get_linear_solver_stats() can report the whole compute()
-        // rather than whichever algorithm happened to be the member one.
+        // rather than whichever algorithm happened to be the member one. A forward
+        // solver's: its factorizations and its solves (the adjoint's are BatchAdjoint's).
         static void _accumulate_solver_stats(LinearSolverStats & into, const LinearSolverStats & from){
-            into.nb_reset += from.nb_reset;
-            into.nb_analyze += from.nb_analyze;
-            into.nb_factorize += from.nb_factorize;
-            into.nb_refactorize += from.nb_refactorize;
-            into.nb_refactorize_failed += from.nb_refactorize_failed;
-            into.nb_fallback_factorize += from.nb_fallback_factorize;
-            into.nb_fallback_factorize_failed += from.nb_fallback_factorize_failed;
-            into.nb_solve += from.nb_solve;
-            into.timer_initialize_ += from.timer_initialize_;
-            into.timer_factor_ += from.timer_factor_;
-            into.timer_refactor_ += from.timer_refactor_;
-            into.timer_solve_ += from.timer_solve_;
-            detail::merge_min_rgrowth(into.min_rgrowth_, from.min_rgrowth_);
+            detail::add_factorization_stats(into, from);
+            detail::add_solve_stats(into, from);
         }
 
         /**

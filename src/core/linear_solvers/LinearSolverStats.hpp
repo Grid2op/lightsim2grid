@@ -55,6 +55,50 @@ namespace detail {
         if (!std::isnan(from) && (std::isnan(into) || from < into)) into = from;
     }
 
+    // The field lists of LinearSolverStats, kept next to it: a field added to the struct is
+    // added to the one of these it belongs to.
+
+    // what the factorizations cost, summed: analyses, factorizations, refactorizations, their
+    // failures and fallbacks, their timers, and the smallest pivot growth of the two
+    inline void add_factorization_stats(LinearSolverStats & into, const LinearSolverStats & from) noexcept {
+        into.nb_analyze += from.nb_analyze;
+        into.nb_factorize += from.nb_factorize;
+        into.nb_refactorize += from.nb_refactorize;
+        into.nb_refactorize_failed += from.nb_refactorize_failed;
+        into.nb_fallback_factorize += from.nb_fallback_factorize;
+        into.nb_fallback_factorize_failed += from.nb_fallback_factorize_failed;
+        into.timer_initialize_ += from.timer_initialize_;
+        into.timer_factor_ += from.timer_factor_;
+        into.timer_refactor_ += from.timer_refactor_;
+        merge_min_rgrowth(into.min_rgrowth_, from.min_rgrowth_);
+    }
+    // a forward solver's own work, summed: its resets and its solve() calls
+    inline void add_solve_stats(LinearSolverStats & into, const LinearSolverStats & from) noexcept {
+        into.nb_reset += from.nb_reset;
+        into.nb_solve += from.nb_solve;
+        into.timer_solve_ += from.timer_solve_;
+    }
+    // an adjoint solver's own work, summed: its solve_transpose() calls
+    inline void add_solve_transpose_stats(LinearSolverStats & into, const LinearSolverStats & from) noexcept {
+        into.nb_solve_transpose += from.nb_solve_transpose;
+        into.timer_solve_transpose_ += from.timer_solve_transpose_;
+    }
+    // `now` with every counter replaced by how much it grew since `before` (the counters cover
+    // a solver's lifetime); the timers and min_rgrowth_ are `now`'s, which cover its last solve
+    inline LinearSolverStats counters_since(const LinearSolverStats & now, const LinearSolverStats & before) noexcept {
+        LinearSolverStats res = now;
+        res.nb_reset -= before.nb_reset;
+        res.nb_analyze -= before.nb_analyze;
+        res.nb_factorize -= before.nb_factorize;
+        res.nb_refactorize -= before.nb_refactorize;
+        res.nb_refactorize_failed -= before.nb_refactorize_failed;
+        res.nb_fallback_factorize -= before.nb_fallback_factorize;
+        res.nb_fallback_factorize_failed -= before.nb_fallback_factorize_failed;
+        res.nb_solve -= before.nb_solve;
+        res.nb_solve_transpose -= before.nb_solve_transpose;
+        return res;
+    }
+
     // C++14-safe detection idiom (deliberately not `if constexpr`, which is C++17: this
     // project falls back to cxx_std_14 on older compilers, see CMakeLists.txt). Prefers
     // the real accessor when the wrapped LinearSolver provides one (LinearSolverPolicy<>

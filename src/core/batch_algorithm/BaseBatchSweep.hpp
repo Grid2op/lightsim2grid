@@ -2098,17 +2098,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(i >= _row_lin_stats_.size()) return;
             // the counters cover the algorithm's lifetime: the row's is what they grew by;
             // the timers (and min_rgrowth_) are reset at the start of each solve already
-            LinearSolverStats r = algo.get_linear_solver_stats();
-            r.nb_reset -= lin_before.nb_reset;
-            r.nb_analyze -= lin_before.nb_analyze;
-            r.nb_factorize -= lin_before.nb_factorize;
-            r.nb_refactorize -= lin_before.nb_refactorize;
-            r.nb_refactorize_failed -= lin_before.nb_refactorize_failed;
-            r.nb_fallback_factorize -= lin_before.nb_fallback_factorize;
-            r.nb_fallback_factorize_failed -= lin_before.nb_fallback_factorize_failed;
-            r.nb_solve -= lin_before.nb_solve;
-            r.nb_solve_transpose -= lin_before.nb_solve_transpose;
-            _row_lin_stats_[i] = r;
+            _row_lin_stats_[i] = detail::counters_since(algo.get_linear_solver_stats(), lin_before);
             if(algo.supports_jacobian()){
                 const auto J = algo.get_J();
                 _row_J_dim_[i] = static_cast<int>(J.rows());
