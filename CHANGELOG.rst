@@ -252,6 +252,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] A grid built by hand with ``LSGrid.init_*`` is checked (``check_grid``) at its first
   powerflow, ``check_solution`` or batch algorithm: a bus id out of range raises instead of
   crashing or being silently ignored (#259).
+- [ADDED] ``LSGrid.set_resume_outer_state`` / ``get_resume_outer_state``: a shortcut for the
+  ``resume_outer_state`` flag of the ``NROuter_*`` AC algorithm (#258).
 
 
 [1.3.0] 2026-11-03

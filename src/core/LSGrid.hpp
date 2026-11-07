@@ -440,6 +440,18 @@ class LS2G_API LSGrid final
         }
 
         /**
+         * Whether a solve of the AC algorithm, an NROuter_* one, starts its outer loops from
+         * where the last converged solve left them rather than from the grid (see
+         * OuterLoopDriverParams::resume_outer_state). A shortcut for the last integer of its
+         * AC AlgoConfig: the setting is the algorithm's, so it is copied and pickled with the
+         * grid's algorithm configuration, and a change of AC algorithm starts from that
+         * algorithm's own (off). Throws if the AC algorithm runs no outer loop; the getter
+         * then returns false.
+         */
+        void set_resume_outer_state(bool resume);
+        [[nodiscard]] bool get_resume_outer_state() const;
+
+        /**
          * The limits the LAST converged powerflow (ac_pf when `ac`, dc_pf otherwise)
          * cannot physically meet -- the same checks the batch algorithms run with
          * `compute_physical_violations`, on this grid's own solve: a voltage
