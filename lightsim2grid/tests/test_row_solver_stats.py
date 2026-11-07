@@ -56,14 +56,17 @@ class TestRowSolverStats(unittest.TestCase):
         return grid.get_algo().get_linear_solver_stats(), grid.get_algo().get_J()
 
     def _check_rows_add_up(self, batch, nb_worker=0):
-        """the rows' counters and the "n" solve's are the whole compute()'s, but for the reset
-        each worker's algorithm gets when it is made, before any row"""
+        """the rows' counters and the "n" solve's are the whole compute()'s, but for what each
+        worker does before its first row: a reset when it is made, then the "n" solve again
+        (outer loops reserve their controls on the base case), which starts with a reset of
+        its own"""
         n_stats, _ = self._n_solve_stats()
         total = batch.get_linear_solver_stats()
         rows = batch.get_row_linear_solver_stats()
         self.assertEqual(len(rows), tob.N_ROWS)
         for name in COUNTERS:
-            outside = nb_worker if name == "nb_reset" else 0
+            per_worker = 2 if name == "nb_reset" else getattr(n_stats, name)
+            outside = nb_worker * per_worker
             self.assertEqual(sum(getattr(r, name) for r in rows) + getattr(n_stats, name) + outside,
                              getattr(total, name), name)
 
@@ -80,10 +83,12 @@ class TestRowSolverStats(unittest.TestCase):
     def test_two_threads(self):
         batch = self._batch(nb_thread=2)
         self._check_rows_add_up(batch, nb_worker=2)
-        # each worker analyzes and factorizes once, in the first row it solves
+        # each worker analyzes and factorizes in its base-case solve, before any row
         rows = batch.get_row_linear_solver_stats()
-        self.assertEqual(sum(r.nb_analyze for r in rows), 2)
-        self.assertEqual(sum(r.nb_factorize for r in rows), 2)
+        self.assertEqual(sum(r.nb_analyze for r in rows), 0)
+        self.assertEqual(sum(r.nb_factorize for r in rows), 0)
+        # the "n" solve, then one per worker
+        self.assertEqual(batch.get_linear_solver_stats().nb_analyze, 3)
 
     def test_jacobian_size(self):
         _, J = self._n_solve_stats()
