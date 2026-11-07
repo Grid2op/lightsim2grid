@@ -236,6 +236,33 @@ Returns the last Jacobian matrix.  The base implementation throws
 ``std::runtime_error``.  Override if your solver exposes a Jacobian
 (needed only when Python code calls ``get_J()`` on the grid model).
 
+``get_adjoint_solve_info`` *(virtual — override only for Newton-Raphson algorithms that serve an adjoint)*
+
+.. code-block:: cpp
+
+    virtual void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const;
+
+What the gradient of the last solve needs besides ``get_J()`` (``AdjointSolveInfo.hpp``):
+the buses whose Q row the solve pinned to the identity, the voltage-control groups whose
+voltage row lost its set-point, ``dF/d|V|`` of each bus of ``vm_buses`` by Jacobian row,
+and the corrections to the ``gen_p`` gradient. Read after ``refresh_J_at_solution()``,
+only when ``supports_jacobian()`` is true. The base implementation leaves it empty. An
+algorithm built on ``NRAlgo`` inherits a complete one; a plugin wrapping one (as
+``examples/dist_slack_algorithm`` does) forwards it with ``get_J``.
+
+``get_ordering_constraints`` *(virtual — override only for algorithms built on an ``NRSystem``)*
+
+.. code-block:: cpp
+
+    virtual OrderingConstraints get_ordering_constraints() const;
+
+The Jacobian indices the system's linear solver must eliminate after the others, so that a
+row switched by value keeps a valid pivot (``OrderingConstraints.hpp``). Read-only: it says
+what the system asks for, whether or not the linear solver orders with it. The base
+implementation returns none. ``NRAlgo`` returns its system's; a plugin owning an
+``NRSystem`` returns ``ordering_constraints()`` of it, one wrapping an algorithm forwards
+it (both as the examples do).
+
 ``get_theta_to_J_col_python`` / ``get_vm_to_J_col_python`` / ``get_q_to_J_col_python`` *(virtual — override only for Newton-Raphson algorithms)*
 
 .. code-block:: cpp
@@ -623,7 +650,13 @@ Windows (MSVC, from a Developer Command Prompt):
 
 The resulting file is ``Release\my_solver.dll`` on Windows (no ``lib`` prefix)
 and ``libmy_solver.so`` on Linux / macOS.
-Pass that path to :func:`~lightsim2grid.load_algorithm_plugin`.
+Pass that path to :func:`~lightsim2grid.load_algorithm_plugin`, or only its name
+(``"my_solver"``): see :func:`~lightsim2grid.find_algorithm_plugin` for where a
+name is looked up.
+
+The plugins of the ``examples/`` folder are all built at once by
+``python examples/build_plugins.py`` (``--help`` for its options: a subset of
+the plugins, ``-j``, ``--test``, extra ``-D`` ...), on Linux, macOS and Windows.
 
 
 Loading and using the plugin from Python
@@ -681,10 +714,35 @@ Python API reference
     loading the same plugin twice — is rejected the same way, and the registry
     is left unchanged (registration is atomic).
 
-    :param path: Absolute or relative path to the ``.so`` / ``.dll`` file.
+    :param path: Absolute or relative path to the ``.so`` / ``.dll`` file, or
+        the bare name of the plugin, looked up by :func:`find_algorithm_plugin`.
     :raises RuntimeError: If the library cannot be loaded (missing file,
         unresolved symbols), does not export the ``ls2g_register_plugin`` entry
-        point, or its registration is refused (ABI mismatch, duplicate name).
+        point, or its registration is refused (ABI mismatch, duplicate name),
+        or if a bare name is not found.
+
+.. py:function:: lightsim2grid.find_algorithm_plugin(name: str) -> str
+
+    Return the path of a built plugin given its name: the library name
+    (``"my_solver"`` for ``libmy_solver.so`` / ``my_solver.dll``) or, for the
+    plugins of ``examples/``, their folder name, with or without its
+    ``_algorithm`` suffix (``"rebuild_outer"``). The first match wins, looking in:
+
+    1. the directories of the ``LS2G_PLUGIN_PATH`` environment variable
+       (separated by ``os.pathsep``, like ``PATH``), and their ``Release`` sub-folder;
+    2. ``examples/<plugin>/build`` of the source checkout, when lightsim2grid is
+       an editable install (``pip install -e .``) of it.
+
+    .. code-block:: bash
+
+        export LS2G_PLUGIN_PATH=/path/to/my_plugin/build   # not needed for examples/ in an editable install
+
+    .. code-block:: python
+
+        lightsim2grid.load_algorithm_plugin("my_solver")
+
+    :raises RuntimeError: If no plugin of that name is found; the message lists
+        the folders searched.
 
 .. py:method:: LSGrid.change_algorithm(name: str) -> None
 
@@ -894,7 +952,7 @@ plugin has not been built, and passes once the ``.so`` is present.
 Other example plugins
 -----------------------
 
-Two more complete, less minimal plugins live in the repository, both following the same build /
+Three more complete, less minimal plugins live in the repository, all following the same build /
 ``load_algorithm_plugin`` / ``change_algorithm`` pattern as ``external_algorithm`` above:
 
 * ``examples/dist_slack_algorithm/`` registers ``NRDistSlack_SparseLU`` / ``NRDistSlack_KLU``: a
@@ -904,6 +962,11 @@ Two more complete, less minimal plugins live in the repository, both following t
   Levenberg-Marquardt-damped Newton-Raphson variant (``LMNRAlgo``), also with ``SparseLU`` and
   ``KLU`` backends. Both names are registered atomically -- if either is already taken, neither is
   added and ``load_algorithm_plugin`` raises instead of half-registering.
+* ``examples/rebuild_outer_algorithm/`` registers ``NROuterRebuild_SparseLU`` /
+  ``NROuterRebuild_KLU``: OpenLoadFlow's outer loops, as ``NROuter_*`` runs them, on a Newton whose
+  Jacobian holds only the equations active now and is rebuilt -- analyzed again -- whenever the
+  loops change them, as OpenLoadFlow does. It is ``OuterLoopAlgo`` around its own ``Inner``
+  (``RebuildOuterInner``, a sibling of ``NROuterInner``): a plugin may wrap the outer-loop driver too.
 
 
 * :ref:`genindex`

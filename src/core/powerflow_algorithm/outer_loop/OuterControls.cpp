@@ -166,6 +166,37 @@ const StandbySvcControl * OuterControls::standby_svc(int svc) const { return fin
 HvdcRegimeControl * OuterControls::hvdc_regime(int line) { return find_control(hvdc_regime_of_, line); }
 const HvdcRegimeControl * OuterControls::hvdc_regime(int line) const { return find_control(hvdc_regime_of_, line); }
 
+bool SlackShareControl::reserved(int bus_solver) const
+{
+    return std::binary_search(buses_.begin(), buses_.end(), bus_solver);
+}
+
+void SlackShareControl::set_units(const std::vector<Unit> & units)
+{
+    units_.clear();
+    for (const Unit & unit : units) {
+        if (unit.weight > 0. && reserved(unit.bus_solver)) units_.push_back(unit);
+    }
+}
+
+real_type SlackShareControl::total_weight() const
+{
+    real_type res = 0.;
+    for (const Unit & unit : units_) res += unit.weight;
+    return res;
+}
+
+SlackShareControl * OuterControls::reserve_slack_share(const std::vector<int> & buses)
+{
+    if (!_supports_slack_share()) return nullptr;
+    std::vector<int> & mine = slack_share_.buses_;
+    mine.insert(mine.end(), buses.begin(), buses.end());
+    std::sort(mine.begin(), mine.end());
+    mine.erase(std::unique(mine.begin(), mine.end()), mine.end());
+    slack_share_reserved_ = true;
+    return &slack_share_;
+}
+
 void OuterControls::clear_reservations()
 {
     bus_voltage_of_.clear();
@@ -185,6 +216,8 @@ void OuterControls::clear_reservations()
     shunt_groups_.clear();
     shunt_controller_of_.clear();
     shunt_controller_store_.clear();
+    slack_share_ = SlackShareControl();
+    slack_share_reserved_ = false;
     // the caller's switchable buses are bus controls whatever the loops declare
     for (int b : caller_switchable_) reserve_bus_voltage(b);
 }
@@ -232,6 +265,7 @@ void OuterControls::reset_states()
     for (auto & shifter : phase_shifter_store_) shifter._reset();
     for (auto & tap : ratio_tap_store_) tap._reset();
     for (auto & shunt : shunt_controller_store_) shunt._reset();
+    slack_share_.units_.clear();  // the loops set the units of each solve
     pending_vm_.clear();
     suspended_.clear();
 }

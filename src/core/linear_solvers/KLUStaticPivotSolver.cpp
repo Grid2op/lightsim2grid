@@ -7,6 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "KLUStaticPivotSolver.hpp"
+#include "MinFillOrdering.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,24 +20,33 @@ void KLUStaticPivotLinearSolver::set_defaults(){
     common_.btf = 0;
 }
 
-bool constrained_amd_order(int n, const int * Ap, const int * Ai,
-                           const OrderingConstraints & constraints,
-                           std::vector<int> & perm){
+bool constrained_order(int n, const int * Ap, const int * Ai,
+                       const OrderingConstraints & constraints,
+                       FillReducingOrdering base,
+                       std::vector<int> & perm){
     perm.resize(n);
     if(n == 0) return true;
-    double control[AMD_CONTROL];
-    double info[AMD_INFO];
-    amd_defaults(control);
-    const int status = amd_order(n, Ap, Ai, perm.data(), control, info);
-    if(status != AMD_OK && status != AMD_OK_BUT_JUMBLED) return false;
+    if(base == FillReducingOrdering::MinFill){
+        if(!min_fill_order(n, Ap, Ai, perm)) return false;
+    } else {
+        double control[AMD_CONTROL];
+        double info[AMD_INFO];
+        amd_defaults(control);
+        const int status = amd_order(n, Ap, Ai, perm.data(), control, info);
+        if(status != AMD_OK && status != AMD_OK_BUT_JUMBLED) return false;
+    }
     if(constraints.empty()) return true;
 
     std::vector<int> pos(n);
     for(int k = 0; k < n; ++k) pos[perm[k]] = k;
-    // sort key: twice the AMD position; a follow index that comes before its last lead one
-    // gets the odd key right after it. Leads keep their place, so the keys of all the
-    // constraints are read off the same AMD order and one pass is enough.
+    // sort key: twice the position in the base order; a follow index that comes before its
+    // last lead one gets the odd key right after it. Leads keep their place, so the keys of
+    // all the constraints are read off the same base order and one pass is enough.
+    // An `in_order` constraint gives all its follow indices the odd key after the last of
+    // its leads and follows, and their rank breaks the tie. Its follows are never another
+    // constraint's leads, so the keys stay read off the base order alone.
     std::vector<long> key(n);
+    std::vector<int> rank(n, 0);
     for(int i = 0; i < n; ++i) key[i] = 2L * pos[i];
     for(const OrderingConstraint & c : constraints){
         int last_lead = -1;
@@ -44,12 +54,33 @@ bool constrained_amd_order(int n, const int * Ap, const int * Ai,
             if(i >= 0 && i < n && pos[i] > last_lead) last_lead = pos[i];
         }
         if(last_lead < 0) continue;
+        if(c.in_order){
+            int last = last_lead;
+            for(int i : c.follow){
+                if(i >= 0 && i < n) last = std::max(last, pos[i]);
+            }
+            int r = 0;
+            for(int i : c.follow){
+                if(i < 0 || i >= n) continue;
+                key[i] = 2L * last + 1;
+                rank[i] = r++;
+            }
+            continue;
+        }
         for(int i : c.follow){
             if(i >= 0 && i < n && pos[i] < last_lead) key[i] = std::max(key[i], 2L * last_lead + 1);
         }
     }
-    std::stable_sort(perm.begin(), perm.end(), [&key](int a, int b){ return key[a] < key[b]; });
+    std::stable_sort(perm.begin(), perm.end(), [&key, &rank](int a, int b){
+        return key[a] < key[b] || (key[a] == key[b] && rank[a] < rank[b]);
+    });
     return true;
+}
+
+bool constrained_amd_order(int n, const int * Ap, const int * Ai,
+                           const OrderingConstraints & constraints,
+                           std::vector<int> & perm){
+    return constrained_order(n, Ap, Ai, constraints, FillReducingOrdering::AMD, perm);
 }
 
 ErrorType KLUStaticPivotLinearSolver::reset(){
@@ -74,12 +105,12 @@ ErrorType KLUStaticPivotLinearSolver::analyze(const EigenRefConstRealSpMat & J){
     factors_ = Factors::None;
     auto * Ap = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr());
     auto * Ai = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr());
-    if(ordering_constraints_.empty()){
+    if(ordering_constraints_.empty() && fill_reducing_ordering_ == FillReducingOrdering::AMD){
         symbolic_.reset(klu_analyze(n, Ap, Ai, &common_));
     } else {
         // symmetric: the rows the constraints move sit on the diagonal of their pivot column
         std::vector<int> perm;
-        if(!constrained_amd_order(static_cast<int>(n), Ap, Ai, ordering_constraints_, perm)) return ErrorType::SolverAnalyze;
+        if(!constrained_order(static_cast<int>(n), Ap, Ai, ordering_constraints_, fill_reducing_ordering_, perm)) return ErrorType::SolverAnalyze;
         symbolic_.reset(klu_analyze_given(n, Ap, Ai, perm.data(), perm.data(), &common_));
     }
     if(common_.status != KLU_OK) return ErrorType::SolverAnalyze;

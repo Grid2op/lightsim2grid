@@ -228,17 +228,9 @@ BatchAdjoint::RealMatRM BatchAdjoint::solve_JT(
 
     stats_ = LinearSolverStats();
     for(const auto & s : th_stats){
-        stats_.nb_analyze += s.nb_analyze;
-        stats_.nb_factorize += s.nb_factorize;
-        stats_.nb_refactorize += s.nb_refactorize;
-        stats_.nb_refactorize_failed += s.nb_refactorize_failed;
-        stats_.nb_fallback_factorize += s.nb_fallback_factorize;
-        stats_.nb_fallback_factorize_failed += s.nb_fallback_factorize_failed;
-        stats_.nb_solve_transpose += s.nb_solve_transpose;
-        stats_.timer_initialize_ += s.timer_initialize_;
-        stats_.timer_factor_ += s.timer_factor_;
-        stats_.timer_refactor_ += s.timer_refactor_;
-        stats_.timer_solve_transpose_ += s.timer_solve_transpose_;
+        // a transposed solver: its factorizations and its solve_transpose() calls
+        detail::add_factorization_stats(stats_, s);
+        detail::add_solve_transpose_stats(stats_, s);
     }
     return lambda;
 }

@@ -31,14 +31,35 @@ An index is a row and a column at once: the ordering is symmetric, and these row
 diagonal of the column they pivot on. A lead index is never a follow one (the leads are Vm
 columns, the follows controller unknowns and custom rows), so that every constraint can be
 honoured off one AMD order (see constrained_amd_order).
+
+A group of several such rows may also need its follow indices in a given order among
+themselves (`in_order`). A remote voltage control with several controllers is the case:
+its voltage row and its sharing rows sit on the diagonals of the controllers' Q columns,
+and holding the first controller rewrites a sharing row into "Q_first = q", whose only
+entry is then off that row's diagonal. That entry is filled in, hence a valid pivot in
+both forms, only when the first controller's Q column is eliminated before the others,
+which AMD does not know to do.
 **/
 struct OrderingConstraint
 {
     std::vector<int> follow;  // eliminated after...
     std::vector<int> lead;    // ...every one of these
+    // the follow indices eliminated together, in the order given, right after the last of
+    // the leads and of the follow indices themselves; otherwise each one moves only if AMD
+    // placed it before a lead, and keeps AMD's order among the others
+    bool in_order = false;
 };
 
 using OrderingConstraints = std::vector<OrderingConstraint>;
+
+/**
+The fill-reducing ordering a KLU-based linear solver starts from, before the ordering
+constraints (if any) move their indices. `AMD`, the default, is KLU's own. `MinFill` is a
+minimum-fill (minimum deficiency) ordering, see min_fill_order: on power-flow Jacobians it
+usually gives somewhat fewer refactorization operations than AMD, for an analysis that costs
+more (it is done once per batch, not once per refactorization).
+**/
+enum class FillReducingOrdering : int { AMD = 0, MinFill = 1 };
 
 namespace detail {
     // whether a linear solver takes ordering constraints (C++14 detection, as for the rgrowth
@@ -71,6 +92,16 @@ namespace detail {
     }
     template<class Solver, class System>
     void set_ordering_constraints_impl(Solver &, const System &, bool, long) {}
+
+    // a linear solver that takes ordering constraints also takes the fill-reducing ordering to
+    // start from; any other one is left as it is
+    template<class Solver>
+    auto set_fill_reducing_ordering_impl(Solver & solver, FillReducingOrdering ordering, int)
+        -> decltype(solver.set_fill_reducing_ordering(ordering), void()) {
+        solver.set_fill_reducing_ordering(ordering);
+    }
+    template<class Solver>
+    void set_fill_reducing_ordering_impl(Solver &, FillReducingOrdering, long) {}
 }  // namespace detail
 
 } // namespace ls2g

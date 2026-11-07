@@ -159,6 +159,10 @@ class LS2G_API OuterGridView
         /// the labelling of the solve (the row's, the grid's AC one otherwise)
         const SolverBusLayout & layout() const;
         const SolverBusIdVect & id_me_to_solver() const;
+        /// the solver bus of grid bus `bus_me` in this labelling, -1 when it is not solved
+        int bus_solver(int bus_me) const;
+        /// the grid's base power, MVA (pu <-> MW)
+        real_type sn_mva() const;
         const GlobalBusIdVect & id_solver_to_me() const;
         /// the row's stranded solver buses, sorted; null: none
         const std::vector<int> * masked() const { return row_ != nullptr ? row_->masked : nullptr; }

@@ -9,6 +9,8 @@
 #ifndef BASE_OUTER_LOOP_H
 #define BASE_OUTER_LOOP_H
 
+#include <atomic>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
@@ -35,11 +37,18 @@ struct OuterLoopDriverParams;
 /**
  * What an outer loop's check() concluded, as OpenLoadFlow's OuterLoopStatus:
  *  - STABLE: nothing to change, the loop is done for this pass;
- *  - UNSTABLE: the loop changed something, the Newton has to run again;
+ *  - UNSTABLE: the loop changed something, the Newton has to run again. If that solve takes
+ *    no step (the change left every bus within tolerance) the change is done, and the loop
+ *    is not checked again until a solve moves V: checked on the same state, a loop that
+ *    reads its trigger off V would act again for what it already did;
  *  - FAILED: the loop cannot go on (eg the slack could not be distributed); the whole
- *    solve stops there and is reported as failed.
+ *    solve stops there and is reported as failed;
+ *  - CHECK_AGAIN: the Newton has to run again and the loop be checked after it whatever that
+ *    solve does, as after UNSTABLE in OpenLoadFlow: a loop working in steps (PhaseControl,
+ *    TransformerVoltageControl), whose next check is its next step, changed or not. Never
+ *    the final status of a solve (OuterLoopStats::status).
  */
-enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED };
+enum class OuterLoopStatus { STABLE, UNSTABLE, FAILED, CHECK_AGAIN };
 
 /**
  * The injections the outer loops edit between two solves, all of it private to the algorithm
@@ -61,6 +70,11 @@ struct LS2G_API OuterInjections
     /// as the grid stores them. Published by LSGrid::compute_results.
     std::vector<real_type> gen_target_p;
     std::vector<real_type> storage_target_p;
+    /// how much reactive injection the targets moved that no solve saw yet, MVar: a
+    /// distributed-slack Newton's share moved into the targets after the solve (see
+    /// OuterLoopAlgo::_fold_slack_share) took the target Q of a unit that does not regulate
+    /// with it. DistributedSlack re-solves on it, and sets it back to 0.
+    real_type unsolved_q_mvar = 0.;
 
     /// the unit's active target in force, MW: the one a loop set, the row's or the grid's
     /// otherwise (storage units in the load convention)
@@ -92,7 +106,10 @@ struct LS2G_API OuterInjections
  * - DistributedSlack: DISTRIBUTE (every check: the slack mismatch, MW, against the threshold),
  *   UNITS_MOVED (how much the units moved, MW, against what counts as a move), FAIL_RESIDUE;
  *   SHARE_LOST_P (at initialize, outer iteration 0: the row's loss shared before the first
- *   solve, MW, see OuterRowView::lost_p_mw).
+ *   solve, MW, see OuterRowView::lost_p_mw). Around a distributed-slack Newton (NROuterDist_*),
+ *   no DISTRIBUTE, and on a unit: PARK / UNPARK (out of the Newton's share at a bound, or back
+ *   in it: its P after the solve and the bound, MW); TARGET_Q_FOLLOWED (the reactive injection
+ *   the share moved with the targets after the solve, MVar, against what counts as a move).
  * - ReactiveLimits, on a controller bus: PV_TO_PQ (PV_TO_PQ_UNREALISTIC, the robust mode's),
  *   KEPT_PV_STRONGEST; PQ_TO_PV, KEPT_PQ_MAX_SWITCH, and, every check for every frozen bus,
  *   KEPT_PQ / KEPT_PQ_GROUP_HOLDS (the release test that did not trigger: the regulated voltage
@@ -103,6 +120,9 @@ struct LS2G_API OuterInjections
  *   A, against the limiter's). TransformerVoltageControl: SWITCH_ON (|target - v| against the
  *   half deadband, pu), ROUND_TO_RANGE (the ratio and the end it left), ROUND_TAP (the ratio and
  *   the tap position). ShuntVoltageControl: ROUND_SECTIONS (the susceptance solved for, pu).
+ * - The driver, under the loop it is about: SETTLED (the loop said UNSTABLE and its change was
+ *   re-solved in zero Newton iterations, so V did not move: the change is done, and the loop is
+ *   not checked again until a solve moves V; value and limit 0).
  */
 struct LS2G_API OuterDecision
 {
@@ -126,8 +146,21 @@ struct OuterSolveCache
 {
     bool has_bus_q_plan = false;
     bus_q_check::BusQPlan bus_q_plan;  ///< see bus_q_check::solve_bus_q_plan
+    /// which solve the cache stands for: a number of its own for every solve (0 before the
+    /// first). A loop that keeps something of its own computed from the solve's view reuses
+    /// it while this cache and this number are the ones it was computed for.
+    std::uint64_t generation = 0;
 
-    void reset() { has_bus_q_plan = false; }
+    void reset() {
+        has_bus_q_plan = false;
+        generation = _next_generation();
+    }
+
+private:
+    static std::uint64_t _next_generation() {
+        static std::atomic<std::uint64_t> counter(0);
+        return ++counter;
+    }
 };
 
 /**
@@ -252,6 +285,37 @@ struct LS2G_API OuterLoopStats
 };
 
 /**
+ * A generator whose reactive output, in the system the last solve of a loop left, is a
+ * function of its own target P: a unit frozen at a limit of its capability curve. Frozen
+ * through its bus' injection (`ctrl_pos` -1, `bus_solver` that bus), or as a
+ * voltage-control controller held at its output (`ctrl_pos`, the plan's position).
+ */
+struct OuterQSlope
+{
+    int gen_id;
+    int bus_solver;
+    int ctrl_pos;
+    real_type dq_dp;   ///< pu of reactive output per MW of target P
+};
+
+/**
+ * What the state a loop left after a solve changes in how an input reaches that solve's
+ * equations -- read by the adjoint of the solve (AdjointSolveInfo::gen_p_terms):
+ * - `q_slopes`: the units whose reactive output follows their target P (OuterQSlope);
+ * - `fixed_p`: the generators whose target P reaches nothing, a unit the distributed slack
+ *   holds at a bound whatever its set-point: (generator id, solver bus), and the pu per MW
+ *   of its P row (1 / sn_mva) the adjoint takes back off its gradient.
+ */
+struct OuterAdjointTerms
+{
+    std::vector<OuterQSlope> q_slopes;
+    std::vector<std::pair<int, int> > fixed_p;
+    real_type inv_sn = 0.;
+
+    void clear() { q_slopes.clear(); fixed_p.clear(); inv_sn = 0.; }
+};
+
+/**
  * One OpenLoadFlow outer loop.
  *
  * Same contract as the element containers (GenericContainer): the public entry points are
@@ -301,6 +365,10 @@ class LS2G_API BaseOuterLoop
 
         std::unique_ptr<BaseOuterLoop> clone() const { return _clone(); }
 
+        /// appends what the state of this loop changes in how the generators' target P
+        /// reaches the solve (see OuterAdjointTerms); read after a solve, for its adjoint
+        void adjoint_terms(OuterAdjointTerms & out) const { _adjoint_terms(out); }
+
         /// the loop's parameters, flattened like an AlgoConfig (what tells two loop lists
         /// apart). A loop's parameters are set at construction and never change afterwards.
         AlgoConfig get_params() const { return _get_params(); }
@@ -317,6 +385,7 @@ class LS2G_API BaseOuterLoop
         virtual bool _holds_svc_monitors() const { return false; }
         virtual std::unique_ptr<BaseOuterLoop> _clone() const = 0;
         virtual AlgoConfig _get_params() const { return AlgoConfig(); }
+        virtual void _adjoint_terms(OuterAdjointTerms & /*out*/) const {}
 };
 
 }  // namespace ls2g

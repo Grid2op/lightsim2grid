@@ -276,7 +276,8 @@ class ContingencyAnalysis(object):
         refuses it with a single-slack one (``NRSing_*``, Gauss-Seidel). With outer loops
         (``NROuter_*``), the ``DistributedSlack`` loop shares the loss itself before the
         contingency's first solve, from the targets in force (those of the "n" solve with
-        :attr:`init_from_n_powerflow`), as OpenLoadFlow's security analysis does.
+        :attr:`init_from_n_powerflow`), and what is left afterwards from those same targets (the
+        result is the whole imbalance shared at once), as OpenLoadFlow's security analysis does.
         """
         return self.computer.redistribute_slack
 

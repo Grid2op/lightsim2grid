@@ -8,12 +8,14 @@
 
 """`redistribute_slack` with outer loops: the DistributedSlack loop shares what a contingency
 loses before the row's first solve, as OpenLoadFlow's security analysis does (its Default
-ContingencyActivePowerLossDistribution), and starts from those targets.
+ContingencyActivePowerLossDistribution), so that the first solve does not put the whole loss on
+the slack bus.
 
-Without it the first solve puts the whole loss on the slack bus, and the loop then shares the
-loss and the change in the losses together: where a unit reaches a bound, the order matters.
-Here the units at 0 MW cannot take a share of a lost load, but they do take one of the losses
-the loop shares afterwards."""
+What the loop shares afterwards (the change in the losses) is shared, as OpenLoadFlow does, as a
+cumulative mismatch from the targets the row started from, not from those the first share left:
+the result is that of the whole imbalance shared at once. It only matters where a unit reaches a
+bound and the two have opposite signs. Here the units at 0 MW cannot take a share of a lost load,
+and the losses the loop shares afterwards do not bring them back up."""
 
 import os
 import sys
@@ -41,9 +43,10 @@ TOL = 1e-8
 LEAF_BUS = 13
 
 
-def _grid():
-    """case14, its only outer loop DistributedSlack, every generator sharing the slack with the
-    same weight, within [0, 300] MW"""
+def _grid(slack_mismatch_mw=1.):
+    """case14, its only outer loop DistributedSlack (stopping below `slack_mismatch_mw`, and
+    sharing down to it when it is below the loop's default residue), every
+    generator sharing the slack with the same weight, within [0, 300] MW"""
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         grid = init_from_pandapower(pn.case14())
@@ -52,9 +55,15 @@ def _grid():
     grid.set_gen_p_limits(np.zeros(nb_gen), p_max)
     grid.set_gen_can_participate_slack([True] * nb_gen, p_max)
     grid.clear_outer_loops()
-    grid.add_outer_loop(DistributedSlack())
+    grid.add_outer_loop(DistributedSlack(slack_bus_p_max_mismatch_mw=slack_mismatch_mw,
+                                         p_residue_eps_mw=min(slack_mismatch_mw, 1e-3)))
     grid.change_algorithm(OUTER)
     return grid
+
+
+# the loop shares down to a tiny mismatch: what it leaves on the slack bus below its threshold
+# would otherwise depend on how the imbalance was split between its steps
+TIGHT_MW = 1e-6
 
 
 def _v0(grid):
@@ -67,7 +76,7 @@ def _leaf_lines(grid):
 
 def _batch(redistribute_slack):
     """the contingency islanding the leaf bus, solved by the batch"""
-    grid = _grid()
+    grid = _grid(TIGHT_MW)
     grid.ac_pf(_v0(grid), MAX_IT, TOL)
     ca = ContingencyAnalysisCPP(grid)
     ca.handle_disconnected_grid = True
@@ -81,8 +90,9 @@ def _batch(redistribute_slack):
 
 def _reference(pre_share):
     """the single solve of the grid without the leaf, the units' targets moved first by the
-    share of the lost load OpenLoadFlow gives them when `pre_share`"""
-    grid = _grid()
+    share of the lost load when `pre_share` (what the loop would give if it shared what is left
+    from those targets)"""
+    grid = _grid(TIGHT_MW)
     lost_mw = -sum(el.target_p_mw for el in grid.get_loads() if el.bus_id == LEAF_BUS)
     if pre_share:
         # every unit has the same weight, and the ones at 0 MW cannot go lower: the two
@@ -120,11 +130,14 @@ class TestOuterRedistributeSlack(unittest.TestCase):
         return p
 
     def test_loss_shared_before_the_first_solve(self):
-        p = self._check(_batch(redistribute_slack=True), pre_share=True)
-        # the units at 0 MW took a share of the losses only (the three condensers: with none
-        # of them below 10 MW, the check below would check nothing)
+        ca = _batch(redistribute_slack=True)
+        self.assertIn(("DistributedSlack/SHARE_LOST_P", 1), ca.get_outer_results()[0].decisions_taken)
+        # the same state as the whole imbalance shared at once (pre_share=False): the units at
+        # 0 MW, that the lost load sent to their bound, stay there (the three condensers: with
+        # none of them below 10 MW, the check below would check nothing)
+        p = self._check(ca, pre_share=False)
         self.assertEqual(int((p < 10.).sum()), 3)
-        self.assertTrue(np.all(p[p < 10.] > 0.))
+        self.assertTrue(np.all(p[p < 10.] == 0.))
 
     def test_without_the_option_the_first_solve_takes_it_all(self):
         p = self._check(_batch(redistribute_slack=False), pre_share=False)
@@ -168,6 +181,55 @@ class TestOuterRedistributeSlackFromN(unittest.TestCase):
                 continue
             self.assertAlmostEqual(moved[gen_id], p_n[gen_id] + 0.25 * p_n[self.TRIPPED], places=6,
                                    msg=f"generator {gen_id}")
+
+
+
+class TestOuterRedistributeSlackAtABound(unittest.TestCase):
+    """A lost generator: the share before the first solve sends a unit to its max_p, and the
+    losses then drop, so the loop takes back part of what it shared. Shared as a cumulative
+    mismatch from the targets the row started from (the "n" solve's, with
+    init_from_n_powerflow), the total is still an increase: the unit stays at its bound, as with
+    the whole imbalance shared at once. Shared from the targets the first share left, it would
+    come back down by its share of the correction."""
+
+    TRIPPED = 0  # the generator at bus 2 (index 1)
+    CAPPED = 2   # a synchronous condenser, moved up by the "n" solve's distributed slack
+    HEADROOM_MW = 2.  # what the capped unit can still take: less than its share of the loss
+
+    def _grid(self, max_p_capped):
+        # the loop shares what the losses change too (below 1 MW here), the weights stay _grid's
+        grid = _grid(TIGHT_MW)
+        nb_gen = len(grid.get_generators())
+        p_max = np.full(nb_gen, 300.)
+        p_max[self.CAPPED] = max_p_capped
+        grid.set_gen_p_limits(np.zeros(nb_gen), p_max)
+        return grid
+
+    def test_a_unit_at_its_bound_stays_there(self):
+        grid = self._grid(300.)
+        grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        cap = grid.get_gen_res()[0][self.CAPPED] + self.HEADROOM_MW
+        grid = self._grid(cap)
+        grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        p_n = grid.get_gen_res()[0].copy()
+        self.assertLess(p_n[self.CAPPED], cap - 1.)  # not at its bound in the "n" state
+        # every remaining unit has the same weight: the capped one cannot take its quarter
+        self.assertGreater(0.25 * p_n[self.TRIPPED], self.HEADROOM_MW)
+
+        ca = ContingencyAnalysisCPP(grid)
+        ca.init_from_n_powerflow = True
+        ca.redistribute_slack = True
+        ca.add_contingency_gen(self.TRIPPED)
+        ca.change_algorithm(OUTER)
+        ca.compute(_v0(grid), MAX_IT, TOL)
+        res = ca.get_outer_results()[0]
+        self.assertTrue(res.converged)
+        moved = dict(res.gen_target_p)
+        shared = sum(moved[g] - p_n[g] for g in moved if g != self.TRIPPED)
+        # the losses dropped: the loop shared less than what was lost, taking some back
+        self.assertLess(shared, p_n[self.TRIPPED] - 0.1)
+        self.assertGreater(shared, 0.)
+        self.assertAlmostEqual(moved[self.CAPPED], cap, places=6)
 
 
 if __name__ == "__main__":

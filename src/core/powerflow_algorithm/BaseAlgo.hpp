@@ -23,9 +23,11 @@
 // and to optimize the matrix operations
 #include "Utils.hpp"
 #include "CustTimer.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 #include "BaseConstants.hpp"
 #include "AlgoConfig.hpp"
 #include "linear_solvers/LinearSolverStats.hpp"
+#include "AdjointSolveInfo.hpp"
 #include "outer_loop/BaseOuterLoop.hpp"
 #include "outer_loop/OuterLoopDriver.hpp"
 #include "outer_loop/OuterControlLayout.hpp"
@@ -255,6 +257,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual IntVect  get_controller_q_col()   const { return IntVect(); }
         // J row of each voltage-control group's voltage constraint (empty without them)
         virtual IntVect  get_group_v_row()        const { return IntVect(); }
+        // The Newton system's ordering constraints (see OrderingConstraints), whether or not
+        // its linear solver orders with them: J indices to eliminate after others, so that a
+        // row switched by value keeps a valid pivot. Read-only; empty without a Newton system.
+        virtual OrderingConstraints get_ordering_constraints() const { return OrderingConstraints(); }
 
         // MultiSlack: J column of the slack_absorbed unknown (-1 when the
         // distributed-slack-in-Jacobian extension is not active).
@@ -500,6 +506,17 @@ class LS2G_API BaseAlgo : public BaseConstants
         // speak of (every non Newton-Raphson algorithm), which is safe: those cannot
         // serve an adjoint at all (get_J already throws).
         virtual void refresh_J_at_solution() {}
+
+        // What the adjoint of the last solve needs besides its Jacobian (AdjointSolveInfo):
+        // which of its rows are identities, which voltage-control groups lost their
+        // set-point, the dF/d|V| column of each bus of `vm_buses` (solver ids) and the
+        // units whose reactive output follows their own target P. Read it where get_J() is
+        // read: after refresh_J_at_solution, the solve's own state still installed. The
+        // default leaves it empty, which is right for an algorithm without a Jacobian (it
+        // cannot serve an adjoint at all).
+        virtual void get_adjoint_solve_info(const std::vector<int> & /*vm_buses*/, AdjointSolveInfo & out) const {
+            out.clear();
+        }
 
         // Tells the algorithm whether a stranded-controller Jacobian slot (see
         // VoltageControl::declare_feature_entries in NRSystem.hpp) is worth reserving

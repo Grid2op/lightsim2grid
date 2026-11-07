@@ -102,11 +102,18 @@ int unit_bus_solver(const Container & container, const OuterRowView::Units * u, 
 
 }  // namespace
 
+int OuterGridView::bus_solver(int bus_me) const { return to_solver(id_me_to_solver(), bus_me); }
+
 // ----- generators ----------------------------------------------------------------------
 
 bool OuterGridView::gen_on(int gen_id) const
 {
     return unit_on(grid_.get_generators(), row_ != nullptr ? &row_->gens : nullptr, gen_id);
+}
+
+real_type OuterGridView::sn_mva() const
+{
+    return grid_.get_sn_mva();
 }
 
 int OuterGridView::gen_bus_solver(int gen_id) const

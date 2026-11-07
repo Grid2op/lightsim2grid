@@ -16,6 +16,7 @@ __all__ = [
     "solver",
     "compilation_options",
     "load_algorithm_plugin",
+    "find_algorithm_plugin",
     "get_include",
     "get_cmake_dir"]
 
@@ -71,16 +72,120 @@ def load_algorithm_plugin(path: str) -> None:
     Parameters
     ----------
     path:
-        Absolute or relative path to the ``.so`` / ``.dll`` file.
+        Absolute or relative path to the ``.so`` / ``.dll`` file, or the bare
+        name of a plugin (``"rebuild_outer_algorithm"``, ``"rebuild_outer"``),
+        looked up by :func:`find_algorithm_plugin`.
 
     Raises
     ------
     RuntimeError
         If the library cannot be loaded, does not export the plugin entry
-        point, or its registration is refused (ABI mismatch, duplicate name).
+        point, or its registration is refused (ABI mismatch, duplicate name),
+        or if a bare name is not found.
     """
     from lightsim2grid.lightsim2grid_cpp import _load_algorithm_plugin
-    _load_algorithm_plugin(str(path))
+    path = str(path)
+    if _is_plugin_name(path) and not _os.path.isfile(path):
+        path = find_algorithm_plugin(path)
+    _load_algorithm_plugin(path)
+
+
+_PLUGIN_PATH_ENV = "LS2G_PLUGIN_PATH"
+_PLUGIN_SUFFIXES = (".so", ".dll", ".dylib")
+
+
+def _is_plugin_name(path: str) -> bool:
+    """A bare name: no directory part and no shared library extension."""
+    seps = [s for s in (_os.sep, _os.altsep, "/") if s]
+    return not any(s in path for s in seps) and _os.path.splitext(path)[1] not in _PLUGIN_SUFFIXES
+
+
+def _plugin_file_names(name: str):
+    if _sys.platform == "win32":
+        return [f"{name}.dll", f"lib{name}.dll"]
+    # the example plugins are lib<name>.so on macOS too (see their CMakeLists)
+    return [f"lib{name}.so", f"{name}.so", f"lib{name}.dylib", f"{name}.dylib"]
+
+
+def _plugin_libraries_in(directory: str):
+    """The shared libraries of a build folder (and of its Release sub-folder, MSVC)."""
+    res = []
+    for folder in (directory, _os.path.join(directory, "Release")):
+        if _os.path.isdir(folder):
+            res += sorted(_os.path.join(folder, f) for f in _os.listdir(folder)
+                          if _os.path.splitext(f)[1] in _PLUGIN_SUFFIXES
+                          and _os.path.isfile(_os.path.join(folder, f)))
+    return res
+
+
+def _checkout_examples_dir():
+    """examples/ of the source checkout, when lightsim2grid is an editable install of it."""
+    candidate = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "examples")
+    return candidate if _os.path.isdir(candidate) else None
+
+
+def find_algorithm_plugin(name: str) -> str:
+    """Return the path of a built algorithm plugin, given its name.
+
+    ``name`` is the plugin's library name (``"dummy_solver"`` for
+    ``libdummy_solver.so`` / ``dummy_solver.dll``) or, for the plugins of the
+    ``examples/`` folder, the name of their folder; the ``_algorithm`` suffix
+    can be left out (``"rebuild_outer"``). The first match is returned, looking in:
+
+    1. the directories listed in the ``LS2G_PLUGIN_PATH`` environment variable
+       (separated by ``os.pathsep``, like ``PATH``), and their ``Release`` sub-folder;
+    2. the ``examples/<plugin>/build`` folders of the source checkout, when
+       lightsim2grid is an editable install (``pip install -e .``) of it. A
+       wheel install has no ``examples/`` folder: use ``LS2G_PLUGIN_PATH``.
+
+    ``examples/build_plugins.py`` builds the example plugins where the second
+    rule finds them.
+
+    Raises
+    ------
+    RuntimeError
+        If no plugin of that name is found.
+    """
+    names = [name] if name.endswith("_algorithm") else [name, f"{name}_algorithm"]
+    file_names = [f for n in names for f in _plugin_file_names(n)]
+
+    searched = []
+    for directory in _os.environ.get(_PLUGIN_PATH_ENV, "").split(_os.pathsep):
+        if not directory:
+            continue
+        for folder in (directory, _os.path.join(directory, "Release")):
+            searched.append(folder)
+            for file_name in file_names:
+                cand = _os.path.join(folder, file_name)
+                if _os.path.isfile(cand):
+                    return _os.path.abspath(cand)
+
+    examples = _checkout_examples_dir()
+    if examples is not None:
+        plugin_dirs = sorted(d for d in _os.listdir(examples)
+                             if _os.path.isfile(_os.path.join(examples, d, "CMakeLists.txt")))
+        # by folder name: the one library its build holds (examples/external_algorithm -> dummy_solver)
+        for n in names:
+            if n in plugin_dirs:
+                build = _os.path.join(examples, n, "build")
+                searched.append(build)
+                libs = _plugin_libraries_in(build)
+                if len(libs) == 1:
+                    return _os.path.abspath(libs[0])
+        # by library name, in every example's build
+        for d in plugin_dirs:
+            build = _os.path.join(examples, d, "build")
+            for lib in _plugin_libraries_in(build):
+                if _os.path.basename(lib) in file_names:
+                    return _os.path.abspath(lib)
+            searched.append(build)
+
+    where = "\n  ".join(dict.fromkeys(searched)) or "(nowhere: LS2G_PLUGIN_PATH is not set and " \
+                                                     "lightsim2grid is not an editable install)"
+    raise RuntimeError(
+        f"Algorithm plugin '{name}' not found (looked for {', '.join(file_names)}) in:\n  {where}\n"
+        f"Build it (python examples/build_plugins.py {name}), add its folder to {_PLUGIN_PATH_ENV}, "
+        f"or pass the full path of the library.")
 
 try:
     from lightsim2grid.lightSimBackend import LightSimBackend  # noqa: F401

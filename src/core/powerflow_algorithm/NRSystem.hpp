@@ -386,6 +386,15 @@ class LS2G_API Base
  * the generic dS pass of NRSystem. The only feature-specific entries are the
  * slack_absorbed column coefficients: slack_weights(bus) at each slack bus'
  * P row.
+ *
+ * Participant buses (set_slack_participant_buses): buses that take a share of
+ * the slack without being slack buses. They stay ordinary pv / pq buses, whose
+ * theta and P row Base already registered, and only get their entry in the
+ * slack_absorbed column. Their weights can then be changed by value
+ * (set_slack_weights) without touching the sparsity. That is how the outer-loop
+ * driver shares the slack inside the Newton (NROuterDist_*) while its single
+ * reference stays the only slack bus. None by default: the layout is the plain
+ * one above.
  */
 class LS2G_API MultiSlack   // distributed-slack extension
 {
@@ -437,23 +446,60 @@ class LS2G_API MultiSlack   // distributed-slack extension
             }
             slack_p_rows_.push_back(ledger.add_p_equation(ref_slack_id_));
             slack_col_ = ledger.add_custom_col();  // slack_absorbed unknown
+
+            // the buses carrying a weight: the slack buses, then the participants that
+            // are not slack buses, on the P row Base gave them (none: not in the solve)
+            weighted_buses_ = slack_buses_;
+            weighted_rows_ = slack_p_rows_;
+            for (int bus : participant_buses_) {
+                if (std::find(slack_buses_.begin(), slack_buses_.end(), bus) != slack_buses_.end()) continue;
+                const int row = (bus >= 0 && bus < ledger.n_bus()) ? ledger.p_row(bus) : -1;
+                if (row < 0) continue;
+                weighted_buses_.push_back(bus);
+                weighted_rows_.push_back(row);
+            }
         }
 
-        // one entry per slack bus: (that bus' P row, slack_absorbed column)
         void declare_ordering_constraints(OrderingConstraints& /*out*/) const {}
 
+        // one entry per weighted bus: (that bus' P row, slack_absorbed column)
         void declare_feature_entries(FeatureSink& sink)
         {
             feature_handles_.clear();
-            feature_handles_.reserve(my_size_);
-            for (int k = 0; k < my_size_; ++k)
-                feature_handles_.push_back(sink.add(slack_p_rows_[k], slack_col_));
+            feature_handles_.reserve(weighted_rows_.size());
+            for (int row : weighted_rows_)
+                feature_handles_.push_back(sink.add(row, slack_col_));
         }
 
         void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& /*Va*/) const
         {
-            for (int k = 0; k < my_size_; ++k)
-                writer.add(feature_handles_[k], slack_weights_(slack_buses_[k]));
+            for (size_t k = 0; k < weighted_buses_.size(); ++k)
+                writer.add(feature_handles_[k], slack_weights_(weighted_buses_[k]));
+        }
+
+        /**
+         * The buses that share the slack without being slack buses (solver ids), see
+         * the class comment. Caller-set run configuration, like
+         * Base::set_switchable_vm_buses: set it before the sparsity build that is to
+         * account for it, and neither update_state() nor clear() resets it.
+         */
+        void set_slack_participant_buses(const std::vector<int>& solver_bus_ids) {
+            participant_buses_ = solver_bus_ids;
+            std::sort(participant_buses_.begin(), participant_buses_.end());
+            participant_buses_.erase(std::unique(participant_buses_.begin(), participant_buses_.end()),
+                                     participant_buses_.end());
+        }
+        const std::vector<int>& slack_participant_buses() const { return participant_buses_; }
+
+        /**
+         * Replace the weights of this solve (per solver bus), by value: the next
+         * fill_J writes them, and NRAlgo::newton re-derives slack_absorbed from them
+         * (calibrate_slack_absorbed). Only the slack and participant buses' weights are
+         * read in J; a weight elsewhere would add a share to a mismatch no equation
+         * holds, so the caller leaves those at 0. Lasts until the next update_state.
+         */
+        void set_slack_weights(const Eigen::Ref<const RealVect>& slack_weights) {
+            slack_weights_ = slack_weights;
         }
 
         // adjust the per-bus complex power mismatch by (slack_absorbed + dx step) * slack_weights
@@ -516,17 +562,17 @@ class LS2G_API MultiSlack   // distributed-slack extension
         {
             if (my_size_ == 0 || slack_weights_.size() != mis.size()) return false;
             real_type total_w = static_cast<real_type>(0.);
-            for (int k = 0; k < my_size_; ++k) total_w += slack_weights_(slack_buses_[k]);
+            for (int bus : weighted_buses_) total_w += slack_weights_(bus);
             // A degenerate participation -- every weight zero, or a sweep row that
             // masked the last participant out -- leaves the guess as it was: there
             // is no bus to distribute to, and dividing by what is left would
             // amplify the imbalance rather than place it.
             if (std::abs(total_w) <= BaseConstants::_tol_equal_float) return false;
             const real_type delta = sum_p / total_w;
-            for (int k = 0; k < my_size_; ++k) {
-                const int bus = slack_buses_[k];
+            for (size_t k = 0; k < weighted_buses_.size(); ++k) {
+                const int bus = weighted_buses_[k];
                 const real_type shift = delta * slack_weights_(bus);
-                res(slack_p_rows_[k]) -= shift;
+                res(weighted_rows_[k]) -= shift;
                 mis(bus) += static_cast<cplx_type>(shift);
             }
             slack_absorbed_ += delta;
@@ -539,6 +585,8 @@ class LS2G_API MultiSlack   // distributed-slack extension
             slack_col_ = -1;
             slack_buses_.clear();
             slack_p_rows_.clear();
+            weighted_buses_.clear();
+            weighted_rows_.clear();
             feature_handles_.clear();
             slack_weights_ = RealVect();
             slack_absorbed_ = static_cast<real_type>(0.);
@@ -562,7 +610,10 @@ class LS2G_API MultiSlack   // distributed-slack extension
         int                slack_col_;        // J column of the slack_absorbed unknown
         std::vector<int>   slack_buses_;      // non-ref slacks sorted, then ref slack
         std::vector<int>   slack_p_rows_;     // P row of each slack bus (same order)
-        std::vector<int>   feature_handles_;  // FeatureSink handles (same order)
+        std::vector<int>   participant_buses_;  // caller-set, sorted (see set_slack_participant_buses)
+        std::vector<int>   weighted_buses_;   // the slack buses, then the participants' (register_in)
+        std::vector<int>   weighted_rows_;    // P row of each weighted bus (same order)
+        std::vector<int>   feature_handles_;  // FeatureSink handles (weighted_buses_ order)
         RealVect           slack_weights_;    // size: nb_bus
         real_type          slack_absorbed_;
 
@@ -1124,7 +1175,10 @@ class LS2G_API VoltageControl
         // its controllers stranded needs nothing: its voltage row is held by the live
         // ones (their bus Q rows), the sharing rows still give every Q_c a value, and
         // the stranded ones' land on masked rows, so the live controllers share among
-        // themselves as if the others were gone. A regulated bus stranded while some
+        // themselves as if the others were gone. With the outer loops (may_hold_), a masked
+        // controller is never the group's reference and is pinned at 0: once an outer loop
+        // holds every live one at a reactive limit, nobody regulates and the regulated bus is
+        // free, as in a single solve of the grid without the island. A regulated bus stranded while some
         // controllers stay live cannot be solved (its masked magnitude cannot reach
         // v_set): the batch skips such a row before the solve (see
         // BaseBatchSweep::_skip_rows_stranding_regulated_bus).
@@ -1166,6 +1220,14 @@ class LS2G_API VoltageControl
             hold_q_ = q_pu_per_controller;
         }
 
+        // The reactive output of every controller (pu, plan order) the next Newton starts
+        // from. update_state() restarts them from the plan, so a driver setting the solve up
+        // again in the middle of a solve (a pattern rebuilt by an outer loop) hands back the
+        // ones it read before (controller_q). Ignored if the controller list changed size.
+        void set_controller_q(const Eigen::Ref<const RealVect> & q) {
+            if (q.size() == q_.size()) q_ = q;
+        }
+
         // Per-solve override of the groups' voltage set-points, indexed by group
         // (the grid's own plan order). A finite entry replaces that group's v_set for
         // every following solve; NaN (or an empty vector) keeps the grid's own. A
@@ -1205,6 +1267,36 @@ class LS2G_API VoltageControl
             return Eigen::Map<const IntVect>(v_rows_.data(), static_cast<Eigen::Index>(v_rows_.size()));
         }
 
+        // The groups whose voltage row holds no set-point in the current state, so whose
+        // v_set no gradient reaches: stranded, or with every controller held (the row then
+        // pins the first one at its output, see fill_custom_rows).
+        void groups_without_v_set(std::vector<int>& out) const {
+            out.clear();
+            const int ng = data_.n_groups();
+            const bool have_stranded = !group_stranded_.empty();
+            for (int g = 0; g < ng; ++g) {
+                const bool stranded = have_stranded && group_stranded_[g];
+                const bool lost = may_hold_ ? _ref_active(g) < 0 : (stranded || data_.is_held(data_.grp_start(g)));
+                if (lost) out.push_back(g);
+            }
+        }
+
+        // The J row that pins controller j at its held output (`Q_j - held = 0`), -1 when
+        // it is not held, or its group is stranded (the row then pins it at 0).
+        int hold_row(int j) const {
+            if (j < 0 || j >= data_.n_controllers()) return -1;
+            const int g = data_.group(j);
+            if (!group_stranded_.empty() && group_stranded_[g]) return -1;
+            const int off = j - data_.grp_start(g);
+            const auto row_of = [&](int k) { return k == 0 ? v_rows_[g] : share_rows_[g][static_cast<std::size_t>(k - 1)]; };
+            if (!may_hold_) return data_.is_held(j) ? row_of(off) : -1;
+            if (!_held(j)) return -1;
+            const int ref = _ref_active(g);
+            // with someone still regulating, the reference's own sharing row pins the first one
+            if (ref >= 0 && off == 0) return row_of(ref);
+            return row_of(off);
+        }
+
         // claims, per group: N q-unknown columns, 1 voltage row, N-1 sharing rows;
         // caches the controller q rows and the regulated-bus vm columns (the ledger
         // is fully populated by Base / MultiSlack before this runs)
@@ -1240,7 +1332,10 @@ class LS2G_API VoltageControl
         // target" and a Q form. Its rows sit on the diagonal of its Q columns (allocated
         // together, see register_in): eliminated after the Vm of the regulated bus and of the
         // controller buses, whose pivots on those buses' Q rows fill the rows' Q entries in,
-        // they keep a usable pivot in both forms. A group that cannot switch adds nothing, and
+        // they keep a usable pivot in both forms. With several controllers, their Q columns
+        // go in the controllers' order (`in_order`): holding the first one rewrites a
+        // sharing row onto the first Q column, which must come before that row's own
+        // column for the row to keep its pivot. A group that cannot switch adds nothing, and
         // its ordering is AMD's.
         void declare_ordering_constraints(OrderingConstraints& out) const
         {
@@ -1254,13 +1349,18 @@ class LS2G_API VoltageControl
                 }
                 if (!switchable) continue;
                 OrderingConstraint c;
+                c.in_order = true;
                 for (int off = 0; off < cnt; ++off) {
                     const int j = first + off;
                     if (q_cols_[j] >= 0) c.follow.push_back(q_cols_[j]);
                     if (ctrl_vm_cols_[j] >= 0) c.lead.push_back(ctrl_vm_cols_[j]);
                 }
-                if (v_rows_[g] >= 0) c.follow.push_back(v_rows_[g]);
-                for (int r : share_rows_[g]) if (r >= 0) c.follow.push_back(r);
+                // the rows share their indices with the Q columns: listed once
+                auto add_row = [&c](int r) {
+                    if (r >= 0 && std::find(c.follow.begin(), c.follow.end(), r) == c.follow.end()) c.follow.push_back(r);
+                };
+                add_row(v_rows_[g]);
+                for (int r : share_rows_[g]) add_row(r);
                 if (vm_cols_[g] >= 0) c.lead.push_back(vm_cols_[g]);
                 if (!c.follow.empty() && !c.lead.empty()) out.push_back(std::move(c));
             }
@@ -1340,12 +1440,18 @@ class LS2G_API VoltageControl
         // the first one); otherwise the voltage row, and the sharing taken against the first
         // ACTIVE controller `ref` -- the row of `ref` itself, which it does not need, pins
         // the first controller when that one is held.
+        //
+        // A controller on a bus the contingency masks is gone (ctrl_masked_): never the
+        // reference, pinned at 0. So when every live controller is held (an outer loop froze
+        // them at a reactive limit), nobody regulates even though a masked one is not held:
+        // the regulated bus is free, as in a powerflow of the grid without the island.
+        bool _masked_ctrl(int j) const {
+            return static_cast<std::size_t>(j) < ctrl_masked_.size() && ctrl_masked_[static_cast<std::size_t>(j)];
+        }
         int _ref_active(int g) const {
             const int first = data_.grp_start(g);
             const int cnt = data_.grp_count(g);
-            const bool stranded = !group_stranded_.empty() && group_stranded_[g];
-            if (stranded) return -1;
-            for (int off = 0; off < cnt; ++off) if (!_held(first + off)) return off;
+            for (int off = 0; off < cnt; ++off) if (!_held(first + off) && !_masked_ctrl(first + off)) return off;
             return -1;
         }
         void _fill_feature_values_holding(FeatureWriter& writer) const
@@ -1367,7 +1473,7 @@ class LS2G_API VoltageControl
                 if (h_vm_[g] >= 0) writer.add(h_vm_[g], ref >= 0 ? static_cast<real_type>(1.) : static_cast<real_type>(0.));
                 for (int k = 0; k < cnt - 1; ++k) {
                     const int m = k + 1;  // the controller this row is the sharing row of
-                    if (ref < 0 || _held(first + m)) {
+                    if (ref < 0 || _held(first + m) || _masked_ctrl(first + m)) {
                         if (h_shareA_[g][k] >= 0) writer.add(h_shareA_[g][k], static_cast<real_type>(1.));
                     } else if (m == ref) {
                         // the first controller is held: this row pins it
@@ -1391,8 +1497,8 @@ class LS2G_API VoltageControl
                 const int cnt   = data_.grp_count(g);
                 const int ref = _ref_active(g);
                 auto Qt = [&](int off) { return q_(first + off) + dx(q_cols_[first + off]); };
-                const bool stranded = !group_stranded_.empty() && group_stranded_[g];
-                auto held_q = [&](int off) { return stranded ? static_cast<real_type>(0.) : _held_q(first + off); };
+                // a masked controller is pinned at 0, a live held one at its held output
+                auto held_q = [&](int off) { return _masked_ctrl(first + off) ? static_cast<real_type>(0.) : _held_q(first + off); };
                 if (ref < 0) {
                     res(v_rows_[g]) -= Qt(0) - held_q(0);
                 } else {
@@ -1404,7 +1510,7 @@ class LS2G_API VoltageControl
                 }
                 for (int k = 0; k < cnt - 1; ++k) {
                     const int m = k + 1;
-                    if (ref < 0 || _held(first + m)) {
+                    if (ref < 0 || _held(first + m) || _masked_ctrl(first + m)) {
                         res(share_rows_[g][k]) -= Qt(m) - held_q(m);
                     } else if (m == ref) {
                         res(share_rows_[g][k]) -= Qt(0) - held_q(0);
@@ -1531,6 +1637,7 @@ class LS2G_API VoltageControl
             h_shareB_.clear();
             masked_buses_.clear();
             group_stranded_.clear();
+            ctrl_masked_.clear();
         }
 
         // number of controllers of the current solve (valid after update_state)
@@ -1561,7 +1668,12 @@ class LS2G_API VoltageControl
         {
             const int ng = data_.n_groups();
             group_stranded_.assign(ng, 0);
+            ctrl_masked_.assign(static_cast<std::size_t>(data_.n_controllers()), 0);
             if (masked_buses_.empty()) return;
+            for (int j = 0; j < data_.n_controllers(); ++j) {
+                ctrl_masked_[static_cast<std::size_t>(j)] =
+                    std::find(masked_buses_.begin(), masked_buses_.end(), data_.bus(j)) != masked_buses_.end() ? 1 : 0;
+            }
             for (int g = 0; g < ng; ++g) {
                 const int first = data_.grp_start(g);
                 const int cnt   = data_.grp_count(g);
@@ -1611,6 +1723,7 @@ class LS2G_API VoltageControl
         std::vector<std::vector<int> > h_shareA_;    // handle (share_row, q_col_{k+1}) per group
         std::vector<std::vector<int> > h_shareB_;    // handle (share_row, q_col_1) per group
         std::vector<int>               masked_buses_;    // last set_masked_buses() argument, verbatim
+        std::vector<char>              ctrl_masked_;     // per controller: 1 iff its bus is masked (same source)
         std::vector<char>              group_stranded_;  // per group: 1 iff the bus of each of its
                                                            // controllers is masked; derived from
                                                            // masked_buses_ by _recompute_group_stranded(),
@@ -1723,8 +1836,12 @@ public:
     // vector (the default) disables masking and reproduces the unmasked behaviour
     // bit-for-bit. solver_bus_ids must never include the reference slack.
     void set_masked_buses(const std::vector<int>& solver_bus_ids) {
-        masked_buses_ = solver_bus_ids;
-        masked_dirty_ = true;
+        // the same set again (a driver hands it over before every Newton) keeps the
+        // positions resolved for it: finding them is a pass over all of J's nonzeros
+        if (solver_bus_ids != masked_buses_) {
+            masked_buses_ = solver_bus_ids;
+            masked_dirty_ = true;
+        }
         // forward to the VoltageControl extension when present (both AC
         // instantiations carry it -- see the SingleSlackNRSystem / MultiSlackNRSystem
         // aliases below): lets the voltage row of a group whose controllers are all
@@ -1752,8 +1869,11 @@ public:
     // nothing for) is silently ignored: q_row() answers -1 and there is nothing to
     // pin. Pass the buses that are PV in THIS scenario, not the ones that are PQ.
     void set_pv_pinned_buses(const std::vector<int>& solver_bus_ids) {
-        pv_pinned_buses_ = solver_bus_ids;
-        masked_dirty_ = true;
+        // the same set again keeps the resolved positions, as for set_masked_buses
+        if (solver_bus_ids != pv_pinned_buses_) {
+            pv_pinned_buses_ = solver_bus_ids;
+            masked_dirty_ = true;
+        }
     }
 
     // Whether the stranded-controller Jacobian slot (see VoltageControl::
@@ -1775,8 +1895,21 @@ public:
         if (hvdc != nullptr) hvdc->set_status_override(status_per_line, keep);
     }
 
+    // Slack participants that stay pv / pq buses, and their weights by value, see
+    // MultiSlack::set_slack_participant_buses / set_slack_weights. No-ops without the
+    // extension (has_multi_slack).
+    bool has_multi_slack() const { return _find_extension<MultiSlack>() != nullptr; }
+    void set_slack_participant_buses(const std::vector<int> & solver_bus_ids) {
+        MultiSlack* ms = _find_extension<MultiSlack>();
+        if (ms != nullptr) ms->set_slack_participant_buses(solver_bus_ids);
+    }
+    void set_slack_weights(const Eigen::Ref<const RealVect> & slack_weights) {
+        MultiSlack* ms = _find_extension<MultiSlack>();
+        if (ms != nullptr) ms->set_slack_weights(slack_weights);
+    }
+
     // Holding voltage controllers by value, see VoltageControl::set_may_hold_controllers /
-    // set_held_controllers. No-op without the extension.
+    // set_held_voltage_controllers. No-op without the extension.
     void set_may_hold_voltage_controllers(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_hold_controllers(val);
@@ -1784,6 +1917,13 @@ public:
     void set_held_voltage_controllers(const std::vector<real_type> & q_pu_per_controller) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_held_controllers(q_pu_per_controller);
+    }
+
+    // The controllers' reactive outputs the next Newton starts from, see
+    // VoltageControl::set_controller_q. No-op without the extension.
+    void set_controller_q(const Eigen::Ref<const RealVect> & q) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_controller_q(q);
     }
 
     // The BranchControl extension, see BranchControl. No-ops (and null / empty answers) without it.
@@ -1966,6 +2106,7 @@ public:
         masked_zero_pos_.clear();
         masked_one_pos_.clear();
         masked_dirty_ = false;
+        J_row_start_.clear();
         ledger_.reset(0);
     }
 
@@ -2060,6 +2201,52 @@ public:
     IntVect group_v_row() const {
         const VoltageControl* vc = _find_extension<VoltageControl>();
         return vc ? IntVect(vc->group_v_row()) : IntVect();
+    }
+
+    // ----- what the adjoint of the last solve needs besides J (see AdjointSolveInfo) --
+    // the buses set_pv_pinned_buses pinned for it
+    const std::vector<int>& pv_pinned_buses() const { return pv_pinned_buses_; }
+    // the buses set_masked_buses masked, as given
+    const std::vector<int>& masked_buses() const { return masked_buses_; }
+    // see VoltageControl::groups_without_v_set / hold_row (nothing without the extension)
+    void groups_without_v_set(std::vector<int>& out) const {
+        out.clear();
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->groups_without_v_set(out);
+    }
+    int controller_hold_row(int j) const {
+        const VoltageControl* vc = _find_extension<VoltageControl>();
+        return vc != nullptr ? vc->hold_row(j) : -1;
+    }
+    // dF/d|V_b| by J row, appended to rows / vals: J's own column where |V_b| is an
+    // unknown, the dS/d|V| column of Ybus mapped onto the P and Q rows otherwise -- the
+    // one J would hold if it were. Reads the dS values of the last
+    // fill_internal_variables, so evaluate at the point of interest first
+    // (BaseAlgo::refresh_J_at_solution). A row may come more than once: sum them.
+    void vm_column(int bus, std::vector<int>& rows, std::vector<real_type>& vals) const {
+        if (bus < 0 || bus >= Ybus_ref_.cols()) return;
+        const int col = ledger_.vm_col(bus);
+        if (col >= 0) {
+            const int* outer = J_.outerIndexPtr();
+            const int* inner = J_.innerIndexPtr();
+            const real_type* val = J_.valuePtr();
+            for (int p = outer[col]; p < outer[col + 1]; ++p) {
+                rows.push_back(inner[p]);
+                vals.push_back(val[p]);
+            }
+            return;
+        }
+        if (static_cast<Eigen::Index>(dS_dVm_vals_.size()) != Ybus_ref_.nonZeros()) return;
+        const auto* outer = Ybus_ref_.outerIndexPtr();
+        const auto* inner = Ybus_ref_.innerIndexPtr();
+        for (auto k = outer[bus]; k < outer[bus + 1]; ++k) {
+            const int i = static_cast<int>(inner[k]);
+            const cplx_type ds = dS_dVm_vals_[static_cast<Eigen::Index>(k)];
+            const int pr = ledger_.p_row(i);
+            const int qr = ledger_.q_row(i);
+            if (pr >= 0) { rows.push_back(pr); vals.push_back(std::real(ds)); }
+            if (qr >= 0) { rows.push_back(qr); vals.push_back(std::imag(ds)); }
+        }
     }
 
     // ----- MultiSlack: slack_absorbed J column (-1 when the extension is absent) --
@@ -2182,6 +2369,13 @@ private:
     std::vector<int>                       masked_zero_pos_;
     std::vector<int>                       masked_one_pos_;
     bool                                   masked_dirty_;
+    // J_'s pattern by row (see _build_J_row_index), built when a mask first needs it
+    // and dropped with the pattern; scratch of _recompute_mask_positions
+    std::vector<int>                       J_row_start_;
+    std::vector<int>                       J_row_pos_;
+    std::vector<int>                       J_row_col_;
+    std::vector<int>                       one_col_of_row_;
+    std::vector<int>                       masked_rows_;
 
     // one dS -> J pass over a value map: for every Ybus nonzero that feeds a
     // Jacobian coefficient, J[pos] = real/imag(ds[k]). TakeReal picks the part,
@@ -2211,40 +2405,64 @@ private:
     }
 
     // resolve masked_zero_pos_ / masked_one_pos_ from masked_buses_ and J_'s
-    // sparsity (one pass over the nonzeros). Call only when J_ is built.
+    // sparsity. Call only when J_ is built. Visits the entries of the masked rows
+    // only, through a row index of J_'s pattern built once per pattern: the sets
+    // change at every row of a batch and at every PV / PQ switch, and a pass over
+    // all of J_'s nonzeros each time is a measurable share of a batch. Each
+    // position belongs to one row, so the order the positions are listed in does
+    // not change J.
     void _recompute_mask_positions() {
         masked_zero_pos_.clear();
         masked_one_pos_.clear();
         masked_dirty_ = false;
         if ((masked_buses_.empty() && pv_pinned_buses_.empty()) || J_.nonZeros() == 0) return;
         const int dim = static_cast<int>(J_.rows());
-        std::vector<char> is_masked_row(dim, 0);
-        std::vector<int>  one_col_of_row(dim, -1);  // for a masked row: the col forced to 1
+        if (static_cast<int>(J_row_start_.size()) != dim + 1) _build_J_row_index();
+        // for a masked row: the col forced to 1 (-2: not a masked row); rows listed once
+        if (static_cast<int>(one_col_of_row_.size()) != dim) one_col_of_row_.assign(dim, -2);
+        masked_rows_.clear();
+        auto mark = [this](int row, int col) {
+            if (row < 0) return;
+            if (one_col_of_row_[row] == -2) masked_rows_.push_back(row);
+            one_col_of_row_[row] = col;
+        };
         for (int b : masked_buses_) {
-            const int pr = ledger_.p_row(b);
-            const int tc = ledger_.theta_col(b);
-            if (pr >= 0) { is_masked_row[pr] = 1; one_col_of_row[pr] = tc; }
-            const int qr = ledger_.q_row(b);
-            const int vc = ledger_.vm_col(b);
-            if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }
+            mark(ledger_.p_row(b), ledger_.theta_col(b));
+            mark(ledger_.q_row(b), ledger_.vm_col(b));
         }
         // a PV-pinned bus keeps its P equation live -- only the Q row goes to
         // identity, which freezes dVm at 0 and leaves dTheta to be solved for.
         // A bus that is ALSO masked above is left as the mask set it (same Q row,
         // same one-column: the two agree, so the order does not matter).
-        for (int b : pv_pinned_buses_) {
-            const int qr = ledger_.q_row(b);
-            const int vc = ledger_.vm_col(b);
-            if (qr >= 0) { is_masked_row[qr] = 1; one_col_of_row[qr] = vc; }
+        for (int b : pv_pinned_buses_) mark(ledger_.q_row(b), ledger_.vm_col(b));
+        for (int row : masked_rows_) {
+            const int one_col = one_col_of_row_[row];
+            for (int k = J_row_start_[row]; k < J_row_start_[row + 1]; ++k) {
+                if (J_row_col_[k] == one_col) masked_one_pos_.push_back(J_row_pos_[k]);
+                else                          masked_zero_pos_.push_back(J_row_pos_[k]);
+            }
+            one_col_of_row_[row] = -2;
         }
+    }
+
+    // J_'s pattern by row: the positions in J_.valuePtr() of row r's entries, and
+    // their columns, are J_row_pos_ / J_row_col_ over [J_row_start_[r], J_row_start_[r + 1])
+    void _build_J_row_index() {
+        const int dim = static_cast<int>(J_.rows());
+        const int nnz = static_cast<int>(J_.nonZeros());
         const int* outer = J_.outerIndexPtr();
         const int* inner = J_.innerIndexPtr();
+        J_row_start_.assign(dim + 1, 0);
+        for (int p = 0; p < nnz; ++p) ++J_row_start_[inner[p] + 1];
+        for (int r = 0; r < dim; ++r) J_row_start_[r + 1] += J_row_start_[r];
+        J_row_pos_.resize(nnz);
+        J_row_col_.resize(nnz);
+        std::vector<int> next(J_row_start_.begin(), J_row_start_.end() - 1);
         for (int col = 0; col < dim; ++col) {
             for (int p = outer[col]; p < outer[col + 1]; ++p) {
-                const int row = inner[p];
-                if (!is_masked_row[row]) continue;
-                if (one_col_of_row[row] == col) masked_one_pos_.push_back(p);
-                else                            masked_zero_pos_.push_back(p);
+                const int k = next[inner[p]]++;
+                J_row_pos_[k] = p;
+                J_row_col_[k] = col;
             }
         }
     }
@@ -2446,6 +2664,9 @@ private:
 
 using SingleSlackNRSystem = NRSystem<Base, VoltageControl, BranchControl, ShuntControl, Hvdc>;
 using MultiSlackNRSystem  = NRSystem<Base, MultiSlack, VoltageControl, Hvdc>;
+// the Newton the outer loops wrap when it shares the slack itself (NROuterDist_*): the
+// single-slack one's extensions, with MultiSlack's slack_absorbed column
+using OuterDistNRSystem   = NRSystem<Base, MultiSlack, VoltageControl, BranchControl, ShuntControl, Hvdc>;
 
 } // namespace ls2g
 

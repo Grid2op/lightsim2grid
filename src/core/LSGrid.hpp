@@ -51,6 +51,7 @@
 
 // import newton raphson solvers using different linear algebra solvers
 #include "AlgorithmSelector.hpp"
+#include "batch_algorithm/PowerFlowAdjoint.hpp"
 
 namespace ls2g {
 
@@ -356,6 +357,7 @@ class LS2G_API LSGrid final
                 _dc_algo.change_algorithm(type);
                 algo_controler_.dc_algo_controler().tell_all_changed();
             } else {
+                _invalidate_adjoint();
                 _algo.change_algorithm(type);
                 algo_controler_.ac_algo_controler().tell_all_changed();
             }
@@ -367,6 +369,7 @@ class LS2G_API LSGrid final
             // Peek at IS_AC to decide which slot to update.
             std::unique_ptr<BaseAlgo> tmp = AlgorithmRegistry::instance().make(name);
             if (tmp->IS_AC) {
+                _invalidate_adjoint();
                 _algo.change_algorithm(name);
                 // Same courtesy as the enum overload above, and it used to be missing
                 // here: a fast-decoupled solve reads Bp / Bpp, which only
@@ -620,6 +623,9 @@ class LS2G_API LSGrid final
                                        const Eigen::Ref<const RealVect> & max_q_mvar);
         /// a generator's reactive limits at `p_mw` (MVar) from its curve; false without one
         bool gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_type & max_q) const;
+        /// their derivatives with respect to `p_mw` there (MVar per MW), on the same segment;
+        /// false without a curve
+        bool gen_limit_slopes_at(int gen_id, real_type p_mw, real_type & dmin_q, real_type & dmax_q) const;
         /**
          * OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target
          * Q (MVar) before it was clamped into its limits at its target P, NaN where none was
@@ -646,6 +652,10 @@ class LS2G_API LSGrid final
         /// the same, for that one generator's target P (MW, NaN: none moved it)
         void gen_limits_at_outer_target(int gen_id, real_type outer_target_p,
                                         real_type & min_q, real_type & max_q) const;
+        /// how those limits move with that target P (MVar per MW): 0 where they are the fixed
+        /// ones (no curve, or no target P an outer loop or a batch row gave it)
+        void gen_limit_slopes_at_outer_target(int gen_id, real_type outer_target_p,
+                                              real_type & dmin_q, real_type & dmax_q) const;
 
         void set_hold_frozen_regulators(bool hold) {
             if(hold == hold_frozen_regulators_) return;
@@ -1146,7 +1156,7 @@ class LS2G_API LSGrid final
         // algo config (scaling/refactor policy params) — also part of StateRes,
         // see LSGrid::get_state()/set_state()
         [[nodiscard]] AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
-        void set_ac_algo_config(const AlgoConfig& cfg) { _algo.set_config(cfg); }
+        void set_ac_algo_config(const AlgoConfig& cfg) { _invalidate_adjoint(); _algo.set_config(cfg); }
         [[nodiscard]] AlgoConfig get_dc_algo_config() const { return _dc_algo.get_config(); }
         void set_dc_algo_config(const AlgoConfig& cfg) { _dc_algo.set_config(cfg); }
         template<class T>
@@ -2647,6 +2657,51 @@ class LS2G_API LSGrid final
             return IntVect::Zero(ctrl.n_controllers());
         }
 
+        // ---- reverse-mode differentiation of the last AC powerflow -------------------
+        // The gradient of a loss L(V) with respect to this grid's injections and voltage
+        // set-points, through the solve ac_pf just made: one transposed solve of its last
+        // Jacobian (J^T lambda = xbar, refreshed at the converged V), then lambda read
+        // at each input's row -- what BaseBatchSweep does per row, for one solve. With
+        // outer loops, the Jacobian is that of their last Newton solve, every decision
+        // they took held fixed (see AdjointSolveInfo and docs/differentiable.rst).
+        //
+        // Nothing is kept by the forward: the algorithm still holds its last system, and
+        // these read it. So they need the grid exactly as that solve left it -- an AC
+        // Newton-Raphson that converged, and no change since (they throw otherwise).
+        using AdjointMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+        /// the dimension of the system: the length of one cotangent, and of one lambda
+        [[nodiscard]] int dim_J();
+        /// where each GRID bus sits in the Jacobian, -1 where it owns no such unknown /
+        /// equation: the columns are where a cotangent of that bus goes in xbar, the rows
+        /// where its injection gradient is read out of lambda
+        [[nodiscard]] IntVect get_theta_col_of_bus();
+        [[nodiscard]] IntVect get_vm_col_of_bus();
+        [[nodiscard]] IntVect get_p_row_of_bus();
+        [[nodiscard]] IntVect get_q_row_of_bus();
+        /// solve J^T lambda = xbar; `xbar` is (k, dim_J), k cotangents (1 for the gradient
+        /// of a scalar loss). The multipliers of the identity rows (a bus pinned PV) are 0.
+        AdjointMat solve_JT(const Eigen::Ref<const AdjointMat> & xbar);
+        /// the indirect half of the gen_v gradient, one entry per generator, already
+        /// weighted by get_gen_v_share (see BaseBatchSweep::gen_v_indirect_grad)
+        RealVect gen_v_indirect_grad(const Eigen::Ref<const RealVect> & lambda);
+        /// what the gen_p gradient owes beyond lambda at the P row (a unit an outer loop
+        /// froze at a limit of its capability curve, one the distributed slack holds at a
+        /// bound), one entry per generator (see BaseBatchSweep::gen_p_indirect_grad)
+        RealVect gen_p_indirect_grad(const Eigen::Ref<const RealVect> & lambda);
+        /// the GRID bus whose magnitude each generator's set-point fixes, -1 where it fixes
+        /// none (see BaseBatchSweep::get_gen_v_target_bus)
+        [[nodiscard]] IntVect get_gen_v_target_bus();
+        /// the share of that derivative each generator carries in this solve, 0 where its
+        /// set-point reaches nothing (see BaseBatchSweep::get_gen_v_share_rows): what the
+        /// DIRECT half of its gradient is weighted by
+        [[nodiscard]] RealVect get_gen_v_share();
+        /// the transformers the last AC powerflow's outer loops left at another tap than the
+        /// grid's, and the pi block (y11, y12, y21, y22, pu) they have there: what its flows are
+        /// computed with (empty without outer loops, or when no loop moved a tap)
+        [[nodiscard]] std::tuple<IntVect, Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
+        get_outer_trafo_admittances() const;
+
         [[nodiscard]] real_type get_computation_time() const{ return _algo.get_computation_time();}
         [[nodiscard]] real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
 
@@ -3095,6 +3150,22 @@ class LS2G_API LSGrid final
         }
     
     protected:
+        // What the reverse-mode entry points work from, out of the last AC solve: the
+        // Jacobian refreshed at the solution, the gen_v layout and the solve's own
+        // description. Worked out once per solve (a backward reads it several times).
+        struct AdjointPrep {
+            bool valid = false;
+            power_flow_adjoint::GenVLayout layout;
+            AdjointSolveInfo info;
+        };
+        // The checks every reverse-mode entry point makes (an AC Newton-Raphson, converged,
+        // the grid unchanged since), then the AdjointPrep of the last solve.
+        const AdjointPrep & _prepare_adjoint(const char * fun_name);
+        // the AC algorithm may hold another solve, or another state of it: work the
+        // AdjointPrep out again on the next read (every ac_pf, change of algorithm, of its
+        // config, reset)
+        void _invalidate_adjoint() { adjoint_prep_.valid = false; }
+
         /**
          * THE BUILD. Everything a solver family needs, assembled out of this grid
          * into `cache`: bus labelling, matrix, injections, slack, pv-pq split.
@@ -3579,6 +3650,7 @@ class LS2G_API LSGrid final
 
         // to solve the newton raphson
         AlgorithmSelector _algo;
+        AdjointPrep adjoint_prep_;  // see _prepare_adjoint; a copy starts without one
         AlgorithmSelector _dc_algo;
         // see set_dc_distribute_slack_on_can_participate; whether the DC cache's weights are
         // the "can participate" ones (the option is on and some unit is flagged)
