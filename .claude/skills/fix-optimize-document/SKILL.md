@@ -15,6 +15,11 @@ The working tree usually holds the user's own uncommitted work. Stage only the f
 your change touched (`git add <paths>`, never `git add -A` / `-a`), and never stash,
 reset or check out over their changes.
 
+**Before the first commit, ask the user where each change goes.** List the bugs and
+improvements found so far, and ask which should be grouped in a dedicated pull request
+(on a branch of their own) and which can be committed directly to the current branch.
+Ask again if new ones turn up later that don't fit the answer already given.
+
 ## 1. A potential bug
 
 Take each suspected bug through these steps on its own:
@@ -38,8 +43,7 @@ Take each suspected bug through these steps on its own:
 4. **Commit it, one commit per bug.** The commit holds the test, the fix and a short
    `[FIXED]` changelog entry. The message says what was wrong, how the test shows
    it, and why the fix is correct. Follow `CLAUDE.md` for the author, `-s` and
-   `Assisted-by:`. If you are on `master` or a `dev_x.y.z` branch, make a feature
-   branch first. Do not push unless asked.
+   `Assisted-by:`. Commit it to the branch the user chose for it (see above).
 
 **Final report.** End with two lists:
 - **Fixed:** for each bug, the commit hash, a one-line description and the test that
@@ -82,6 +86,8 @@ with B returning the **same answers** as A.
   whether the answers were identical, and the cases that got *slower*. No measured
   numbers go into code comments or docs (see `CLAUDE.md`); they belong in the commit
   message or the PR.
+- **Commit:** one commit per optimisation, on the branch the user chose for it, with
+  an `[IMPROVED]` changelog entry.
 
 If the A/B shows no gain, or a loss, say so and do not commit the change.
 
@@ -102,3 +108,5 @@ Before changing any doc, docstring or example, **check the code it describes.**
   build with no warnings.
 - The `CLAUDE.md` rules on comments and docs apply: no mention of RTE, no measured
   numbers.
+- **Commit:** on the branch the user chose for it, with a changelog entry
+  (usually `[IMPROVED]`).
