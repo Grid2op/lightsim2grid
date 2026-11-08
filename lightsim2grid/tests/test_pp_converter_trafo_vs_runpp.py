@@ -108,6 +108,13 @@ class TestTrafoVsRunpp(_Base):
         self.assert_same_as_pp(make_net(vn_lv_kv=21., tap_side="lv"))
         self.assert_same_as_pp(make_net(vn_hv_kv=107., vn_lv_kv=21., tap_step_degree=30.))
 
+    def test_tap_ignored_by_pandapower(self):
+        """issue #274: pandapower 3 applies a tap only for a "Ratio", "Symmetrical" (or "Ideal")
+        tap_changer_type and a tap_side of "hv" or "lv"; without them the transformer is at
+        ratio 1 whatever tap_pos says, where this converter applied the tap anyway"""
+        self.assert_same_as_pp(make_net(tap_changer_type=None))
+        self.assert_same_as_pp(make_net(tap_side=None))
+
     def test_symmetrical_tap(self):
         """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
         self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))

@@ -61,11 +61,26 @@ def _aux_add_trafo(
         warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
     shift_[~np.isfinite(shift_)] = 0.
 
-    # test the missing values on the column itself: `== "hv"` is already False for them
-    tap_side_missing = pp_net.trafo["tap_side"].isna().to_numpy()
-    if np.any(tap_side_missing):
-        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"], they have been replaced by \"hv\"")
-    is_tap_hv_side = (pp_net.trafo["tap_side"].to_numpy() == "hv") | tap_side_missing
+    tap_side = pp_net.trafo["tap_side"].to_numpy()
+    # a transformer without a tap side has no tap (below): it is stored as not on the hv side, as always
+    is_tap_hv_side = tap_side == "hv"
+    # the transformers whose tap pandapower applies (`_calc_tap_from_dataframe`): those with a tap
+    # side and, with pandapower 3 data, a "Ratio" or "Symmetrical" tap changer. The others are at
+    # ratio 1 (plus their shift_degree) whatever their tap_pos.
+    has_step = (tap_step_pct != 0.) & (tap_pos != tap_neutral)
+    tap_applies = np.isin(tap_side, ["hv", "lv"])
+    if np.any(~tap_applies & has_step):
+        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"]: the tap of these transformers "
+                      "is ignored, as pandapower does.")
+    if "tap_changer_type" in pp_net.trafo:
+        is_complex = np.isin(pp_net.trafo["tap_changer_type"].to_numpy(), ["Ratio", "Symmetrical"])
+        if "tap_dependency_table" in pp_net.trafo:
+            # computed from their table by pandapower, not handled below
+            is_complex |= pp_net.trafo["tap_dependency_table"].fillna(False).to_numpy(dtype=bool)
+        if np.any(~is_complex & tap_applies & has_step):
+            warnings.warn("Some transformers have a tap but no pp_net.trafo[\"tap_changer_type\"]: their tap "
+                          "is ignored, as pandapower does.")
+        tap_applies &= is_complex
     
     if "tap_phase_shifter" in pp_net.trafo:
         if np.any(pp_net.trafo["tap_phase_shifter"].to_numpy()):
@@ -119,7 +134,8 @@ def _aux_add_trafo(
         step = tap_step_pct[trafo_ids]
         angle = tap_angles_[trafo_ids]
         on_hv = is_tap_hv_side[trafo_ids]
-        for mask, vn, direction in ((on_hv, vnh, 1.), (~on_hv, vnl, -1.)):
+        applies = tap_applies[trafo_ids]
+        for mask, vn, direction in ((applies & on_hv, vnh, 1.), (applies & ~on_hv, vnl, -1.)):
             vn[mask], tap_shift = _complex_tap(vn[mask], step[mask], diff[mask], angle[mask])
             shift[mask] += direction * tap_shift
         return vnh, vnl, shift
@@ -176,8 +192,8 @@ def _aux_add_trafo(
             model.deactivate_trafo(tr_id)
 
     # the tap changers (what the TransformerVoltageControl outer loop moves), then what they regulate
-    with_steps = _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_, tap_neutral, tap_pos,
-                                         trafo_params, trafo_r, trafo_x, trafo_b)
+    with_steps = _aux_trafo_tap_changers(model, pp_net, np.where(tap_applies, tap_step_pct, 0.), tap_angles_,
+                                         tap_neutral, tap_pos, trafo_params, trafo_r, trafo_x, trafo_b)
     _aux_trafo_tap_regulation(model, pp_net, pp_to_ls, with_steps)
 
 

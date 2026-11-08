@@ -319,7 +319,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] pandapower converter: the ``leakage_resistance_ratio_hv`` warning fired for the supported 0.5
   and never for another value (#274).
 - [FIXED] pandapower converter: a missing ``tap_side`` became the low voltage side without a warning;
-  it is now the high voltage side, with the warning (#274).
+  the tap is now ignored, with a warning, as pandapower does (#274).
 - [FIXED] pandapower converter: the "Ideal" tap changer check of the 3-winding transformers could
   not be reached (#274).
 - [FIXED] pandapower 3 converter: the magnetising susceptance of a transformer subtracted ``pfe`` instead of
@@ -330,6 +330,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   is added to the phase shift and its ratio is the modulus of the complex step, as pandapower (#274).
 - [FIXED] pandapower converter: a transformer rated for other voltages than its buses (``vn_hv_kv`` /
   ``vn_lv_kv``) lost its off-nominal ratio and impedance base (#274).
+- [FIXED] pandapower converter: the tap of a transformer without a ``"Ratio"`` / ``"Symmetrical"``
+  ``tap_changer_type`` was applied, where pandapower ignores it (#274).
 
 
 [1.3.0] 2026-11-03

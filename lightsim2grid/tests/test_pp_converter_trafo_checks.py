@@ -74,20 +74,19 @@ class TestTrafoConverterChecks(unittest.TestCase):
         _, msgs = _convert(net)
         self.assertTrue(any("shift_degree" in m for m in msgs), msgs)
 
-    def test_missing_tap_side_is_hv_and_warns(self):
+    def test_missing_tap_side_ignores_tap_and_warns(self):
         """issue #274: a missing tap_side became the low voltage side (`== "hv"` is False for
-        None), and the NaN check ran on that boolean array so it never warned. It must warn
-        and give the same transformer as tap_side="hv", as the warning says."""
+        None), and the NaN check ran on that boolean array so it never warned. pandapower ignores
+        the tap of such a transformer (ratio 1): so does the converter now, with a warning."""
         ref = _small_net()
-        model_ref, _ = _convert(ref)
-        V_ref = _solve(model_ref)
+        ref.trafo["tap_pos"] = 0  # neutral
+        V_ref = _solve(_convert(ref)[0])
 
         net = _small_net()
         net.trafo["tap_side"] = None
         model, msgs = _convert(net)
         self.assertTrue(any("tap_side" in m for m in msgs), msgs)
-        V = _solve(model)
-        np.testing.assert_allclose(V, V_ref, rtol=0., atol=1e-10)
+        np.testing.assert_allclose(_solve(model), V_ref, rtol=0., atol=1e-10)
 
     def test_ideal_trafo3w_is_checked(self):
         """issue #274: the "Ideal" check of the 3-winding transformers sat in an `elif` behind
