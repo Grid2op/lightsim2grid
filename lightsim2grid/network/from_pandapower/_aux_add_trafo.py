@@ -99,9 +99,9 @@ def _aux_add_trafo(
         raise RuntimeError("Cannot convert a transformer with model 'pi' to LightSim2grid (using pandapower < 3)")
     vn_hv_bus = pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"].to_numpy()
     vn_lv_bus = pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"].to_numpy()
-    # the voltages the tap moves
-    vn_hv_ref = vn_hv_bus
-    vn_lv_ref = vn_lv_bus
+    # the voltages the tap moves: the rated ones, which may differ from the buses' (off-nominal ratio)
+    vn_hv_ref = pp_net.trafo["vn_hv_kv"].to_numpy(dtype=float)
+    vn_lv_ref = pp_net.trafo["vn_lv_kv"].to_numpy(dtype=float)
     per_trafo = (pp_net.trafo["vk_percent"].to_numpy(),
                  pp_net.trafo["vkr_percent"].to_numpy(),
                  pp_net.trafo["sn_mva"].to_numpy(),

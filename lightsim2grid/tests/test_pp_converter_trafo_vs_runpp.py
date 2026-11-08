@@ -99,6 +99,15 @@ class TestTrafoVsRunpp(_Base):
         self.assert_same_as_pp(make_net(tap_step_degree=30., tap_side="lv"))
         self.assert_same_as_pp(make_net(tap_step_degree=30., shift_degree=30., tap_neutral=1, tap_pos=-4))
 
+    def test_off_nominal_rated_voltages(self):
+        """issue #274: a transformer rated for other voltages than its buses' (vn_hv_kv / vn_lv_kv
+        != the buses' vn_kv) has an off-nominal ratio, and pandapower moves the tap from the rated
+        voltage; the bus voltages were used for both here, which dropped that ratio"""
+        self.assert_same_as_pp(make_net(vn_hv_kv=115.))
+        self.assert_same_as_pp(make_net(vn_lv_kv=21.))
+        self.assert_same_as_pp(make_net(vn_lv_kv=21., tap_side="lv"))
+        self.assert_same_as_pp(make_net(vn_hv_kv=107., vn_lv_kv=21., tap_step_degree=30.))
+
     def test_symmetrical_tap(self):
         """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
         self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))

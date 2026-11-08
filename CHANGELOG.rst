@@ -328,6 +328,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   multiplied by the square of the tap ratio instead of divided by it (#274).
 - [FIXED] pandapower converter: the angle of a tap with a ``tap_step_degree`` (asymmetrical or symmetrical)
   is added to the phase shift and its ratio is the modulus of the complex step, as pandapower (#274).
+- [FIXED] pandapower converter: a transformer rated for other voltages than its buses (``vn_hv_kv`` /
+  ``vn_lv_kv``) lost its off-nominal ratio and impedance base (#274).
 
 
 [1.3.0] 2026-11-03
