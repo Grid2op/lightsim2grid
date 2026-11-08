@@ -551,6 +551,37 @@ TEST_CASE("tripping a remote-regulating generator leaves that row unsolved, not 
     }
 }
 
+TEST_CASE("unsolved_fallback solves the unsolved row as a one-off ac_pf does", "[batch][vctrl]")
+{
+    LSGrid ref_grid = make_remote_gen_grid();
+    ref_grid.deactivate_gen(1);
+    const CplxVect ref = single_shot(ref_grid);
+
+    for (int nb_thread : {1, 2}) {
+        INFO("nb_thread = " << nb_thread);
+        LSGrid grid = make_remote_gen_grid();
+        ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+        ca.set_nb_thread(nb_thread);
+        ca.set_unsolved_fallback(true);
+        ca.add_contingency_gen({1});
+        ca.add_contingency_load({0});
+        ca.compute(flat_start(grid), 30, 1e-10);
+        const auto conts = ca.my_contingencies();
+        for (size_t row = 0; row < conts.size(); ++row) {
+            INFO("row " << row);
+            CHECK(ca.converged()[row] == 1);
+            CHECK(ca.get_violations()[row].empty());
+            const bool gen_trip = std::get<3>(conts[row]) == std::vector<int>{1};
+            // the reason stays: this row went through the fallback
+            CHECK(ca.get_unsolved_reasons()[row].empty() == !gen_trip);
+            if (gen_trip) {
+                for (int b = 0; b < NB_BUS; ++b) CHECK(std::abs(ca.get_voltages()(row, b) - ref(b)) < 1e-9);
+            }
+        }
+        CHECK(ca.nb_solved() == 2);
+    }
+}
+
 TEST_CASE("a contingency stranding a lone controller's own bus falls back to plain PQ", "[batch][vctrl][mask]")
 {
     // Mirror image of the previous test: the trafo strands bus 2 (B, the sole

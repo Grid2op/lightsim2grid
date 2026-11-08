@@ -1348,6 +1348,22 @@ void bind_batch(py::module_& m) {
                       "limits the converged state is unchanged. Same as "
                       "LSGrid.consider_only_main_component(redistribute_slack=True), contingency "
                       "by contingency.")
+        .def_property("unsolved_fallback",
+                      [](const ContingencyAnalysis & self){ return self.get_unsolved_fallback(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_unsolved_fallback(val); },
+                      "Whether the contingencies the batch leaves unsolved (see get_unsolved_reasons) "
+                      "are solved after it, one at a time, with LSGrid.ac_pf: on a private copy of the "
+                      "grid, the contingency's elements deactivated, with the batch's algorithm, its "
+                      "configuration and outer loops, max_iter and tol, starting where the batch's "
+                      "rows start (with init_from_n_powerflow, from the \"n\" solve -- its outer "
+                      "loops' state included, the copy solving \"n\" again before each one). Their "
+                      "voltages, convergence, limit and physical violations and generator results go "
+                      "where the batch's rows put theirs, their reason is kept; their Jacobian is not "
+                      "(keep_jacobian). A contingency the fallback cannot reproduce stays UNSOLVED and "
+                      "its reason says why (one splitting the grid with handle_disconnected_grid, "
+                      "redistribute_slack without outer loops). Sequential, and as slow as one "
+                      "ac_pf per contingency (two with outer loops and init_from_n_powerflow). Off by "
+                      "default.")
         .def_property("handle_disconnected_grid",
                       [](const ContingencyAnalysis & self){ return self.get_handle_disconnected_grid(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_handle_disconnected_grid(val); },

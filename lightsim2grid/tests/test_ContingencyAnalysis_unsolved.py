@@ -11,7 +11,9 @@
 Tripping a generator that regulates a remote bus is not supported by the batch yet (its
 voltage control lives in Jacobian rows and columns the batch does not reserve per row). It
 used to make ``compute()`` raise for the whole batch; that row alone is now reported
-``LimitViolationType.UNSOLVED``, with its reason in ``get_unsolved_reasons()``.
+``LimitViolationType.UNSOLVED``, with its reason in ``get_unsolved_reasons()``. With
+``unsolved_fallback``, those rows are then solved one at a time by ``ac_pf`` on a copy of the
+grid, and must match that one-off solve.
 
 Fixture: pandapower case14, generator 3 (on bus 7) regulating bus 9 remotely, as in
 ``test_voltage_control_batch.py``.
@@ -158,6 +160,148 @@ class TestUnsolvedContingencies(unittest.TestCase):
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertEqual(list(ca.get_unsolved_reasons()), ["", ""])
         self.assertTrue(all(ca.converged_mask()))
+
+
+class TestUnsolvedFallback(unittest.TestCase):
+    """``unsolved_fallback``: the rows the batch leaves unsolved are solved after it, one at a
+    time, by ``ac_pf`` on a copy of the grid with the contingency's elements out."""
+
+    def setUp(self):
+        self.grid = _grid()
+        self.n_line = len(self.grid.get_lines())
+        self.v0 = np.ones(self.grid.total_bus(), dtype=complex)
+        self.buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+
+    def _reference(self, grid, cont, init_from_n=False):
+        """the one-off solve of that contingency, as the fallback is documented to run it"""
+        ref = copy.deepcopy(grid)
+        v_start = 1.0 * self.v0
+        outer = "NROuter" in ref.get_algo_name()
+        if init_from_n:
+            v_start = ref.ac_pf(1.0 * self.v0, MAX_IT, TOL)
+            self.assertGreater(v_start.shape[0], 0)
+            if outer:
+                ref.set_resume_outer_state(True)
+        branches, shunts, loads, gens, side1, side2 = (list(c) for c in cont)
+        for br in branches:
+            if br < self.n_line:
+                ref.deactivate_powerline(int(br))
+            else:
+                ref.deactivate_trafo(int(br - self.n_line))
+        for br in side1:
+            if br < self.n_line:
+                ref.deactivate_powerline_side1(int(br))
+            else:
+                ref.deactivate_trafo_side1(int(br - self.n_line))
+        for g in gens:
+            ref.deactivate_gen(int(g))
+        for s in shunts:
+            ref.deactivate_shunt(int(s))
+        for ld in loads:
+            ref.deactivate_load(int(ld))
+        return ref, ref.ac_pf(v_start, MAX_IT, TOL)
+
+    def _analysis(self, grid=None, nb_thread=1, init_from_n=False, fallback=True):
+        grid = self.grid if grid is None else grid
+        ca = ContingencyAnalysisCPP(grid)
+        ca.compute_limit_violations = True
+        ca.unsolved_fallback = fallback
+        ca.init_from_n_powerflow = init_from_n
+        ca.nb_thread = nb_thread
+        for line_id in (0, 3):
+            ca.add_n1(line_id)
+        ca.add_contingency_gen(GEN_REMOTE)
+        ca.add_contingency(branch_ids=[5], gen_ids=[GEN_REMOTE])
+        ca.add_contingency(branch_ids_side1=[7], gen_ids=[GEN_REMOTE])
+        ca.add_contingency(load_ids=[2], gen_ids=[GEN_REMOTE])
+        ca.add_contingency_gen(LOCAL_GEN)
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        return ca
+
+    def _check(self, ca, grid=None, init_from_n=False):
+        grid = self.grid if grid is None else grid
+        reasons = ca.get_unsolved_reasons()
+        amps = ca.compute_flows()
+        nb_fallback = 0
+        for row, cont in enumerate(ca.my_contingencies()):
+            with self.subTest(row=row, contingency=cont):
+                self.assertEqual(bool(reasons[row]), GEN_REMOTE in cont[3])
+                nb_fallback += bool(reasons[row])
+                ref, V_ref = self._reference(grid, cont, init_from_n)
+                if V_ref.shape[0] == 0 and not reasons[row]:
+                    # a row of the batch the one-off solve does not solve either (the outer
+                    # loops, at this tolerance): nothing to compare
+                    self.assertFalse(ca.converged()[row])
+                    continue
+                self.assertGreater(V_ref.shape[0], 0)
+                self.assertTrue(ca.converged()[row])
+                self.assertFalse(any(v.element_type == ViolationElementType.GRID
+                                     for v in ca.get_violations()[row]))
+                np.testing.assert_allclose(ca.get_voltages()[row][self.buses], V_ref[self.buses],
+                                           rtol=1e-7, atol=1e-7)
+                if reasons[row]:
+                    # the flows read off the row's voltages, as for any other row
+                    a_or = np.concatenate([ref.get_line_res1()[3], ref.get_trafo_res1()[3]])
+                    out = set(cont[0]) | set(cont[4]) | set(cont[5])
+                    keep = [br for br in range(a_or.shape[0]) if br not in out]
+                    np.testing.assert_allclose(amps[row][keep], a_or[keep], rtol=1e-6, atol=1e-6)
+        self.assertEqual(nb_fallback, 4)
+
+    def test_every_row_is_solved(self):
+        self._check(self._analysis())
+
+    def test_multithreaded(self):
+        self._check(self._analysis(nb_thread=3))
+
+    def test_init_from_n_powerflow(self):
+        self._check(self._analysis(init_from_n=True), init_from_n=True)
+
+    def test_off_by_default(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        self.assertFalse(ca.unsolved_fallback)
+        ca = self._analysis(fallback=False)
+        self.assertEqual(sum(not c for c in ca.converged()), 4)
+
+    def test_toggling_back_off(self):
+        ca = self._analysis()
+        self.assertTrue(all(ca.converged()))
+        ca.unsolved_fallback = False
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        self.assertEqual(sum(not c for c in ca.converged()), 4)
+        row = TestUnsolvedContingencies._row(ca, gens=[GEN_REMOTE])
+        self.assertEqual([v.violation_type for v in ca.get_violations()[row]], [LimitViolationType.UNSOLVED])
+
+    def test_source_grid_untouched(self):
+        V_before = copy.deepcopy(self.grid).ac_pf(1.0 * self.v0, MAX_IT, TOL)
+        self._analysis()
+        statuses = [l.connected_global for l in self.grid.get_lines()]
+        self.assertTrue(all(statuses))
+        self.assertTrue(all(g.connected for g in self.grid.get_generators()))
+        np.testing.assert_allclose(self.grid.ac_pf(1.0 * self.v0, MAX_IT, TOL), V_before, atol=1e-12)
+
+    def test_with_outer_loops(self):
+        for init_from_n in (False, True):
+            with self.subTest(init_from_n=init_from_n):
+                grid = _grid()
+                grid.change_algorithm("NROuter_SparseLU")
+                ca = self._analysis(grid=grid, init_from_n=init_from_n)
+                self.assertIn("NROuter", ca.get_algo_name())
+                self._check(ca, grid=grid, init_from_n=init_from_n)
+
+    def test_a_split_grid_is_not_attempted(self):
+        """handle_disconnected_grid: the batch solves a split grid on its main component, a
+        one-off solve of the whole grid would not -- the fallback leaves that row unsolved"""
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.compute_limit_violations = True
+        ca.handle_disconnected_grid = True
+        ca.unsolved_fallback = True
+        # the remote controller's own bus is behind that transformer: masked, the batch solves
+        # the rest
+        ca.add_contingency(branch_ids=[self.n_line + TRAFO_BEHIND], gen_ids=[GEN_REMOTE])
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        self.assertFalse(ca.converged()[0])
+        self.assertIn("splits the grid", ca.get_unsolved_reasons()[0])
+        self.assertEqual([v.violation_type for v in ca.get_violations()[0]], [LimitViolationType.UNSOLVED])
 
 
 if __name__ == "__main__":

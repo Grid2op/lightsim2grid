@@ -314,6 +314,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [BREAKING] ``ContingencyAnalysis`` / ``ScenarioSweep``: a row tripping what the batch does not support (a
   remote-regulating generator, a shunt ``ShuntVoltageControl`` owns) is reported ``UNSOLVED``, with
   ``get_unsolved_reasons()``, instead of making ``compute()`` raise for the whole batch (#280).
+- [ADDED] ``ContingencyAnalysis.unsolved_fallback``: the contingencies the batch leaves ``UNSOLVED`` are solved
+  after it, one at a time, by ``ac_pf`` on a copy of the grid (#280).
 
 
 [1.3.0] 2026-11-03

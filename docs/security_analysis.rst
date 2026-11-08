@@ -340,6 +340,19 @@ could not solve, the ``unsolved_reason`` (see below).
     solved relative to that base case -- a diverging base case makes the whole analysis
     meaningless.
 
+A contingency the batch does not support yet -- one tripping a generator that regulates a remote
+bus, or stands on a bus a control group holds, or a shunt the ``ShuntVoltageControl`` outer loop
+owns -- is reported ``UNSOLVED`` rather than making the whole analysis fail.
+``get_unsolved_reasons()`` (and each result's ``unsolved_reason``) says why. With
+``unsolved_fallback = True``, these contingencies are then solved after the batch, one at a time,
+by ``ac_pf`` on a private copy of the grid: the contingency's elements deactivated, the batch's own
+algorithm, outer loops, ``max_iter`` and ``tol``, starting where the batch's contingencies start
+(with ``init_from_n_powerflow``, from the "n" solve, its outer loops' state included). They get
+the same results as the others -- voltages, flows, limit and physical violations -- except a
+Jacobian for the gradients, and keep their ``unsolved_reason``, so the slower path stays visible.
+The fallback does not run a contingency that splits the grid under ``handle_disconnected_grid``,
+nor, without outer loops, one under ``redistribute_slack``: those stay ``UNSOLVED``.
+
 Violation checking is fully compatible with the ``handle_disconnected_grid`` and ``nb_thread``
 options described above: it is performed **inline, per contingency, inside the thread that
 solves it** (not as a separate post-processing pass), so it does not affect the multi-threading

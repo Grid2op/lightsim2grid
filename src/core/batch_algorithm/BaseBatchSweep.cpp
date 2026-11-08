@@ -774,6 +774,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // compute the powerflows, possibly split across several threads
     _compute_threaded(nb_steps, Vinit_solver, ac_solver_used, max_iter, tol, sn_mva, _timer_thread_init);
+    // ... and, where asked, the rows the batch left unsolved, one at a time (ContingencyAnalysis)
+    _maybe_solve_unsolved_rows(Vinit, Vinit_solver, max_iter, tol);
 
     // each row's outcome next to what its loops did, once every worker is done
     for(size_t i = 0; i < _outer_results_.size() && i < _converged_mask_.size(); ++i){

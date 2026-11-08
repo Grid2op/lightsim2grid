@@ -741,6 +741,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         const std::vector<std::string> & get_unsolved_reasons() const { return _row_unsolved_reason_; }
 
+        // ContingencyAnalysis only: solve the rows the batch leaves unsolved after it, one at a
+        // time, with LSGrid::ac_pf on a private copy of the grid (see _solve_unsolved_rows). A
+        // row solved that way keeps its reason. Off by default. Not L2: it decides what runs
+        // after the batch, not what the batch is built from.
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        bool get_unsolved_fallback() const noexcept { return _unsolved_fallback_; }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        void set_unsolved_fallback(bool val) {
+            if(val == _unsolved_fallback_) return;
+            clear_batch_outputs();  // the results were computed with the other value
+            _unsolved_fallback_ = val;
+        }
+
         // OLF-style bounded redistribution of the active power a row loses (a generator
         // contingency, an island cut off in "handle disconnected grid" mode) BEFORE its
         // solve, the saturated units leaving that row's distributed slack -- see
@@ -3840,6 +3855,212 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _row_unsolved_reason_[row] = msg.str();
         }
 
+        // ----- the fallback: the unsolved rows, one at a time, with LSGrid::ac_pf ------
+        // ContingencyAnalysis only (set_unsolved_fallback), after the batch. Each row is
+        // solved on a private copy of the grid, made once per compute(), as a one-off solve
+        // of the contingency would be: its elements deactivated, ac_pf with the batch's own
+        // algorithm, configuration, outer loops, max_iter and tol, then its elements put back.
+        // Where the batch's rows start, so does the row: from the batch's seed (the "n"
+        // solve's voltages with init_from_n_powerflow); with outer loops and
+        // init_from_n_powerflow, from the "n" state of its loops too -- the copy solves "n"
+        // again before each row (resume off, as the batch's "n" solve) and resumes from it
+        // (LSGrid::set_resume_outer_state). Its results go where the batch's rows put theirs:
+        // the voltages, convergence and limit violations, the per-row solve statistics and
+        // outer-loop results, the physical violations and generator results where asked.
+        // What it does not give: a row's Jacobian (keep_jacobian), so no gradient for it.
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        void _maybe_solve_unsolved_rows(const Eigen::Ref<const CplxVect> & Vinit, const CplxVect & Vinit_solver,
+                                        int max_iter, real_type tol){
+            if(!_unsolved_fallback_ || !_algo.ac_solver_used()) return;
+            std::vector<size_t> rows;
+            for(size_t i = 0; i < _row_unsolved_reason_.size(); ++i) if(_row_is_unsolved(i)) rows.push_back(i);
+            if(rows.empty()) return;
+
+            LSGrid grid(_grid_model);
+            grid.change_algorithm(_algo.get_name());
+            grid.set_ac_algo_config(_algo.get_config());
+            const bool outer = grid.get_algo().supports_outer_loops();
+            const bool resume_from_n = outer && _init_from_n_powerflow;
+            if(outer) grid.set_resume_outer_state(false);
+
+            // the batch's seed, on the grid's buses (the caller's Vinit off the batch's layout)
+            const GlobalBusIdVect & solver_to_me = active_layout().id_solver_to_me;
+            CplxVect V_seed = Vinit;
+            for(size_t s = 0; s < solver_to_me.size(); ++s){
+                V_seed(solver_to_me[s].cast_int()) = Vinit_solver(static_cast<Eigen::Index>(s));
+            }
+            CplxVect V_solver(static_cast<Eigen::Index>(solver_to_me.size()));
+
+            for(size_t i : rows){
+                const std::string why_not = _fallback_refuses(i, outer);
+                if(!why_not.empty()){
+                    _row_unsolved_reason_[i] += " The fallback did not run it: " + why_not + ".";
+                    continue;
+                }
+                auto timer = CustTimer();
+                CplxVect V_start = V_seed;
+                std::string error;
+                CplxVect res;
+                FallbackUndo undo;
+                try {
+                    if(resume_from_n){
+                        // the "n" state the row resumes from, as the batch's "n" solve reached it
+                        grid.set_resume_outer_state(false);
+                        const CplxVect V_n = grid.ac_pf(V_seed, max_iter, tol);
+                        if(V_n.size() == 0) error = "the \"n\" solve did not converge on the grid copy";
+                        else V_start = V_n;
+                        grid.set_resume_outer_state(true);
+                    }
+                    if(error.empty()){
+                        _apply_row_on_grid(i, grid, undo);
+                        const LinearSolverStats lin_before = grid.get_algo().get_linear_solver_stats_before_solve();
+                        res = grid.ac_pf(V_start, max_iter, tol);
+                        ++_nb_solved;
+                        _record_row_solve_stats(i, grid.get_algo(), lin_before);
+                    }
+                } catch(const std::exception & e){
+                    error = e.what();
+                }
+                const bool conv = error.empty() && res.size() > 0;
+                if(conv){
+                    ++_nb_converged;
+                    for(size_t s = 0; s < solver_to_me.size(); ++s){
+                        V_solver(static_cast<Eigen::Index>(s)) = res(solver_to_me[s].cast_int());
+                    }
+                    _voltages.raw().row(static_cast<Eigen::Index>(i))(solver_to_me.as_eigen()) = V_solver.array();
+                    _record_fallback_row_results(i, grid, V_solver);
+                }
+                _converged_mask_[i] = conv ? 1 : 0;
+                if(_compute_limit_violations_){
+                    _converged[i] = conv ? 1 : 0;
+                    _violations[i].clear();
+                    if(conv){
+                        _record_row_violations(i, V_solver, _row_masked_ids(i));
+                    } else {
+                        // the solver ran and did not converge: DIVERGENCE; it could not run: still UNSOLVED
+                        _violations[i].push_back(LimitViolation{
+                            ViolationElementType::GRID, -1, 0,
+                            error.empty() ? LimitViolationType::DIVERGENCE : LimitViolationType::UNSOLVED,
+                            std::numeric_limits<real_type>::quiet_NaN(),
+                            std::numeric_limits<real_type>::quiet_NaN()});
+                    }
+                }
+                if(!error.empty()) _row_unsolved_reason_[i] += " The fallback failed: " + error;
+                // whatever happened, the copy goes back to the base grid for the next row
+                undo.apply(grid);
+                if(resume_from_n) grid.set_resume_outer_state(false);
+                _timer_solver += timer.duration();
+            }
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        void _maybe_solve_unsolved_rows(const Eigen::Ref<const CplxVect> &, const CplxVect &, int, real_type){}
+
+        // what the fallback cannot reproduce of the batch's row, empty when it can
+        std::string _fallback_refuses(size_t i, bool outer) const {
+            // the pre-pass moves this row's set-points and takes units out of its slack: a
+            // one-off solve knows nothing of it (with outer loops, DistributedSlack shares it)
+            if(_redistribute_slack_ && !outer) return "`redistribute_slack` without outer loops is not applied by a one-off solve";
+            // a row whose contingency strands buses (handle_disconnected_grid) is solved on its
+            // main component by the batch, which a one-off solve of the whole grid is not
+            const std::vector<int> * masked = _row_masked_ids(i);
+            if(masked != nullptr && *masked != _base_masked_) return "it splits the grid";
+            return std::string();
+        }
+
+        // what the fallback changed on its copy of the grid, to put it back
+        struct FallbackUndo {
+            // branch id (lines then trafos), and its global / side statuses before
+            struct Branch { int id; bool global; bool side1; bool side2; };
+            std::vector<Branch> branches;
+            std::vector<int> gens, loads, shunts;
+            int n_line = 0;
+            void apply(LSGrid & grid){
+                for(auto it = branches.rbegin(); it != branches.rend(); ++it){
+                    const bool is_line = it->id < n_line;
+                    const int el = is_line ? it->id : it->id - n_line;
+                    if(it->global){
+                        if(is_line) grid.reactivate_powerline(el); else grid.reactivate_trafo(el);
+                    }
+                    if(!it->side1){ if(is_line) grid.deactivate_powerline_side1(el); else grid.deactivate_trafo_side1(el); }
+                    else if(is_line) grid.reactivate_powerline_side1(el); else grid.reactivate_trafo_side1(el);
+                    if(!it->side2){ if(is_line) grid.deactivate_powerline_side2(el); else grid.deactivate_trafo_side2(el); }
+                    else if(is_line) grid.reactivate_powerline_side2(el); else grid.reactivate_trafo_side2(el);
+                }
+                for(int g : gens) grid.reactivate_gen(g);
+                for(int l : loads) grid.reactivate_load(l);
+                for(int s : shunts) grid.reactivate_shunt(s);
+                branches.clear(); gens.clear(); loads.clear(); shunts.clear();
+            }
+        };
+
+        // row i's contingency on `grid`: what it trips that is connected there, recorded in `undo`
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        void _apply_row_on_grid(size_t i, LSGrid & grid, FallbackUndo & undo) const {
+            const ContingencyElements & cont = ybus_policy_.li_rows[i];
+            const int n_line = static_cast<int>(n_line_);
+            undo.n_line = n_line;
+            const auto & lines = grid.get_powerlines_as_data();
+            const auto & trafos = grid.get_trafos_as_data();
+            using UndoBranch = typename FallbackUndo::Branch;
+            auto status = [&](int br, UndoBranch & b){
+                const bool is_line = br < n_line;
+                const int el = is_line ? br : br - n_line;
+                b.id = br;
+                b.global = is_line ? lines.get_status_global()[el] : trafos.get_status_global()[el];
+                b.side1 = is_line ? lines.get_status_side_1()[el] : trafos.get_status_side_1()[el];
+                b.side2 = is_line ? lines.get_status_side_2()[el] : trafos.get_status_side_2()[el];
+            };
+            auto open = [&](int br, bool side1, bool side2){
+                UndoBranch b;
+                status(br, b);
+                if(!b.global) return;
+                undo.branches.push_back(b);
+                const bool is_line = br < n_line;
+                const int el = is_line ? br : br - n_line;
+                if(side1 && side2){ if(is_line) grid.deactivate_powerline(el); else grid.deactivate_trafo(el); }
+                else if(side1){ if(is_line) grid.deactivate_powerline_side1(el); else grid.deactivate_trafo_side1(el); }
+                else { if(is_line) grid.deactivate_powerline_side2(el); else grid.deactivate_trafo_side2(el); }
+            };
+            for(int br : cont.branches) open(br, true, true);
+            for(int br : cont.branches_side1) open(br, true, false);
+            for(int br : cont.branches_side2) open(br, false, true);
+            for(int g : cont.gens){
+                if(!grid.get_generators().get_status(g)) continue;
+                grid.deactivate_gen(g);
+                undo.gens.push_back(g);
+            }
+            for(int l : cont.loads){
+                if(!grid.get_loads().get_status(l)) continue;
+                grid.deactivate_load(l);
+                undo.loads.push_back(l);
+            }
+            for(int s : cont.shunts){
+                if(!grid.get_shunts().get_status(s)) continue;
+                grid.deactivate_shunt(s);
+                undo.shunts.push_back(s);
+            }
+        }
+
+        // what the batch records of a converged row beyond its voltages and violations, read
+        // off the grid copy's own solve
+        void _record_fallback_row_results(size_t i, const LSGrid & grid, const CplxVect &){
+            if(_compute_physical_violations_ && i < _physical_violations_.size()){
+                _physical_violations_[i] = grid.get_physical_violations(true, _physical_tol_mva_, _physical_tol_vm_pu_);
+            }
+            if(_compute_gen_results_ && static_cast<Eigen::Index>(i) < _gen_results_.rows()){
+                const auto res = grid.get_gen_res();
+                const auto & p = std::get<0>(res);
+                const auto & q = std::get<1>(res);
+                for(Eigen::Index g = 0; g < p.size(); ++g){
+                    _gen_results_(static_cast<Eigen::Index>(i), 2 * g) = p(g);
+                    _gen_results_(static_cast<Eigen::Index>(i), 2 * g + 1) = q(g);
+                }
+            }
+        }
+
         // ================= generator contingencies ===============================
         // ScenarioSweep (set_contingency_gens, set_topo_actions) and ContingencyAnalysis
         // (a contingency tripping a generator), read alike through _gen_off_in_row.
@@ -5045,6 +5266,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Sized by _reset_unsolved_rows, filled by the checks that used to refuse the whole
         // batch (_check_shunt_trips, _maybe_prepare_gen_contingency).
         std::vector<std::string> _row_unsolved_reason_;
+        // see set_unsolved_fallback
+        bool _unsolved_fallback_ = false;
         bool _compute_limit_violations_ = false;
         real_type _violation_threshold_ = 1.0;
         real_type _violation_rel_tol_ = DEFAULT_VIOLATION_REL_TOL;

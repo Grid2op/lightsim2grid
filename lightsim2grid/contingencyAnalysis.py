@@ -266,6 +266,27 @@ class ContingencyAnalysis(object):
         self.computer.handle_disconnected_grid = val
 
     @property
+    def unsolved_fallback(self):
+        """Whether the contingencies the batch leaves unsolved (see :func:`get_unsolved_reasons`)
+        are solved after it, one at a time, with ``ac_pf`` on a private copy of the grid (the
+        contingency's elements deactivated, the same algorithm, outer loops and parameters). They
+        then get results as the other contingencies do, and keep their ``unsolved_reason``.
+        Sequential and as slow as one powerflow per such contingency. Default: ``False``. See
+        ``ContingencyAnalysisCPP.unsolved_fallback``.
+        """
+        return self.computer.unsolved_fallback
+
+    @unsolved_fallback.setter
+    def unsolved_fallback(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `unsolved_fallback` attribute must be a boolean.")
+        val = bool(val)
+        if val != self.computer.unsolved_fallback:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.unsolved_fallback = val
+
+    @property
     def redistribute_slack(self):
         """Whether the active power a contingency loses (the elements of the island it cuts
         off, simulated with :attr:`handle_disconnected_grid`) is first shared on the remaining
