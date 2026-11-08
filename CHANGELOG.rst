@@ -344,6 +344,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   0.5 (a shunt admittance per side), which were replaced by 0.5 (#274).
 - [ADDED] ``LSGrid.update_trafos_parameters_full``: replace the transformers' r, x and the shunt admittance
   of each side.
+- [ADDED] pandapower converter: a phase tap changer (``set_trafo_phase_tap_changer``) for the taps that move the
+  phase (asymmetrical, symmetrical, ideal, tabular with an angle), and a ratio one for tabular taps (#274).
 
 
 [1.3.0] 2026-11-03

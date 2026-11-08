@@ -203,5 +203,52 @@ class TestTrafoVsRunpp(_Base):
         self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical", tap_step_degree=30.))
 
 
+class TestTapStateVsRunpp(_Base):
+    """issue #274: the tap is a state of the transformer, not a ratio baked in at load time:
+    converted at one position and moved to another (`change_trafo_ratio_tap` /
+    `change_trafo_phase_tap`), the grid is what pp.runpp computes at the new position."""
+    VARIANTS = {
+        "ratio hv": dict(),
+        "ratio lv, off-nominal": dict(tap_side="lv", vn_lv_kv=21.),
+        "asymmetrical hv": dict(tap_step_degree=30.),
+        "asymmetrical lv, parallel": dict(tap_step_degree=30., tap_side="lv", parallel=2),
+        "symmetrical": dict(tap_changer_type="Symmetrical", tap_step_degree=10.),
+        "ideal hv": dict(tap_changer_type="Ideal", tap_step_percent=np.nan, tap_step_degree=2.),
+        "ideal lv, percent": dict(tap_changer_type="Ideal", tap_step_percent=1.5, tap_side="lv"),
+    }
+
+    def check_moves(self, make, phase):
+        model = ls_model(make(3))
+        trafo = model.get_trafos()[0]
+        self.assertEqual(trafo.has_phase_tap_changer, phase)
+        self.assertEqual(trafo.has_ratio_tap_changer, not phase)
+        for pos in (-9, -2, 0, 5, 9):
+            with self.subTest(pos=pos):
+                if phase:
+                    model.change_trafo_phase_tap(0, pos)
+                else:
+                    model.change_trafo_ratio_tap(0, pos)
+                V_pp = pp_voltages(make(pos))
+                np.testing.assert_allclose(ls_voltages(model, V_pp.shape[0]), V_pp, rtol=0., atol=TOL_V)
+
+    def test_moved_tap(self):
+        for name, kw in self.VARIANTS.items():
+            phase = kw.get("tap_step_degree", 0.) != 0. or kw.get("tap_changer_type") == "Ideal"
+            with self.subTest(name):
+                self.check_moves(lambda pos, kw=kw: make_net(tap_pos=pos, **kw), phase)
+
+    def test_moved_tabular_tap(self):
+        """a tabular tap changer: a ratio one when its table has no angle, a phase one otherwise"""
+        self.check_moves(lambda pos: with_table(make_net(tap_pos=pos)), False)
+        self.check_moves(lambda pos: with_table(make_net(tap_pos=pos, tap_side="lv"), angle_deg=1.5), True)
+
+    def test_tabular_tap_with_a_hole(self):
+        """no tap changer when the table misses a position within tap_min .. tap_max"""
+        net = with_table(make_net())
+        net.trafo_characteristic_table = net.trafo_characteristic_table.query("step != -5")
+        trafo = ls_model(net).get_trafos()[0]
+        self.assertFalse(trafo.has_ratio_tap_changer or trafo.has_phase_tap_changer)
+
+
 if __name__ == "__main__":
     unittest.main()

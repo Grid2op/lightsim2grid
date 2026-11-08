@@ -46,10 +46,9 @@ def _aux_add_trafo(
     # does: the first ("tap_*" columns), and the second ("tap2_*") when there is one
     tap1 = _read_tap_changer(pp_net, "tap")
     tap2 = _read_tap_changer(pp_net, "tap2") if "tap2_pos" in pp_net.trafo else None
-    tap_neutral, tap_step_pct, tap_pos, tap_angles_ = tap1.neutral, tap1.step_pct, tap1.pos, tap1.step_degree
+    tap_pos = tap1.pos
     # a transformer without a tap side has no tap: it is stored as not on the hv side, as always
     is_tap_hv_side = tap1.on_hv
-    tap_applies = tap1.complex
     is_tabular = tap1.is_tabular
     tap_table = _read_tap_table(pp_net, is_tabular)
 
@@ -178,8 +177,7 @@ def _aux_add_trafo(
             model.deactivate_trafo(tr_id)
 
     # the tap changers (what the TransformerVoltageControl outer loop moves), then what they regulate
-    with_steps = _aux_trafo_tap_changers(model, pp_net, np.where(tap_applies, tap_step_pct, 0.), tap_angles_,
-                                         tap_neutral, tap_pos, trafo_params, trafo_r, trafo_x, trafo_b)
+    with_steps = _aux_trafo_tap_changers(model, pp_net, tap1, tap_table, trafo_params, trafo_r, trafo_x, trafo_b)
     _aux_trafo_tap_regulation(model, pp_net, pp_to_ls, with_steps)
 
 
@@ -374,22 +372,27 @@ def _pct_change(new, ref):
     return out
 
 
-def _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_deg, tap_neutral, tap_pos,
-                            trafo_params, trafo_r, trafo_x, trafo_b):
-    """Give a ratio tap changer (``LSGrid.set_trafo_ratio_tap_changer``) to every transformer
-    whose ``tap_min`` .. ``tap_max`` describe one: one step per integer position, with the
-    ratio and the r, x, g, b this converter computes at that position. Moving the tap is then
-    the same as converting the grid again with ``tap_pos`` at the new position.
+def _aux_trafo_tap_changers(model, pp_net, tap1, tap_table, trafo_params, trafo_r, trafo_x, trafo_b):
+    """Give a tap changer to every transformer whose ``tap_min`` .. ``tap_max`` describe one: one
+    step per integer position, with the ratio, the phase shift and the r, x, g, b this converter
+    computes at that position. Moving the tap is then the same as converting the grid again with
+    ``tap_pos`` at the new position.
 
-    Left without one (and so with the fixed ratio of its current tap, as before):
+    It is a ratio tap changer (``LSGrid.set_trafo_ratio_tap_changer``, what the
+    TransformerVoltageControl outer loop moves) when only the ratio moves with the tap, and a phase
+    tap changer (``LSGrid.set_trafo_phase_tap_changer``, with a ratio per step too) when the phase
+    shift moves as well: an asymmetrical or symmetrical tap (``tap_step_degree`` != 0), an ideal
+    phase shifter, a tabular tap changer whose table has an angle.
 
-    - a transformer with no step (``tap_step_percent`` 0 or NaN) or no finite ``tap_min`` / ``tap_max``;
-    - a tap position that is not an integer within ``[tap_min, tap_max]``;
-    - a non-zero ``tap_step_degree``: pandapower moves the phase shift with the tap there, which
-      this converter does not model;
-    - a tabular tap changer (``tap_dependency_table``), whose table is not read.
+    Left without one (and so with the fixed ratio and shift of its current tap):
 
-    Returns the boolean mask of the transformers given one.
+    - a transformer whose tap pandapower ignores, or with no step (``tap_step_percent`` and, for an
+      ideal one, ``tap_step_degree`` 0 or NaN);
+    - no finite ``tap_min`` / ``tap_max``, or a tap position that is not an integer within them;
+    - a tabular tap changer whose table misses a position within ``tap_min`` .. ``tap_max``;
+    - the second tap changer (``tap2_*``), which stays at its position.
+
+    Returns the boolean mask of the transformers given a ratio tap changer.
     """
     nb_trafo = pp_net.trafo.shape[0]
     with_steps = np.zeros(nb_trafo, dtype=bool)
@@ -397,14 +400,23 @@ def _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_deg, tap_neu
         return with_steps
     tap_min = pp_net.trafo["tap_min"].to_numpy(dtype=float)
     tap_max = pp_net.trafo["tap_max"].to_numpy(dtype=float)
+    tap_pos = tap1.pos
     with np.errstate(invalid="ignore"):
-        ok = (np.isfinite(tap_min) & np.isfinite(tap_max) & (tap_step_pct != 0.) &
+        ok = (np.isfinite(tap_min) & np.isfinite(tap_max) &
               (tap_min == np.round(tap_min)) & (tap_max == np.round(tap_max)) & (tap_min <= tap_max) &
               (tap_pos == np.round(tap_pos)) & (tap_pos >= tap_min) & (tap_pos <= tap_max) &
-              (tap_neutral == np.round(tap_neutral)))
-    ok &= tap_angles_deg == 0.
-    if "tap_dependency_table" in pp_net.trafo:
-        ok &= ~pp_net.trafo["tap_dependency_table"].fillna(False).to_numpy(dtype=bool)
+              (tap1.neutral == np.round(tap1.neutral)))
+    moves_ratio = tap1.complex & (tap1.step_pct != 0.)
+    moves_phase = (moves_ratio & (tap1.step_degree != 0.)) | \
+        (tap1.ideal & ((tap1.step_pct != 0.) | (tap1.step_degree != 0.)))
+    for tid in np.flatnonzero(ok & tap1.tabular):
+        positions = range(int(tap_min[tid]), int(tap_max[tid]) + 1)
+        if not all(tap_table.has(tid, pos) for pos in positions):
+            continue
+        moves_ratio[tid] = True
+        angles, = tap_table.at(np.full(len(positions), tid), np.array(positions), ("angle_deg",), (0.,))
+        moves_phase[tid] = bool(np.any(angles != 0.))
+    ok &= moves_ratio | moves_phase
     trafo_ids = np.flatnonzero(ok)
     if trafo_ids.shape[0] == 0:
         return with_steps
@@ -417,7 +429,7 @@ def _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_deg, tap_neu
         rep_pos.append(positions)
     rep_ids = np.concatenate(rep_ids)
     rep_pos = np.concatenate(rep_pos)
-    r_all, x_all, h1_all, h2_all, rho_all, _ = trafo_params(rep_ids, rep_pos)
+    r_all, x_all, h1_all, h2_all, rho_all, shift_all = trafo_params(rep_ids, rep_pos)
     b_all = h1_all + h2_all  # its change: the same on both sides, both scale with the tap
 
     start = 0
@@ -426,13 +438,18 @@ def _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_deg, tap_neu
         sl = slice(start, start + n_pos)
         start += n_pos
         # the corrections apply to the r, x, h the transformer was built with: at its current tap
-        model.set_trafo_ratio_tap_changer(int(tid), int(tap_min[tid]), int(tap_pos[tid]),
-                                          list(rho_all[sl]),
-                                          list(_pct_change(r_all[sl], trafo_r[tid])),
-                                          list(_pct_change(x_all[sl], trafo_x[tid])),
-                                          list(_pct_change(b_all[sl].real, np.real(trafo_b[tid]))),
-                                          list(_pct_change(b_all[sl].imag, np.imag(trafo_b[tid]))))
-        with_steps[tid] = True
+        corrections = [list(_pct_change(r_all[sl], trafo_r[tid])),
+                       list(_pct_change(x_all[sl], trafo_x[tid])),
+                       list(_pct_change(b_all[sl].real, np.real(trafo_b[tid]))),
+                       list(_pct_change(b_all[sl].imag, np.imag(trafo_b[tid])))]
+        if moves_phase[tid]:
+            # alpha: the whole shift at each step (shift_degree included), as the transformer's own
+            model.set_trafo_phase_tap_changer(int(tid), int(tap_min[tid]), int(tap_pos[tid]),
+                                              list(rho_all[sl]), list(shift_all[sl]), *corrections)
+        else:
+            model.set_trafo_ratio_tap_changer(int(tid), int(tap_min[tid]), int(tap_pos[tid]),
+                                              list(rho_all[sl]), *corrections)
+            with_steps[tid] = True
     return with_steps
 
 
