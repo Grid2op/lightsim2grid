@@ -8,6 +8,7 @@
 
 import warnings
 import numpy as np
+import pandas as pd
 import pandapower as pp
 from packaging import version
 
@@ -68,15 +69,17 @@ def _aux_add_trafo(
     if np.any(~tap_applies & has_step):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"]: the tap of these transformers "
                       "is ignored, as pandapower does.")
+    # a tabular tap changer takes its ratio, angle, vk and vkr at each step from a table
+    is_tabular = np.zeros(tap_side.shape[0], dtype=bool)
+    if "tap_dependency_table" in pp_net.trafo:
+        is_tabular = pp_net.trafo["tap_dependency_table"].fillna(False).to_numpy(dtype=bool)
+    tap_table = _read_tap_table(pp_net, is_tabular)
     # an ideal tap changer only moves the phase (pandapower 3 "Ideal", pandapower 2 tap_phase_shifter)
     if "tap_changer_type" in pp_net.trafo:
         changer_type = pp_net.trafo["tap_changer_type"].to_numpy()
         is_ideal = changer_type == "Ideal"
         is_complex = np.isin(changer_type, ["Ratio", "Symmetrical"])
-        if "tap_dependency_table" in pp_net.trafo:
-            # computed from their table by pandapower, not handled below
-            is_complex |= pp_net.trafo["tap_dependency_table"].fillna(False).to_numpy(dtype=bool)
-        if np.any(~is_complex & ~is_ideal & tap_applies & has_step):
+        if np.any(~is_complex & ~is_ideal & ~is_tabular & tap_applies & has_step):
             warnings.warn("Some transformers have a tap but no pp_net.trafo[\"tap_changer_type\"]: their tap "
                           "is ignored, as pandapower does.")
     else:
@@ -84,8 +87,9 @@ def _aux_add_trafo(
         if "tap_phase_shifter" in pp_net.trafo:
             is_ideal = pp_net.trafo["tap_phase_shifter"].fillna(False).to_numpy(dtype=bool)
         is_complex = ~is_ideal
-    tap_ideal = tap_applies & is_ideal
-    tap_applies &= is_complex
+    tap_tabular = tap_applies & is_tabular
+    tap_ideal = tap_applies & is_ideal & ~is_tabular
+    tap_applies &= is_complex & ~is_tabular
     
     # not attached to the 2-winding checks: those always find their column
     if "trafo3w" in pp_net and "tap_changer_type" in pp_net.trafo3w:
@@ -141,11 +145,17 @@ def _aux_add_trafo(
         on_hv = is_tap_hv_side[trafo_ids]
         applies = tap_applies[trafo_ids]
         ideal = tap_ideal[trafo_ids]
+        tabular = tap_tabular[trafo_ids]
         for mask, vn, direction in ((applies & on_hv, vnh, 1.), (applies & ~on_hv, vnl, -1.)):
             vn[mask], tap_shift = _complex_tap(vn[mask], step[mask], diff[mask], angle[mask])
             shift[mask] += direction * tap_shift
         for mask, direction in ((ideal & on_hv, 1.), (ideal & ~on_hv, -1.)):
             shift[mask] += direction * _ideal_tap(step[mask], diff[mask], angle[mask])
+        if np.any(tabular):
+            ratio_t, angle_t = tap_table.at(trafo_ids, positions, ("voltage_ratio", "angle_deg"), (1., 0.))
+            for mask, vn, direction in ((tabular & on_hv, vnh, 1.), (tabular & ~on_hv, vnl, -1.)):
+                vn[mask] *= ratio_t[mask]
+                shift[mask] += direction * angle_t[mask]
         return vnh, vnl, shift
 
     def trafo_params(trafo_ids, positions):
@@ -159,7 +169,13 @@ def _aux_add_trafo(
         `(vn_trafo_lv / vn_lv) ** 2 / parallel` (which commutes with the T to pi conversion)."""
         trafo_ids = np.asarray(trafo_ids, dtype=int)
         vnh, vnl, shift = tap_model(trafo_ids, positions)
-        vk, vkr, sn, pfe, i0 = [np.asarray(el)[trafo_ids] for el in per_trafo]
+        vk, vkr, sn, pfe, i0 = [np.asarray(el, dtype=float)[trafo_ids] for el in per_trafo]
+        tabular = is_tabular[trafo_ids]
+        if np.any(tabular):
+            # pandapower reads them in the table whatever the tap side (`_get_vk_values_from_table`)
+            vk_t, vkr_t = tap_table.at(trafo_ids, positions, ("vk_percent", "vkr_percent"), (vk, vkr))
+            vk = np.where(tabular, vk_t, vk)
+            vkr = np.where(tabular, vkr_t, vkr)
         vn_hv, vn_lv = vn_hv_bus[trafo_ids], vn_lv_bus[trafo_ids]
         no_tap = np.zeros(trafo_ids.shape[0])
         hv_side = [True] * trafo_ids.shape[0]
@@ -203,6 +219,58 @@ def _aux_add_trafo(
     with_steps = _aux_trafo_tap_changers(model, pp_net, np.where(tap_applies, tap_step_pct, 0.), tap_angles_,
                                          tap_neutral, tap_pos, trafo_params, trafo_r, trafo_x, trafo_b)
     _aux_trafo_tap_regulation(model, pp_net, pp_to_ls, with_steps)
+
+
+class _TapTable:
+    """The rows of ``net.trafo_characteristic_table`` of the tabular transformers, by
+    (transformer, step)."""
+    def __init__(self, id_characteristic, table):
+        self.id_characteristic = id_characteristic
+        self.rows = {}
+        for row in table.to_dict("records"):
+            self.rows[(row["id_characteristic"], int(row["step"]))] = row
+
+    def has(self, trafo_id, position):
+        return (self.id_characteristic[trafo_id], int(position)) in self.rows
+
+    def at(self, trafo_ids, positions, columns, defaults):
+        """The `columns` of the transformers `trafo_ids` at `positions` (one array per column);
+        `defaults` (a value or an array like `trafo_ids`) where the table has no such column or
+        the transformer no table."""
+        positions = np.broadcast_to(np.asarray(positions, dtype=float), np.shape(trafo_ids))
+        res = []
+        for col, default in zip(columns, defaults):
+            out = np.array(np.broadcast_to(np.asarray(default, dtype=float), np.shape(trafo_ids)))
+            for k, (tid, pos) in enumerate(zip(trafo_ids, positions)):
+                row = self.rows.get((self.id_characteristic[tid], int(pos)))
+                if row is not None and col in row and np.isfinite(row[col]):
+                    out[k] = row[col]
+            res.append(out)
+        return res
+
+
+def _read_tap_table(pp_net, is_tabular):
+    """The tap table of the tabular transformers (`_TapTable`), checked as pandapower does: each
+    has an id_characteristic_table, and its row at the current tap_pos exists."""
+    if not np.any(is_tabular):
+        return None
+    table = pp_net.get("trafo_characteristic_table", None)
+    if table is None or not hasattr(table, "shape") or table.shape[0] == 0:
+        raise RuntimeError("Some pp_net.trafo[\"tap_dependency_table\"] are True but there is no "
+                           "pp_net.trafo_characteristic_table.")
+    id_char = pp_net.trafo["id_characteristic_table"].to_numpy() \
+        if "id_characteristic_table" in pp_net.trafo else np.full(is_tabular.shape[0], np.nan)
+    if np.any(is_tabular & pd.isna(id_char)):
+        raise RuntimeError("Some pp_net.trafo[\"tap_dependency_table\"] are True with no "
+                           "pp_net.trafo[\"id_characteristic_table\"].")
+    tap_table = _TapTable(id_char, table)
+    tap_pos = pp_net.trafo["tap_pos"].to_numpy(dtype=float)
+    missing = [pp_net.trafo.index[tid] for tid in np.flatnonzero(is_tabular)
+               if not np.isfinite(tap_pos[tid]) or not tap_table.has(tid, tap_pos[tid])]
+    if missing:
+        raise RuntimeError(f"The tabular transformers {missing} have no row at their tap_pos in "
+                           "pp_net.trafo_characteristic_table.")
+    return tap_table
 
 
 def _complex_tap(vn, step_pct, diff, step_degree):

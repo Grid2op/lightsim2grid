@@ -62,6 +62,19 @@ def ls_voltages(model, n_bus):
     return V[:n_bus]
 
 
+def with_table(net, angle_deg=0.):
+    """a tabular tap changer on transformer 0: ratio, angle, vk and vkr per step"""
+    import pandas as pd
+    steps = np.arange(-9, 10)
+    net.trafo_characteristic_table = pd.DataFrame({
+        "id_characteristic": 0, "step": steps,
+        "voltage_ratio": 1. + 0.012 * steps, "angle_deg": angle_deg * steps,
+        "vk_percent": 10. + 0.2 * steps, "vkr_percent": 0.3 + 0.01 * steps})
+    net.trafo["tap_dependency_table"] = True
+    net.trafo["id_characteristic_table"] = 0
+    return net
+
+
 class _Base(unittest.TestCase):
     def setUp(self):
         if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
@@ -138,6 +151,23 @@ class TestTrafoVsRunpp(_Base):
         by the element checks, although the pandapower 3 converter handles it"""
         self.assert_same_as_pp(make_net(), trafo_model="pi")
         self.assert_same_as_pp(make_net(tap_side="lv", tap_step_degree=30., vn_lv_kv=21.), trafo_model="pi")
+
+    def test_tabular_tap(self):
+        """issue #274: a tabular tap changer (tap_dependency_table) takes its ratio, angle, vk
+        and vkr at the current step from net.trafo_characteristic_table; the table was ignored
+        and the tap computed from tap_step_percent"""
+        self.assert_same_as_pp(with_table(make_net()))
+        self.assert_same_as_pp(with_table(make_net(tap_side="lv", tap_pos=-4), angle_deg=1.5))
+        self.assert_same_as_pp(with_table(make_net(tap_changer_type="Ideal", tap_step_percent=np.nan,
+                                                   tap_step_degree=2.), angle_deg=2.))
+
+    def test_tabular_tap_without_row_refused(self):
+        """a tabular transformer whose table has no row at its tap_pos is refused, rather than
+        built from pandapower's fallback values"""
+        net = with_table(make_net(tap_pos=3))
+        net.trafo_characteristic_table = net.trafo_characteristic_table.query("step != 3")
+        with self.assertRaisesRegex(RuntimeError, "no row at their tap_pos"):
+            ls_model(net)
 
     def test_symmetrical_tap(self):
         """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
