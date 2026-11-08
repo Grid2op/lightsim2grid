@@ -316,7 +316,7 @@ TEST_CASE("ContingencyAnalysis and ScenarioSweep agree on the same trips, slack 
     require_close(ca.get_voltages().row(ca_row1).transpose(), sweep.get_voltages().row(1).transpose(), 1e-9);
 }
 
-TEST_CASE("tripping a regulating shunt is left unsolved with outer loops", "[batch][contingency_injections][outer]")
+TEST_CASE("tripping a regulating shunt is left out of the batch with outer loops", "[batch][contingency_injections][outer]")
 {
     LSGrid grid = make_grid();
     std::vector<real_type> p(4, 0.), q;
@@ -337,11 +337,11 @@ TEST_CASE("tripping a regulating shunt is left unsolved with outer loops", "[bat
     for(size_t row = 0; row < conts.size(); ++row){
         const bool regulating = std::get<1>(conts[row]) == std::vector<int>{1};
         CHECK(ca.converged_mask()[row] == (regulating ? 0 : 1));
-        CHECK(ca.get_unsolved_reasons()[row].empty() == !regulating);
+        CHECK(ca.get_batch_unsupported_reasons()[row].empty() == !regulating);
         if(regulating){
             REQUIRE(ca.get_violations()[row].size() == 1);
-            CHECK(ca.get_violations()[row][0].violation_type == ls2g::LimitViolationType::UNSOLVED);
-            CHECK(ca.get_unsolved_reasons()[row].find("ShuntVoltageControl") != std::string::npos);
+            CHECK(ca.get_violations()[row][0].violation_type == ls2g::LimitViolationType::BATCH_UNSUPPORTED);
+            CHECK(ca.get_batch_unsupported_reasons()[row].find("ShuntVoltageControl") != std::string::npos);
         }
     }
 
@@ -357,7 +357,7 @@ TEST_CASE("tripping a regulating shunt is left unsolved with outer loops", "[bat
     sweep.set_contingency_shunts(shunt_off);
     sweep.compute(flat(grid), 30, TOL);
     CHECK(sweep.converged_mask()[0] == 0);
-    CHECK_FALSE(sweep.get_unsolved_reasons()[0].empty());
+    CHECK_FALSE(sweep.get_batch_unsupported_reasons()[0].empty());
 }
 
 TEST_CASE("ContingencyAnalysis trips loads and generators with outer loops", "[batch][contingency_injections][outer]")

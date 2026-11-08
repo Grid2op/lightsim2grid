@@ -6,13 +6,13 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
-"""A contingency the batch does not support is left UNSOLVED, the others still run (#280).
+"""A contingency the batch does not support is reported BATCH_UNSUPPORTED, the others still run (#280).
 
 Tripping a generator that regulates a remote bus is not supported by the batch yet (its
 voltage control lives in Jacobian rows and columns the batch does not reserve per row). It
 used to make ``compute()`` raise for the whole batch; that row alone is now reported
-``LimitViolationType.UNSOLVED``, with its reason in ``get_unsolved_reasons()``. With
-``unsolved_fallback``, those rows are then solved one at a time by ``ac_pf`` on a copy of the
+``LimitViolationType.BATCH_UNSUPPORTED``, with its reason in ``get_batch_unsupported_reasons()``. With
+``batch_unsupported_fallback``, those rows are then solved one at a time by ``ac_pf`` on a copy of the
 grid, and must match that one-off solve.
 
 Fixture: pandapower case14, generator 3 (on bus 7) regulating bus 9 remotely, as in
@@ -49,7 +49,7 @@ def _grid():
     return grid
 
 
-class TestUnsolvedContingencies(unittest.TestCase):
+class TestBatchUnsupportedContingencies(unittest.TestCase):
     def setUp(self):
         self.grid = _grid()
         self.n_line = len(self.grid.get_lines())
@@ -88,20 +88,20 @@ class TestUnsolvedContingencies(unittest.TestCase):
         raise AssertionError(f"no row for branches {branches}, generators {gens}")
 
     def _check(self, ca):
-        reasons = ca.get_unsolved_reasons()
+        reasons = ca.get_batch_unsupported_reasons()
         conts = ca.my_contingencies()
         self.assertEqual(len(reasons), len(conts))
-        unsolved = {self._row(ca, gens=[GEN_REMOTE]), self._row(ca, branches=[5], gens=[GEN_REMOTE])}
+        unsupported = {self._row(ca, gens=[GEN_REMOTE]), self._row(ca, branches=[5], gens=[GEN_REMOTE])}
         for row, cont in enumerate(conts):
             with self.subTest(row=row, contingency=cont):
-                if row in unsolved:
+                if row in unsupported:
                     self.assertIn("remote bus", reasons[row])
                     self.assertIn(f"generator {GEN_REMOTE}", reasons[row])
                     self.assertFalse(ca.converged()[row])
                     self.assertFalse(ca.converged_mask()[row])
                     viol = ca.get_violations()[row]
                     self.assertEqual(len(viol), 1)
-                    self.assertEqual(viol[0].violation_type, LimitViolationType.UNSOLVED)
+                    self.assertEqual(viol[0].violation_type, LimitViolationType.BATCH_UNSUPPORTED)
                     self.assertEqual(viol[0].element_type, ViolationElementType.GRID)
                     self.assertEqual(viol[0].category, ViolationCategory.SOLVER)
                     self.assertTrue(np.all(ca.get_voltages()[row] == 0.))
@@ -122,7 +122,7 @@ class TestUnsolvedContingencies(unittest.TestCase):
     def test_handle_disconnected_grid(self):
         self._check(self._analysis(handle_disconnected_grid=True))
 
-    def test_flows_of_an_unsolved_row_are_nan(self):
+    def test_flows_of_an_unsupported_row_are_nan(self):
         """as those of a row the connectivity check skips"""
         ca = self._analysis()
         amps = ca.compute_flows()
@@ -140,30 +140,30 @@ class TestUnsolvedContingencies(unittest.TestCase):
         ca.add_n1(0)
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         row = self._row(ca, branches=[self.n_line + TRAFO_BEHIND], gens=[GEN_REMOTE])
-        self.assertEqual(ca.get_unsolved_reasons()[row], "")
+        self.assertEqual(ca.get_batch_unsupported_reasons()[row], "")
         self.assertEqual([v.violation_type for v in ca.get_violations()[row]],
                          [LimitViolationType.NOT_SIMULATED])
 
     def test_reasons_follow_the_contingency_list(self):
         """Registering again (L2 cleared) and recomputing settles the reasons anew."""
         ca = self._analysis()
-        self.assertEqual(sum(bool(r) for r in ca.get_unsolved_reasons()), 2)
+        self.assertEqual(sum(bool(r) for r in ca.get_batch_unsupported_reasons()), 2)
         ca.remove_contingency(gen_ids=[GEN_REMOTE])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
-        self.assertEqual(sum(bool(r) for r in ca.get_unsolved_reasons()), 1)
-        self.assertEqual(len(ca.get_unsolved_reasons()), len(ca.my_contingencies()))
+        self.assertEqual(sum(bool(r) for r in ca.get_batch_unsupported_reasons()), 1)
+        self.assertEqual(len(ca.get_batch_unsupported_reasons()), len(ca.my_contingencies()))
 
     def test_without_unsupported_contingency_nothing_changes(self):
         ca = ContingencyAnalysisCPP(self.grid)
         ca.add_n1(0)
         ca.add_contingency_gen(LOCAL_GEN)
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
-        self.assertEqual(list(ca.get_unsolved_reasons()), ["", ""])
+        self.assertEqual(list(ca.get_batch_unsupported_reasons()), ["", ""])
         self.assertTrue(all(ca.converged_mask()))
 
 
-class TestUnsolvedFallback(unittest.TestCase):
-    """``unsolved_fallback``: the rows the batch leaves unsolved are solved after it, one at a
+class TestBatchUnsupportedFallback(unittest.TestCase):
+    """``batch_unsupported_fallback``: the rows the batch does not support are solved after it, one at a
     time, by ``ac_pf`` on a copy of the grid with the contingency's elements out."""
 
     def setUp(self):
@@ -205,7 +205,7 @@ class TestUnsolvedFallback(unittest.TestCase):
         grid = self.grid if grid is None else grid
         ca = ContingencyAnalysisCPP(grid)
         ca.compute_limit_violations = True
-        ca.unsolved_fallback = fallback
+        ca.batch_unsupported_fallback = fallback
         ca.init_from_n_powerflow = init_from_n
         ca.nb_thread = nb_thread
         for line_id in (0, 3):
@@ -220,7 +220,7 @@ class TestUnsolvedFallback(unittest.TestCase):
 
     def _check(self, ca, grid=None, init_from_n=False):
         grid = self.grid if grid is None else grid
-        reasons = ca.get_unsolved_reasons()
+        reasons = ca.get_batch_unsupported_reasons()
         amps = ca.compute_flows()
         nb_fallback = 0
         for row, cont in enumerate(ca.my_contingencies()):
@@ -258,18 +258,18 @@ class TestUnsolvedFallback(unittest.TestCase):
 
     def test_off_by_default(self):
         ca = ContingencyAnalysisCPP(self.grid)
-        self.assertFalse(ca.unsolved_fallback)
+        self.assertFalse(ca.batch_unsupported_fallback)
         ca = self._analysis(fallback=False)
         self.assertEqual(sum(not c for c in ca.converged()), 4)
 
     def test_toggling_back_off(self):
         ca = self._analysis()
         self.assertTrue(all(ca.converged()))
-        ca.unsolved_fallback = False
+        ca.batch_unsupported_fallback = False
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertEqual(sum(not c for c in ca.converged()), 4)
-        row = TestUnsolvedContingencies._row(ca, gens=[GEN_REMOTE])
-        self.assertEqual([v.violation_type for v in ca.get_violations()[row]], [LimitViolationType.UNSOLVED])
+        row = TestBatchUnsupportedContingencies._row(ca, gens=[GEN_REMOTE])
+        self.assertEqual([v.violation_type for v in ca.get_violations()[row]], [LimitViolationType.BATCH_UNSUPPORTED])
 
     def test_source_grid_untouched(self):
         V_before = copy.deepcopy(self.grid).ac_pf(1.0 * self.v0, MAX_IT, TOL)
@@ -296,7 +296,7 @@ class TestUnsolvedFallback(unittest.TestCase):
         ca = ContingencyAnalysisCPP(self.grid)
         ca.compute_limit_violations = True
         ca.handle_disconnected_grid = True
-        ca.unsolved_fallback = True
+        ca.batch_unsupported_fallback = True
         ca.add_contingency(branch_ids=[trafo], gen_ids=[GEN_REMOTE])
         ca.add_contingency(branch_ids=[trafo], gen_ids=[LOCAL_GEN])  # the batch's own
         ca.add_n1(0)
@@ -304,8 +304,8 @@ class TestUnsolvedFallback(unittest.TestCase):
         amps = ca.compute_flows()
         for gen in (GEN_REMOTE, LOCAL_GEN):
             with self.subTest(gen=gen):
-                row = TestUnsolvedContingencies._row(ca, branches=[trafo], gens=[gen])
-                self.assertEqual(bool(ca.get_unsolved_reasons()[row]), gen == GEN_REMOTE)
+                row = TestBatchUnsupportedContingencies._row(ca, branches=[trafo], gens=[gen])
+                self.assertEqual(bool(ca.get_batch_unsupported_reasons()[row]), gen == GEN_REMOTE)
                 self.assertTrue(ca.converged()[row])
                 ref = copy.deepcopy(self.grid)
                 ref.deactivate_trafo(TRAFO_BEHIND)
@@ -327,12 +327,12 @@ class TestUnsolvedFallback(unittest.TestCase):
         ca = ContingencyAnalysisCPP(self.grid)
         ca.compute_limit_violations = True
         ca.redistribute_slack = True
-        ca.unsolved_fallback = True
+        ca.batch_unsupported_fallback = True
         ca.add_contingency_gen(GEN_REMOTE)
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertFalse(ca.converged()[0])
-        self.assertIn("redistribute_slack", ca.get_unsolved_reasons()[0])
-        self.assertEqual([v.violation_type for v in ca.get_violations()[0]], [LimitViolationType.UNSOLVED])
+        self.assertIn("redistribute_slack", ca.get_batch_unsupported_reasons()[0])
+        self.assertEqual([v.violation_type for v in ca.get_violations()[0]], [LimitViolationType.BATCH_UNSUPPORTED])
 
 if __name__ == "__main__":
     unittest.main()

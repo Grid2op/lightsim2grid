@@ -475,8 +475,8 @@ class ScenarioSweep:
         Only generators regulating their **own** bus are supported for now. A step
         whose mask names a generator that regulates a remote bus, or one whose bus a
         control group holds (a remote generator, an SVC or an HVDC converter station),
-        is left unsolved: ``LimitViolationType.UNSOLVED``, with the reason in
-        ``get_unsolved_reasons()``.
+        is left out of the batch: ``LimitViolationType.BATCH_UNSUPPORTED``, with the reason in
+        ``get_batch_unsupported_reasons()``.
         """
         mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
         if mask.shape[1] != self.grid2op_env.n_gen:
@@ -647,12 +647,12 @@ class ScenarioSweep:
         """
         return self.computer.get_violations()
 
-    def get_unsolved_reasons(self):
+    def get_batch_unsupported_reasons(self):
         """Per row: why the batch could not solve it, or an empty string for a row it
-        supports. Such a row is reported with a ``LimitViolationType.UNSOLVED`` violation
+        supports. Such a row is reported with a ``LimitViolationType.BATCH_UNSUPPORTED`` violation
         (with :attr:`compute_limit_violations`) and a zero row of voltages, instead of making
         :func:`compute` raise."""
-        return self.computer.get_unsolved_reasons()
+        return self.computer.get_batch_unsupported_reasons()
 
     def get_violations_n(self):
         """List of :class:`LimitViolation` for the pre-batch ("n") case (no injection

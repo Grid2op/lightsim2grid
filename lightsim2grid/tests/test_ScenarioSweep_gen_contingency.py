@@ -278,9 +278,9 @@ class TestScenarioSweepGenContingency(unittest.TestCase):
         self.assertGreater(sum(st.nb_refactorize for st in per_algo), nb_rows,
                            "the rows should be running on refactorizations")
 
-    def test_remote_controller_is_left_unsolved(self):
+    def test_remote_controller_is_batch_unsupported(self):
         """Remote voltage control is out of scope: the row taking out such a generator is
-        left unsolved, and says why, rather than mislead -- and the other rows still run."""
+        left out of the batch, and says why, rather than mislead -- and the other rows still run."""
         from lightsim2grid.lightsim2grid_cpp import LimitViolationType
         grid = copy.deepcopy(self.grid)
         gen_id = next(g for g in range(self.n_gen)
@@ -294,13 +294,13 @@ class TestScenarioSweepGenContingency(unittest.TestCase):
         sweep.compute_limit_violations = True
         sweep.set_contingency_gens(gen_mask)
         sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
-        reasons = sweep.get_unsolved_reasons()
+        reasons = sweep.get_batch_unsupported_reasons()
         self.assertIn("remote", reasons[0].lower())
         self.assertEqual(reasons[1], "")
         self.assertFalse(sweep.converged_mask()[0])
         self.assertTrue(sweep.converged_mask()[1])
         self.assertEqual([v.violation_type for v in sweep.get_violations()[0]],
-                         [LimitViolationType.UNSOLVED])
+                         [LimitViolationType.BATCH_UNSUPPORTED])
         self.assertTrue(np.all(sweep.get_voltages()[0] == 0.))
         ref = copy.deepcopy(grid).ac_pf(1.0 * self.Vinit, self.max_it, self.tol)
         buses = self._solved_buses()
@@ -492,7 +492,7 @@ class TestGenContingencyWithRemoteControlAcrossTrafo(unittest.TestCase):
             np.testing.assert_allclose(sweep.get_voltages()[0][self.buses], ref[self.buses],
                                        rtol=1e-8, atol=1e-8)
 
-    def test_masking_the_remote_controller_itself_is_still_unsolved(self):
+    def test_masking_the_remote_controller_itself_is_still_batch_unsupported(self):
         """The scope guard must not be weakened by the transformer cases above."""
         gen_mask = np.zeros((1, self.n_gen), dtype=bool)
         gen_mask[0, self.GEN_REMOTE] = True
@@ -500,4 +500,4 @@ class TestGenContingencyWithRemoteControlAcrossTrafo(unittest.TestCase):
         sweep.set_contingency_gens(gen_mask)
         sweep.compute(1.0 * self.Vinit, self.MAX_IT, self.TOL)
         self.assertFalse(sweep.converged_mask()[0])
-        self.assertIn("remote", sweep.get_unsolved_reasons()[0].lower())
+        self.assertIn("remote", sweep.get_batch_unsupported_reasons()[0].lower())

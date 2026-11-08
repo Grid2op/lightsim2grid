@@ -312,10 +312,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   fails, without a unit off the slack bus, as OpenLoadFlow does. ``olf_outer_loops``, hence every grid
   ``init_from_pypowsybl`` builds, sets it (#269).
 - [BREAKING] ``ContingencyAnalysis`` / ``ScenarioSweep``: a row tripping what the batch does not support (a
-  remote-regulating generator, a shunt ``ShuntVoltageControl`` owns) is reported ``UNSOLVED``, with
-  ``get_unsolved_reasons()``, instead of making ``compute()`` raise for the whole batch (#280).
-- [ADDED] ``ContingencyAnalysis.unsolved_fallback``: the contingencies the batch leaves ``UNSOLVED`` are solved
-  after it, one at a time, by ``ac_pf`` on a copy of the grid (#280).
+  remote-regulating generator, a shunt ``ShuntVoltageControl`` owns) is reported ``BATCH_UNSUPPORTED``, with
+  ``get_batch_unsupported_reasons()``, instead of making ``compute()`` raise for the whole batch (#280).
+- [ADDED] ``ContingencyAnalysis.batch_unsupported_fallback``: the contingencies reported ``BATCH_UNSUPPORTED``
+  are solved after the batch, one at a time, by ``ac_pf`` on a copy of the grid (#280).
 
 
 [1.3.0] 2026-11-03

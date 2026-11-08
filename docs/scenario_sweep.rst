@@ -439,8 +439,8 @@ description of what each does. Same names, same semantics, and both classes'
     `ContingencyAnalysis`). A non-converged row's `get_violations()` entry already carries
     a single `LimitViolation` with `element_type == ViolationElementType.GRID` and
     `violation_type` `NOT_SIMULATED` (skipped before the solver ran, eg it splits the
-    grid and `handle_disconnected_grid` is off), `UNSOLVED` (the batch does not support what
-    the row trips, see `get_unsolved_reasons()`) or `DIVERGENCE` (the solver ran but did not
+    grid and `handle_disconnected_grid` is off), `BATCH_UNSUPPORTED` (the batch does not support what
+    the row trips, see `get_batch_unsupported_reasons()`) or `DIVERGENCE` (the solver ran but did not
     converge) -- a separate convergence flag would be redundant. If the shared pre-batch "n"
     powerflow itself diverges, that same sentinel is stamped into `get_violations_n()` and
     into every row of `get_violations()`, rather than leaving them as empty lists

@@ -227,7 +227,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _li_masked.clear();
                 _cont_connected_.clear();
                 _skip_mask.clear();
-                _row_unsolved_reason_.clear();
+                _row_batch_unsupported_reason_.clear();
                 _gen_contingency_active_ = false;
                 _switchable_buses_.clear();
                 _row_pv_to_pq_.clear();
@@ -734,26 +734,27 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         // The rows the batch cannot solve (ContingencyAnalysis AND ScenarioSweep): per row,
-        // why (empty for a row the batch supports). Such a row is reported UNSOLVED (a GRID
+        // why (empty for a row the batch supports). Such a row is reported BATCH_UNSUPPORTED (a GRID
         // LimitViolation, converged_mask() 0) instead of failing the whole compute(). Settled
         // at compute(), with the rest of what is built for the batch (L2): empty before the
         // first one.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
-        const std::vector<std::string> & get_unsolved_reasons() const { return _row_unsolved_reason_; }
+        const std::vector<std::string> & get_batch_unsupported_reasons() const { return _row_batch_unsupported_reason_; }
 
-        // ContingencyAnalysis only: solve the rows the batch leaves unsolved after it, one at a
-        // time, with LSGrid::ac_pf on a private copy of the grid (see _solve_unsolved_rows). A
+        // ContingencyAnalysis only: solve the rows the batch does not support after it, one at a
+        // time, with LSGrid::ac_pf on a private copy of the grid (see
+        // _maybe_solve_batch_unsupported_rows). A
         // row solved that way keeps its reason. Off by default. Not L2: it decides what runs
         // after the batch, not what the batch is built from.
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
-        bool get_unsolved_fallback() const noexcept { return _unsolved_fallback_; }
+        bool get_batch_unsupported_fallback() const noexcept { return _batch_unsupported_fallback_; }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
-        void set_unsolved_fallback(bool val) {
-            if(val == _unsolved_fallback_) return;
+        void set_batch_unsupported_fallback(bool val) {
+            if(val == _batch_unsupported_fallback_) return;
             clear_batch_outputs();  // the results were computed with the other value
-            _unsolved_fallback_ = val;
+            _batch_unsupported_fallback_ = val;
         }
 
         // OLF-style bounded redistribution of the active power a row loses (a generator
@@ -3094,7 +3095,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(!conv){
                 _violations[i].push_back(LimitViolation{
                     ViolationElementType::GRID, -1, 0,
-                    _row_is_unsolved(i) ? LimitViolationType::UNSOLVED :
+                    _row_is_batch_unsupported(i) ? LimitViolationType::BATCH_UNSUPPORTED :
                     invertible ? LimitViolationType::DIVERGENCE : LimitViolationType::NOT_SIMULATED,
                     std::numeric_limits<real_type>::quiet_NaN(),
                     std::numeric_limits<real_type>::quiet_NaN()});
@@ -3831,14 +3832,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // ================= rows the batch cannot solve ==============================
         // A row whose contingency trips something the batch does not model yet is left out
-        // of it -- reported UNSOLVED, its voltages at 0 -- rather than failing the whole
+        // of it -- reported BATCH_UNSUPPORTED, its voltages at 0 -- rather than failing the whole
         // compute(). The checks run once per batch, before the "n" solve, so such a row
-        // reserves nothing in the Jacobian. The reason is the row's (get_unsolved_reasons).
-        void _reset_unsolved_rows(size_t nb_steps){
-            _row_unsolved_reason_.assign(nb_steps, std::string());
+        // reserves nothing in the Jacobian. The reason is the row's (get_batch_unsupported_reasons).
+        void _reset_batch_unsupported_rows(size_t nb_steps){
+            _row_batch_unsupported_reason_.assign(nb_steps, std::string());
         }
-        bool _row_is_unsolved(size_t row) const {
-            return row < _row_unsolved_reason_.size() && !_row_unsolved_reason_[row].empty();
+        bool _row_is_batch_unsupported(size_t row) const {
+            return row < _row_batch_unsupported_reason_.size() && !_row_batch_unsupported_reason_[row].empty();
         }
         // whether the connectivity check already skips that row (NOT_SIMULATED): it wins,
         // the row is not marked as well -- there is nothing a one-off solve of it could do
@@ -3847,16 +3848,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return _algo.ac_solver_used() && row < _cont_connected_.size() && _cont_connected_[row] == 0;
         }
         // `what` completes "row <row> ..."; the first reason given to a row is kept
-        void _mark_row_unsolved(size_t row, const std::string & what){
-            if(row >= _row_unsolved_reason_.size() || _row_is_unsolved(row)) return;
+        void _mark_row_batch_unsupported(size_t row, const std::string & what){
+            if(row >= _row_batch_unsupported_reason_.size() || _row_is_batch_unsupported(row)) return;
             if(_row_skipped_by_precheck(row)) return;
             std::ostringstream msg;
             msg << algo_name() << ": row " << row << " " << what << ".";
-            _row_unsolved_reason_[row] = msg.str();
+            _row_batch_unsupported_reason_[row] = msg.str();
         }
 
-        // ----- the fallback: the unsolved rows, one at a time, with LSGrid::ac_pf ------
-        // ContingencyAnalysis only (set_unsolved_fallback), after the batch. Each row is
+        // ----- the fallback: the rows the batch does not support, one at a time, with LSGrid::ac_pf
+        // ContingencyAnalysis only (set_batch_unsupported_fallback), after the batch. Each row is
         // solved on a private copy of the grid, made once per compute(), as a one-off solve
         // of the contingency would be: its elements deactivated, ac_pf with the batch's own
         // algorithm, configuration, outer loops, max_iter and tol, then its elements put back.
@@ -3874,11 +3875,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // What it does not give: a row's Jacobian (keep_jacobian), so no gradient for it.
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
-        void _maybe_solve_unsolved_rows(const Eigen::Ref<const CplxVect> & Vinit, const CplxVect & Vinit_solver,
+        void _maybe_solve_batch_unsupported_rows(const Eigen::Ref<const CplxVect> & Vinit, const CplxVect & Vinit_solver,
                                         int max_iter, real_type tol){
-            if(!_unsolved_fallback_ || !_algo.ac_solver_used()) return;
+            if(!_batch_unsupported_fallback_ || !_algo.ac_solver_used()) return;
             std::vector<size_t> rows;
-            for(size_t i = 0; i < _row_unsolved_reason_.size(); ++i) if(_row_is_unsolved(i)) rows.push_back(i);
+            for(size_t i = 0; i < _row_batch_unsupported_reason_.size(); ++i) if(_row_is_batch_unsupported(i)) rows.push_back(i);
             if(rows.empty()) return;
 
             LSGrid grid(_grid_model);
@@ -3899,7 +3900,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(size_t i : rows){
                 const std::string why_not = _fallback_refuses(i, outer);
                 if(!why_not.empty()){
-                    _row_unsolved_reason_[i] += " The fallback did not run it: " + why_not + ".";
+                    _row_batch_unsupported_reason_[i] += " The fallback did not run it: " + why_not + ".";
                     continue;
                 }
                 auto timer = CustTimer();
@@ -3956,15 +3957,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     if(conv){
                         _record_row_violations(i, V_solver, _row_masked_ids(i));
                     } else {
-                        // the solver ran and did not converge: DIVERGENCE; it could not run: still UNSOLVED
+                        // the solver ran and did not converge: DIVERGENCE; it could not run: still BATCH_UNSUPPORTED
                         _violations[i].push_back(LimitViolation{
                             ViolationElementType::GRID, -1, 0,
-                            error.empty() ? LimitViolationType::DIVERGENCE : LimitViolationType::UNSOLVED,
+                            error.empty() ? LimitViolationType::DIVERGENCE : LimitViolationType::BATCH_UNSUPPORTED,
                             std::numeric_limits<real_type>::quiet_NaN(),
                             std::numeric_limits<real_type>::quiet_NaN()});
                     }
                 }
-                if(!error.empty()) _row_unsolved_reason_[i] += " The fallback failed: " + error;
+                if(!error.empty()) _row_batch_unsupported_reason_[i] += " The fallback failed: " + error;
                 // whatever happened, the shared copy goes back to the base grid for the next row
                 // (a row's own copy just goes)
                 if(!splits){
@@ -3976,7 +3977,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
-        void _maybe_solve_unsolved_rows(const Eigen::Ref<const CplxVect> &, const CplxVect &, int, real_type){}
+        void _maybe_solve_batch_unsupported_rows(const Eigen::Ref<const CplxVect> &, const CplxVect &, int, real_type){}
 
         // what the fallback cannot reproduce of the batch's row, empty when it can
         std::string _fallback_refuses(size_t i, bool outer) const {
@@ -4172,7 +4173,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // or a bus a group (remote generator, SVC, HVDC station) controls -- lives
             // in the VoltageControl extension, which owns Jacobian columns and rows of
             // its own that nothing here reserves or masks. A row taking out such a
-            // generator is left unsolved (see _mark_row_unsolved); the steps below skip it,
+            // generator is left out of the batch (see _mark_row_batch_unsupported); the steps below skip it,
             // so it reserves nothing in the Jacobian either.
             const std::set<int> & group_buses = _grid_model.get_ac_voltage_control_plan().group_controlled_buses();
             for(size_t step = 0; step < nb_steps; ++step){
@@ -4188,10 +4189,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                    : ", which stands on a bus whose voltage a control group holds (a remote "
                                      "generator, an SVC or an HVDC converter station)")
                         << ": only generators regulating their own bus can be disconnected by the batch for now";
-                    _mark_row_unsolved(step, msg.str());
+                    _mark_row_batch_unsupported(step, msg.str());
                     break;
                 }
-                if(_row_is_unsolved(step)) gens_off[step].clear();
+                if(_row_is_batch_unsupported(step)) gens_off[step].clear();
             }
 
             // ---- 2. which bus does each local voltage controller pin? --------------
@@ -4230,7 +4231,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::vector<int> candidate_buses;
             for(Eigen::Index step = 0; step < nb_rows; ++step){
                 candidate_buses.clear();
-                if(_row_is_unsolved(static_cast<size_t>(step))) continue;
+                if(_row_is_batch_unsupported(static_cast<size_t>(step))) continue;
                 for(int gen_id : gens_off[static_cast<size_t>(step)]){
                     if(pinned_bus_of_gen[gen_id] >= 0) candidate_buses.push_back(pinned_bus_of_gen[gen_id]);
                 }
@@ -4289,7 +4290,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 const std::vector<int> & slack_solver = active_layout().slack_bus_id_solver.to_int_vector();
                 const auto & topo_gens_on = _topo_gens_on_rows();
                 for(size_t step = 0; step < nb_steps && step < topo_gens_on.size(); ++step){
-                    if(_row_is_unsolved(step)) continue;
+                    if(_row_is_batch_unsupported(step)) continue;
                     std::vector<int> & to_pq = _row_pv_to_pq_[step];
                     for(const auto & gen_on : topo_gens_on[step]){
                         const int gen_id = gen_on.gen_id;
@@ -4433,8 +4434,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // A shunt a row trips must not be one the ShuntVoltageControl outer loop moves:
         // its sections are that loop's (NRSystem's ShuntControl patches the diagonal by
         // the difference with what it believes is stamped there), and it does not know
-        // of a row taking the shunt out. Such a row is left unsolved (see
-        // _mark_row_unsolved), with an algorithm running outer loops whose list holds that
+        // of a row taking the shunt out. Such a row is left out of the batch (see
+        // _mark_row_batch_unsupported), with an algorithm running outer loops whose list holds that
         // loop (OpenLoadFlow's default list does not: the sections are then nobody's), once
         // per batch (_prepare_ybus_varying has listed the rows' shunts, _maybe_prepare_masks
         // the rows the connectivity check skips).
@@ -4455,7 +4456,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     msg << "trips shunt " << shunt_id << ", which regulates a voltage, with an algorithm "
                            "running outer loops (" << _algo.get_name() << "): the ShuntVoltageControl loop "
                            "owns its sections and does not support a row taking it out yet";
-                    _mark_row_unsolved(row, msg.str());
+                    _mark_row_batch_unsupported(row, msg.str());
                     break;
                 }
             }
@@ -4808,7 +4809,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::vector<char> saturated;
             for(size_t i = 0; i < nb_steps; ++i){
                 if(i < _skip_mask.size() && _skip_mask[i]) continue;
-                if(_row_is_unsolved(i)) continue;
+                if(_row_is_batch_unsupported(i)) continue;
                 const std::vector<int> * masked = _row_masked_ids(i);
                 const auto in_island_solver = [masked](int bus_solver){
                     if(masked == nullptr || bus_solver < 0) return false;
@@ -4985,7 +4986,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     // each other asks for a magnitude no solution can hold, so it is
                     // skipped before the solver rather than silently resolved by
                     // whichever generator set_vm visits last (_row_gen_v_conflicts)
-                    if(!_skip_mask[cont_id] && !_row_is_unsolved(cont_id) && !_row_gen_v_conflicts(cont_id)){
+                    if(!_skip_mask[cont_id] && !_row_is_batch_unsupported(cont_id) && !_row_gen_v_conflicts(cont_id)){
                         const std::vector<int> & masked = _li_masked[cont_id];
                         auto t1 = CustTimer();
                         YbusPolicy::Contingency::remove_from_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
@@ -5042,9 +5043,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                             div_reason = LimitViolationType::DIVERGENCE;
                         }
                     } else {
-                        // a row the connectivity check skipped is never marked unsolved (see
-                        // _mark_row_unsolved): the two do not overlap
-                        div_reason = _row_is_unsolved(cont_id) ? LimitViolationType::UNSOLVED
+                        // a row the connectivity check skipped is never marked unsupported (see
+                        // _mark_row_batch_unsupported): the two do not overlap
+                        div_reason = _row_is_batch_unsupported(cont_id) ? LimitViolationType::BATCH_UNSUPPORTED
                                                                : LimitViolationType::NOT_SIMULATED;
                     }
 
@@ -5286,12 +5287,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<char> _cont_connected_;
         BusGraph bus_graph_;
         std::vector<char> _skip_mask;
-        // per row, why the batch cannot solve it (empty: it can), see get_unsolved_reasons.
-        // Sized by _reset_unsolved_rows, filled by the checks that used to refuse the whole
+        // per row, why the batch cannot solve it (empty: it can), see get_batch_unsupported_reasons.
+        // Sized by _reset_batch_unsupported_rows, filled by the checks that used to refuse the whole
         // batch (_check_shunt_trips, _maybe_prepare_gen_contingency).
-        std::vector<std::string> _row_unsolved_reason_;
-        // see set_unsolved_fallback
-        bool _unsolved_fallback_ = false;
+        std::vector<std::string> _row_batch_unsupported_reason_;
+        // see set_batch_unsupported_fallback
+        bool _batch_unsupported_fallback_ = false;
         bool _compute_limit_violations_ = false;
         real_type _violation_threshold_ = 1.0;
         real_type _violation_rel_tol_ = DEFAULT_VIOLATION_REL_TOL;

@@ -43,9 +43,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
         invertible = false;
         return;
     }
-    // a row the batch does not support (see _mark_row_unsolved): reported UNSOLVED by
+    // a row the batch does not support (see _mark_row_batch_unsupported): reported BATCH_UNSUPPORTED by
     // _store_row_status, nothing to put back
-    if(_row_is_unsolved(i)){
+    if(_row_is_batch_unsupported(i)){
         conv = false;
         invertible = false;
         return;
@@ -622,8 +622,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _maybe_resolve_topology(nb_steps);
         // the per-row Ybus edit lists (a no-op where Ybus does not vary)
         _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
-        // the rows the checks below leave unsolved: none yet
-        _reset_unsolved_rows(nb_steps);
+        // the rows the checks below find the batch does not support: none yet
+        _reset_batch_unsupported_rows(nb_steps);
         // ... and settle, once, which contingencies split the grid and what they strand
         // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
         // row skips a contingency that splits the grid, and the masked mode strands the
@@ -636,7 +636,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _maybe_prepare_masks();
 
         // a regulating shunt a row trips is not supported under the outer loops: that row
-        // is left unsolved (after the two above, which say which rows are skipped anyway)
+        // is left out of the batch (after the two above, which say which rows are skipped anyway)
         _check_shunt_trips(nb_steps);
 
         // generator contingencies (ScenarioSweep and ContingencyAnalysis; no-op
@@ -774,8 +774,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
 
     // compute the powerflows, possibly split across several threads
     _compute_threaded(nb_steps, Vinit_solver, ac_solver_used, max_iter, tol, sn_mva, _timer_thread_init);
-    // ... and, where asked, the rows the batch left unsolved, one at a time (ContingencyAnalysis)
-    _maybe_solve_unsolved_rows(Vinit, Vinit_solver, max_iter, tol);
+    // ... and, where asked, the rows the batch does not support, one at a time (ContingencyAnalysis)
+    _maybe_solve_batch_unsupported_rows(Vinit, Vinit_solver, max_iter, tol);
 
     // each row's outcome next to what its loops did, once every worker is done
     for(size_t i = 0; i < _outer_results_.size() && i < _converged_mask_.size(); ++i){

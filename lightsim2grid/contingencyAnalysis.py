@@ -71,8 +71,8 @@ class ContingencyResult:
         If ``converged`` is False, ``limit_violations`` contains exactly one ``LimitViolation``
         with ``element_type == ViolationElementType.GRID`` and ``violation_type``
         ``LimitViolationType.NOT_SIMULATED`` (a pre-check skipped this contingency, eg it splits
-        the grid, without ever invoking the solver), ``LimitViolationType.UNSOLVED`` (the batch
-        does not support what it trips, see ``unsolved_reason``) or
+        the grid, without ever invoking the solver), ``LimitViolationType.BATCH_UNSUPPORTED`` (the batch
+        does not support what it trips, see ``batch_unsupported_reason``) or
         ``LimitViolationType.DIVERGENCE`` (the solver ran but did not converge).
     """
     element_ids: List[int]  #: branch ids (lines then trafos) disconnected by this contingency
@@ -87,8 +87,8 @@ class ContingencyResult:
     load_ids: List[int] = field(default_factory=list)
     gen_ids: List[int] = field(default_factory=list)
     #: why the batch could not solve this contingency (empty if it could), see
-    #: `ContingencyAnalysis.get_unsolved_reasons`
-    unsolved_reason: str = ""
+    #: `ContingencyAnalysis.get_batch_unsupported_reasons`
+    batch_unsupported_reason: str = ""
 
 
 @dataclass
@@ -266,25 +266,25 @@ class ContingencyAnalysis(object):
         self.computer.handle_disconnected_grid = val
 
     @property
-    def unsolved_fallback(self):
-        """Whether the contingencies the batch leaves unsolved (see :func:`get_unsolved_reasons`)
+    def batch_unsupported_fallback(self):
+        """Whether the contingencies the batch does not support (see :func:`get_batch_unsupported_reasons`)
         are solved after it, one at a time, with ``ac_pf`` on a private copy of the grid (the
         contingency's elements deactivated, the same algorithm, outer loops and parameters). They
-        then get results as the other contingencies do, and keep their ``unsolved_reason``.
+        then get results as the other contingencies do, and keep their ``batch_unsupported_reason``.
         Sequential and as slow as one powerflow per such contingency. Default: ``False``. See
-        ``ContingencyAnalysisCPP.unsolved_fallback``.
+        ``ContingencyAnalysisCPP.batch_unsupported_fallback``.
         """
-        return self.computer.unsolved_fallback
+        return self.computer.batch_unsupported_fallback
 
-    @unsolved_fallback.setter
-    def unsolved_fallback(self, val: bool):
+    @batch_unsupported_fallback.setter
+    def batch_unsupported_fallback(self, val: bool):
         if bool(val) != val:
-            raise ValueError("The `unsolved_fallback` attribute must be a boolean.")
+            raise ValueError("The `batch_unsupported_fallback` attribute must be a boolean.")
         val = bool(val)
-        if val != self.computer.unsolved_fallback:
+        if val != self.computer.batch_unsupported_fallback:
             # the results kept by get_flows / run were computed with the other value
             self.clear(with_contlist=False)
-        self.computer.unsolved_fallback = val
+        self.computer.batch_unsupported_fallback = val
 
     @property
     def redistribute_slack(self):
@@ -585,12 +585,12 @@ class ContingencyAnalysis(object):
         self.computer.physical_violation_tol_vm_pu = val  # validates, and drops base case + results
         self.clear(with_contlist=False)
 
-    def get_unsolved_reasons(self):
+    def get_batch_unsupported_reasons(self):
         """Per contingency, in the C++-side order (`my_defaults()`): why the batch could not
         solve it, or an empty string for one it supports. Such a contingency is reported with a
-        ``LimitViolationType.UNSOLVED`` violation instead of making the whole computation fail.
-        Prefer :func:`run`, whose results carry it as ``unsolved_reason``."""
-        return self.computer.get_unsolved_reasons()
+        ``LimitViolationType.BATCH_UNSUPPORTED`` violation instead of making the whole computation fail.
+        Prefer :func:`run`, whose results carry it as ``batch_unsupported_reason``."""
+        return self.computer.get_batch_unsupported_reasons()
 
     def get_physical_violations(self):
         """Per contingency, in the C++-side order (`my_defaults()`): the list of
@@ -1021,8 +1021,8 @@ class ContingencyAnalysis(object):
             A `converged == False` post-contingency entry has exactly one `LimitViolation` in
             `limit_violations`, with `element_type == ViolationElementType.GRID` and
             `violation_type` `LimitViolationType.NOT_SIMULATED` (a pre-check skipped it, eg it
-            splits the grid), `LimitViolationType.UNSOLVED` (the batch does not support what it
-            trips, `unsolved_reason` says why) or `LimitViolationType.DIVERGENCE` (the solver ran
+            splits the grid), `LimitViolationType.BATCH_UNSUPPORTED` (the batch does not support what it
+            trips, `batch_unsupported_reason` says why) or `LimitViolationType.DIVERGENCE` (the solver ran
             but did not converge) -- unlike a `converged == True` entry with an empty list, which genuinely
             means no violation was found.
         """
@@ -1048,7 +1048,7 @@ class ContingencyAnalysis(object):
         # (see PreContingencyResult.physical_violations)
         with_phys = self.computer.compute_physical_violations
         phys = self.computer.get_physical_violations() if with_phys else None
-        unsolved = self.computer.get_unsolved_reasons()
+        unsupported = self.computer.get_batch_unsupported_reasons()
 
         pre_contingency_result = PreContingencyResult(
             converged=self.computer.converged_n(),
@@ -1066,7 +1066,7 @@ class ContingencyAnalysis(object):
                 shunt_ids=list(all_conts[id_cpp][1]),
                 load_ids=list(all_conts[id_cpp][2]),
                 gen_ids=list(all_conts[id_cpp][3]),
-                unsolved_reason=str(unsolved[id_cpp]) if id_cpp < len(unsolved) else "",
+                batch_unsupported_reason=str(unsupported[id_cpp]) if id_cpp < len(unsupported) else "",
             )
             for id_me, id_cpp in enumerate(orders_)
         ]
