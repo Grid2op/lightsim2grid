@@ -8312,14 +8312,15 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
     - a branch (powerline or transformer, numbered lines then transformers) is taken out of Ybus, as with
       :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.add_nk`;
     - a shunt too: it is an admittance, one diagonal coefficient (in DC its active part leaves the injection).
-      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute` raises if the shunt regulates a
-      voltage and the outer loops run hold a ShuntVoltageControl one (that loop owns its sections);
+      The contingency is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``, see
+      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.get_batch_unsupported_reasons`) if the shunt
+      regulates a voltage and the outer loops run hold a ShuntVoltageControl one (that loop owns its sections);
     - a load leaves the injection, its active and reactive power;
     - a generator leaves it too (its active power, and the reactive setpoint of one that does not regulate voltage)
       and the distributed slack is re-weighted without it. When it is the last one regulating its own bus, that bus
       turns PQ for the contingency, as :func:`lightsim2grid.scenarioSweep.ScenarioSweepCPP.set_contingency_gens`
-      does it. A generator regulating a remote bus, or standing on a bus a control group holds, is refused by
-      :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.compute`;
+      does it. A contingency tripping a generator regulating a remote bus, or standing on a bus a control group
+      holds, is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``);
     - a branch of ``branch_ids_side1`` (``branch_ids_side2``) is opened at side 1 (side 2) only: its other end stays
       connected and still carries the branch's charging, as a branch open at one end in the grid does. This is how
       OpenLoadFlow models a branch whose breaker opens at one end only (see
@@ -8571,14 +8572,14 @@ const std::string DocContingencyAnalysis::ViolationElementType = R"mydelimiter(
     The kind of element on which a limit was violated: ``BUS`` (a voltage limit), ``LINE`` /
     ``TRAFO`` (a current limit), or ``GRID`` -- the whole grid / contingency rather than a
     specific element, used when the contingency itself could not be simulated at all (see
-    :class:`LimitViolationType`'s ``NOT_SIMULATED`` / ``DIVERGENCE``).
+    :class:`LimitViolationType`'s ``NOT_SIMULATED`` / ``BATCH_UNSUPPORTED`` / ``DIVERGENCE``).
 
 )mydelimiter";
 
 const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
     The kind of limit that was violated: ``LOW_VOLTAGE`` / ``HIGH_VOLTAGE`` (a bus voltage
     magnitude limit) or ``CURRENT`` (a line / transformer thermal limit) for an ordinary,
-    element-level violation; ``NOT_SIMULATED`` or ``DIVERGENCE`` for a contingency-level one (see
+    element-level violation; ``NOT_SIMULATED``, ``BATCH_UNSUPPORTED`` or ``DIVERGENCE`` for a contingency-level one (see
     :class:`ViolationElementType`'s ``GRID``); ``LOW_Q`` / ``HIGH_Q``, ``LOW_P`` / ``HIGH_P`` and
     ``LOW_VOLTAGE_AT_MIN_Q`` / ``HIGH_VOLTAGE_AT_MAX_Q``, ``LOW_VOLTAGE_SVC_STANDBY`` /
     ``HIGH_VOLTAGE_SVC_STANDBY``, ``LOW_VOLTAGE_REMOTE_CONTROL`` /
@@ -8588,6 +8589,9 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
       solver was never invoked for it.
+    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg a generator
+      regulating a remote bus), so it was left out of the batch rather than failing all of it.
+      ``get_batch_unsupported_reasons()`` says why.
     - ``DIVERGENCE``: the solver was invoked for this contingency but did not converge.
 
 )mydelimiter";

@@ -161,12 +161,26 @@ class TestShuntVoltageControl(unittest.TestCase):
         self.assertGreater(V_ref.shape[0], 0)
         np.testing.assert_allclose(ca.get_voltages()[0], V_ref, atol=1e-8, rtol=0.)
 
-        # the loop in the list: refused, it owns the shunt's sections
+        # the loop in the list: not supported by the batch, it owns the shunt's sections
         grid.add_outer_loop(ShuntVoltageControl())
         ca = ContingencyAnalysisCPP(grid)
         ca.add_contingency_shunt(shunt_id)
-        with self.assertRaises(RuntimeError):
-            ca.compute(v0, 30, 1e-10)
+        ca.compute(v0, 30, 1e-10)
+        self.assertFalse(ca.converged_mask()[0])
+        self.assertIn("ShuntVoltageControl", ca.get_batch_unsupported_reasons()[0])
+
+        # ... and solved after the batch by the fallback, as a one-off solve with the loop does
+        ca = ContingencyAnalysisCPP(grid)
+        ca.batch_unsupported_fallback = True
+        ca.add_contingency_shunt(shunt_id)
+        ca.compute(v0, 30, 1e-10)
+        self.assertTrue(ca.converged_mask()[0])
+        self.assertIn("ShuntVoltageControl", ca.get_batch_unsupported_reasons()[0])
+        ref = copy.deepcopy(grid)
+        ref.deactivate_shunt(shunt_id)
+        V_ref = ref.ac_pf(v0.copy(), 30, 1e-10)
+        self.assertGreater(V_ref.shape[0], 0)
+        np.testing.assert_allclose(ca.get_voltages()[0], V_ref, atol=1e-8, rtol=0.)
 
 
 if __name__ == "__main__":
