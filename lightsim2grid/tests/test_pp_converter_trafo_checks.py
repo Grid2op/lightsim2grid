@@ -89,7 +89,25 @@ class TestTrafoConverterChecks(unittest.TestCase):
         V = _solve(model)
         np.testing.assert_allclose(V, V_ref, rtol=0., atol=1e-10)
 
-
+    def test_ideal_trafo3w_is_checked(self):
+        """issue #274: the "Ideal" check of the 3-winding transformers sat in an `elif` behind
+        the 2-winding one, which pandapower 3 always takes, so it could not be reached. The
+        3-winding transformers are rejected earlier by `_aux_check_legit`, which is bypassed
+        here to reach the transformer converter itself."""
+        if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
+            self.skipTest("tap_changer_type only exists with pandapower 3")
+        net = _small_net()
+        b_mv = pp.create_bus(net, vn_kv=20.)
+        b_lv = pp.create_bus(net, vn_kv=10.)
+        pp.create_transformer3w_from_parameters(net, 0, b_mv, b_lv, vn_hv_kv=110., vn_mv_kv=20., vn_lv_kv=10.,
+                                                sn_hv_mva=40., sn_mv_mva=20., sn_lv_mva=20.,
+                                                vk_hv_percent=10., vk_mv_percent=10., vk_lv_percent=10.,
+                                                vkr_hv_percent=0.3, vkr_mv_percent=0.3, vkr_lv_percent=0.3,
+                                                pfe_kw=20., i0_percent=0.05)
+        net.trafo3w["tap_changer_type"] = "Ideal"
+        with mock.patch("lightsim2grid.network.from_pandapower.initLSGrid._aux_check_legit"):
+            with self.assertRaisesRegex(RuntimeError, "3-winding"):
+                _convert(net)
 
 
 if __name__ == "__main__":

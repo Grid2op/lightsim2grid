@@ -77,7 +77,8 @@ def _aux_add_trafo(
         if np.any(pp_net.trafo["tap_changer_type"].to_numpy() == "Ideal"):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 2-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
-    elif "tap_changer_type" in pp_net.trafo3w:
+    # not an `elif`: the 2-winding checks above always take one of their branches with pandapower 3
+    if "trafo3w" in pp_net and "tap_changer_type" in pp_net.trafo3w:
         if np.any(pp_net.trafo3w["tap_changer_type"].to_numpy() == "Ideal"):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")

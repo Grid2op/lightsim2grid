@@ -320,6 +320,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   and never for another value (#274).
 - [FIXED] pandapower converter: a missing ``tap_side`` became the low voltage side without a warning;
   it is now the high voltage side, with the warning (#274).
+- [FIXED] pandapower converter: the "Ideal" tap changer check of the 3-winding transformers could
+  not be reached (#274).
 
 
 [1.3.0] 2026-11-03
