@@ -326,6 +326,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``pfe**2`` from ``(i0 . sn)**2`` (#274).
 - [FIXED] pandapower 3 converter: with the tap on the low voltage side, the magnetising admittance was
   multiplied by the square of the tap ratio instead of divided by it (#274).
+- [FIXED] pandapower converter: the angle of a tap with a ``tap_step_degree`` (asymmetrical or symmetrical)
+  is added to the phase shift and its ratio is the modulus of the complex step, as pandapower (#274).
 
 
 [1.3.0] 2026-11-03

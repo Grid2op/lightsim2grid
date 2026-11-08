@@ -55,8 +55,6 @@ def _aux_add_trafo(
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_pos\"], they have been replaced by the "
                       "neutral position (pp_net.trafo[\"tap_neutral\"])")
     tap_pos[~np.isfinite(tap_pos)] = tap_neutral[~np.isfinite(tap_pos)]
-    # pandapower counts the steps from the neutral position, and so does everything below
-    tap_rel = tap_pos - tap_neutral
 
     shift_ = pp_net.trafo["shift_degree"].to_numpy().copy()
     if np.any(~np.isfinite(shift_)):
@@ -86,8 +84,7 @@ def _aux_add_trafo(
     tap_angles_ = pp_net.trafo["tap_step_degree"].to_numpy().copy()
     if np.any(~np.isfinite(tap_angles_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
-    tap_angles_[~np.isfinite(tap_angles_)] = 0.
-    tap_angles_ = np.deg2rad(tap_angles_)
+    tap_angles_[~np.isfinite(tap_angles_)] = 0.  # in degree
 
     if "leakage_resistance_ratio_hv" in pp_net.trafo and (np.abs(pp_net.trafo["leakage_resistance_ratio_hv"].to_numpy() - 0.5) > 1e-7).any():
         warnings.warn("leakage_resistance_ratio_hv != 0.5 is not supported by this converter at the moment. It will be replaced by 0.5")
@@ -100,50 +97,78 @@ def _aux_add_trafo(
     use_pp3 = version.parse(pp.__version__) >= _MIN_PP_VERSION_ADV_GRID_MODEL and pp_orig_file == "pandapower_v3"
     if not use_pp3 and not trafo_model_is_t:
         raise RuntimeError("Cannot convert a transformer with model 'pi' to LightSim2grid (using pandapower < 3)")
-    per_trafo = (tap_step_pct,
-                 tap_angles_,  # in radian !
-                 is_tap_hv_side,
-                 pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"].to_numpy(),
-                 pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"].to_numpy(),
-                 pp_net.trafo["vk_percent"].to_numpy(),
+    vn_hv_bus = pp_net.bus.loc[pp_net.trafo["hv_bus"]]["vn_kv"].to_numpy()
+    vn_lv_bus = pp_net.bus.loc[pp_net.trafo["lv_bus"]]["vn_kv"].to_numpy()
+    # the voltages the tap moves
+    vn_hv_ref = vn_hv_bus
+    vn_lv_ref = vn_lv_bus
+    per_trafo = (pp_net.trafo["vk_percent"].to_numpy(),
                  pp_net.trafo["vkr_percent"].to_numpy(),
                  pp_net.trafo["sn_mva"].to_numpy(),
                  pp_net.trafo["pfe_kw"].to_numpy(),
                  pp_net.trafo["i0_percent"].to_numpy())
 
-    def trafo_params(trafo_ids, rel_positions):
-        """r, x, b (pu) of the transformers `trafo_ids` with their taps `rel_positions`
-        steps away from neutral -- the one place they are computed, so that a tap
-        position the step tables below describe is exactly the transformer this
-        converter would build at that position."""
-        step, angle, hv_side, vn_hv, vn_lv, vk, vkr, sn, pfe, i0 = [np.asarray(el)[trafo_ids] for el in per_trafo]
-        rel_positions = np.asarray(rel_positions, dtype=float)
+    def tap_model(trafo_ids, positions):
+        """The voltages (kV) of both windings and the phase shift (degree) of the transformers
+        `trafo_ids` with their tap at `positions`, as pandapower's `_calc_tap_from_dataframe`."""
+        positions = np.asarray(positions, dtype=float)
+        vnh = vn_hv_ref[trafo_ids].astype(float)
+        vnl = vn_lv_ref[trafo_ids].astype(float)
+        shift = shift_[trafo_ids].astype(float)
+        diff = positions - tap_neutral[trafo_ids]
+        step = tap_step_pct[trafo_ids]
+        angle = tap_angles_[trafo_ids]
+        on_hv = is_tap_hv_side[trafo_ids]
+        for mask, vn, direction in ((on_hv, vnh, 1.), (~on_hv, vnl, -1.)):
+            vn[mask], tap_shift = _complex_tap(vn[mask], step[mask], diff[mask], angle[mask])
+            shift[mask] += direction * tap_shift
+        return vnh, vnl, shift
+
+    def trafo_params(trafo_ids, positions):
+        """r, x, b (pu), ratio and phase shift (degree) of the transformers `trafo_ids` with their
+        taps at `positions` -- the one place they are computed, so that a tap position the
+        step tables below describe is exactly the transformer this converter would build at
+        that position.
+
+        The ratio is the one `LSGrid.init_trafo` expects on the tap side; r, x, b are pandapower's
+        `_calc_r_x_y_from_dataframe`: the impedance at the low voltage bus base, scaled by
+        `(vn_trafo_lv / vn_lv) ** 2` (which commutes with the T to pi conversion)."""
+        trafo_ids = np.asarray(trafo_ids, dtype=int)
+        vnh, vnl, shift = tap_model(trafo_ids, positions)
+        vk, vkr, sn, pfe, i0 = [np.asarray(el)[trafo_ids] for el in per_trafo]
+        vn_hv, vn_lv = vn_hv_bus[trafo_ids], vn_lv_bus[trafo_ids]
+        no_tap = np.zeros(trafo_ids.shape[0])
+        hv_side = [True] * trafo_ids.shape[0]
         if use_pp3:
             # use pandapower version 3 converter in this case.
             # We use it because:
             # - the grid comes from pandapower3 (eg pn.case118() with pandapower 3 installed)
             # - AND the pandapower version is >= 3
-            return converter.get_trafo_param_pp3(step, rel_positions, angle, list(hv_side), vn_hv, vn_lv,
-                                                 vk, vkr, sn, pfe, i0, trafo_model_is_t)
-        # default legacy mode: use the pandapower 2 converter
-        return converter.get_trafo_param_pp2(step, rel_positions, angle, list(hv_side), vn_hv, vn_lv,
-                                             vk, vkr, sn, pfe, i0)
+            r, x, b = converter.get_trafo_param_pp3(no_tap, no_tap, no_tap, hv_side, vn_hv, vn_lv,
+                                                    vk, vkr, sn, pfe, i0, trafo_model_is_t)
+        else:
+            # default legacy mode: use the pandapower 2 converter
+            r, x, b = converter.get_trafo_param_pp2(no_tap, no_tap, no_tap, hv_side, vn_hv, vn_lv,
+                                                    vk, vkr, sn, pfe, i0)
+        z_factor = (vnl / vn_lv) ** 2
+        ratio = (vnh / vnl) / (vn_hv / vn_lv)  # pandapower's, on the high voltage side
+        ratio = np.where(is_tap_hv_side[trafo_ids], ratio, 1. / ratio)
+        return r * z_factor, x * z_factor, b / z_factor, ratio, shift
 
     all_trafos = np.arange(pp_net.trafo.shape[0])
-    trafo_r, trafo_x, trafo_b = trafo_params(all_trafos, tap_rel)
+    trafo_r, trafo_x, trafo_b, trafo_ratio, trafo_shift = trafo_params(all_trafos, tap_pos)
 
     # initialize the grid
     do_ignore_tap_side_for_phase_shift = True
-    model.init_trafo_pandapower(trafo_r,
-                                trafo_x,
-                                trafo_b,
-                                tap_step_pct,
-                                tap_rel,
-                                shift_,
-                                is_tap_hv_side,
-                                pp_bus_to_ls(pp_net.trafo["hv_bus"].values, pp_to_ls),
-                                pp_bus_to_ls(pp_net.trafo["lv_bus"].values, pp_to_ls),
-                                do_ignore_tap_side_for_phase_shift)
+    model.init_trafo(trafo_r,
+                     trafo_x,
+                     trafo_b,
+                     trafo_ratio,
+                     trafo_shift,
+                     is_tap_hv_side,
+                     pp_bus_to_ls(pp_net.trafo["hv_bus"].values, pp_to_ls),
+                     pp_bus_to_ls(pp_net.trafo["lv_bus"].values, pp_to_ls),
+                     do_ignore_tap_side_for_phase_shift)
 
     for tr_id, is_connected in enumerate(pp_net.trafo["in_service"].values):
         if not is_connected:
@@ -154,6 +179,17 @@ def _aux_add_trafo(
     with_steps = _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_, tap_neutral, tap_pos,
                                          trafo_params, trafo_r, trafo_x, trafo_b)
     _aux_trafo_tap_regulation(model, pp_net, pp_to_ls, with_steps)
+
+
+def _complex_tap(vn, step_pct, diff, step_degree):
+    """pandapower's (non ideal) tap, `_get_trafo_shift`: the tap side voltage `vn` moved by `diff`
+    steps of `step_pct` % along `step_degree`. Returns the modulus of the result and its angle
+    (degree)."""
+    du = vn * 0.01 * step_pct * diff
+    angle = np.deg2rad(step_degree)
+    v_re = vn + du * np.cos(angle)
+    v_im = du * np.sin(angle)
+    return np.sqrt(v_re ** 2 + v_im ** 2), np.rad2deg(np.arctan(v_im / v_re))
 
 
 def _pct_change(new, ref):
@@ -167,7 +203,7 @@ def _pct_change(new, ref):
     return out
 
 
-def _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_rad, tap_neutral, tap_pos,
+def _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_deg, tap_neutral, tap_pos,
                             trafo_params, trafo_r, trafo_x, trafo_b):
     """Give a ratio tap changer (``LSGrid.set_trafo_ratio_tap_changer``) to every transformer
     whose ``tap_min`` .. ``tap_max`` describe one: one step per integer position, with the
@@ -195,7 +231,7 @@ def _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_rad, tap_neu
               (tap_min == np.round(tap_min)) & (tap_max == np.round(tap_max)) & (tap_min <= tap_max) &
               (tap_pos == np.round(tap_pos)) & (tap_pos >= tap_min) & (tap_pos <= tap_max) &
               (tap_neutral == np.round(tap_neutral)))
-    ok &= tap_angles_rad == 0.
+    ok &= tap_angles_deg == 0.
     if "tap_dependency_table" in pp_net.trafo:
         ok &= ~pp_net.trafo["tap_dependency_table"].fillna(False).to_numpy(dtype=bool)
     trafo_ids = np.flatnonzero(ok)
@@ -210,11 +246,8 @@ def _aux_trafo_tap_changers(model, pp_net, tap_step_pct, tap_angles_rad, tap_neu
         rep_pos.append(positions)
     rep_ids = np.concatenate(rep_ids)
     rep_pos = np.concatenate(rep_pos)
-    rel = rep_pos - tap_neutral[rep_ids]
-    r_all, x_all, b_all = trafo_params(rep_ids, rel)
+    r_all, x_all, b_all, rho_all, _ = trafo_params(rep_ids, rep_pos)
     b_all = np.asarray(b_all)
-    # what init_trafo_pandapower does with the ratio: 1 + step % . (position - neutral)
-    rho_all = 1. + 0.01 * tap_step_pct[rep_ids] * rel
 
     start = 0
     for tid in trafo_ids:

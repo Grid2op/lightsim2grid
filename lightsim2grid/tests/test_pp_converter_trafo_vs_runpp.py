@@ -91,8 +91,18 @@ class TestTrafoVsRunpp(_Base):
         self.assert_same_as_pp(make_net(shift_degree=30.))
         self.assert_same_as_pp(make_net(shift_degree=30., tap_side="lv"))
 
+    def test_asymmetrical_tap(self):
+        """issue #274: a tap with both a step in % and a step angle moves the voltage along a
+        complex step; pandapower puts the angle of the result in the phase shift, which was
+        lost here (the angle only entered the impedance base)"""
+        self.assert_same_as_pp(make_net(tap_step_degree=30.))
+        self.assert_same_as_pp(make_net(tap_step_degree=30., tap_side="lv"))
+        self.assert_same_as_pp(make_net(tap_step_degree=30., shift_degree=30., tap_neutral=1, tap_pos=-4))
 
-
+    def test_symmetrical_tap(self):
+        """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
+        self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))
+        self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical", tap_step_degree=30.))
 
 
 if __name__ == "__main__":
