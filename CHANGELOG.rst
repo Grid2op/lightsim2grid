@@ -324,6 +324,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   not be reached (#274).
 - [FIXED] pandapower 3 converter: the magnetising susceptance of a transformer subtracted ``pfe`` instead of
   ``pfe**2`` from ``(i0 . sn)**2`` (#274).
+- [FIXED] pandapower 3 converter: with the tap on the low voltage side, the magnetising admittance was
+  multiplied by the square of the tap ratio instead of divided by it (#274).
 
 
 [1.3.0] 2026-11-03

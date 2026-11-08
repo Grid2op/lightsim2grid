@@ -79,6 +79,21 @@ class TestTrafoVsRunpp(_Base):
         current (the magnetising susceptance used pfe instead of pfe**2, issue #274)"""
         self.assert_same_as_pp(make_net())
 
+    def test_ratio_tap_lv(self):
+        """issue #274: with the tap on the low voltage side, the magnetising admittance was
+        multiplied by (vn_trafo_lv / vn_lv)**2 where pandapower divides by it"""
+        self.assert_same_as_pp(make_net(tap_side="lv"))
+
+    def test_ratio_tap_neutral(self):
+        self.assert_same_as_pp(make_net(tap_neutral=2, tap_pos=5))
+
+    def test_shift_degree(self):
+        self.assert_same_as_pp(make_net(shift_degree=30.))
+        self.assert_same_as_pp(make_net(shift_degree=30., tap_side="lv"))
+
+
+
+
 
 if __name__ == "__main__":
     unittest.main()
