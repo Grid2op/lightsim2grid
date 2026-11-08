@@ -535,12 +535,18 @@ part of the data, from the element tables and from the controllers of ``net.cont
    * - Loop
      - What the converter gives it
    * - ``TransformerVoltageControl``
-     - a ratio tap changer per transformer with integer ``tap_min`` .. ``tap_max`` and a non-zero ``tap_step_percent``:
-       each step is the transformer the converter builds with ``tap_pos`` at that position (ratio, r, x and magnetising
-       admittance). The regulation comes from an in-service ``DiscreteTapControl`` (target: the middle of
+     - a ratio tap changer per transformer with integer ``tap_min`` .. ``tap_max`` whose tap moves only the ratio (a
+       ``"Ratio"`` or ``"Symmetrical"`` one with a non-zero ``tap_step_percent`` and no ``tap_step_degree``, or a tabular
+       one whose table has no angle): each step is the transformer the converter builds with ``tap_pos`` at that position
+       (ratio, r, x and magnetising admittance). The regulation comes from an in-service ``DiscreteTapControl`` (target: the middle of
        ``[vm_lower_pu, vm_upper_pu]``, deadband: that band) or ``ContinuousTapControl`` (``vm_set_pu``, a deadband of
        twice ``tol``), on the transformer's own ``side`` bus. As in pandapower, a transformer whose regulated bus has an
        ext_grid does not regulate.
+   * - ``PhaseControl``
+     - a phase tap changer, built the same way (ratio and shift per step), for the taps that move the phase: an
+       asymmetrical or symmetrical one with a ``tap_step_degree``, an ideal phase shifter, a tabular one whose table has an
+       angle. pandapower has no controller for them: they do not regulate, but can be moved with
+       ``change_trafo_phase_tap``.
    * - ``ShuntVoltageControl``
      - one section per step, ``1`` .. ``max_step``, and the regulation of a ``DiscreteShuntController`` (``vm_set_pu``, a
        deadband of twice ``tol``, its ``controlled_bus``).
@@ -551,9 +557,9 @@ part of the data, from the element tables and from the controllers of ``net.cont
    * - ``ReactiveLimits``
      - ``min_q_mvar`` / ``max_q_mvar`` of the generators (no capability curve), and ``min_p_mw`` / ``max_p_mw`` as active limits.
 
-Not converted: phase tap changers (a transformer with a non-zero ``tap_step_degree`` keeps a fixed ratio and
-shift), tabular tap changers and shunts (``tap_dependency_table`` / ``step_dependency_table``), the controllers
-of three-winding transformers, and every other controller.
+Not converted: the second tap changer (``tap2_*``, applied at its position but not moved), tabular shunts
+(``step_dependency_table``), the controllers of three-winding transformers and of the transformers with a phase tap
+changer, and every other controller.
 
 pandapower's discrete tap controller stops at the first tap that brings the voltage within its band, while the loop
 solves the ratio continuously and rounds it to the closest tap: both end within the band, not always on the same tap.
