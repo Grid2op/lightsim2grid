@@ -332,6 +332,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``vn_lv_kv``) lost its off-nominal ratio and impedance base (#274).
 - [FIXED] pandapower converter: the tap of a transformer without a ``"Ratio"`` / ``"Symmetrical"``
   ``tap_changer_type`` was applied, where pandapower ignores it (#274).
+- [ADDED] pandapower converter: ideal phase shifters (``tap_changer_type="Ideal"``, ``tap_phase_shifter``),
+  no longer refused (#274).
 
 
 [1.3.0] 2026-11-03

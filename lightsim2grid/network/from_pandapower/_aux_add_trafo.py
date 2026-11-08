@@ -72,25 +72,26 @@ def _aux_add_trafo(
     if np.any(~tap_applies & has_step):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"]: the tap of these transformers "
                       "is ignored, as pandapower does.")
+    # an ideal tap changer only moves the phase (pandapower 3 "Ideal", pandapower 2 tap_phase_shifter)
     if "tap_changer_type" in pp_net.trafo:
-        is_complex = np.isin(pp_net.trafo["tap_changer_type"].to_numpy(), ["Ratio", "Symmetrical"])
+        changer_type = pp_net.trafo["tap_changer_type"].to_numpy()
+        is_ideal = changer_type == "Ideal"
+        is_complex = np.isin(changer_type, ["Ratio", "Symmetrical"])
         if "tap_dependency_table" in pp_net.trafo:
             # computed from their table by pandapower, not handled below
             is_complex |= pp_net.trafo["tap_dependency_table"].fillna(False).to_numpy(dtype=bool)
-        if np.any(~is_complex & tap_applies & has_step):
+        if np.any(~is_complex & ~is_ideal & tap_applies & has_step):
             warnings.warn("Some transformers have a tap but no pp_net.trafo[\"tap_changer_type\"]: their tap "
                           "is ignored, as pandapower does.")
-        tap_applies &= is_complex
+    else:
+        is_ideal = np.zeros(tap_side.shape[0], dtype=bool)
+        if "tap_phase_shifter" in pp_net.trafo:
+            is_ideal = pp_net.trafo["tap_phase_shifter"].fillna(False).to_numpy(dtype=bool)
+        is_complex = ~is_ideal
+    tap_ideal = tap_applies & is_ideal
+    tap_applies &= is_complex
     
-    if "tap_phase_shifter" in pp_net.trafo:
-        if np.any(pp_net.trafo["tap_phase_shifter"].to_numpy()):
-            raise RuntimeError("Ideal phase shifters are not modeled. Please remove all trafos with "
-                               "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
-    elif "tap_changer_type" in pp_net.trafo:
-        if np.any(pp_net.trafo["tap_changer_type"].to_numpy() == "Ideal"):
-            raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 2-winding trafos "
-                               "with \"tap_changer_type\" set to \"Ideal\".")
-    # not an `elif`: the 2-winding checks above always take one of their branches with pandapower 3
+    # not attached to the 2-winding checks: those always find their column
     if "trafo3w" in pp_net and "tap_changer_type" in pp_net.trafo3w:
         if np.any(pp_net.trafo3w["tap_changer_type"].to_numpy() == "Ideal"):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
@@ -100,6 +101,10 @@ def _aux_add_trafo(
     if np.any(~np.isfinite(tap_angles_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
     tap_angles_[~np.isfinite(tap_angles_)] = 0.  # in degree
+    if np.any(tap_ideal & (tap_step_pct != 0.) & (tap_angles_ != 0.)):
+        # as pandapower
+        raise RuntimeError("Both tap_step_degree and tap_step_percent set for an ideal phase shifter "
+                           "(pp_net.trafo[\"tap_changer_type\"] set to \"Ideal\").")
 
     if "leakage_resistance_ratio_hv" in pp_net.trafo and (np.abs(pp_net.trafo["leakage_resistance_ratio_hv"].to_numpy() - 0.5) > 1e-7).any():
         warnings.warn("leakage_resistance_ratio_hv != 0.5 is not supported by this converter at the moment. It will be replaced by 0.5")
@@ -135,9 +140,12 @@ def _aux_add_trafo(
         angle = tap_angles_[trafo_ids]
         on_hv = is_tap_hv_side[trafo_ids]
         applies = tap_applies[trafo_ids]
+        ideal = tap_ideal[trafo_ids]
         for mask, vn, direction in ((applies & on_hv, vnh, 1.), (applies & ~on_hv, vnl, -1.)):
             vn[mask], tap_shift = _complex_tap(vn[mask], step[mask], diff[mask], angle[mask])
             shift[mask] += direction * tap_shift
+        for mask, direction in ((ideal & on_hv, 1.), (ideal & ~on_hv, -1.)):
+            shift[mask] += direction * _ideal_tap(step[mask], diff[mask], angle[mask])
         return vnh, vnl, shift
 
     def trafo_params(trafo_ids, positions):
@@ -206,6 +214,13 @@ def _complex_tap(vn, step_pct, diff, step_degree):
     v_re = vn + du * np.cos(angle)
     v_im = du * np.sin(angle)
     return np.sqrt(v_re ** 2 + v_im ** 2), np.rad2deg(np.arctan(v_im / v_re))
+
+
+def _ideal_tap(step_pct, diff, step_degree):
+    """pandapower's ideal tap, `_get_trafo_shift(ideal=True)`: the phase shift (degree) of `diff`
+    steps of `step_degree`, or, without one, of the chord `step_pct` % of the unit circle."""
+    return np.where(step_degree != 0., diff * step_degree,
+                    2. * np.rad2deg(np.arcsin(0.01 * diff * step_pct / 2.)))
 
 
 def _pct_change(new, ref):

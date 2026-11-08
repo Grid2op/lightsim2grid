@@ -115,6 +115,19 @@ class TestTrafoVsRunpp(_Base):
         self.assert_same_as_pp(make_net(tap_changer_type=None))
         self.assert_same_as_pp(make_net(tap_side=None))
 
+    def test_ideal_phase_shifter(self):
+        """issue #274: an "Ideal" tap changer only shifts the phase, by the step angle per step
+        (or 2.arcsin(step % / 2) without one); it was refused"""
+        self.assert_same_as_pp(make_net(tap_changer_type="Ideal", tap_step_percent=np.nan, tap_step_degree=2.))
+        self.assert_same_as_pp(make_net(tap_changer_type="Ideal", tap_step_percent=np.nan, tap_step_degree=2.,
+                                        tap_side="lv", shift_degree=30.))
+        self.assert_same_as_pp(make_net(tap_changer_type="Ideal", tap_step_percent=2., tap_neutral=1, tap_pos=-3))
+
+    def test_ideal_phase_shifter_both_steps_refused(self):
+        """pandapower refuses an ideal tap changer with both a step angle and a step in %"""
+        with self.assertRaises(RuntimeError):
+            ls_model(make_net(tap_changer_type="Ideal", tap_step_degree=2.))
+
     def test_symmetrical_tap(self):
         """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
         self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))
