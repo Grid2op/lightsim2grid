@@ -54,16 +54,27 @@ def _solve(model):
 class TestTrafoConverterChecks(unittest.TestCase):
     def test_leakage_ratio_warning_only_when_unsupported(self):
         """issue #274: the 'leakage_resistance_ratio_hv != 0.5 is not supported' warning
-        fired when the value was 0.5 (the supported one) and never otherwise."""
+        fired when the value was 0.5 (the supported one) and never otherwise. Other values are
+        now converted by the pandapower 3 converter (test_pp_converter_trafo_vs_runpp), and still
+        replaced by 0.5, with the warning, by the pandapower 2 one."""
+        def convert_pp2(net):
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                init_from_pandapower(net, pp_orig_file="pandapower_v2")
+            return [str(el.message) for el in w]
+
         net = _small_net()
         net.trafo["leakage_resistance_ratio_hv"] = 0.5
-        _, msgs = _convert(net)
+        msgs = convert_pp2(net)
         self.assertFalse(any("leakage_resistance_ratio_hv" in m for m in msgs), msgs)
 
         net = _small_net()
         net.trafo["leakage_resistance_ratio_hv"] = 0.3
-        _, msgs = _convert(net)
+        msgs = convert_pp2(net)
         self.assertTrue(any("leakage_resistance_ratio_hv" in m for m in msgs), msgs)
+        if CURRENT_PP_VERSION > MAX_PP2_DATAREADER:
+            _, msgs = _convert(net)
+            self.assertFalse(any("leakage_resistance_ratio_hv" in m for m in msgs), msgs)
 
     def test_nan_shift_degree_warns(self):
         """issue #274: the NaN check of shift_degree once tested tap_pos instead, so a NaN

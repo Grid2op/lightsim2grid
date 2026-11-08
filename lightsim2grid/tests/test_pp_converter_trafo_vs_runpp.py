@@ -184,6 +184,19 @@ class TestTrafoVsRunpp(_Base):
         self.assert_same_as_pp(add_tap2(make_net(), tap2_changer_type="Ideal", tap2_step_percent=np.nan,
                                         tap2_step_degree=3.))
 
+    def test_leakage_ratio(self):
+        """issue #274: with the leakage impedance not split half and half between the windings
+        (leakage_resistance_ratio_hv / leakage_reactance_ratio_hv != 0.5), the T model gives a
+        different shunt admittance on each side; the converter used 0.5 for both"""
+        net = make_net()
+        net.trafo["leakage_resistance_ratio_hv"] = 0.3
+        net.trafo["leakage_reactance_ratio_hv"] = 0.7
+        self.assert_same_as_pp(net)
+        net = make_net(tap_side="lv", tap_step_degree=30., parallel=2)
+        net.trafo["leakage_reactance_ratio_hv"] = 0.2
+        self.assert_same_as_pp(net)
+        self.assert_same_as_pp(net, trafo_model="pi")  # no effect on the pi model
+
     def test_symmetrical_tap(self):
         """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
         self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))

@@ -340,6 +340,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``vkr`` at the current step from ``trafo_characteristic_table``, which was ignored (#274).
 - [ADDED] pandapower converter: the second tap changer (``tap2_*`` columns), applied after the first as
   pandapower does; it was ignored (#274).
+- [ADDED] pandapower 3 converter: ``leakage_resistance_ratio_hv`` / ``leakage_reactance_ratio_hv`` other than
+  0.5 (a shunt admittance per side), which were replaced by 0.5 (#274).
+- [ADDED] ``LSGrid.update_trafos_parameters_full``: replace the transformers' r, x and the shunt admittance
+  of each side.
 
 
 [1.3.0] 2026-11-03
