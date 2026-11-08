@@ -133,6 +133,12 @@ class TestTrafoVsRunpp(_Base):
         self.assert_same_as_pp(make_net(parallel=2))
         self.assert_same_as_pp(make_net(parallel=3, tap_side="lv", tap_step_degree=30.))
 
+    def test_pi_model(self):
+        """issue #274: a grid whose transformers are computed with trafo_model "pi" was refused
+        by the element checks, although the pandapower 3 converter handles it"""
+        self.assert_same_as_pp(make_net(), trafo_model="pi")
+        self.assert_same_as_pp(make_net(tap_side="lv", tap_step_degree=30., vn_lv_kv=21.), trafo_model="pi")
+
     def test_symmetrical_tap(self):
         """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
         self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))
