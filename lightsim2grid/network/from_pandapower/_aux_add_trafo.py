@@ -87,7 +87,7 @@ def _aux_add_trafo(
     tap_angles_[~np.isfinite(tap_angles_)] = 0.
     tap_angles_ = np.deg2rad(tap_angles_)
 
-    if "leakage_resistance_ratio_hv" in pp_net.trafo and (np.abs(pp_net.trafo["leakage_resistance_ratio_hv"].to_numpy() - 0.5) < 1e-7).any():
+    if "leakage_resistance_ratio_hv" in pp_net.trafo and (np.abs(pp_net.trafo["leakage_resistance_ratio_hv"].to_numpy() - 0.5) > 1e-7).any():
         warnings.warn("leakage_resistance_ratio_hv != 0.5 is not supported by this converter at the moment. It will be replaced by 0.5")
         
     trafo_model_is_t = True
