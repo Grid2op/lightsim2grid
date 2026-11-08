@@ -338,6 +338,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] pandapower converter: grids with ``trafo_model="pi"`` (pandapower 3 data), no longer refused (#274).
 - [ADDED] pandapower converter: tabular tap changers (``tap_dependency_table``): ratio, angle, ``vk`` and
   ``vkr`` at the current step from ``trafo_characteristic_table``, which was ignored (#274).
+- [ADDED] pandapower converter: the second tap changer (``tap2_*`` columns), applied after the first as
+  pandapower does; it was ignored (#274).
 
 
 [1.3.0] 2026-11-03

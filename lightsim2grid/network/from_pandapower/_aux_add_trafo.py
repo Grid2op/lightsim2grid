@@ -7,6 +7,7 @@
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 import warnings
+from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pandapower as pp
@@ -36,75 +37,27 @@ def _aux_add_trafo(
     -------
 
     """
-    # fix the missing values
-    tap_neutral = pp_net.trafo["tap_neutral"].to_numpy().copy()
-    if np.any(~np.isfinite(tap_neutral)):
-        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_neutral\"], they have been replaced by 0")
-    tap_neutral[~np.isfinite(tap_neutral)] = 0.
-
-    tap_step_pct = pp_net.trafo["tap_step_percent"].to_numpy().copy()
-    if np.any(~np.isfinite(tap_step_pct)):
-        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_percent\"], they have been replaced by 0")
-    tap_step_pct[~np.isfinite(tap_step_pct)] = 0.
-
-    tap_pos = pp_net.trafo["tap_pos"].to_numpy().copy()
-    if np.any(~np.isfinite(tap_pos)):
-        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_pos\"], they have been replaced by the "
-                      "neutral position (pp_net.trafo[\"tap_neutral\"])")
-    tap_pos[~np.isfinite(tap_pos)] = tap_neutral[~np.isfinite(tap_pos)]
-
     shift_ = pp_net.trafo["shift_degree"].to_numpy().copy()
     if np.any(~np.isfinite(shift_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
     shift_[~np.isfinite(shift_)] = 0.
 
-    tap_side = pp_net.trafo["tap_side"].to_numpy()
-    # a transformer without a tap side has no tap (below): it is stored as not on the hv side, as always
-    is_tap_hv_side = tap_side == "hv"
-    # the transformers whose tap pandapower applies (`_calc_tap_from_dataframe`): those with a tap
-    # side and, with pandapower 3 data, a "Ratio" or "Symmetrical" tap changer. The others are at
-    # ratio 1 (plus their shift_degree) whatever their tap_pos.
-    has_step = (tap_step_pct != 0.) & (tap_pos != tap_neutral)
-    tap_applies = np.isin(tap_side, ["hv", "lv"])
-    if np.any(~tap_applies & has_step):
-        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"]: the tap of these transformers "
-                      "is ignored, as pandapower does.")
-    # a tabular tap changer takes its ratio, angle, vk and vkr at each step from a table
-    is_tabular = np.zeros(tap_side.shape[0], dtype=bool)
-    if "tap_dependency_table" in pp_net.trafo:
-        is_tabular = pp_net.trafo["tap_dependency_table"].fillna(False).to_numpy(dtype=bool)
+    # the tap changers, applied one after the other as pandapower's `_calc_tap_from_dataframe`
+    # does: the first ("tap_*" columns), and the second ("tap2_*") when there is one
+    tap1 = _read_tap_changer(pp_net, "tap")
+    tap2 = _read_tap_changer(pp_net, "tap2") if "tap2_pos" in pp_net.trafo else None
+    tap_neutral, tap_step_pct, tap_pos, tap_angles_ = tap1.neutral, tap1.step_pct, tap1.pos, tap1.step_degree
+    # a transformer without a tap side has no tap: it is stored as not on the hv side, as always
+    is_tap_hv_side = tap1.on_hv
+    tap_applies = tap1.complex
+    is_tabular = tap1.is_tabular
     tap_table = _read_tap_table(pp_net, is_tabular)
-    # an ideal tap changer only moves the phase (pandapower 3 "Ideal", pandapower 2 tap_phase_shifter)
-    if "tap_changer_type" in pp_net.trafo:
-        changer_type = pp_net.trafo["tap_changer_type"].to_numpy()
-        is_ideal = changer_type == "Ideal"
-        is_complex = np.isin(changer_type, ["Ratio", "Symmetrical"])
-        if np.any(~is_complex & ~is_ideal & ~is_tabular & tap_applies & has_step):
-            warnings.warn("Some transformers have a tap but no pp_net.trafo[\"tap_changer_type\"]: their tap "
-                          "is ignored, as pandapower does.")
-    else:
-        is_ideal = np.zeros(tap_side.shape[0], dtype=bool)
-        if "tap_phase_shifter" in pp_net.trafo:
-            is_ideal = pp_net.trafo["tap_phase_shifter"].fillna(False).to_numpy(dtype=bool)
-        is_complex = ~is_ideal
-    tap_tabular = tap_applies & is_tabular
-    tap_ideal = tap_applies & is_ideal & ~is_tabular
-    tap_applies &= is_complex & ~is_tabular
-    
+
     # not attached to the 2-winding checks: those always find their column
     if "trafo3w" in pp_net and "tap_changer_type" in pp_net.trafo3w:
         if np.any(pp_net.trafo3w["tap_changer_type"].to_numpy() == "Ideal"):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
-            
-    tap_angles_ = pp_net.trafo["tap_step_degree"].to_numpy().copy()
-    if np.any(~np.isfinite(tap_angles_)):
-        warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
-    tap_angles_[~np.isfinite(tap_angles_)] = 0.  # in degree
-    if np.any(tap_ideal & (tap_step_pct != 0.) & (tap_angles_ != 0.)):
-        # as pandapower
-        raise RuntimeError("Both tap_step_degree and tap_step_percent set for an ideal phase shifter "
-                           "(pp_net.trafo[\"tap_changer_type\"] set to \"Ideal\").")
 
     if "leakage_resistance_ratio_hv" in pp_net.trafo and (np.abs(pp_net.trafo["leakage_resistance_ratio_hv"].to_numpy() - 0.5) > 1e-7).any():
         warnings.warn("leakage_resistance_ratio_hv != 0.5 is not supported by this converter at the moment. It will be replaced by 0.5")
@@ -135,27 +88,12 @@ def _aux_add_trafo(
     def tap_model(trafo_ids, positions):
         """The voltages (kV) of both windings and the phase shift (degree) of the transformers
         `trafo_ids` with their tap at `positions`, as pandapower's `_calc_tap_from_dataframe`."""
-        positions = np.asarray(positions, dtype=float)
         vnh = vn_hv_ref[trafo_ids].astype(float)
         vnl = vn_lv_ref[trafo_ids].astype(float)
         shift = shift_[trafo_ids].astype(float)
-        diff = positions - tap_neutral[trafo_ids]
-        step = tap_step_pct[trafo_ids]
-        angle = tap_angles_[trafo_ids]
-        on_hv = is_tap_hv_side[trafo_ids]
-        applies = tap_applies[trafo_ids]
-        ideal = tap_ideal[trafo_ids]
-        tabular = tap_tabular[trafo_ids]
-        for mask, vn, direction in ((applies & on_hv, vnh, 1.), (applies & ~on_hv, vnl, -1.)):
-            vn[mask], tap_shift = _complex_tap(vn[mask], step[mask], diff[mask], angle[mask])
-            shift[mask] += direction * tap_shift
-        for mask, direction in ((ideal & on_hv, 1.), (ideal & ~on_hv, -1.)):
-            shift[mask] += direction * _ideal_tap(step[mask], diff[mask], angle[mask])
-        if np.any(tabular):
-            ratio_t, angle_t = tap_table.at(trafo_ids, positions, ("voltage_ratio", "angle_deg"), (1., 0.))
-            for mask, vn, direction in ((tabular & on_hv, vnh, 1.), (tabular & ~on_hv, vnl, -1.)):
-                vn[mask] *= ratio_t[mask]
-                shift[mask] += direction * angle_t[mask]
+        _apply_tap_changer(tap1, trafo_ids, positions, vnh, vnl, shift, tap_table)
+        if tap2 is not None:
+            _apply_tap_changer(tap2, trafo_ids, tap2.pos[trafo_ids], vnh, vnl, shift, None)
         return vnh, vnl, shift
 
     def trafo_params(trafo_ids, positions):
@@ -219,6 +157,88 @@ def _aux_add_trafo(
     with_steps = _aux_trafo_tap_changers(model, pp_net, np.where(tap_applies, tap_step_pct, 0.), tap_angles_,
                                          tap_neutral, tap_pos, trafo_params, trafo_r, trafo_x, trafo_b)
     _aux_trafo_tap_regulation(model, pp_net, pp_to_ls, with_steps)
+
+
+def _read_tap_changer(pp_net, prefix):
+    """One tap changer of the transformers, from the `prefix`_* columns ("tap" or "tap2"), with the
+    missing values filled and the kind of tap pandapower applies (`_calc_tap_from_dataframe`):
+    a tap needs a side; then, with pandapower 3 data, a "Ratio" or "Symmetrical" tap changer is
+    `complex`, an "Ideal" one `ideal` (with pandapower 2 data: tap_phase_shifter), one with a
+    tap_dependency_table `tabular`. The others are at ratio 1 whatever their position."""
+    trafo = pp_net.trafo
+    nb = trafo.shape[0]
+
+    def column(name, fill, what):
+        col = f"{prefix}_{name}"
+        vals = trafo[col].to_numpy(dtype=float).copy() if col in trafo else np.full(nb, np.nan)
+        if col in trafo and np.any(~np.isfinite(vals)):
+            warnings.warn(f"There were some Nan in the pp_net.trafo[\"{col}\"], they have been replaced by {what}")
+        bad = ~np.isfinite(vals)
+        vals[bad] = fill[bad] if isinstance(fill, np.ndarray) else fill
+        return vals
+
+    tc = SimpleNamespace()
+    tc.neutral = column("neutral", 0., "0")
+    tc.step_pct = column("step_percent", 0., "0")
+    tc.pos = column("pos", tc.neutral, f"the neutral position (pp_net.trafo[\"{prefix}_neutral\"])")
+    tc.step_degree = column("step_degree", 0., "0")  # in degree
+    side = trafo[f"{prefix}_side"].to_numpy() if f"{prefix}_side" in trafo else np.full(nb, None)
+    tc.on_hv = side == "hv"
+    applies = np.isin(side, ["hv", "lv"])
+    has_step = (tc.step_pct != 0.) & (tc.pos != tc.neutral)
+    if np.any(~applies & has_step):
+        warnings.warn(f"There were some Nan in the pp_net.trafo[\"{prefix}_side\"]: the tap of these "
+                      "transformers is ignored, as pandapower does.")
+
+    tc.is_tabular = np.zeros(nb, dtype=bool)
+    if f"{prefix}_dependency_table" in trafo:
+        tc.is_tabular = trafo[f"{prefix}_dependency_table"].fillna(False).to_numpy(dtype=bool)
+        if prefix != "tap" and np.any(tc.is_tabular):
+            raise RuntimeError(f"Tabular tap changers (pp_net.trafo[\"{prefix}_dependency_table\"]) are only "
+                               "handled for the first tap changer.")
+    if f"{prefix}_changer_type" in trafo:
+        changer_type = trafo[f"{prefix}_changer_type"].to_numpy()
+        is_ideal = changer_type == "Ideal"
+        is_complex = np.isin(changer_type, ["Ratio", "Symmetrical"])
+        if np.any(~is_complex & ~is_ideal & ~tc.is_tabular & applies & has_step):
+            warnings.warn(f"Some transformers have a tap but no pp_net.trafo[\"{prefix}_changer_type\"]: their "
+                          "tap is ignored, as pandapower does.")
+    else:
+        is_ideal = np.zeros(nb, dtype=bool)
+        if f"{prefix}_phase_shifter" in trafo:
+            is_ideal = trafo[f"{prefix}_phase_shifter"].fillna(False).to_numpy(dtype=bool)
+        is_complex = ~is_ideal
+    tc.tabular = applies & tc.is_tabular
+    tc.ideal = applies & is_ideal & ~tc.is_tabular
+    tc.complex = applies & is_complex & ~tc.is_tabular
+    if np.any(tc.ideal & (tc.step_pct != 0.) & (tc.step_degree != 0.)):
+        # as pandapower
+        raise RuntimeError(f"Both {prefix}_step_degree and {prefix}_step_percent set for an ideal phase shifter "
+                           f"(pp_net.trafo[\"{prefix}_changer_type\"] set to \"Ideal\").")
+    return tc
+
+
+def _apply_tap_changer(tc, trafo_ids, positions, vnh, vnl, shift, tap_table):
+    """Move, in place, the winding voltages `vnh`, `vnl` (kV) and the `shift` (degree) of the
+    transformers `trafo_ids` by their tap changer `tc` (`_read_tap_changer`) at `positions`."""
+    positions = np.asarray(positions, dtype=float)
+    diff = positions - tc.neutral[trafo_ids]
+    step = tc.step_pct[trafo_ids]
+    angle = tc.step_degree[trafo_ids]
+    on_hv = tc.on_hv[trafo_ids]
+    applies = tc.complex[trafo_ids]
+    ideal = tc.ideal[trafo_ids]
+    tabular = tc.tabular[trafo_ids]
+    for mask, vn, direction in ((applies & on_hv, vnh, 1.), (applies & ~on_hv, vnl, -1.)):
+        vn[mask], tap_shift = _complex_tap(vn[mask], step[mask], diff[mask], angle[mask])
+        shift[mask] += direction * tap_shift
+    for mask, direction in ((ideal & on_hv, 1.), (ideal & ~on_hv, -1.)):
+        shift[mask] += direction * _ideal_tap(step[mask], diff[mask], angle[mask])
+    if np.any(tabular):
+        ratio_t, angle_t = tap_table.at(trafo_ids, positions, ("voltage_ratio", "angle_deg"), (1., 0.))
+        for mask, vn, direction in ((tabular & on_hv, vnh, 1.), (tabular & ~on_hv, vnl, -1.)):
+            vn[mask] *= ratio_t[mask]
+            shift[mask] += direction * angle_t[mask]
 
 
 class _TapTable:

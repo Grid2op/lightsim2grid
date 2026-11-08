@@ -169,6 +169,21 @@ class TestTrafoVsRunpp(_Base):
         with self.assertRaisesRegex(RuntimeError, "no row at their tap_pos"):
             ls_model(net)
 
+    def test_second_tap_changer(self):
+        """issue #274: pandapower applies a second tap changer (the tap2_* columns) after the
+        first; it was ignored"""
+        def add_tap2(net, **kw):
+            par = dict(tap2_side="lv", tap2_neutral=0, tap2_min=-5, tap2_max=5, tap2_pos=2,
+                       tap2_step_percent=1., tap2_step_degree=0., tap2_changer_type="Ratio")
+            par.update(kw)
+            for k, v in par.items():
+                net.trafo[k] = v
+            return net
+        self.assert_same_as_pp(add_tap2(make_net()))
+        self.assert_same_as_pp(add_tap2(make_net(tap_step_degree=30.), tap2_side="hv", tap2_step_degree=10.))
+        self.assert_same_as_pp(add_tap2(make_net(), tap2_changer_type="Ideal", tap2_step_percent=np.nan,
+                                        tap2_step_degree=3.))
+
     def test_symmetrical_tap(self):
         """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
         self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))
