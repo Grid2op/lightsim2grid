@@ -322,6 +322,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   it is now the high voltage side, with the warning (#274).
 - [FIXED] pandapower converter: the "Ideal" tap changer check of the 3-winding transformers could
   not be reached (#274).
+- [FIXED] pandapower 3 converter: the magnetising susceptance of a transformer subtracted ``pfe`` instead of
+  ``pfe**2`` from ``(i0 . sn)**2`` (#274).
 
 
 [1.3.0] 2026-11-03

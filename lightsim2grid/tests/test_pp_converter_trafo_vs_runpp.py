@@ -1,0 +1,84 @@
+# Copyright (c) 2026, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+"""issue #274: the pandapower transformer converter against ``pp.runpp``, one transformer
+variant at a time, on the smallest grid that has one (ext_grid -- trafo -- line -- load)."""
+
+import copy
+import unittest
+import warnings
+
+import numpy as np
+import pandapower as pp
+
+from lightsim2grid.network import init_from_pandapower
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
+
+# both solvers converge far below it: what is left is the model
+TOL_V = 1e-8
+
+
+def make_net(**trafo_kw):
+    net = pp.create_empty_network()
+    b_hv = pp.create_bus(net, vn_kv=110.)
+    b_lv = pp.create_bus(net, vn_kv=20.)
+    b_ld = pp.create_bus(net, vn_kv=20.)
+    pp.create_ext_grid(net, b_hv, vm_pu=1.02)
+    par = dict(sn_mva=40., vn_hv_kv=110., vn_lv_kv=20., vk_percent=10., vkr_percent=0.3, pfe_kw=30.,
+               i0_percent=0.1, shift_degree=0., tap_side="hv", tap_neutral=0, tap_min=-9, tap_max=9,
+               tap_pos=3, tap_step_percent=1.5, tap_step_degree=0., tap_changer_type="Ratio")
+    par.update(trafo_kw)
+    pp.create_transformer_from_parameters(net, b_hv, b_lv, **par)
+    pp.create_line_from_parameters(net, b_lv, b_ld, 2., 0.1, 0.3, 10., 0.4)
+    pp.create_load(net, b_ld, p_mw=25., q_mvar=8.)
+    return net
+
+
+def pp_voltages(net, trafo_model="t"):
+    net = copy.deepcopy(net)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        pp.runpp(net, calculate_voltage_angles=True, init="flat", trafo_model=trafo_model,
+                 tolerance_mva=1e-11, lightsim2grid=False, numba=False)
+    return net.res_bus["vm_pu"].to_numpy() * np.exp(1j * np.deg2rad(net.res_bus["va_degree"].to_numpy()))
+
+
+def ls_model(net, trafo_model="t"):
+    net = copy.deepcopy(net)
+    net._options = dict(trafo_model=trafo_model)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return init_from_pandapower(net, pp_orig_file="pandapower_v3")
+
+
+def ls_voltages(model, n_bus):
+    V = model.ac_pf(np.full(model.total_bus(), 1. + 0j), 20, 1e-11)
+    assert V.shape[0] > 0, "the lightsim2grid powerflow diverged"
+    return V[:n_bus]
+
+
+class _Base(unittest.TestCase):
+    def setUp(self):
+        if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
+            self.skipTest("compares with the pandapower 3 transformer model")
+
+    def assert_same_as_pp(self, net, trafo_model="t"):
+        V_pp = pp_voltages(net, trafo_model)
+        V_ls = ls_voltages(ls_model(net, trafo_model), V_pp.shape[0])
+        np.testing.assert_allclose(V_ls, V_pp, rtol=0., atol=TOL_V)
+
+
+class TestTrafoVsRunpp(_Base):
+    def test_ratio_tap(self):
+        """the plain case: a ratio tap changer off neutral, with iron losses and a magnetising
+        current (the magnetising susceptance used pfe instead of pfe**2, issue #274)"""
+        self.assert_same_as_pp(make_net())
+
+
+if __name__ == "__main__":
+    unittest.main()

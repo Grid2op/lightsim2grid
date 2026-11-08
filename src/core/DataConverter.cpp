@@ -348,7 +348,7 @@ std::tuple<RealVect,
     //  ym_mva = i0 / 100 * trafo_sn_mva
     RealVect ym_mva = trafo_i0_pct.array() * 0.01 * trafo_sn_mva.array();
     // b_mva_squared = np.square(ym_mva) - np.square(pfe_mw)
-    RealVect b_mva_squared = ym_mva.array() * ym_mva.array() - pfe_mw.array();
+    RealVect b_mva_squared = ym_mva.array() * ym_mva.array() - pfe_mw.array() * pfe_mw.array();
     // b_mva_squared[b_mva_squared < 0] = 0
     for(int i = 0; i<nb_trafo; ++i) {if (b_mva_squared(i) < 0.)  b_mva_squared(i) = 0.;}
     // b_mva = -np.sqrt(b_mva_squared)
