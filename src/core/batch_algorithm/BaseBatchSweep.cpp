@@ -43,6 +43,13 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
         invertible = false;
         return;
     }
+    // a row the batch does not support (see _mark_row_unsolved): reported UNSOLVED by
+    // _store_row_status, nothing to put back
+    if(_row_is_unsolved(i)){
+        conv = false;
+        invertible = false;
+        return;
+    }
 
     _apply_step_gen_v(i, V);
     _apply_step_topo_seed(i, V);
@@ -615,8 +622,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _maybe_resolve_topology(nb_steps);
         // the per-row Ybus edit lists (a no-op where Ybus does not vary)
         _prepare_ybus_varying(ac_solver_used, static_cast<Eigen::Index>(nb_steps));
-        // ... a regulating shunt a row trips is refused under the outer loops
-        _check_shunt_trips(nb_steps);
+        // the rows the checks below leave unsolved: none yet
+        _reset_unsolved_rows(nb_steps);
         // ... and settle, once, which contingencies split the grid and what they strand
         // (a no-op where Ybus does not vary). Only where someone reads the answer: an AC
         // row skips a contingency that splits the grid, and the masked mode strands the
@@ -627,6 +634,10 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         // ScenarioSweep; no-op elsewhere -- and _handle_disconnected_grid can never be
         // true elsewhere, since no setter exists to set it there)
         _maybe_prepare_masks();
+
+        // a regulating shunt a row trips is not supported under the outer loops: that row
+        // is left unsolved (after the two above, which say which rows are skipped anyway)
+        _check_shunt_trips(nb_steps);
 
         // generator contingencies (ScenarioSweep and ContingencyAnalysis; no-op
         // elsewhere). Must run after

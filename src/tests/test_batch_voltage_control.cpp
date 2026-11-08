@@ -519,6 +519,38 @@ static bool refactorize_is_a_factorize(AlgorithmType algo)
     return algo == AlgorithmType::NR_SparseLU || algo == AlgorithmType::NRSing_SparseLU;
 }
 
+TEST_CASE("tripping a remote-regulating generator leaves that row unsolved, not the batch", "[batch][vctrl]")
+{
+    // the batch does not reserve the Jacobian slots a remote controller's trip needs: that
+    // row is UNSOLVED, with its reason, and the empty contingency next to it still solves
+    for (bool handle_disconnected : {false, true}) {
+        INFO("handle_disconnected_grid = " << handle_disconnected);
+        LSGrid grid = make_remote_gen_grid();
+        ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+        ca.set_handle_disconnected_grid(handle_disconnected);
+        ca.add_contingency_gen({1});
+        ca.add_contingency_load({0});
+        ca.compute(flat_start(grid), 30, 1e-10);
+        const auto conts = ca.my_contingencies();
+        REQUIRE(conts.size() == 2);
+        REQUIRE(ca.get_unsolved_reasons().size() == 2);
+        for (size_t row = 0; row < conts.size(); ++row) {
+            const bool gen_trip = std::get<3>(conts[row]) == std::vector<int>{1};
+            INFO("row " << row);
+            CHECK(ca.converged()[row] == (gen_trip ? 0 : 1));
+            CHECK(ca.get_unsolved_reasons()[row].empty() == !gen_trip);
+            if (gen_trip) {
+                CHECK(ca.get_unsolved_reasons()[row].find("remote bus") != std::string::npos);
+                REQUIRE(ca.get_violations()[row].size() == 1);
+                CHECK(ca.get_violations()[row][0].violation_type == LimitViolationType::UNSOLVED);
+                CHECK(ca.get_violations()[row][0].category() == ls2g::ViolationCategory::SOLVER);
+                for (int b = 0; b < NB_BUS; ++b) CHECK(std::abs(ca.get_voltages()(row, b)) == 0.);
+            }
+        }
+        CHECK(ca.nb_solved() == 1);  // the unsolved row never reached the solver
+    }
+}
+
 TEST_CASE("a contingency stranding a lone controller's own bus falls back to plain PQ", "[batch][vctrl][mask]")
 {
     // Mirror image of the previous test: the trafo strands bus 2 (B, the sole

@@ -284,9 +284,10 @@ Each ``LimitViolation`` reports:
   ``LINE`` / ``TRAFO``); unused (``-1``) for ``GRID``;
 - ``side``: ``1`` or ``2`` for ``LINE`` / ``TRAFO`` (unused, ``0``, for ``BUS`` / ``GRID``);
 - ``violation_type``: :class:`lightsim2grid.contingencyAnalysis.LimitViolationType`
-  (``LOW_VOLTAGE``, ``HIGH_VOLTAGE``, ``CURRENT``, ``NOT_SIMULATED`` or ``DIVERGENCE``, see below);
+  (``LOW_VOLTAGE``, ``HIGH_VOLTAGE``, ``CURRENT``, ``NOT_SIMULATED``, ``UNSOLVED`` or
+  ``DIVERGENCE``, see below);
 - ``value`` / ``limit``: the value reached and the limit that was violated; unused (``NaN``) for
-  ``NOT_SIMULATED`` / ``DIVERGENCE``;
+  ``NOT_SIMULATED`` / ``UNSOLVED`` / ``DIVERGENCE``;
 - ``name``: for ``LINE`` / ``TRAFO``, the element's own name (see ``LSGrid.set_line_names`` /
   ``set_trafo_names``); for ``BUS``, the name of the *substation* the violating bus belongs to
   (see ``LSGrid.set_substation_names`` -- there is no per-bus name, only per-substation ones);
@@ -295,7 +296,8 @@ Each ``LimitViolation`` reports:
 Each ``ContingencyResult`` reports ``element_ids`` (the branch ids disconnected by this
 contingency -- always present, even without a ``name``) and the corresponding ``element_names``,
 the optional user-supplied ``contingency_name`` (set via ``add_single_contingency(..., name=...)``),
-whether the contingency ``converged``, and its ``limit_violations``.
+whether the contingency ``converged``, its ``limit_violations`` and, for a contingency the batch
+could not solve, the ``unsolved_reason`` (see below).
 
 .. warning::
 
@@ -325,8 +327,10 @@ whether the contingency ``converged``, and its ``limit_violations``.
 
     Also, if a contingency does not converge, its ``limit_violations`` contains exactly one
     ``LimitViolation`` with ``element_type == ViolationElementType.GRID`` and ``violation_type``
-    either ``LimitViolationType.NOT_SIMULATED`` (a pre-check -- eg it splits the grid in multiple
-    connected components -- skipped this contingency without ever invoking the solver) or
+    ``LimitViolationType.NOT_SIMULATED`` (a pre-check -- eg it splits the grid in multiple
+    connected components -- skipped this contingency without ever invoking the solver),
+    ``LimitViolationType.UNSOLVED`` (the batch does not support what it trips, eg a generator
+    regulating a remote bus: ``unsolved_reason`` / ``get_unsolved_reasons()`` say why) or
     ``LimitViolationType.DIVERGENCE`` (the solver ran but did not converge, eg reached
     ``max_iter``). This is unlike a converged case with an empty ``limit_violations`` list, which
     genuinely means no violation was found.

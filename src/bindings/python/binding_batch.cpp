@@ -766,6 +766,12 @@ void bind_batch(py::module_& m) {
         .value("DIVERGENCE", LimitViolationType::DIVERGENCE,
                "The solver was invoked for this contingency but did not converge (element_type is "
                "ViolationElementType.GRID).")
+        .value("UNSOLVED", LimitViolationType::UNSOLVED,
+               "The batch does not support what this contingency trips (eg a generator regulating "
+               "a remote bus): it was left out of the batch instead of failing the whole "
+               "compute(). Unlike NOT_SIMULATED, a one-off solve of it is possible. "
+               "get_unsolved_reasons() says why, per row (element_type is "
+               "ViolationElementType.GRID).")
         .value("LOW_VOLTAGE_AT_MIN_Q", LimitViolationType::LOW_VOLTAGE_AT_MIN_Q,
                "A PQ generator flagged as pinned at its MINIMUM reactive power (see "
                "LSGrid.set_gen_can_be_pv) whose regulated bus sits BELOW the target it would "
@@ -1111,17 +1117,19 @@ void bind_batch(py::module_& m) {
              "candidate generators is negligible; masking every generator on the grid "
              "grows the Jacobian's dimension by roughly the number of PV buses, and "
              "every factorization and solve pays for it.\n\n"
-             "Only generators regulating their OWN bus are supported. compute() raises "
-             "if the mask names a generator that regulates a remote bus, or one whose "
-             "bus a control group holds (a remote generator, an SVC or an HVDC "
-             "converter station): remote voltage control is not supported yet.")
+             "Only generators regulating their OWN bus are supported. A step whose mask "
+             "names a generator that regulates a remote bus, or one whose bus a control "
+             "group holds (a remote generator, an SVC or an HVDC converter station), is "
+             "left unsolved (LimitViolationType.UNSOLVED, see get_unsolved_reasons): remote "
+             "voltage control is not supported yet.")
         .def("set_contingency_shunts", &ScenarioSweep::set_contingency_shunts<>, py::arg("mask"),
              "Per-step shunt contingency mask, shape (n_simul, n_shunt), dtype bool. "
              "True means 'disconnect this shunt for this simulation'. A shunt is an "
              "admittance: the step loses its diagonal Ybus coefficient (in DC, its active "
-             "part leaves the injection), as the branch masks edit Ybus. compute() raises "
-             "with an algorithm running outer loops if the mask names a shunt that "
-             "regulates a voltage (the ShuntVoltageControl loop owns its sections).")
+             "part leaves the injection), as the branch masks edit Ybus. With an algorithm "
+             "running the ShuntVoltageControl outer loop, a step naming a shunt that "
+             "regulates a voltage is left unsolved (LimitViolationType.UNSOLVED, see "
+             "get_unsolved_reasons): that loop owns its sections.")
         .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
              "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "
              "True means 'disconnect this load for this simulation': the step's own load "
@@ -1186,13 +1194,19 @@ void bind_batch(py::module_& m) {
                       "component(s) are masked (their voltage is reported as 0). Supported by the "
                       "Newton-Raphson family (AC) and the DC solver; a non Newton-Raphson AC "
                       "algorithm is rejected.")
+        .def("get_unsolved_reasons", &ScenarioSweep::get_unsolved_reasons<>,
+             "Per row: why the batch could not solve it, or an empty string for a row it supports. "
+             "Such a row is reported with a LimitViolationType.UNSOLVED violation (with "
+             "compute_limit_violations) and converged_mask() 0, instead of making compute() "
+             "raise. Settled by compute().")
         .def("get_violations", &ScenarioSweep::get_violations<>,
              "Per row (same order as every modify_* / set_contingency_* input): list of "
              "LimitViolation. A row that did not converge has exactly one LimitViolation here, "
              "with element_type ViolationElementType.GRID and violation_type either "
              "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid "
-             "with handle_disconnected_grid off) or LimitViolationType.DIVERGENCE (the solver "
-             "ran but did not converge, including a diverging pre-batch \"n\" powerflow, which "
+             "with handle_disconnected_grid off), LimitViolationType.UNSOLVED (the batch does not "
+             "support what it trips, see get_unsolved_reasons) or LimitViolationType.DIVERGENCE "
+             "(the solver ran but did not converge, including a diverging pre-batch \"n\" powerflow, which "
              "stamps every row this way). Requires compute_limit_violations=True.",
              py::return_value_policy::reference_internal)
         .def("get_violations_n", &ScenarioSweep::get_violations_n<>,
@@ -1458,12 +1472,19 @@ void bind_batch(py::module_& m) {
              },
              "Per contingency (row order matches my_defaults()): whether it converged / was "
              "actually simulated (False for skipped or diverged contingencies).")
+        .def("get_unsolved_reasons", &ContingencyAnalysis::get_unsolved_reasons<>,
+             "Per row: why the batch could not solve it, or an empty string for a row it supports. "
+             "Such a row is reported with a LimitViolationType.UNSOLVED violation (with "
+             "compute_limit_violations) and converged_mask() 0, instead of making compute() "
+             "raise. Settled by compute().")
         .def("get_violations", &ContingencyAnalysis::get_violations<>,
              "Per contingency (row order matches my_defaults()): list of LimitViolation. A "
              "non-converged contingency (converged() is False) has exactly one LimitViolation "
-             "here, with element_type ViolationElementType.GRID and violation_type either "
-             "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid) or "
-             "LimitViolationType.DIVERGENCE (the solver ran but did not converge).",
+             "here, with element_type ViolationElementType.GRID and violation_type "
+             "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid), "
+             "LimitViolationType.UNSOLVED (the batch does not support what it trips, see "
+             "get_unsolved_reasons) or LimitViolationType.DIVERGENCE (the solver ran but did not "
+             "converge).",
              py::return_value_policy::reference_internal)
         .def("converged_n", &ContingencyAnalysis::converged_n<>,
              "Whether the pre-contingency ('n') powerflow converged.")

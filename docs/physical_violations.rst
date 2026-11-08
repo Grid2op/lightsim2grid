@@ -49,7 +49,7 @@ one :class:`~lightsim2grid.contingencyAnalysis.ViolationCategory`, which is the 
      - Not a limit: a control or an automaton whose action the solution did not apply. The equipment could do it
        and an outer loop would, so the state is reachable, but it is not the one the controls would settle in.
    * - ``SOLVER``
-     - What the solver did: ``NOT_SIMULATED`` and ``DIVERGENCE`` (reported by the batch classes).
+     - What the solver did: ``NOT_SIMULATED``, ``UNSOLVED`` and ``DIVERGENCE`` (reported by the batch classes).
 
 ``ViolationCategory.CONTROL`` is new with the ``NROuter_*`` algorithms.
 

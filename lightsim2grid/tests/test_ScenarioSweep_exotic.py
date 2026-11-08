@@ -243,9 +243,9 @@ class TestScenarioSweepExotic(unittest.TestCase):
     def test_dc_handle_disconnected_grid(self):
         self._check(ac=False, handle_disconnected_grid=True)
 
-    def test_ac_group_generator_contingency_is_refused(self):
+    def test_ac_group_generator_contingency_is_unsolved(self):
         """Not supported yet in AC: disconnecting a generator of a remote control group
-        needs Jacobian slots the batch does not reserve. It must say so, for one
+        needs Jacobian slots the batch does not reserve. The row says so, for one
         generator of the group as for all of them, rather than solve something else."""
         grid = build_grid()
         n_line, n_gen = len(grid.get_lines()), len(grid.get_generators())
@@ -255,9 +255,9 @@ class TestScenarioSweepExotic(unittest.TestCase):
             sweep = ScenarioSweepCPP(grid)
             sweep.set_contingency_lines(np.zeros((1, n_line), dtype=bool))
             sweep.set_contingency_gens(gen_mask)
-            with self.assertRaises(RuntimeError) as ctx:
-                sweep.compute(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
-            assert "remote bus" in str(ctx.exception)
+            sweep.compute(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
+            assert not sweep.converged_mask()[0]
+            assert "remote bus" in sweep.get_unsolved_reasons()[0]
 
 
 class TestContingencyAnalysisExotic(unittest.TestCase):
