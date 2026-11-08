@@ -63,10 +63,11 @@ def _aux_add_trafo(
         warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
     shift_[~np.isfinite(shift_)] = 0.
 
-    is_tap_hv_side = pp_net.trafo["tap_side"].to_numpy() == "hv"
-    if np.any(~np.isfinite(is_tap_hv_side)):
+    # test the missing values on the column itself: `== "hv"` is already False for them
+    tap_side_missing = pp_net.trafo["tap_side"].isna().to_numpy()
+    if np.any(tap_side_missing):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"], they have been replaced by \"hv\"")
-    is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
+    is_tap_hv_side = (pp_net.trafo["tap_side"].to_numpy() == "hv") | tap_side_missing
     
     if "tap_phase_shifter" in pp_net.trafo:
         if np.any(pp_net.trafo["tap_phase_shifter"].to_numpy()):

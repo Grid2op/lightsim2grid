@@ -318,6 +318,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   are solved after the batch, one at a time, by ``ac_pf`` on a copy of the grid (#280).
 - [FIXED] pandapower converter: the ``leakage_resistance_ratio_hv`` warning fired for the supported 0.5
   and never for another value (#274).
+- [FIXED] pandapower converter: a missing ``tap_side`` became the low voltage side without a warning;
+  it is now the high voltage side, with the warning (#274).
 
 
 [1.3.0] 2026-11-03
