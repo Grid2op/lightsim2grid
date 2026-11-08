@@ -128,6 +128,11 @@ class TestTrafoVsRunpp(_Base):
         with self.assertRaises(RuntimeError):
             ls_model(make_net(tap_changer_type="Ideal", tap_step_degree=2.))
 
+    def test_parallel(self):
+        """issue #274: `parallel` identical transformers in one row were refused"""
+        self.assert_same_as_pp(make_net(parallel=2))
+        self.assert_same_as_pp(make_net(parallel=3, tap_side="lv", tap_step_degree=30.))
+
     def test_symmetrical_tap(self):
         """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
         self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))

@@ -334,6 +334,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``tap_changer_type`` was applied, where pandapower ignores it (#274).
 - [ADDED] pandapower converter: ideal phase shifters (``tap_changer_type="Ideal"``, ``tap_phase_shifter``),
   no longer refused (#274).
+- [ADDED] pandapower converter: transformers with ``parallel != 1``, no longer refused (#274).
 
 
 [1.3.0] 2026-11-03

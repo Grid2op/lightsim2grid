@@ -35,10 +35,6 @@ def _aux_add_trafo(
     -------
 
     """
-    if "parallel" in pp_net.trafo and np.any(pp_net.trafo["parallel"].to_numpy() != 1):
-        raise RuntimeError("Cannot handle 'parallel' trafo columns. Please duplicate the rows if that is the case. "
-                           "Some pp_net.trafo[\"parallel\"] != 1 it is not handled by lightsim yet.")
-
     # fix the missing values
     tap_neutral = pp_net.trafo["tap_neutral"].to_numpy().copy()
     if np.any(~np.isfinite(tap_neutral)):
@@ -122,6 +118,10 @@ def _aux_add_trafo(
     # the voltages the tap moves: the rated ones, which may differ from the buses' (off-nominal ratio)
     vn_hv_ref = pp_net.trafo["vn_hv_kv"].to_numpy(dtype=float)
     vn_lv_ref = pp_net.trafo["vn_lv_kv"].to_numpy(dtype=float)
+    # `parallel` identical transformers in one row: impedance / parallel, admittance * parallel
+    parallel = np.ones(pp_net.trafo.shape[0])
+    if "parallel" in pp_net.trafo:
+        parallel = pp_net.trafo["parallel"].to_numpy(dtype=float)
     per_trafo = (pp_net.trafo["vk_percent"].to_numpy(),
                  pp_net.trafo["vkr_percent"].to_numpy(),
                  pp_net.trafo["sn_mva"].to_numpy(),
@@ -156,7 +156,7 @@ def _aux_add_trafo(
 
         The ratio is the one `LSGrid.init_trafo` expects on the tap side; r, x, b are pandapower's
         `_calc_r_x_y_from_dataframe`: the impedance at the low voltage bus base, scaled by
-        `(vn_trafo_lv / vn_lv) ** 2` (which commutes with the T to pi conversion)."""
+        `(vn_trafo_lv / vn_lv) ** 2 / parallel` (which commutes with the T to pi conversion)."""
         trafo_ids = np.asarray(trafo_ids, dtype=int)
         vnh, vnl, shift = tap_model(trafo_ids, positions)
         vk, vkr, sn, pfe, i0 = [np.asarray(el)[trafo_ids] for el in per_trafo]
@@ -174,7 +174,7 @@ def _aux_add_trafo(
             # default legacy mode: use the pandapower 2 converter
             r, x, b = converter.get_trafo_param_pp2(no_tap, no_tap, no_tap, hv_side, vn_hv, vn_lv,
                                                     vk, vkr, sn, pfe, i0)
-        z_factor = (vnl / vn_lv) ** 2
+        z_factor = (vnl / vn_lv) ** 2 / parallel[trafo_ids]
         ratio = (vnh / vnl) / (vn_hv / vn_lv)  # pandapower's, on the high voltage side
         ratio = np.where(is_tap_hv_side[trafo_ids], ratio, 1. / ratio)
         return r * z_factor, x * z_factor, b / z_factor, ratio, shift
