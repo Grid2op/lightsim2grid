@@ -3864,7 +3864,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // solve's voltages with init_from_n_powerflow); with outer loops and
         // init_from_n_powerflow, from the "n" state of its loops too -- the copy solves "n"
         // again before each row (resume off, as the batch's "n" solve) and resumes from it
-        // (LSGrid::set_resume_outer_state). Its results go where the batch's rows put theirs:
+        // (LSGrid::set_resume_outer_state). A row that splits the grid (handle_disconnected_grid:
+        // the batch solves its main component) is solved on a copy of that copy, thrown away
+        // after it: LSGrid::consider_only_main_component cuts its islands off there, which
+        // deactivates their elements and may move the slack -- nothing the undo could put
+        // back. Its results go where the batch's rows put theirs:
         // the voltages, convergence and limit violations, the per-row solve statistics and
         // outer-loop results, the physical violations and generator results where asked.
         // What it does not give: a row's Jacobian (keep_jacobian), so no gradient for it.
@@ -3903,21 +3907,30 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 std::string error;
                 CplxVect res;
                 FallbackUndo undo;
+                // the grid this row is solved on: the shared copy, or its own (see above)
+                const bool splits = _fallback_row_splits(i);
+                std::unique_ptr<LSGrid> own_grid;
                 try {
+                    if(splits) own_grid.reset(new LSGrid(grid));
+                    LSGrid & row_grid = splits ? *own_grid : grid;
                     if(resume_from_n){
                         // the "n" state the row resumes from, as the batch's "n" solve reached it
-                        grid.set_resume_outer_state(false);
-                        const CplxVect V_n = grid.ac_pf(V_seed, max_iter, tol);
+                        row_grid.set_resume_outer_state(false);
+                        const CplxVect V_n = row_grid.ac_pf(V_seed, max_iter, tol);
                         if(V_n.size() == 0) error = "the \"n\" solve did not converge on the grid copy";
                         else V_start = V_n;
-                        grid.set_resume_outer_state(true);
+                        row_grid.set_resume_outer_state(true);
                     }
                     if(error.empty()){
-                        _apply_row_on_grid(i, grid, undo);
-                        const LinearSolverStats lin_before = grid.get_algo().get_linear_solver_stats_before_solve();
-                        res = grid.ac_pf(V_start, max_iter, tol);
+                        _apply_row_on_grid(i, row_grid, undo);
+                        // the islands go, as the batch masks them. Their lost power is the
+                        // distributed slack's, or the DistributedSlack loop's, as in the batch
+                        // (redistribute_slack without outer loops is refused above)
+                        if(splits) row_grid.consider_only_main_component(false);
+                        const LinearSolverStats lin_before = row_grid.get_algo().get_linear_solver_stats_before_solve();
+                        res = row_grid.ac_pf(V_start, max_iter, tol);
                         ++_nb_solved;
-                        _record_row_solve_stats(i, grid.get_algo(), lin_before);
+                        _record_row_solve_stats(i, row_grid.get_algo(), lin_before);
                     }
                 } catch(const std::exception & e){
                     error = e.what();
@@ -3928,8 +3941,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     for(size_t s = 0; s < solver_to_me.size(); ++s){
                         V_solver(static_cast<Eigen::Index>(s)) = res(solver_to_me[s].cast_int());
                     }
+                    // the buses the batch masks read 0, as on its own rows (ac_pf hands back
+                    // whatever it was given at a bus it cut off)
+                    if(splits){
+                        for(int b : _li_masked[i]) if(b >= 0 && b < V_solver.size()) V_solver(b) = cplx_type(0., 0.);
+                    }
                     _voltages.raw().row(static_cast<Eigen::Index>(i))(solver_to_me.as_eigen()) = V_solver.array();
-                    _record_fallback_row_results(i, grid, V_solver);
+                    _record_fallback_row_results(i, splits ? *own_grid : grid, V_solver);
                 }
                 _converged_mask_[i] = conv ? 1 : 0;
                 if(_compute_limit_violations_){
@@ -3947,9 +3965,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     }
                 }
                 if(!error.empty()) _row_unsolved_reason_[i] += " The fallback failed: " + error;
-                // whatever happened, the copy goes back to the base grid for the next row
-                undo.apply(grid);
-                if(resume_from_n) grid.set_resume_outer_state(false);
+                // whatever happened, the shared copy goes back to the base grid for the next row
+                // (a row's own copy just goes)
+                if(!splits){
+                    undo.apply(grid);
+                    if(resume_from_n) grid.set_resume_outer_state(false);
+                }
                 _timer_solver += timer.duration();
             }
         }
@@ -3961,12 +3982,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::string _fallback_refuses(size_t i, bool outer) const {
             // the pre-pass moves this row's set-points and takes units out of its slack: a
             // one-off solve knows nothing of it (with outer loops, DistributedSlack shares it)
+            (void) i;
             if(_redistribute_slack_ && !outer) return "`redistribute_slack` without outer loops is not applied by a one-off solve";
-            // a row whose contingency strands buses (handle_disconnected_grid) is solved on its
-            // main component by the batch, which a one-off solve of the whole grid is not
-            const std::vector<int> * masked = _row_masked_ids(i);
-            if(masked != nullptr && *masked != _base_masked_) return "it splits the grid";
             return std::string();
+        }
+        // whether row i strands buses the "n" case does not: the batch solves it on its main
+        // component (handle_disconnected_grid), and so does the fallback
+        bool _fallback_row_splits(size_t i) const {
+            const std::vector<int> * masked = _row_masked_ids(i);
+            return masked != nullptr && *masked != _base_masked_;
         }
 
         // what the fallback changed on its copy of the grid, to put it back

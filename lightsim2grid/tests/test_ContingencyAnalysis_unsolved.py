@@ -288,21 +288,51 @@ class TestUnsolvedFallback(unittest.TestCase):
                 self.assertIn("NROuter", ca.get_algo_name())
                 self._check(ca, grid=grid, init_from_n=init_from_n)
 
-    def test_a_split_grid_is_not_attempted(self):
-        """handle_disconnected_grid: the batch solves a split grid on its main component, a
-        one-off solve of the whole grid would not -- the fallback leaves that row unsolved"""
+    def test_a_split_grid_keeps_its_main_component(self):
+        """handle_disconnected_grid: the batch solves a split grid on its main component, and so
+        does the fallback (consider_only_main_component on its own copy of the grid). The batch's
+        own split row is checked against the same reference, so the two conventions agree."""
+        trafo = self.n_line + TRAFO_BEHIND  # the remote controller's own bus is behind it
         ca = ContingencyAnalysisCPP(self.grid)
         ca.compute_limit_violations = True
         ca.handle_disconnected_grid = True
         ca.unsolved_fallback = True
-        # the remote controller's own bus is behind that transformer: masked, the batch solves
-        # the rest
-        ca.add_contingency(branch_ids=[self.n_line + TRAFO_BEHIND], gen_ids=[GEN_REMOTE])
+        ca.add_contingency(branch_ids=[trafo], gen_ids=[GEN_REMOTE])
+        ca.add_contingency(branch_ids=[trafo], gen_ids=[LOCAL_GEN])  # the batch's own
+        ca.add_n1(0)
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        amps = ca.compute_flows()
+        for gen in (GEN_REMOTE, LOCAL_GEN):
+            with self.subTest(gen=gen):
+                row = TestUnsolvedContingencies._row(ca, branches=[trafo], gens=[gen])
+                self.assertEqual(bool(ca.get_unsolved_reasons()[row]), gen == GEN_REMOTE)
+                self.assertTrue(ca.converged()[row])
+                ref = copy.deepcopy(self.grid)
+                ref.deactivate_trafo(TRAFO_BEHIND)
+                ref.deactivate_gen(gen)
+                ref.consider_only_main_component(False)
+                V_ref = ref.ac_pf(1.0 * self.v0, MAX_IT, TOL)
+                self.assertGreater(V_ref.shape[0], 0)
+                # the stranded bus reads 0, as a masked one (ac_pf hands back its input there)
+                main = [b for b in self.buses if b != 7]
+                np.testing.assert_allclose(ca.get_voltages()[row][main], V_ref[main], rtol=1e-7, atol=1e-7)
+                self.assertEqual(ca.get_voltages()[row][7], 0.)
+                a_or = np.concatenate([ref.get_line_res1()[3], ref.get_trafo_res1()[3]])
+                live = [br for br in range(a_or.shape[0]) if br != trafo]
+                np.testing.assert_allclose(np.nan_to_num(amps[row][live]), a_or[live], rtol=1e-6, atol=1e-6)
+        # the source grid of the analysis kept its element: only the fallback's copy lost it
+        self.assertTrue(self.grid.get_generators()[GEN_REMOTE].connected)
+
+    def test_redistribute_slack_without_outer_loops_is_refused(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.compute_limit_violations = True
+        ca.redistribute_slack = True
+        ca.unsolved_fallback = True
+        ca.add_contingency_gen(GEN_REMOTE)
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertFalse(ca.converged()[0])
-        self.assertIn("splits the grid", ca.get_unsolved_reasons()[0])
+        self.assertIn("redistribute_slack", ca.get_unsolved_reasons()[0])
         self.assertEqual([v.violation_type for v in ca.get_violations()[0]], [LimitViolationType.UNSOLVED])
-
 
 if __name__ == "__main__":
     unittest.main()

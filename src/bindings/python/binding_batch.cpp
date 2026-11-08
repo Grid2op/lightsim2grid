@@ -1359,11 +1359,12 @@ void bind_batch(py::module_& m) {
                       "loops' state included, the copy solving \"n\" again before each one). Their "
                       "voltages, convergence, limit and physical violations and generator results go "
                       "where the batch's rows put theirs, their reason is kept; their Jacobian is not "
-                      "(keep_jacobian). A contingency the fallback cannot reproduce stays UNSOLVED and "
-                      "its reason says why (one splitting the grid with handle_disconnected_grid, "
-                      "redistribute_slack without outer loops). Sequential, and as slow as one "
-                      "ac_pf per contingency (two with outer loops and init_from_n_powerflow). Off by "
-                      "default.")
+                      "(keep_jacobian). One splitting the grid with handle_disconnected_grid is solved "
+                      "on its main component, as the batch does it (LSGrid.consider_only_main_component "
+                      "on a copy of its own). With redistribute_slack and no outer loops the fallback "
+                      "does not run: those contingencies stay UNSOLVED and their reason says why. "
+                      "Sequential, and as slow as one ac_pf per contingency (two with outer loops and "
+                      "init_from_n_powerflow). Off by default.")
         .def_property("handle_disconnected_grid",
                       [](const ContingencyAnalysis & self){ return self.get_handle_disconnected_grid(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_handle_disconnected_grid(val); },

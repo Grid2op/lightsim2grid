@@ -350,8 +350,10 @@ algorithm, outer loops, ``max_iter`` and ``tol``, starting where the batch's con
 (with ``init_from_n_powerflow``, from the "n" solve, its outer loops' state included). They get
 the same results as the others -- voltages, flows, limit and physical violations -- except a
 Jacobian for the gradients, and keep their ``unsolved_reason``, so the slower path stays visible.
-The fallback does not run a contingency that splits the grid under ``handle_disconnected_grid``,
-nor, without outer loops, one under ``redistribute_slack``: those stay ``UNSOLVED``.
+A contingency that splits the grid under ``handle_disconnected_grid`` is solved on its main
+component, as the batch does it (``LSGrid.consider_only_main_component`` on a copy of its own).
+Without outer loops, ``redistribute_slack`` is not reproduced by a one-off solve: those
+contingencies stay ``UNSOLVED``.
 
 Violation checking is fully compatible with the ``handle_disconnected_grid`` and ``nb_thread``
 options described above: it is performed **inline, per contingency, inside the thread that
