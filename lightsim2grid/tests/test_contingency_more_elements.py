@@ -650,6 +650,14 @@ class TestWrappers(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             ca.add_contingency(storages=["not a storage unit"])
 
+    def test_static_var_compensators(self):
+        env = self._env()
+        grid = env.backend._grid
+        grid.init_svcs([2, 2], np.array([1., 1.]), np.array([5., 3.]), np.zeros(2), np.full(2, -0.5), np.full(2, 0.5),
+                       np.array([12, 13], dtype=np.int32), np.array([12, 13], dtype=np.int32))
+        grid.tell_solver_need_reset()
+        self._check(env, "svcs", "svc_ids", "svc_ids", 1, "set_contingency_svcs", 2)
+
     def test_an_empty_contingency_is_refused(self):
         with self.assertRaises(RuntimeError):
             ContingencyAnalysis(self._env()).add_contingency()

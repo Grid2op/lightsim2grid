@@ -90,6 +90,8 @@ class ContingencyResult:
     sgen_ids: List[int] = field(default_factory=list)
     #: the storage units it trips
     storage_ids: List[int] = field(default_factory=list)
+    #: the static var compensators it trips
+    svc_ids: List[int] = field(default_factory=list)
     #: why the batch could not solve this contingency (empty if it could), see
     #: `ContingencyAnalysis.get_batch_unsupported_reasons`
     batch_unsupported_reason: str = ""
@@ -823,7 +825,7 @@ class ContingencyAnalysis(object):
         self.__computed = False   # see add_single_contingency
 
     @staticmethod
-    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=(), sgens=(), storages=(), *_):
+    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=(), sgens=(), storages=(), svcs=(), *_):
         """internal: the key a contingency is known by on this side. A branch-only one is
         the flat tuple of its branch ids; one tripping shunts, loads or generators is the
         nested tuple of its four lists, followed by the other kinds when it trips any. Each list sorted, every id once: the c++ side keeps
@@ -832,7 +834,7 @@ class ContingencyAnalysis(object):
         empty.)"""
         def _ids(stuff):
             return tuple(sorted({int(el) for el in stuff}))
-        others = (sgens, storages)
+        others = (sgens, storages, svcs)
         if any(len(el) for el in others):
             return (_ids(branches), _ids(shunts), _ids(loads), _ids(gens)) + tuple(_ids(el) for el in others)
         if not shunts and not loads and not gens:
@@ -865,12 +867,12 @@ class ContingencyAnalysis(object):
             names = [el.name for el in getattr(self._ls_backend._grid, getter)()]
         return self._ids_of(stuff, names, kind)
 
-    def add_contingency(self, lines=(), shunts=(), loads=(), gens=(), name=None, sgens=(), storages=()):
+    def add_contingency(self, lines=(), shunts=(), loads=(), gens=(), name=None, sgens=(), storages=(), svcs=()):
         """
         Adds a single contingency tripping, together, powerlines (and transformers, both by
         `env.name_line` or id), shunts (`env.name_shunt` or id), loads (`env.name_load` or id)
         and generators (`env.name_gen` or id), and, by name in the grid or by id, static
-        generators (`sgens`) and storage units (`storages`, `env.name_storage` or id). Any of them may be empty, not all of them.
+        generators (`sgens`) and storage units (`storages`, `env.name_storage` or id), and static var compensators (`svcs`). Any of them may be empty, not all of them.
 
         A shunt leaves the admittance matrix, a load and a generator the injection (a
         generator that is the last one regulating its bus turns that bus PQ); the
@@ -897,7 +899,8 @@ class ContingencyAnalysis(object):
         gen_ids = self._ids_of(gens, type(self._ls_backend).name_gen, "generator")
         other_ids = {"sgen_ids": self._other_ids(sgens, "get_static_generators", "static generator"),
                      "storage_ids": self._other_ids(storages, "get_storages", "storage unit",
-                                                    getattr(type(self._ls_backend), "name_storage", []))}
+                                                    getattr(type(self._ls_backend), "name_storage", [])),
+                     "svc_ids": self._other_ids(svcs, "get_svcs", "static var compensator")}
         has_others = any(len(el) for el in other_ids.values())
         if not branch_ids and not shunt_ids and not load_ids and not gen_ids and not has_others:
             # add_single_contingency() would register it (add_nk([])), the c++
@@ -938,6 +941,10 @@ class ContingencyAnalysis(object):
     def add_contingency_storage(self, storages, name=None):
         """Adds a single contingency tripping storage units, see `add_contingency`."""
         self.add_contingency(storages=storages, name=name)
+
+    def add_contingency_svc(self, svcs, name=None):
+        """Adds a single contingency tripping static var compensators, see `add_contingency`."""
+        self.add_contingency(svcs=svcs, name=name)
 
     def add_contingency_gen(self, gens, name=None):
         """A single contingency tripping these generators only (one id / name, or several). See
@@ -1096,6 +1103,7 @@ class ContingencyAnalysis(object):
                 gen_ids=list(all_conts[id_cpp][3]),
                 sgen_ids=list(all_conts[id_cpp][6]),
                 storage_ids=list(all_conts[id_cpp][7]),
+                svc_ids=list(all_conts[id_cpp][8]),
                 batch_unsupported_reason=str(unsupported[id_cpp]) if id_cpp < len(unsupported) else "",
             )
             for id_me, id_cpp in enumerate(orders_)
