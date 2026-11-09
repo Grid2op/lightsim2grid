@@ -8352,7 +8352,10 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
       batch (``LimitViolationType.BATCH_UNSUPPORTED``);
     - a static var compensator of ``svc_ids`` leaves the grid with its fixed reactive injection and its ``b0``. A
       contingency tripping one that regulates a voltage, carries a standby automaton or was frozen at a reactive limit
-      is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``): a control group owns its Jacobian rows.
+      is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``): a control group owns its Jacobian rows;
+    - an HVDC line of ``hvdc_ids`` stops transmitting: both its converter stations leave the injection. A contingency
+      tripping a line in AC emulation (or frozen at its limit), or one a station of which regulates a voltage, is left
+      out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
 
     What the contingency loses is made up by the distributed slack (``redistribute_slack`` shares it OLF-like before
     the solve), and a bus it strands is handled as a branch contingency strands one (``handle_disconnected_grid``).
@@ -8410,7 +8413,7 @@ const std::string DocContingencyAnalysis::my_contingencies = R"mydelimiter(
     Returns
     -------
     my_contingencies: ``list``
-        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2, sgen_ids, storage_ids, svc_ids)`` per contingency,
+        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2, sgen_ids, storage_ids, svc_ids, hvdc_ids)`` per contingency,
         each a sorted list (the last two: the branches opened at that side only).
         :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults` lists the branches opened at both
         ends only.

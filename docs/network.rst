@@ -629,7 +629,8 @@ each distinct contingency once:
         return {el.name: i for i, el in enumerate(elements)}
     branch_id = {name: i for i, name in enumerate(list(grid.get_line_names()) + list(grid.get_trafo_names()))}
     kinds = (branch_id, ids(grid.get_shunts()), ids(grid.get_loads()), ids(grid.get_generators()))
-    other_kinds = (ids(grid.get_static_generators()), ids(grid.get_storages()), ids(grid.get_svcs()))
+    other_kinds = (ids(grid.get_static_generators()), ids(grid.get_storages()), ids(grid.get_svcs()),
+                   ids(grid.get_dclines()))
 
     ca = ContingencyAnalysisCPP(grid)
     ca.handle_disconnected_grid = True

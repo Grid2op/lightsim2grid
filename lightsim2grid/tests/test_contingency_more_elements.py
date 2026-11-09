@@ -328,5 +328,89 @@ class TestStaticVarCompensators(_ContingencyMoreElements):
             ca.add_contingency(svc_ids=[len(self.grid.get_svcs())])
 
 
+class TestHvdcLines(_ContingencyMoreElements):
+    ARG = "hvdc_ids"
+    DROOP, REGULATING, FIXED = 0, 1, 2   # AC emulation, stations regulating at both ends, LCC at fixed P and Q
+
+    def _setup_grid(self, grid):
+        big = np.full(3, 1e3)
+        grid.init_hvdc_lines(np.array([9, 10, 12], dtype=np.int32), np.array([3, 11, 13], dtype=np.int32),
+                             [0, 0, 1], [0, 0, 1],
+                             np.ones(3), np.ones(3),
+                             [True, True, False], [False, True, False],
+                             np.array([1.03, 1.03, 1.]), np.array([1., 1.03, 1.]),
+                             np.zeros(3), np.array([3., 0., 0.]),
+                             -big, big, -big, big,
+                             np.array([1., 1., 0.9]), np.array([1., 1., 0.9]),
+                             [0, 0, 0], np.array([10., 5., 3.]),
+                             np.ones(3), np.full(3, 12.),
+                             [True, False, False], np.array([5., 0., 0.]), np.array([2., 0., 0.]),
+                             np.full(3, 100.), np.full(3, 100.))
+        grid.tell_solver_need_reset()
+
+    def _deactivate(self, grid, el_id):
+        grid.deactivate_dcline(el_id)
+
+    def test_matches_a_one_off_powerflow(self):
+        trips = [([self.FIXED], []), ([self.FIXED], [5])]
+        ca = self._analysis(trips)
+        V = np.asarray(ca.get_voltages())
+        for el_ids, branches in trips:
+            row = self._row(ca, el_ids, branches)
+            self.assertEqual(ca.get_batch_unsupported_reasons()[row], "")
+            self.assertTrue(ca.converged_mask()[row])
+            np.testing.assert_allclose(V[row], self._reference(el_ids, branches), atol=1e-8, rtol=0.)
+
+    def test_dc(self):
+        ca = self._analysis([([self.FIXED], []), ([self.REGULATING], [])], dc=True)
+        self.assertEqual(ca.get_batch_unsupported_reasons()[self._row(ca, [self.REGULATING])], "")
+        V = np.asarray(ca.get_voltages())
+        for el_ids in ([self.FIXED], [self.REGULATING]):
+            np.testing.assert_allclose(np.angle(V[self._row(ca, el_ids)]), np.angle(self._reference(el_ids, dc=True)),
+                                       atol=1e-8, rtol=0.)
+
+    def test_what_the_batch_leaves_out(self):
+        ca = self._analysis([([self.DROOP], []), ([self.REGULATING], []), ([self.FIXED], [])],
+                            compute_limit_violations=True)
+        reasons = ca.get_batch_unsupported_reasons()
+        self.assertIn("AC emulation", reasons[self._row(ca, [self.DROOP])])
+        self.assertIn("regulates a voltage", reasons[self._row(ca, [self.REGULATING])])
+        self.assertEqual(reasons[self._row(ca, [self.FIXED])], "")
+        self.assertFalse(ca.converged_mask()[self._row(ca, [self.DROOP])])
+
+    def test_the_fallback_solves_them(self):
+        for line in (self.DROOP, self.REGULATING):
+            with self.subTest(line=line):
+                ca = ContingencyAnalysisCPP(self.grid)
+                ca.batch_unsupported_fallback = True
+                ca.add_contingency(hvdc_ids=[line])
+                ca.compute(1.0 * self.v0, MAX_IT, TOL)
+                self.assertTrue(ca.converged_mask()[0])
+                np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([line]),
+                                           atol=1e-8, rtol=0.)
+
+    def test_redistribute_slack_shares_what_it_loses(self):
+        for gen in self.grid.get_generators():
+            self.grid.add_gen_slackbus(gen.id, 1.)
+        self.grid.tell_solver_need_reset()
+        ca = self._analysis([([self.FIXED], [])], redistribute_slack=True)
+        # the stations' injections (generator convention), which the slack makes up
+        info = self.grid.get_dclines()[self.FIXED]
+        ref = copy.deepcopy(self.grid)
+        ref.deactivate_dcline(self.FIXED)
+        ref.redistribute_active_power(info.target_p1_mw + info.p2_mw)
+        ref.tell_solver_need_reset()
+        V_ref = ref.ac_pf(1.0 * self.v0, MAX_IT, TOL)
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], V_ref, atol=1e-6, rtol=0.)
+
+    def test_registration(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.add_contingency(hvdc_ids=[1, 0])
+        self.assertEqual([c[9] for c in ca.my_contingencies()], [[0, 1]])
+        self.assertTrue(ca.remove_contingency(hvdc_ids=[0, 1]))
+        with self.assertRaises(RuntimeError):
+            ca.add_contingency(hvdc_ids=[len(self.grid.get_dclines())])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -291,6 +291,29 @@ void YbusPolicy::Contingency::_append_svc_trips(const std::set<int> & svc_ids,
     }
 }
 
+void YbusPolicy::Contingency::_append_hvdc_trips(const std::set<int> & hvdc_ids,
+                                                 const LSGrid & grid_model,
+                                                 bool ac_solver_used,
+                                                 const SolverBusIdVect & id_me_to_solver,
+                                                 std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    const auto & hvdc_lines = grid_model.get_dclines();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    const auto take_out = [&](const ConverterStationContainer & stations, int hvdc_id){
+        const int bus = live_solver_bus(stations, hvdc_id, id_me_to_solver);
+        if(bus < 0) return;
+        // what ConverterStationContainer::fillSbus_station stamps, taken back
+        real_type q = 0.;
+        if(ac_solver_used && !stations.get_voltage_regulator_on(hvdc_id)) q = stations.get_target_q()(hvdc_id);
+        sbus_dp.push_back({bus, -per_unit(cplx_type(stations.get_target_p(hvdc_id), q), sn_mva)});
+    };
+    for(int hvdc_id : hvdc_ids){
+        if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;
+        take_out(hvdc_lines.get_stations_side_1(), hvdc_id);
+        take_out(hvdc_lines.get_stations_side_2(), hvdc_id);
+    }
+}
+
 void YbusPolicy::Contingency::init_li_coeffs(
     const LSGrid & grid_model,
     bool ac_solver_used,
@@ -320,6 +343,7 @@ void YbusPolicy::Contingency::init_li_coeffs(
         _append_sgen_trips(this_cont.sgens, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         _append_storage_trips(this_cont.storages, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         _append_svc_trips(this_cont.svcs, grid_model, ac_solver_used, id_me_to_solver, coeffs, sbus_dp);
+        _append_hvdc_trips(this_cont.hvdcs, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         li_coeffs.push_back(std::move(coeffs));
         ++cont_id;
     }

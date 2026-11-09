@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips HVDC lines (``hvdc_ids``). AC emulation and
+  voltage-regulating stations are reported ``BATCH_UNSUPPORTED``. Issue #281.
 - [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips static var compensators (``svc_ids``). Those a
   control group holds are reported ``BATCH_UNSUPPORTED``. Issue #281.
 - [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips storage units (``storage_ids``). Issue #281.
