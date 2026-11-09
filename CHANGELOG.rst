@@ -316,6 +316,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``get_batch_unsupported_reasons()``, instead of making ``compute()`` raise for the whole batch (#280).
 - [ADDED] ``ContingencyAnalysis.batch_unsupported_fallback``: the contingencies reported ``BATCH_UNSUPPORTED``
   are solved after the batch, one at a time, by ``ac_pf`` on a copy of the grid (#280).
+- [FIXED] ``ShuntVoltageControl``: switching a regulating shunt off or on between two solves now rebuilds its
+  control. The shunts of its bus silently stopped regulating.
+- [FIXED] ``ShuntVoltageControl``: moving a regulating shunt to another energized bus between two solves
+  now rebuilds its control, which stayed on the former bus.
 - [FIXED] pandapower converter: the ``leakage_resistance_ratio_hv`` warning fired for the supported 0.5
   and never for another value (#274).
 - [FIXED] pandapower converter: a missing ``tap_side`` became the low voltage side without a warning;

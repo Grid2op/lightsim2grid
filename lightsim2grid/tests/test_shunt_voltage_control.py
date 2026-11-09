@@ -183,5 +183,215 @@ class TestShuntVoltageControl(unittest.TestCase):
         np.testing.assert_allclose(ca.get_voltages()[0], V_ref, atol=1e-8, rtol=0.)
 
 
+class TestShuntReconnected(unittest.TestCase):
+    """The outer loops reserve a shunt's control only when the Newton rebuilds, and a shunt
+    going on or off only changes the diagonal of Ybus, which asks for no rebuild. A regulating
+    shunt that was off when the controls were reserved came back with no control: the solve
+    said STABLE, the sections did not move and the bus missed its target.
+
+    Every test compares a grid that went through the sequence with a fresh one solved once in
+    the same final state: the history must not show in the result."""
+
+    def setUp(self):
+        if not HAS_PYPOWSYBL:
+            self.skipTest("pypowsybl is not installed")
+
+    def _grid(self, bus="B9", target_kv=13.2, sections=(3, 1), off=(), moved=()):
+        grid = _grid(_net(bus, target_kv, sections))
+        grid.change_algorithm("NROuter_KLU")
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ShuntVoltageControl())
+        for shunt_id in self._ids(grid, off):
+            grid.deactivate_shunt(shunt_id)
+        self._move(grid, moved)
+        return grid
+
+    def _move(self, grid, names):
+        """Move shunts to a bus next to the one they started on, energized by a line."""
+        for shunt_id in self._ids(grid, names):
+            bus = grid.get_shunts()[shunt_id].regulated_bus  # they all start on the bus they regulate
+            grid.change_bus_shunt(shunt_id, next(l.bus2_id for l in grid.get_lines() if l.bus1_id == bus))
+
+    @staticmethod
+    def _ids(grid, names):
+        all_names = [s.name for s in grid.get_shunts()]
+        return [all_names.index(name) for name in names]
+
+    def _solve(self, grid, v0=None):
+        v0 = np.full(grid.total_bus(), 1.0 + 0j) if v0 is None else v0
+        V = grid.ac_pf(v0.copy(), 30, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        self.assertEqual(grid.get_algo().get_outer_loop_stats().status.name, "STABLE")
+        return V
+
+    @staticmethod
+    def _analyzes(grid):
+        return grid.get_algo().get_linear_solver_stats().nb_analyze
+
+    @staticmethod
+    def _counts(grid):
+        res = {s.name: s.res_section_count for s in grid.get_shunts()}
+        return [res[name] for name in SHUNTS]
+
+    def _assert_same_as_fresh(self, grid, V, off=(), **kwargs):
+        fresh = self._grid(off=off, **kwargs)
+        V_fresh = self._solve(fresh)
+        self.assertEqual(self._counts(grid), self._counts(fresh))
+        np.testing.assert_allclose(V, V_fresh, atol=1e-8, rtol=0.)
+
+    def test_all_shunts_off_at_the_first_solve(self):
+        # no group at all was reserved: the bus had no control to come back to
+        grid = self._grid(off=SHUNTS)
+        self._solve(grid)
+        for shunt_id in self._ids(grid, SHUNTS):
+            grid.reactivate_shunt(shunt_id)
+        self._assert_same_as_fresh(grid, self._solve(grid))
+
+    def test_one_shunt_off_at_the_first_solve(self):
+        # a group was reserved for the bus, without the shunt that comes back
+        for off in SHUNTS:
+            with self.subTest(off=off):
+                grid = self._grid(off=[off])
+                self._solve(grid)
+                grid.reactivate_shunt(self._ids(grid, [off])[0])
+                self._assert_same_as_fresh(grid, self._solve(grid))
+
+    def test_reconnected_from_the_previous_voltages(self):
+        # a warm start, as an agent solving step after step does
+        grid = self._grid(off=SHUNTS)
+        V = self._solve(grid)
+        for shunt_id in self._ids(grid, SHUNTS):
+            grid.reactivate_shunt(shunt_id)
+        self._assert_same_as_fresh(grid, self._solve(grid, V))
+
+    def test_several_cycles(self):
+        grid = self._grid(off=SHUNTS)
+        ids = self._ids(grid, SHUNTS)
+        for _ in range(3):
+            self._solve(grid)
+            for shunt_id in ids:
+                grid.reactivate_shunt(shunt_id)
+            self._assert_same_as_fresh(grid, self._solve(grid))
+            for shunt_id in ids:
+                grid.deactivate_shunt(shunt_id)
+            self._assert_same_as_fresh(grid, self._solve(grid), off=SHUNTS)
+
+    def test_one_shunt_tripped_after_a_solve(self):
+        # the other direction: the group was reserved with a shunt that is now gone
+        for off in SHUNTS:
+            with self.subTest(off=off):
+                grid = self._grid()
+                self._solve(grid)
+                grid.deactivate_shunt(self._ids(grid, [off])[0])
+                self._assert_same_as_fresh(grid, self._solve(grid), off=[off])
+
+    def test_hidden_by_a_generator_stays_hidden(self):
+        # bus 6 is a generator's: reconnected, the shunts still have nothing to do
+        kwargs = dict(bus="B6", target_kv=12.8, sections=(0, 2))
+        grid = self._grid(off=SHUNTS, **kwargs)
+        self._solve(grid)
+        for shunt_id in self._ids(grid, SHUNTS):
+            grid.reactivate_shunt(shunt_id)
+        V = self._solve(grid)
+        self.assertEqual(self._counts(grid), [0, 2])
+        self._assert_same_as_fresh(grid, V, **kwargs)
+
+    def test_rebuilds_once(self):
+        # one rebuild for the reconnection, none for the solves that follow it
+        grid = self._grid(off=SHUNTS)
+        self._solve(grid)
+        before = self._analyzes(grid)
+        for shunt_id in self._ids(grid, SHUNTS):
+            grid.reactivate_shunt(shunt_id)
+        self._solve(grid)
+        after = self._analyzes(grid)
+        self.assertEqual(after, before + 1)
+        self._solve(grid)
+        self.assertEqual(self._analyzes(grid), after)
+
+    def test_all_shunts_moved_after_a_solve(self):
+        # moving a shunt between two energized buses renumbers no bus and adds no Ybus entry: the
+        # controls reserved at the previous bus stayed, and the bus missed its target
+        grid = self._grid()
+        self._solve(grid)
+        self._move(grid, SHUNTS)
+        self._assert_same_as_fresh(grid, self._solve(grid), moved=SHUNTS)
+
+    def test_one_shunt_moved_after_a_solve(self):
+        # the shunts of the bus become two controllers of the same regulated bus
+        for name in SHUNTS:
+            with self.subTest(moved=name):
+                grid = self._grid()
+                self._solve(grid)
+                self._move(grid, [name])
+                self._assert_same_as_fresh(grid, self._solve(grid), moved=[name])
+
+    def test_moved_from_the_previous_voltages(self):
+        grid = self._grid()
+        V = self._solve(grid)
+        self._move(grid, SHUNTS)
+        self._assert_same_as_fresh(grid, self._solve(grid, V), moved=SHUNTS)
+
+    def test_moved_there_and_back(self):
+        grid = self._grid()
+        V_start = self._solve(grid)
+        ids = self._ids(grid, SHUNTS)
+        home = [grid.get_shunts()[k].bus_id for k in ids]
+        self._move(grid, SHUNTS)
+        self._assert_same_as_fresh(grid, self._solve(grid), moved=SHUNTS)
+        for shunt_id, bus in zip(ids, home):
+            grid.change_bus_shunt(shunt_id, bus)
+        V = self._solve(grid)
+        self._assert_same_as_fresh(grid, V)
+        np.testing.assert_allclose(V, V_start, atol=1e-8, rtol=0.)
+
+    def test_move_rebuilds_once(self):
+        grid = self._grid()
+        self._solve(grid)
+        before = self._analyzes(grid)
+        self._move(grid, SHUNTS)
+        self._solve(grid)
+        after = self._analyzes(grid)
+        self.assertEqual(after, before + 1)
+        self._solve(grid)
+        self.assertEqual(self._analyzes(grid), after)
+
+    def test_move_to_the_same_bus_is_no_rebuild(self):
+        grid = self._grid()
+        self._solve(grid)
+        before = self._analyzes(grid)
+        for shunt_id in self._ids(grid, SHUNTS):
+            grid.change_bus_shunt(shunt_id, grid.get_shunts()[shunt_id].bus_id)
+        self._solve(grid)
+        self.assertEqual(self._analyzes(grid), before)
+
+    def test_no_rebuild_when_moving_a_shunt_that_does_not_regulate(self):
+        grid = self._grid()
+        shunt_id = self._ids(grid, ["SH-A"])[0]
+        shunt = grid.get_shunts()[shunt_id]
+        bus = shunt.regulated_bus
+        grid.set_shunt_section_regulation(shunt_id, False, shunt.target_vm_pu, shunt.target_deadband_pu, bus)
+        self._solve(grid)
+        before = self._analyzes(grid)
+        grid.change_bus_shunt(shunt_id, next(l.bus2_id for l in grid.get_lines() if l.bus1_id == bus))
+        self._solve(grid)
+        self.assertEqual(self._analyzes(grid), before)
+
+    def test_no_rebuild_for_a_shunt_that_does_not_regulate(self):
+        # switching such a shunt changes no control: the Newton keeps its factorization
+        grid = self._grid()
+        for shunt_id, shunt in zip(self._ids(grid, SHUNTS), [grid.get_shunts()[k] for k in self._ids(grid, SHUNTS)]):
+            grid.set_shunt_section_regulation(shunt_id, False, shunt.target_vm_pu, shunt.target_deadband_pu,
+                                              shunt.regulated_bus)
+        self._solve(grid)
+        before = self._analyzes(grid)
+        shunt_id = self._ids(grid, ["SH-A"])[0]
+        grid.deactivate_shunt(shunt_id)
+        self._solve(grid)
+        grid.reactivate_shunt(shunt_id)
+        self._solve(grid)
+        self.assertEqual(self._analyzes(grid), before)
+
+
 if __name__ == "__main__":
     unittest.main()
