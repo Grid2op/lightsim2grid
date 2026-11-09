@@ -585,6 +585,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *    is OpenLoadFlow's model of a branch whose breaker opens at one end only.
          *    For the flows, the current checks and the outer loops it counts as open.
          *    Named at both ends, or also in `branch_ids`, it is opened at both.
+         *  - a static generator leaves the row's injection (its active and reactive power).
          * What it loses is made up by the distributed slack (redistribute_slack shares
          * it OLF-like before the solve), and a bus it strands is handled as a branch
          * contingency strands one (handle_disconnected_grid).
@@ -596,9 +597,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                              const std::vector<int> & load_ids,
                              const std::vector<int> & gen_ids,
                              const std::vector<int> & branch_ids_side1 = std::vector<int>(),
-                             const std::vector<int> & branch_ids_side2 = std::vector<int>()){
+                             const std::vector<int> & branch_ids_side2 = std::vector<int>(),
+                             const std::vector<int> & sgen_ids = std::vector<int>()){
             const ContingencyElements cont = _checked_contingency(branch_ids, shunt_ids, load_ids, gen_ids, "add_contingency",
-                                                                  branch_ids_side1, branch_ids_side2);
+                                                                  branch_ids_side1, branch_ids_side2, sgen_ids);
             // a contingency registration (L2), as add_nk
             clear_batch_inputs();
             ybus_policy_.li_defaults.insert(cont);
@@ -633,9 +635,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                 const std::vector<int> & load_ids,
                                 const std::vector<int> & gen_ids,
                                 const std::vector<int> & branch_ids_side1 = std::vector<int>(),
-                                const std::vector<int> & branch_ids_side2 = std::vector<int>()){
+                                const std::vector<int> & branch_ids_side2 = std::vector<int>(),
+                                const std::vector<int> & sgen_ids = std::vector<int>()){
             const ContingencyElements cont = _checked_contingency(branch_ids, shunt_ids, load_ids, gen_ids, "remove_contingency",
-                                                                  branch_ids_side1, branch_ids_side2);
+                                                                  branch_ids_side1, branch_ids_side2, sgen_ids);
             clear_batch_inputs();
             return ybus_policy_.li_defaults.erase(cont) >= 1;
         }
@@ -699,9 +702,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return res;
         }
         // everything each contingency trips, in row order: (branches, shunts, loads,
-        // generators, branches opened at side 1 only, at side 2 only), each sorted
+        // generators, branches opened at side 1 only, at side 2 only, static generators), each sorted
         using ContingencyTuple = std::tuple<std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>,
-                                            std::vector<int>, std::vector<int> >;
+                                            std::vector<int>, std::vector<int>, std::vector<int> >;
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         std::vector<ContingencyTuple> my_contingencies() const {
@@ -713,7 +716,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                std::vector<int>(cont.loads.begin(), cont.loads.end()),
                                                std::vector<int>(cont.gens.begin(), cont.gens.end()),
                                                std::vector<int>(cont.branches_side1.begin(), cont.branches_side1.end()),
-                                               std::vector<int>(cont.branches_side2.begin(), cont.branches_side2.end())));
+                                               std::vector<int>(cont.branches_side2.begin(), cont.branches_side2.end()),
+                                               std::vector<int>(cont.sgens.begin(), cont.sgens.end())));
             }
             return res;
         }
@@ -1579,7 +1583,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                  const std::vector<int> & gen_ids,
                                                  const char * fun_name,
                                                  const std::vector<int> & branch_ids_side1 = std::vector<int>(),
-                                                 const std::vector<int> & branch_ids_side2 = std::vector<int>()) const {
+                                                 const std::vector<int> & branch_ids_side2 = std::vector<int>(),
+                                                 const std::vector<int> & sgen_ids = std::vector<int>()) const {
             ContingencyElements res;
             for(int el : branch_ids){ _check_ok_id(el, static_cast<int>(n_total_), "powerline / trafo", fun_name); res.branches.insert(el); }
             for(int el : branch_ids_side1){ _check_ok_id(el, static_cast<int>(n_total_), "powerline / trafo", fun_name); res.branches_side1.insert(el); }
@@ -1592,6 +1597,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(int el : shunt_ids){ _check_ok_id(el, _grid_model.get_shunts().nb(), "shunt", fun_name); res.shunts.insert(el); }
             for(int el : load_ids){ _check_ok_id(el, _grid_model.get_loads().nb(), "load", fun_name); res.loads.insert(el); }
             for(int el : gen_ids){ _check_ok_id(el, _grid_model.get_generators().nb(), "generator", fun_name); res.gens.insert(el); }
+            for(int el : sgen_ids){ _check_ok_id(el, _grid_model.get_static_generators().nb(), "static generator", fun_name); res.sgens.insert(el); }
             if(res.empty()){
                 std::ostringstream exc_;
                 exc_ << algo_name() << "::" << fun_name << ": the contingency trips nothing (every list is empty).";
@@ -2673,6 +2679,20 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         std::vector<int> _row_tripped_shunts(size_t) const { return std::vector<int>(); }
+        // what row i's ContingencyAnalysis contingency trips, nullptr anywhere else
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        const ContingencyElements * _row_contingency(size_t i) const {
+            return i < ybus_policy_.li_rows.size() ? &ybus_policy_.li_rows[i] : nullptr;
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        const ContingencyElements * _row_contingency(size_t) const { return nullptr; }
+        bool _sgen_off_in_row(size_t i, int sgen_id) const {
+            const ContingencyElements * cont = _row_contingency(i);
+            return cont != nullptr && cont->sgens.count(sgen_id) > 0;
+        }
+
         // the generators row i's ContingencyAnalysis contingency trips (a ScenarioSweep
         // reads its mask through _gen_off_in_row)
         template<class Y = YbusPolicy, class S = SbusPolicy,
@@ -3999,7 +4019,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // branch id (lines then trafos), and its global / side statuses before
             struct Branch { int id; bool global; bool side1; bool side2; };
             std::vector<Branch> branches;
-            std::vector<int> gens, loads, shunts;
+            std::vector<int> gens, loads, shunts, sgens;
             int n_line = 0;
             void apply(LSGrid & grid){
                 for(auto it = branches.rbegin(); it != branches.rend(); ++it){
@@ -4016,7 +4036,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 for(int g : gens) grid.reactivate_gen(g);
                 for(int l : loads) grid.reactivate_load(l);
                 for(int s : shunts) grid.reactivate_shunt(s);
-                branches.clear(); gens.clear(); loads.clear(); shunts.clear();
+                for(int s : sgens) grid.reactivate_sgen(s);
+                branches.clear(); gens.clear(); loads.clear(); shunts.clear(); sgens.clear();
             }
         };
 
@@ -4066,6 +4087,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(!grid.get_shunts().get_status(s)) continue;
                 grid.deactivate_shunt(s);
                 undo.shunts.push_back(s);
+            }
+            for(int s : cont.sgens){
+                if(!grid.get_static_generators().get_status(s)) continue;
+                grid.deactivate_sgen(s);
+                undo.sgens.push_back(s);
             }
         }
 
@@ -4411,9 +4437,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _push_switchable_to_algo();
         }
 
-        // what the loads and shunts row i's contingency trips take out of the balance, as
-        // power LOST (generator convention): minus their consumption, each counted once,
-        // where it stood in the base grid (the slack pre-pass' term (e))
+        // what the loads, shunts and static generators row i's contingency trips take out
+        // of the balance, as power LOST (generator convention): their injection, each counted
+        // once, where it stood in the base grid (the slack pre-pass' term (e))
         real_type _row_trip_lost_mw(size_t i) const {
             real_type lost = 0.;
             const auto & loads = _grid_model.get_loads();
@@ -4427,6 +4453,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(!shunts.get_status()[static_cast<size_t>(shunt_id)]) continue;
                 if(shunts.get_bus_id()(shunt_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
                 lost -= shunts.get_target_p()(shunt_id);
+            }
+            if(const ContingencyElements * cont = _row_contingency(i)){
+                const auto & sgens = _grid_model.get_static_generators();
+                for(int sgen_id : cont->sgens){
+                    if(!sgens.get_status()[static_cast<size_t>(sgen_id)]) continue;
+                    if(sgens.get_bus_id()(sgen_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
+                    lost += _sgen_target_p_in_row(i, sgen_id);
+                }
             }
             return lost;
         }
@@ -4835,7 +4869,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         generators, 1., in_island,
                         [&](int gen_id){ return gen_off(gen_id) ? 0. : gen_p_row(gen_id); });
                     lost_mw += slack_redistribution::sum_setpoints_if(
-                        sgens, 1., in_island, [this, i](int sgen_id){ return this->_sgen_target_p_in_row(i, sgen_id); });
+                        sgens, 1., in_island, [this, i](int sgen_id){
+                            return this->_sgen_off_in_row(i, sgen_id) ? 0. : this->_sgen_target_p_in_row(i, sgen_id); });
                     lost_mw += slack_redistribution::sum_setpoints_if(
                         loads, -1., in_island, [this, i](int load_id){
                             return this->_load_leaves_base_bus(i, load_id) ? 0. : this->_load_target_p_in_row(i, load_id); });
@@ -4852,9 +4887,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 lost_mw += _row_injection_change_lost_mw(i);
                 // (d) what the row's topological action moves, disconnects or reactivates
                 lost_mw += _row_topo_lost_mw(i, in_island_solver);
-                // (e) the loads and shunts the row's contingency trips (its generators are
-                // (a)): their consumption leaves the balance, stranded or not ((b) leaves
-                // them out)
+                // (e) the loads, shunts and static generators the row's contingency trips
+                // (its generators are (a)): their injection leaves the balance, stranded or
+                // not ((b) leaves them out)
                 lost_mw += _row_trip_lost_mw(i);
                 if(outer){
                     // the DistributedSlack loop shares it (see OuterRowView::lost_p_mw). Even

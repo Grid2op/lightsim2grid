@@ -8344,7 +8344,8 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
       OpenLoadFlow models a branch whose breaker opens at one end only (see
       :func:`lightsim2grid.network.ContingencyPropagator.opened_sides`). Its flows read 0, it is not checked against
       its current limits and the outer loops see it as open, as for a branch opened at both ends. A branch named at
-      both sides, or also in ``branch_ids``, is opened at both.
+      both sides, or also in ``branch_ids``, is opened at both;
+    - a static generator of ``sgen_ids`` leaves the injection, its active and reactive power.
 
     What the contingency loses is made up by the distributed slack (``redistribute_slack`` shares it OLF-like before
     the solve), and a bus it strands is handled as a branch contingency strands one (``handle_disconnected_grid``).
@@ -8402,7 +8403,7 @@ const std::string DocContingencyAnalysis::my_contingencies = R"mydelimiter(
     Returns
     -------
     my_contingencies: ``list``
-        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2)`` per contingency,
+        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2, sgen_ids)`` per contingency,
         each a sorted list (the last two: the branches opened at that side only).
         :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults` lists the branches opened at both
         ends only.

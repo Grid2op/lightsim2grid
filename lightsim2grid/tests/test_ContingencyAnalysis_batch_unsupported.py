@@ -182,7 +182,7 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
             self.assertGreater(v_start.shape[0], 0)
             if outer:
                 ref.set_resume_outer_state(True)
-        branches, shunts, loads, gens, side1, side2 = (list(c) for c in cont)
+        branches, shunts, loads, gens, side1, side2 = (list(c) for c in cont[:6])
         for br in branches:
             if br < self.n_line:
                 ref.deactivate_powerline(int(br))

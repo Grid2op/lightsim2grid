@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips static generators (``sgen_ids``). Issue #281.
+  ``my_contingencies`` gains that list.
 - [ADDED] ``ContingencyPropagator.add_contingencies`` (and ``propagate_contingencies``) read powsybl's
   contingency lists, a json file included; ``contingency_ids`` gives their ids. Grouping ignores busbar names.
 - [FIXED] batches with outer loops: a voltage-control group losing a controller to an island, its other

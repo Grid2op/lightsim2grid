@@ -819,13 +819,13 @@ class ContingencyAnalysis(object):
         self.__computed = False   # see add_single_contingency
 
     @staticmethod
-    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=()):
+    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=(), *_):
         """internal: the key a contingency is known by on this side. A branch-only one is
         the flat tuple of its branch ids; one tripping shunts, loads or generators is the
         nested tuple of its four lists. Each list sorted, every id once: the c++ side keeps
         sets, and `my_contingencies` must give back the key that was registered. (This class
-        never opens a branch at one end only: the last two lists `my_contingencies` gives
-        are empty.)"""
+        never opens a branch at one end only, nor trips anything else: the other lists
+        `my_contingencies` gives are empty.)"""
         def _ids(stuff):
             return tuple(sorted({int(el) for el in stuff}))
         if not shunts and not loads and not gens:

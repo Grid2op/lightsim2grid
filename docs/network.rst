@@ -629,17 +629,19 @@ each distinct contingency once:
         return {el.name: i for i, el in enumerate(elements)}
     branch_id = {name: i for i, name in enumerate(list(grid.get_line_names()) + list(grid.get_trafo_names()))}
     kinds = (branch_id, ids(grid.get_shunts()), ids(grid.get_loads()), ids(grid.get_generators()))
+    other_kinds = (ids(grid.get_static_generators()),)
 
     ca = ContingencyAnalysisCPP(grid)
     ca.handle_disconnected_grid = True
     keys = []
     for cont, opened in zip(unique, unique_sides):
-        # what is tripped (all its ends), then the branches opened at side 1, at side 2:
-        # the six lists of add_contingency, each sorted, as my_contingencies() gives them
+        # what is tripped (all its ends), then the branches opened at side 1, at side 2, then
+        # the other kinds: the lists of add_contingency, each sorted, as my_contingencies() gives them
         tripped = [name for name in cont if name not in opened]
         key = tuple(tuple(sorted(kind[name] for name in tripped if name in kind)) for kind in kinds)
         key += tuple(tuple(sorted(branch_id[name] for name, side in opened.items()
                                   if side == end and name in branch_id)) for end in (1, 2))
+        key += tuple(tuple(sorted(kind[name] for name in tripped if name in kind)) for kind in other_kinds)
         keys.append(key)
         ca.add_contingency(*key)
     ca.compute(v_init, max_iter, tol)
@@ -649,7 +651,7 @@ each distinct contingency once:
     V_unique = ca.get_voltages()[[row[key] for key in keys]]
     V = V_unique[inverse]   # one row per contingency added
 
-A shunt leaves the admittance matrix, a load and a generator the injection (a generator that
+A shunt leaves the admittance matrix, a load, a generator and a static generator the injection (a generator that
 was the last one regulating its bus turns that bus PQ), and what the contingency loses is made
 up by the distributed slack. An element the grid does not model under that name (a branch fused
 away as a zero impedance one, for example) is left connected by the loop above; one the

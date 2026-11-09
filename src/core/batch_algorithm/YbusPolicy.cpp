@@ -230,6 +230,25 @@ void YbusPolicy::Contingency::_append_gen_trips(const std::vector<int> & gen_ids
     }
 }
 
+void YbusPolicy::Contingency::_append_sgen_trips(const std::set<int> & sgen_ids,
+                                                 const LSGrid & grid_model,
+                                                 bool ac_solver_used,
+                                                 const SolverBusIdVect & id_me_to_solver,
+                                                 std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    const auto & sgens = grid_model.get_static_generators();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    const Eigen::Ref<const RealVect> target_p = sgens.get_target_p();
+    const Eigen::Ref<const RealVect> target_q = sgens.get_target_q();
+    for(int sgen_id : sgen_ids){
+        const int bus = live_solver_bus(sgens, sgen_id, id_me_to_solver);
+        if(bus < 0) continue;
+        // a static generator injects p + jq: taken back
+        const real_type q = ac_solver_used ? target_q(sgen_id) : 0.;
+        sbus_dp.push_back({bus, -per_unit(cplx_type(target_p(sgen_id), q), sn_mva)});
+    }
+}
+
 void YbusPolicy::Contingency::init_li_coeffs(
     const LSGrid & grid_model,
     bool ac_solver_used,
@@ -256,6 +275,7 @@ void YbusPolicy::Contingency::init_li_coeffs(
                            grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         _append_gen_trips(std::vector<int>(this_cont.gens.begin(), this_cont.gens.end()),
                           grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
+        _append_sgen_trips(this_cont.sgens, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         li_coeffs.push_back(std::move(coeffs));
         ++cont_id;
     }

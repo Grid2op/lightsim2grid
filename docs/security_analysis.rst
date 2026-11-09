@@ -75,7 +75,7 @@ contingency, and the distributed slack makes up what is lost (`redistribute_slac
 OpenLoadFlow-style before the solve). `run()` reports, for each contingency, the branches in
 `element_ids` and the rest in `shunt_ids` / `load_ids` / `gen_ids`. The C++ class
 :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP` takes ids
-(`add_contingency(branch_ids, shunt_ids, load_ids, gen_ids)`), and `my_contingencies()` lists
+(`add_contingency(branch_ids, shunt_ids, load_ids, gen_ids, sgen_ids=...)`), and `my_contingencies()` lists
 what each row trips.
 
 Two limits for now: a generator regulating a remote bus, or standing on a bus a control group

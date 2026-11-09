@@ -89,7 +89,7 @@ class TestContingencyAnalysisCPP(_Base):
         V = np.asarray(ca.get_voltages())
         conts = ca.my_contingencies()
         self.assertEqual(len(conts), len(self.TRIPS))
-        for row, (br, sh, ld, gn, br1, br2) in enumerate(conts):
+        for row, (br, sh, ld, gn, br1, br2, *_) in enumerate(conts):
             self.assertEqual((br1, br2), ([], []))
             self.assertTrue(ca.converged_mask()[row])
             np.testing.assert_allclose(V[row], self._reference_V(br, sh, ld, gn), atol=1e-8, rtol=0.)
@@ -102,9 +102,9 @@ class TestContingencyAnalysisCPP(_Base):
         ca.add_contingency_load(1)
         conts = ca.my_contingencies()
         self.assertEqual(len(conts), 4)
-        self.assertIn(([], [0], [], [], [], []), [tuple(c) for c in conts])
-        self.assertIn(([], [], [1, 2], [], [], []), [tuple(c) for c in conts])
-        self.assertIn(([], [], [], [self.gen_alone], [], []), [tuple(c) for c in conts])
+        self.assertIn(([], [0], [], [], [], [], []), [tuple(c) for c in conts])
+        self.assertIn(([], [], [1, 2], [], [], [], []), [tuple(c) for c in conts])
+        self.assertIn(([], [], [], [self.gen_alone], [], [], []), [tuple(c) for c in conts])
         # my_defaults lists the branches only
         self.assertEqual(ca.my_defaults(), [[], [], [], []])
         self.assertTrue(ca.remove_contingency(load_ids=[1, 2]))
@@ -160,7 +160,7 @@ class TestOneSideTrips(_Base):
         ca.add_contingency(branch_ids_side1=[3, 5], branch_ids_side2=[3])
         ca.add_contingency(branch_ids=[4], branch_ids_side2=[4])
         conts = sorted(tuple(c) for c in ca.my_contingencies())
-        self.assertEqual(conts, [([3], [], [], [], [5], []), ([4], [], [], [], [], [])])
+        self.assertEqual(conts, [([3], [], [], [], [5], [], []), ([4], [], [], [], [], [], [])])
         self.assertTrue(ca.remove_contingency(branch_ids=[3], branch_ids_side1=[5]))
         self.assertEqual(len(ca.my_contingencies()), 1)
         with self.assertRaises(RuntimeError):
