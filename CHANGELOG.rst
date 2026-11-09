@@ -350,6 +350,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   of each side.
 - [ADDED] pandapower converter: a phase tap changer (``set_trafo_phase_tap_changer``) for the taps that move the
   phase (asymmetrical, symmetrical, ideal, tabular with an angle), and a ratio one for tabular taps (#274).
+- [ADDED] pandapower converter: tabular shunts (``step_dependency_table``): the power of the step from
+  ``shunt_characteristic_table``, which was ignored, and its rows as sections, to move them or regulate.
 
 
 [1.3.0] 2026-11-03
