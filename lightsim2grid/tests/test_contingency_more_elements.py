@@ -21,7 +21,7 @@ import pandapower.networks as pn
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore")
     from lightsim2grid.gridmodel import init_from_pandapower
-from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
+from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP, ScenarioSweepCPP
 from lightsim2grid.algorithm import AlgorithmType
 
 MAX_IT = 30
@@ -44,6 +44,11 @@ class _ContingencyMoreElements(unittest.TestCase):
     to trip an element of it: `ARG` names the list of `add_contingency`, `_deactivate` does it
     on a grid."""
     ARG = None
+    SETTER = None
+
+    @staticmethod
+    def _container(grid):
+        raise NotImplementedError
 
     @staticmethod
     def _net():
@@ -93,6 +98,35 @@ class _ContingencyMoreElements(unittest.TestCase):
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         return ca
 
+    def _sweep(self, trips, grid=None, dc=False, **attributes):
+        """One row per `(element ids, branches)` of `trips`, as masks (a branch of the grid is a line here)."""
+        grid = self.grid if grid is None else grid
+        sweep = ScenarioSweepCPP(grid)
+        if dc:
+            sweep.change_algorithm(AlgorithmType.DC_SparseLU)
+        for name, value in attributes.items():
+            setattr(sweep, name, value)
+        nb_el = len(self._container(grid))
+        mask = np.zeros((len(trips), nb_el), dtype=bool)
+        line_mask = np.zeros((len(trips), self.n_line), dtype=bool)
+        for row, (el_ids, branches) in enumerate(trips):
+            mask[row, list(el_ids)] = True
+            line_mask[row, list(branches)] = True
+        getattr(sweep, self.SETTER)(mask)
+        sweep.set_contingency_lines(line_mask)
+        return sweep
+
+    def _check_sweep(self, trips, sweep, dc=False, angles_only=False):
+        sweep.compute(1.0 * self.v0, MAX_IT, TOL)
+        V = np.asarray(sweep.get_voltages())
+        for row, (el_ids, branches) in enumerate(trips):
+            self.assertTrue(sweep.converged_mask()[row], (el_ids, branches))
+            ref = self._reference(el_ids, branches, dc=dc)
+            if angles_only:
+                np.testing.assert_allclose(np.angle(V[row]), np.angle(ref), atol=1e-8, rtol=0.)
+            else:
+                np.testing.assert_allclose(V[row], ref, atol=1e-8, rtol=0.)
+
     def _row(self, ca, el_ids, branches=()):
         pos = self._arg_position()
         for row, cont in enumerate(ca.my_contingencies()):
@@ -107,7 +141,53 @@ class _ContingencyMoreElements(unittest.TestCase):
 
 class TestStaticGenerators(_ContingencyMoreElements):
     ARG = "sgen_ids"
+    SETTER = "set_contingency_sgens"
     TRIPS = [([0], []), ([1], []), ([0, 1], []), ([0], [5])]
+
+    @staticmethod
+    def _container(grid):
+        return grid.get_static_generators()
+
+    def test_scenario_sweep(self):
+        self._check_sweep(self.TRIPS, self._sweep(self.TRIPS))
+
+    def test_scenario_sweep_dc(self):
+        self._check_sweep(self.TRIPS, self._sweep(self.TRIPS, dc=True), dc=True)
+
+    def test_scenario_sweep_takes_the_row_s_own_power_out(self):
+        # the tripped unit is given another power in its row: nothing of it must be left
+        trips = [([0], []), ([1], [])]
+        sweep = self._sweep(trips)
+        base = np.array([s.target_p_mw for s in self.grid.get_static_generators()])
+        sweep.modify_sgen_p(np.tile(base, (2, 1)) * np.array([[3., 1.], [1., 2.]]))
+        sweep.compute(1.0 * self.v0, MAX_IT, TOL)
+        V = np.asarray(sweep.get_voltages())
+        for row, (el_ids, branches) in enumerate(trips):
+            ref = copy.deepcopy(self.grid)
+            kept = 1 - el_ids[0]
+            ref.change_p_sgen(kept, float(base[kept] * [[3., 1.], [1., 2.]][row][kept]))
+            ref.deactivate_sgen(el_ids[0])
+            if branches:
+                ref.deactivate_powerline(branches[0])
+            ref.tell_solver_need_reset()
+            np.testing.assert_allclose(V[row], ref.ac_pf(1.0 * self.v0, MAX_IT, TOL), atol=1e-8, rtol=0.)
+
+    def test_scenario_sweep_redistribute_slack(self):
+        for gen in self.grid.get_generators():
+            self.grid.add_gen_slackbus(gen.id, 1.)
+        sweep = self._sweep([([0], [])], redistribute_slack=True)
+        sweep.compute(1.0 * self.v0, MAX_IT, TOL)
+        ref = copy.deepcopy(self.grid)
+        ref.deactivate_sgen(0)
+        ref.redistribute_active_power(8.)
+        ref.tell_solver_need_reset()
+        np.testing.assert_allclose(np.asarray(sweep.get_voltages())[0], ref.ac_pf(1.0 * self.v0, MAX_IT, TOL),
+                                   atol=1e-6, rtol=0.)
+
+    def test_scenario_sweep_checks_the_mask(self):
+        sweep = ScenarioSweepCPP(self.grid)
+        with self.assertRaises(RuntimeError):
+            sweep.set_contingency_sgens(np.zeros((1, 3), dtype=bool))
 
     @staticmethod
     def _net():

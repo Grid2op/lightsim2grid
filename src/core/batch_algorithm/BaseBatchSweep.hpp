@@ -445,6 +445,19 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         /**
+         * ScenarioSweep only: row i, column s True means "disconnect static generator s for
+         * step i". An injection only, as set_contingency_loads: the row's active power (its
+         * own modify_sgen_p row, or the grid's) and the reactive setpoint leave its Sbus.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_sgens(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_static_generators().nb()), "set_contingency_sgens");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_sgens");
+            sbus_policy_.sgen_off = mask;
+        }
+
+        /**
          * ScenarioSweep only: one topological action per row (a `TopoAction`, grid2op
          * semantics: set_bus on loads / generators / storage units / line and trafo
          * ends, set_line_status), played by that row on top of its injections and
@@ -2721,9 +2734,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
         const ContingencyElements * _row_contingency(size_t) const { return nullptr; }
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _sgen_off_in_row(size_t i, int sgen_id) const {
+            return sbus_policy_.sgen_off_in(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(sgen_id));
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         bool _sgen_off_in_row(size_t i, int sgen_id) const {
             const ContingencyElements * cont = _row_contingency(i);
             return cont != nullptr && cont->sgens.count(sgen_id) > 0;
+        }
+        // the static generators row i trips (sorted ids): its contingency or its mask
+        std::vector<int> _row_tripped_sgens(size_t i) const {
+            std::vector<int> res;
+            const int nb_sgen = _grid_model.get_static_generators().nb();
+            for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id) if(_sgen_off_in_row(i, sgen_id)) res.push_back(sgen_id);
+            return res;
         }
         bool _hvdc_off_in_row(size_t i, int hvdc_id) const {
             const ContingencyElements * cont = _row_contingency(i);
@@ -4516,13 +4541,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(shunts.get_bus_id()(shunt_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
                 lost -= shunts.get_target_p()(shunt_id);
             }
+            const auto & sgens = _grid_model.get_static_generators();
+            for(int sgen_id : _row_tripped_sgens(i)){
+                if(!sgens.get_status()[static_cast<size_t>(sgen_id)]) continue;
+                if(sgens.get_bus_id()(sgen_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
+                lost += _sgen_target_p_in_row(i, sgen_id);
+            }
             if(const ContingencyElements * cont = _row_contingency(i)){
-                const auto & sgens = _grid_model.get_static_generators();
-                for(int sgen_id : cont->sgens){
-                    if(!sgens.get_status()[static_cast<size_t>(sgen_id)]) continue;
-                    if(sgens.get_bus_id()(sgen_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
-                    lost += _sgen_target_p_in_row(i, sgen_id);
-                }
                 const auto & storages = _grid_model.get_storages();
                 for(int storage_id : cont->storages){
                     if(!storages.get_status()[static_cast<size_t>(storage_id)]) continue;
@@ -5337,7 +5362,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 exc_ << algo_name() << "::" << fun_name << ": the injections and/or the contingency "
                         "masks were modified (modify_gen_p / modify_sgen_p / modify_load_p / "
                         "modify_load_q / set_contingency_lines / set_contingency_trafos / "
-                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / "
+                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / set_contingency_sgens / "
                         "set_topo_actions) after the "
                         "last compute(); call compute() again before reading the flows.";
                 throw std::runtime_error(exc_.str());

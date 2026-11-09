@@ -232,6 +232,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [ADDED] ``ScenarioSweep.set_contingency_sgens``: per-row trips of static generators. Issue #281.
 - [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips HVDC lines (``hvdc_ids``). AC emulation and
   voltage-regulating stations are reported ``BATCH_UNSUPPORTED``. Issue #281.
 - [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips static var compensators (``svc_ids``). Those a

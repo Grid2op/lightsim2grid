@@ -192,6 +192,9 @@ What that changes in the balance is made up by the distributed slack, and with
 `redistribute_slack = True` it is shared OpenLoadFlow-style before the solve, as for a
 generator. A row naming a load in both the mask and its topological action is refused.
 
+`set_contingency_sgens(mask)` (shape `(n_simul, n_sgen)`) does the same for the static generators:
+the row's active power (`modify_sgen_p`, or the grid's) and the reactive setpoint leave its injection.
+
 .. warning::
 
     With an algorithm running outer loops among which a ShuntVoltageControl one, `compute()`

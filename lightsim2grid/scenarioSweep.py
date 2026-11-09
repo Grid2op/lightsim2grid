@@ -520,6 +520,25 @@ class ScenarioSweep:
         self.computer.set_contingency_loads(mask)
         self.__computed = False
 
+    def _set_element_mask(self, setter, mask, container, kind):
+        """internal: a per-step mask of the elements of one kind of the grid"""
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        if mask.shape[1] != len(container):
+            raise RuntimeError(f"The number of {kind} on the grid ({len(container)}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        getattr(self.computer, setter)(mask)
+        self.__computed = False
+
+    def set_contingency_sgens(self, mask):
+        """Per-step static generator contingency mask, shape ``(n_simul, n_sgen)``, dtype bool.
+        ``True`` means "disconnect this static generator for this simulation".
+
+        An injection only: the step's active power (:func:`modify_sgen_p`, or the grid's) and
+        the reactive setpoint leave the injection, and the distributed slack makes up the balance.
+        """
+        self._set_element_mask("set_contingency_sgens", mask, self.grid2op_env.backend._grid.get_static_generators(),
+                               "static generators")
+
     def set_topo_actions(self, actions):
         """One topological action per row, played by that row on top of its injections
         and contingency masks.

@@ -1130,6 +1130,11 @@ void bind_batch(py::module_& m) {
              "running the ShuntVoltageControl outer loop, a step naming a shunt that "
              "regulates a voltage is left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see "
              "get_batch_unsupported_reasons): that loop owns its sections.")
+        .def("set_contingency_sgens", &ScenarioSweep::set_contingency_sgens<>, py::arg("mask"),
+             "Per-step static generator contingency mask, shape (n_simul, n_sgen), dtype bool. "
+             "True means 'disconnect this static generator for this simulation': the step's "
+             "active power (modify_sgen_p, or the grid's) and the reactive setpoint leave its "
+             "injection, and the distributed slack makes up the balance.")
         .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
              "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "
              "True means 'disconnect this load for this simulation': the step's own load "
