@@ -387,6 +387,17 @@ the same (see the ``lm_algorithm`` and ``dist_slack_algorithm`` examples): witho
 it, a row's ``modify_gen_v`` on a generator that holds a bus remotely is solved at
 the grid's own set-point.
 
+Optional: a batch row tripping a voltage-control group's controller
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A batch row can take a generator that is a controller of a voltage-control group out. An
+algorithm that can do it overrides ``supports_tripped_voltage_controllers`` (``true``),
+``set_may_trip_voltage_controllers`` (before the sparsity it affects, as
+``set_may_mask_voltage_control``) and ``set_tripped_voltage_controllers`` (the positions of the
+row's controllers, in the plan's list). One deriving from the built-in Newton-Raphson forwards
+them to its ``NRSystem``. With the default (``false``), the batch reports those rows
+``BATCH_UNSUPPORTED``.
+
 Nothing to do: the outer-loop hooks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

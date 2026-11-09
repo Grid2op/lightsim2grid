@@ -472,10 +472,10 @@ class ScenarioSweep:
         merely masks the equation of the buses that are still PV. The whole sweep keeps
         running on a single analysis, as it did before this axis existed.
 
-        Only generators regulating their **own** bus are supported for now. A step
-        whose mask names a generator that regulates a remote bus, or one whose bus a
-        control group holds (a remote generator, an SVC or an HVDC converter station),
-        is left out of the batch: ``LimitViolationType.BATCH_UNSUPPORTED``, with the reason in
+        A generator that is a controller of a voltage-control group (it regulates a remote
+        bus, or a bus such a group holds) leaves its group for the step, the others keep
+        regulating. A step taking out every controller of a group regulating a slack bus is
+        left out of the batch: ``LimitViolationType.BATCH_UNSUPPORTED``, with the reason in
         ``get_batch_unsupported_reasons()``.
         """
         mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)

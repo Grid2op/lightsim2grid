@@ -767,8 +767,8 @@ void bind_batch(py::module_& m) {
                "The solver was invoked for this contingency but did not converge (element_type is "
                "ViolationElementType.GRID).")
         .value("BATCH_UNSUPPORTED", LimitViolationType::BATCH_UNSUPPORTED,
-               "The batch does not support what this contingency trips (eg a generator regulating "
-               "a remote bus): it was left out of the batch instead of failing the whole "
+               "The batch does not support what this contingency trips (eg a static var compensator "
+               "regulating a voltage): it was left out of the batch instead of failing the whole "
                "compute(). Unlike NOT_SIMULATED, a one-off solve of it is possible. "
                "get_batch_unsupported_reasons() says why, per row (element_type is "
                "ViolationElementType.GRID).")
@@ -1117,11 +1117,10 @@ void bind_batch(py::module_& m) {
              "candidate generators is negligible; masking every generator on the grid "
              "grows the Jacobian's dimension by roughly the number of PV buses, and "
              "every factorization and solve pays for it.\n\n"
-             "Only generators regulating their OWN bus are supported. A step whose mask "
-             "names a generator that regulates a remote bus, or one whose bus a control "
-             "group holds (a remote generator, an SVC or an HVDC converter station), is "
-             "left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see get_batch_unsupported_reasons): remote "
-             "voltage control is not supported yet.")
+             "A generator that is a controller of a voltage-control group leaves its group for "
+             "the step, the others keep regulating. A step taking out every controller of a group "
+             "regulating a slack bus is left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see get_batch_unsupported_reasons): remote "
+             "the batch cannot free that bus' magnitude.")
         .def("set_contingency_shunts", &ScenarioSweep::set_contingency_shunts<>, py::arg("mask"),
              "Per-step shunt contingency mask, shape (n_simul, n_shunt), dtype bool. "
              "True means 'disconnect this shunt for this simulation'. A shunt is an "

@@ -171,11 +171,11 @@ the change in the losses it causes is left to the powerflow's distributed slack.
 
 .. warning::
 
-    Only generators that regulate their **own** bus are supported for now. `compute()`
-    raises if the mask names a generator that regulates a remote bus, or one standing on
-    a bus whose voltage a control group holds (a remote generator, an SVC or an HVDC
-    converter station). Those go through a different part of the Jacobian, with columns
-    and rows of their own that this feature does not yet reserve and mask.
+    A generator that is a controller of a voltage-control group (it regulates a remote bus, or
+    a bus such a group holds) is taken out of its group for the row: the others keep regulating,
+    and the regulated bus is free when none is left. A row taking out every controller of a group
+    that regulates a slack bus is reported `BATCH_UNSUPPORTED`, and so is one with an algorithm
+    that cannot take a controller out of a row (a plugin without the capability).
 
 Shunt and load contingencies
 ------------------------------------

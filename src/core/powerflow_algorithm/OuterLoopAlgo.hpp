@@ -235,6 +235,11 @@ public:
     void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const override;
     void set_masked_buses(const std::vector<int> & solver_bus_ids) override { inner_.algo().set_masked_buses(solver_bus_ids); }
     void set_may_mask_voltage_control(bool val) override { inner_.algo().set_may_mask_voltage_control(val); }
+    bool supports_tripped_voltage_controllers() const override { return inner_.algo().supports_tripped_voltage_controllers(); }
+    void set_may_trip_voltage_controllers(bool val) override { inner_.algo().set_may_trip_voltage_controllers(val); }
+    void set_tripped_voltage_controllers(const std::vector<int> & controllers) override {
+        inner_.algo().set_tripped_voltage_controllers(controllers);
+    }
     void set_voltage_control_v_set(const Eigen::Ref<const RealVect> & v_set) override { inner_.algo().set_voltage_control_v_set(v_set); }
     bool supports_pv_pinning() const override { return inner_.algo().supports_pv_pinning(); }
     void set_start_polar_cache(bool val) override { inner_.algo().set_start_polar_cache(val); }

@@ -390,11 +390,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * (see _maybe_prepare_gen_contingency / NRSystem::set_pv_pinned_buses). One
          * analysis, one factorization, refactorizations after that -- as before.
          *
-         * Only generators that regulate their OWN bus are supported. A generator that
-         * regulates a remote bus, or one whose bus is held by an SVC or an HVDC
-         * converter station, is rejected by compute(): those go through the
-         * VoltageControl extension, whose own Jacobian rows and columns this does not
-         * yet know how to reserve and mask.
+         * A generator that is a controller of a voltage-control group leaves its group for
+         * the row (see _maybe_prepare_gen_contingency); a row taking out every controller of
+         * a group regulating a slack bus is left out of the batch.
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -639,9 +637,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *    one that does not regulate voltage), and the distributed slack is
          *    re-weighted without it. When it is the last one regulating its own bus,
          *    that bus turns PQ for the row, as set_contingency_gens does it on a
-         *    ScenarioSweep (the same machinery, see _maybe_prepare_gen_contingency, and
-         *    the same scope: a generator regulating a remote bus, or on a bus a control
-         *    group holds, is refused by compute()).
+         *    ScenarioSweep (the same machinery, see _maybe_prepare_gen_contingency). A
+         *    controller of a voltage-control group leaves its group for the row.
          *  - a branch of `branch_ids_side1` (`branch_ids_side2`) is opened at side 1 (2)
          *    only: its other end stays connected and keeps the Kron-reduced part of the
          *    branch (its charging), as a branch open at one end in the grid does. That
@@ -3973,6 +3970,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     bool some_live = false;
                     for(int off = 0; off < ctrl.grp_count(g) && !some_live; ++off){
                         if(ctrl.is_held(first + off)) continue;
+                        if(ctrl.kind(first + off) == VoltageControlSolverData::GEN &&
+                           _gen_off_in_row(row, ctrl.elem_id(first + off))) continue;  // the row trips it
                         some_live = !is_masked(masked, ctrl.bus(first + off));
                     }
                     if(some_live){ _skip_mask[row] = 1; break; }
@@ -4278,6 +4277,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_gen_contingency(size_t nb_steps){
+            _row_tripped_controllers_.clear();
             _switchable_buses_.clear();
             _row_pv_to_pq_.clear();
             _row_pv_pinned_.clear();
@@ -4343,31 +4343,60 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
 
-            // ---- 1. leave out what this version cannot model -----------------------
-            // Only a generator pinning its OWN bus is in scope. A remote controller --
-            // or a bus a group (remote generator, SVC, HVDC station) controls -- lives
-            // in the VoltageControl extension, which owns Jacobian columns and rows of
-            // its own that nothing here reserves or masks. A row taking out such a
-            // generator is left out of the batch (see _mark_row_batch_unsupported); the steps below skip it,
-            // so it reserves nothing in the Jacobian either.
-            const std::set<int> & group_buses = _grid_model.get_ac_voltage_control_plan().group_controlled_buses();
+            // ---- 1. the generators that are controllers of a voltage-control group -----
+            // A remote controller, or a local one on a bus a group holds, lives in the
+            // VoltageControl extension: its Q is an unknown of the Jacobian. The row tells the
+            // algorithm it is gone, in a pattern reserved up front (_row_tripped_controllers_).
+            // What cannot be done that way leaves the row out of the batch; the steps below skip it.
+            const VoltageControlPlan & vc_plan = _grid_model.get_ac_voltage_control_plan();
+            const VoltageControlSolverData & vc_ctrl = vc_plan.controllers();
+            const std::set<int> & group_buses = vc_plan.group_controlled_buses();
+            const std::set<int> & free_vm_slack = vc_plan.free_vm_slack_buses();
+            std::map<int, int> controller_of_gen;
+            for(int c = 0; c < vc_ctrl.n_controllers(); ++c){
+                if(vc_ctrl.kind(c) == VoltageControlSolverData::GEN) controller_of_gen[vc_ctrl.elem_id(c)] = c;
+            }
+            const bool can_trip = _algo.supports_tripped_voltage_controllers();
             for(size_t step = 0; step < nb_steps; ++step){
+                std::vector<int> tripped;
                 for(int gen_id : gens_off[step]){
-                    const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
-                    const bool remote = generators.is_remote_voltage_controller(gen_id);
-                    const bool in_group = bus_id_me != BaseConstants::_deactivated_bus_id &&
-                                          group_buses.find(bus_id_me) != group_buses.end();
-                    if(!remote && !in_group) continue;
+                    const auto it = controller_of_gen.find(gen_id);
+                    if(it != controller_of_gen.end() && can_trip){
+                        tripped.push_back(it->second);
+                        continue;
+                    }
+                    if(it == controller_of_gen.end() && !generators.is_remote_voltage_controller(gen_id)) continue;
                     std::ostringstream msg;
-                    msg << "disconnects generator " << gen_id
-                        << (remote ? ", which regulates the voltage of a remote bus"
-                                   : ", which stands on a bus whose voltage a control group holds (a remote "
-                                     "generator, an SVC or an HVDC converter station)")
-                        << ": only generators regulating their own bus can be disconnected by the batch for now";
+                    msg << "disconnects generator " << gen_id << ", which regulates the voltage of a remote bus or "
+                           "stands on a bus a control group holds: the algorithm " << _algo.get_name()
+                        << " cannot take a controller out of a row";
                     _mark_row_batch_unsupported(step, msg.str());
                     break;
                 }
+                if(!_row_is_batch_unsupported(step) && !tripped.empty()){
+                    std::sort(tripped.begin(), tripped.end());
+                    // a group left with nobody regulating frees its regulated bus: not a slack bus,
+                    // whose magnitude nothing would hold any more
+                    for(int g = 0; g < vc_ctrl.n_groups(); ++g){
+                        if(free_vm_slack.count(vc_ctrl.reg_bus(g)) == 0) continue;
+                        bool someone_left = false, one_tripped = false;
+                        for(int c = vc_ctrl.grp_start(g); c < vc_ctrl.grp_start(g) + vc_ctrl.grp_count(g); ++c){
+                            if(std::binary_search(tripped.begin(), tripped.end(), c)) one_tripped = true;
+                            else if(!vc_ctrl.is_held(c)) someone_left = true;
+                        }
+                        if(!one_tripped || someone_left) continue;
+                        std::ostringstream msg;
+                        msg << "disconnects every controller of the group regulating a slack bus (solver bus "
+                            << vc_ctrl.reg_bus(g) << "): that bus' magnitude cannot be freed by the batch for now";
+                        _mark_row_batch_unsupported(step, msg.str());
+                        break;
+                    }
+                }
                 if(_row_is_batch_unsupported(step)) gens_off[step].clear();
+                else if(!tripped.empty()){
+                    if(_row_tripped_controllers_.empty()) _row_tripped_controllers_.assign(nb_steps, std::vector<int>());
+                    _row_tripped_controllers_[step].swap(tripped);
+                }
             }
 
             // ---- 2. which bus does each local voltage controller pin? --------------
@@ -4377,6 +4406,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::map<int, std::vector<int> > gens_of_bus;  // solver bus -> its local controllers
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
                 if(!generators.is_local_voltage_controller(gen_id)) continue;
+                if(controller_of_gen.count(gen_id) > 0) continue;  // a group holds its bus, not the PV path
                 const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
                 if(bus_id_me == BaseConstants::_deactivated_bus_id) continue;
                 const int bus_solver = id_me_to_solver[bus_id_me].cast_int();
@@ -4770,6 +4800,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // included: _algo is a member, and what a previous compute() reserved on it has
         // to be taken back or the next one solves a bus as PQ that nothing pins.
         void _push_switchable_to_algo(){
+            _algo.set_may_trip_voltage_controllers(!_row_tripped_controllers_.empty());
+            _algo.set_tripped_voltage_controllers(std::vector<int>());
             _algo.set_switchable_vm_buses(_switchable_buses_);
             _algo.set_pv_pinned_buses(_switchable_buses_);
             // same reason as in _maybe_prepare_masks: a Q row pinned to identity in
@@ -5207,6 +5239,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
         }
 
+        // the controllers of the voltage-control groups row i trips, for its solves
+        void _apply_row_tripped_controllers(size_t i, AlgorithmSelector & algo) const {
+            if(_row_tripped_controllers_.empty()) return;
+            algo.set_tripped_voltage_controllers(_row_tripped_controllers_[i]);
+        }
+
         // whether row i turns some switchable bus PQ -- only then is the algorithm's
         // pinning (all switchable buses, its resting state) worth touching: every
         // set_pv_pinned_buses call marks the mask positions dirty, which costs a pass
@@ -5280,6 +5318,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         YbusPolicy::Contingency::remove_from_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
                         timer_modif_ybus += t1.duration();
 
+                        _apply_row_tripped_controllers(cont_id, algo);
                         const bool own_mask = masked != _base_masked_;
                         if(own_mask) algo.set_masked_buses(masked);
                         // generator contingencies: release the pinning of the buses
@@ -5575,6 +5614,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<char> _cont_connected_;
         BusGraph bus_graph_;
         std::vector<char> _skip_mask;
+        // per row, the controllers of the voltage-control groups it trips (positions in the plan's
+        // controller list, sorted). Empty when no row trips one (_maybe_prepare_gen_contingency).
+        std::vector<std::vector<int> > _row_tripped_controllers_;
         // per row, why the batch cannot solve it (empty: it can), see get_batch_unsupported_reasons.
         // Sized by _reset_batch_unsupported_rows, filled by the checks that used to refuse the whole
         // batch (_check_shunt_trips, _maybe_prepare_gen_contingency).

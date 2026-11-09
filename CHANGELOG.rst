@@ -232,6 +232,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,
+  ``set_may_trip_voltage_controllers`` and ``set_tripped_voltage_controllers``. Rebuild plugins.
+- [IMPROVED] batches: a row can trip a generator of a voltage-control group (remote regulation included).
+  Reported ``BATCH_UNSUPPORTED`` only when every controller of a group regulating a slack bus goes.
 - [ADDED] ``ContingencyAnalysis.add_contingency``: trips HVDC lines (``hvdcs``). Issue #281.
 - [ADDED] ``ContingencyAnalysis.add_contingency``: trips static var compensators (``svcs``). Issue #281.
 - [ADDED] ``ContingencyAnalysis.add_contingency``: trips storage units (``storages``). Issue #281.

@@ -72,6 +72,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
         _set_outer_row_resume(i, *row_view);
         algo.set_outer_row_view(row_view);
     }
+    _apply_row_tripped_controllers(i, algo);
 
     if(invertible){
         if(!_has_gen_contingency()){
@@ -420,6 +421,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         // build_J_sparsity() already sees this), unlike _algo in
         // _maybe_prepare_masks() which may already have sparsity built.
         if(mask_mode) algos[t]->set_may_mask_voltage_control(true);
+        if(!_row_tripped_controllers_.empty()) algos[t]->set_may_trip_voltage_controllers(true);
         // the refactorize fallback the member algo got (see _maybe_prepare_masks /
         // _push_switchable_to_algo): a fresh algo starts without it
         if(mask_mode || _has_pv_switching() || _row_slack_weights_vary() ||

@@ -1209,6 +1209,15 @@ class LS2G_API VoltageControl
         // affect (an outer loop's declaration, see OuterLoopAlgo); off, nothing changes.
         void set_may_hold_controllers(bool val) { may_hold_ = val; }
 
+        // A batch row that trips some controllers (positions in the plan's controller list,
+        // an empty list: none). Such a controller is gone, as one on a masked bus: never the
+        // reference of its group's sharing, pinned at 0 -- and when none is left to regulate,
+        // the regulated bus is free. Values only, in the pattern of the holding form, which
+        // set_may_trip_controllers asks for before the sparsity is built. Stored as
+        // set_masked_buses does, for the next update_state().
+        void set_tripped_controllers(const std::vector<int>& controllers) { tripped_controllers_ = controllers; }
+        void set_may_trip_controllers(bool val) { may_trip_ = val; }
+
         // Hold some controllers at a reactive output by value, for the next Newton solves:
         // an entry of `q_pu_per_controller` (in the plan's controller order) that is finite
         // holds that controller there (its sharing row, or the group's voltage row when
@@ -1276,7 +1285,7 @@ class LS2G_API VoltageControl
             const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
                 const bool stranded = have_stranded && group_stranded_[g];
-                const bool lost = may_hold_ ? _ref_active(g) < 0 : (stranded || data_.is_held(data_.grp_start(g)));
+                const bool lost = _holding_form() ? _ref_active(g) < 0 : (stranded || data_.is_held(data_.grp_start(g)));
                 if (lost) out.push_back(g);
             }
         }
@@ -1289,7 +1298,7 @@ class LS2G_API VoltageControl
             if (!group_stranded_.empty() && group_stranded_[g]) return -1;
             const int off = j - data_.grp_start(g);
             const auto row_of = [&](int k) { return k == 0 ? v_rows_[g] : share_rows_[g][static_cast<std::size_t>(k - 1)]; };
-            if (!may_hold_) return data_.is_held(j) ? row_of(off) : -1;
+            if (!_holding_form()) return data_.is_held(j) ? row_of(off) : -1;
             if (!_held(j)) return -1;
             const int ref = _ref_active(g);
             // with someone still regulating, the reference's own sharing row pins the first one
@@ -1396,7 +1405,7 @@ class LS2G_API VoltageControl
                     // ... and for a group whose first controller is HELD (so all of them are,
                     // see VoltageControlSolverData::held): its voltage row is "Q_first = q"
                     if ((data_.kind(j) == VoltageControlSolverData::SVC ||
-                         (off == 0 && (may_mask_ || may_hold_ || data_.is_held(j)))) &&
+                         (off == 0 && (may_mask_ || _holding_form() || data_.is_held(j)))) &&
                         v_row >= 0 && q_cols_[j] >= 0)
                         h_slope_[j] = sink.add(v_row, q_cols_[j]);
                 }
@@ -1412,7 +1421,7 @@ class LS2G_API VoltageControl
                 }
                 // holding by value: each sharing row towards every other controller but the
                 // first (its own and the first one's are the two above)
-                if (may_hold_) {
+                if (_holding_form()) {
                     h_shareRef_[g].assign(cnt > 1 ? cnt - 1 : 0, std::vector<int>(cnt, -1));
                     for (int k = 0; k < cnt - 1; ++k) {
                         const int row = share_rows_[g][k];
@@ -1433,7 +1442,10 @@ class LS2G_API VoltageControl
         bool _held(int j) const { return data_.is_held(j) || _held_by_value(j); }
         // the output a held controller holds, and what of it Sbus already carries
         real_type _held_q(int j) const { return _held_by_value(j) ? hold_q_[static_cast<std::size_t>(j)] : q_held_(j); }
-        real_type _q_in_sbus(int j) const { return data_.is_held(j) ? q_held_(j) : static_cast<real_type>(0.); }
+        // (a controller the row trips has taken its frozen output out of Sbus with it)
+        real_type _q_in_sbus(int j) const { return data_.is_held(j) && !_masked_ctrl(j) ? q_held_(j) : static_cast<real_type>(0.); }
+        // the rows written so that any controller may be held or gone
+        bool _holding_form() const { return may_hold_ || may_trip_; }
 
         // The rows of a group when any controller may be held by value (may_hold_): with
         // nobody active, every controller pinned at its held output (the voltage row pins
@@ -1523,7 +1535,7 @@ class LS2G_API VoltageControl
 
         void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& /*Va*/) const
         {
-            if (may_hold_) { _fill_feature_values_holding(writer); return; }
+            if (_holding_form()) { _fill_feature_values_holding(writer); return; }
             const int ng = data_.n_groups();
             const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
@@ -1576,7 +1588,7 @@ class LS2G_API VoltageControl
                               const Eigen::Ref<const RealVect>& Vm,
                               const Eigen::Ref<const RealVect>& dx) const
         {
-            if (may_hold_) { _fill_custom_rows_holding(res, Vm, dx); return; }
+            if (_holding_form()) { _fill_custom_rows_holding(res, Vm, dx); return; }
             const int ng = data_.n_groups();
             const bool have_stranded = !group_stranded_.empty();
             for (int g = 0; g < ng; ++g) {
@@ -1669,10 +1681,15 @@ class LS2G_API VoltageControl
             const int ng = data_.n_groups();
             group_stranded_.assign(ng, 0);
             ctrl_masked_.assign(static_cast<std::size_t>(data_.n_controllers()), 0);
+            for (int j : tripped_controllers_) {
+                if (j < 0 || j >= data_.n_controllers()) continue;
+                ctrl_masked_[static_cast<std::size_t>(j)] = 1;
+                q_(j) = static_cast<real_type>(0.);
+            }
             if (masked_buses_.empty()) return;
             for (int j = 0; j < data_.n_controllers(); ++j) {
-                ctrl_masked_[static_cast<std::size_t>(j)] =
-                    std::find(masked_buses_.begin(), masked_buses_.end(), data_.bus(j)) != masked_buses_.end() ? 1 : 0;
+                if (std::find(masked_buses_.begin(), masked_buses_.end(), data_.bus(j)) != masked_buses_.end())
+                    ctrl_masked_[static_cast<std::size_t>(j)] = 1;
             }
             for (int g = 0; g < ng; ++g) {
                 const int first = data_.grp_start(g);
@@ -1699,6 +1716,8 @@ class LS2G_API VoltageControl
         // compute(), so it never actually goes stale across a clear_jacobian().
         bool                           may_mask_ = false;
         bool                           may_hold_ = false;    // see set_may_hold_controllers
+        bool                           may_trip_ = false;    // see set_may_trip_controllers
+        std::vector<int>               tripped_controllers_; // see set_tripped_controllers
         std::vector<real_type>         hold_q_;              // see set_held_controllers, pu, NaN: not held
         // handle (share_row k, q_col m) per group, sharing row, controller (-1 where none):
         // the entries towards every other controller of the group (may_hold_)
@@ -1723,7 +1742,7 @@ class LS2G_API VoltageControl
         std::vector<std::vector<int> > h_shareA_;    // handle (share_row, q_col_{k+1}) per group
         std::vector<std::vector<int> > h_shareB_;    // handle (share_row, q_col_1) per group
         std::vector<int>               masked_buses_;    // last set_masked_buses() argument, verbatim
-        std::vector<char>              ctrl_masked_;     // per controller: 1 iff its bus is masked (same source)
+        std::vector<char>              ctrl_masked_;     // per controller: 1 iff gone: its bus is masked, or the row trips it
         std::vector<char>              group_stranded_;  // per group: 1 iff the bus of each of its
                                                            // controllers is masked; derived from
                                                            // masked_buses_ by _recompute_group_stranded(),
@@ -1913,6 +1932,14 @@ public:
     void set_may_hold_voltage_controllers(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_hold_controllers(val);
+    }
+    void set_may_trip_voltage_controllers(bool val) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_may_trip_controllers(val);
+    }
+    void set_tripped_voltage_controllers(const std::vector<int> & controllers) {
+        VoltageControl* vc = _find_extension<VoltageControl>();
+        if (vc != nullptr) vc->set_tripped_controllers(controllers);
     }
     void set_held_voltage_controllers(const std::vector<real_type> & q_pu_per_controller) {
         VoltageControl* vc = _find_extension<VoltageControl>();

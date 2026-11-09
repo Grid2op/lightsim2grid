@@ -72,7 +72,13 @@ class _ContingencyMoreElements(unittest.TestCase):
         self.n_line = len(self.grid.get_lines())
         self.v0 = np.ones(self.grid.total_bus(), dtype=complex)
 
-    def _reference(self, el_ids=(), branches=(), gens=(), dc=False, grid=None):
+    def _add_voltage_svc(self):
+        """a voltage-mode SVC, what the batch leaves out, standing on bus 4"""
+        self.grid.init_svcs([1], np.array([1.02]), np.zeros(1), np.zeros(1), np.full(1, -0.5), np.full(1, 0.5),
+                            np.array([4], dtype=np.int32), np.array([4], dtype=np.int32))
+        self.grid.tell_solver_need_reset()
+
+    def _reference(self, el_ids=(), branches=(), gens=(), dc=False, grid=None, svcs=()):
         ref = copy.deepcopy(self.grid if grid is None else grid)
         for br in branches:
             if br < self.n_line:
@@ -81,6 +87,8 @@ class _ContingencyMoreElements(unittest.TestCase):
                 ref.deactivate_trafo(int(br) - self.n_line)
         for gen_id in gens:
             ref.deactivate_gen(int(gen_id))
+        for svc_id in svcs:
+            ref.deactivate_svc(int(svc_id))
         for el_id in el_ids:
             self._deactivate(ref, int(el_id))
         ref.tell_solver_need_reset()
@@ -254,16 +262,15 @@ class TestStaticGenerators(_ContingencyMoreElements):
                                    atol=1e-8, rtol=0.)
 
     def test_fallback(self):
-        # a remote regulator takes the row out of the batch: the fallback trips the rest too
-        self.grid.set_gen_regulated_bus(GEN_REMOTE, REG_BUS)
-        self.grid.tell_solver_need_reset()
+        # a voltage-mode SVC takes the row out of the batch: the fallback trips the rest too
+        self._add_voltage_svc()
         ca = ContingencyAnalysisCPP(self.grid)
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(gen_ids=[GEN_REMOTE], sgen_ids=[0])
+        ca.add_contingency(svc_ids=[0], sgen_ids=[0])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertTrue(ca.converged_mask()[0])
-        self.assertIn("remote bus", ca.get_batch_unsupported_reasons()[0])
-        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([0], gens=[GEN_REMOTE]),
+        self.assertIn("regulates a voltage", ca.get_batch_unsupported_reasons()[0])
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([0], svcs=[0]),
                                    atol=1e-8, rtol=0.)
 
 
@@ -334,16 +341,15 @@ class TestStorageUnits(_ContingencyMoreElements):
             ca.add_contingency(storage_ids=[len(self.grid.get_storages())])
 
     def test_fallback(self):
-        self.grid.set_gen_regulated_bus(GEN_REMOTE, REG_BUS)
-        self.grid.tell_solver_need_reset()
+        self._add_voltage_svc()
         ca = ContingencyAnalysisCPP(self.grid)
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(gen_ids=[GEN_REMOTE], storage_ids=[self.PQ])
+        ca.add_contingency(svc_ids=[0], storage_ids=[self.PQ])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertTrue(ca.converged_mask()[0])
-        self.assertIn("remote bus", ca.get_batch_unsupported_reasons()[0])
+        self.assertIn("regulates a voltage", ca.get_batch_unsupported_reasons()[0])
         np.testing.assert_allclose(np.asarray(ca.get_voltages())[0],
-                                   self._reference([self.PQ], gens=[GEN_REMOTE]), atol=1e-8, rtol=0.)
+                                   self._reference([self.PQ], svcs=[0]), atol=1e-8, rtol=0.)
 
     @staticmethod
     def _container(grid):
@@ -587,6 +593,153 @@ class TestHvdcLines(_ContingencyMoreElements):
         self.assertTrue(ca.remove_contingency(hvdc_ids=[0, 1]))
         with self.assertRaises(RuntimeError):
             ca.add_contingency(hvdc_ids=[len(self.grid.get_dclines())])
+
+
+class TestRemoteVoltageControllers(unittest.TestCase):
+    """Generators of a voltage-control group, tripped by a row of the batch: gone from the
+    group, as in a one-off solve of the grid without them."""
+    REG_BUS = 9
+    GROUP = (1, 2, 3)
+    TRIPS = ([1], [2], [3], [1, 2], [1, 3], [2, 3], [1, 2, 3])
+
+    def _grid(self, group=GROUP, algo=None, q_limits=None, reg_bus=None):
+        reg_bus = self.REG_BUS if reg_bus is None else reg_bus
+        net = pn.case14()
+        for gen_pos, (min_q, max_q) in (q_limits or {}).items():
+            net.gen.loc[net.gen.index[gen_pos - 1], ["min_q_mvar", "max_q_mvar"]] = [min_q, max_q]
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(net)
+        for gen_id in group:
+            grid.set_gen_regulated_bus(gen_id, reg_bus)
+            grid.change_v_gen(gen_id, 1.04)
+        if algo is not None:
+            grid.change_algorithm(algo)
+        grid.tell_solver_need_reset()
+        return grid
+
+    @staticmethod
+    def _one_off(grid, gens, v0):
+        ref = copy.deepcopy(grid)
+        for gen_id in gens:
+            ref.deactivate_gen(int(gen_id))
+        ref.tell_solver_need_reset()
+        return ref.ac_pf(1.0 * v0, MAX_IT, TOL)
+
+    def _check(self, grid, trips, algo=None, **attributes):
+        v0 = np.ones(grid.total_bus(), dtype=complex)
+        ca = ContingencyAnalysisCPP(grid)
+        if algo is not None:
+            ca.change_algorithm(algo)
+        for name, value in attributes.items():
+            setattr(ca, name, value)
+        for gens in trips:
+            ca.add_contingency(gen_ids=list(gens))
+        ca.compute(1.0 * v0, MAX_IT, TOL)
+        rows = {tuple(c[3]): row for row, c in enumerate(ca.my_contingencies())}
+        V = np.asarray(ca.get_voltages())
+        for gens in trips:
+            with self.subTest(gens=gens):
+                row = rows[tuple(gens)]
+                self.assertEqual(ca.get_batch_unsupported_reasons()[row], "")
+                self.assertTrue(ca.converged_mask()[row])
+                np.testing.assert_allclose(V[row], self._one_off(grid, gens, v0), atol=1e-8, rtol=0.)
+
+    def test_matches_a_one_off_powerflow(self):
+        self._check(self._grid(), self.TRIPS)
+
+    def test_multithreaded(self):
+        self._check(self._grid(), self.TRIPS, nb_thread=3)
+
+    def test_with_the_islands_handled(self):
+        self._check(self._grid(), self.TRIPS, handle_disconnected_grid=True)
+
+    def test_a_group_of_one(self):
+        self._check(self._grid(group=(3,)), [[3]])
+
+    def test_with_outer_loops(self):
+        self._check(self._grid(algo="NROuter_SparseLU"), self.TRIPS, algo="NROuter_SparseLU")
+
+    def test_scenario_sweep(self):
+        grid = self._grid()
+        v0 = np.ones(grid.total_bus(), dtype=complex)
+        mask = np.zeros((len(self.TRIPS), len(grid.get_generators())), dtype=bool)
+        for row, gens in enumerate(self.TRIPS):
+            mask[row, gens] = True
+        sweep = ScenarioSweepCPP(grid)
+        sweep.set_contingency_gens(mask)
+        sweep.compute(1.0 * v0, MAX_IT, TOL)
+        V = np.asarray(sweep.get_voltages())
+        for row, gens in enumerate(self.TRIPS):
+            self.assertEqual(sweep.get_batch_unsupported_reasons()[row], "")
+            np.testing.assert_allclose(V[row], self._one_off(grid, gens, v0), atol=1e-8, rtol=0.)
+
+    def test_the_regulated_bus_goes_free_when_nobody_is_left(self):
+        grid = self._grid()
+        ca = ContingencyAnalysisCPP(grid)
+        ca.add_contingency(gen_ids=list(self.GROUP))
+        ca.add_contingency(gen_ids=[1])
+        ca.compute(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
+        V = {tuple(c[3]): v for c, v in zip(ca.my_contingencies(), np.asarray(ca.get_voltages()))}
+        self.assertGreater(abs(abs(V[self.GROUP][self.REG_BUS]) - 1.04), 1e-3)
+        self.assertAlmostEqual(abs(V[(1,)][self.REG_BUS]), 1.04, places=8)
+
+    def test_a_local_generator_of_a_group(self):
+        # generator 1 stands on the bus generator 3 regulates remotely: both are of the group
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            bus_of_1 = init_from_pandapower(pn.case14()).get_generators()[1].bus_id
+        grid = self._grid(group=(1, 3), reg_bus=bus_of_1)
+        self._check(grid, [[1], [3], [1, 3]])
+
+    def test_outer_loops_with_a_controller_at_its_reactive_limit(self):
+        # generator 1 cannot give the group what it asks: ReactiveLimits holds it
+        limits = {1: (-1., 1.)}
+        self._check(self._grid(algo="NROuter_SparseLU", q_limits=limits), self.TRIPS, algo="NROuter_SparseLU")
+
+    def test_outer_loops_a_tripped_controller_whose_range_excludes_0(self):
+        # Q = 0 is outside what generator 1 may produce: it is gone, nothing checks it
+        limits = {1: (5., 6.)}
+        self._check(self._grid(algo="NROuter_SparseLU", q_limits=limits), [[1], [1, 2], [1, 2, 3]],
+                    algo="NROuter_SparseLU")
+
+    def test_outer_loops_multithreaded(self):
+        self._check(self._grid(algo="NROuter_SparseLU", q_limits={1: (-1., 1.)}), self.TRIPS,
+                    algo="NROuter_SparseLU", nb_thread=3)
+
+    def test_a_group_regulating_a_slack_bus(self):
+        # gen 1 regulates the slack bus with the slack generator: one of them may go, not both
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(pn.case14())
+        slack = next(g for g in grid.get_generators() if g.is_slack)
+        grid.set_gen_regulated_bus(1, slack.bus_id)
+        grid.change_v_gen(1, slack.target_vm_pu)
+        grid.tell_solver_need_reset()
+        v0 = np.ones(grid.total_bus(), dtype=complex)
+        ca = ContingencyAnalysisCPP(grid)
+        ca.add_contingency(gen_ids=[1])
+        ca.add_contingency(gen_ids=[1, slack.id])
+        ca.compute(1.0 * v0, MAX_IT, TOL)
+        rows = {tuple(c[3]): row for row, c in enumerate(ca.my_contingencies())}
+        one = rows[(1,)]
+        self.assertEqual(ca.get_batch_unsupported_reasons()[one], "")
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[one], self._one_off(grid, [1], v0), atol=1e-8, rtol=0.)
+        both = rows[tuple(sorted((1, slack.id)))]
+        self.assertIn("slack bus", ca.get_batch_unsupported_reasons()[both])
+        self.assertFalse(ca.converged_mask()[both])
+
+    def test_consecutive_computes_without_a_trip(self):
+        # a second compute() with no such row is back to the plain pattern
+        grid = self._grid()
+        v0 = np.ones(grid.total_bus(), dtype=complex)
+        ca = ContingencyAnalysisCPP(grid)
+        ca.add_contingency(gen_ids=[1])
+        ca.compute(1.0 * v0, MAX_IT, TOL)
+        ca.remove_contingency(gen_ids=[1])
+        ca.add_n1(0)
+        ca.compute(1.0 * v0, MAX_IT, TOL)
+        self.assertTrue(ca.converged_mask()[0])
 
 
 class TestWrappers(unittest.TestCase):

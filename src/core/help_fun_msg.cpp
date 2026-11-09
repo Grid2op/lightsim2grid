@@ -8337,8 +8337,9 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
     - a generator leaves it too (its active power, and the reactive setpoint of one that does not regulate voltage)
       and the distributed slack is re-weighted without it. When it is the last one regulating its own bus, that bus
       turns PQ for the contingency, as :func:`lightsim2grid.scenarioSweep.ScenarioSweepCPP.set_contingency_gens`
-      does it. A contingency tripping a generator regulating a remote bus, or standing on a bus a control group
-      holds, is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``);
+      does it. A generator that is a controller of a voltage-control group leaves its group for the contingency, the
+      others keep regulating and the regulated bus is free when none is left. A contingency taking out every controller
+      of a group regulating a slack bus is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``);
     - a branch of ``branch_ids_side1`` (``branch_ids_side2``) is opened at side 1 (side 2) only: its other end stays
       connected and still carries the branch's charging, as a branch open at one end in the grid does. This is how
       OpenLoadFlow models a branch whose breaker opens at one end only (see
@@ -8618,8 +8619,8 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
       solver was never invoked for it.
-    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg a generator
-      regulating a remote bus), so it was left out of the batch rather than failing all of it.
+    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg a static var
+      compensator regulating a voltage), so it was left out of the batch rather than failing all of it.
       ``get_batch_unsupported_reasons()`` says why.
     - ``DIVERGENCE``: the solver was invoked for this contingency but did not converge.
 

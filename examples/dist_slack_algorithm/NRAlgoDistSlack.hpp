@@ -104,6 +104,11 @@ public:
     TimerJac get_timers_jacobian() const override { return inner_.get_timers_jacobian(); }
 
     bool supports_bus_masking() const override { return inner_.supports_bus_masking(); }
+    bool supports_tripped_voltage_controllers() const override { return inner_.supports_tripped_voltage_controllers(); }
+    void set_may_trip_voltage_controllers(bool val) override { inner_.set_may_trip_voltage_controllers(val); }
+    void set_tripped_voltage_controllers(const std::vector<int>& controllers) override {
+        inner_.set_tripped_voltage_controllers(controllers);
+    }
     void set_masked_buses(const std::vector<int>& solver_bus_ids) override {
         inner_.set_masked_buses(solver_bus_ids);
     }
