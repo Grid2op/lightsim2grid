@@ -658,6 +658,23 @@ class TestWrappers(unittest.TestCase):
         grid.tell_solver_need_reset()
         self._check(env, "svcs", "svc_ids", "svc_ids", 1, "set_contingency_svcs", 2)
 
+    def test_hvdc_lines(self):
+        env = self._env()
+        grid = env.backend._grid
+        big = np.full(2, 1e3)
+        grid.init_hvdc_lines(np.array([10, 12], dtype=np.int32), np.array([11, 13], dtype=np.int32),
+                             [1, 1], [1, 1], np.ones(2), np.ones(2),
+                             [False, False], [False, False],
+                             np.ones(2), np.ones(2), np.zeros(2), np.zeros(2),
+                             -big, big, -big, big,
+                             np.full(2, 0.9), np.full(2, 0.9),
+                             [0, 0], np.array([5., 3.]),
+                             np.ones(2), np.full(2, 12.),
+                             [False, False], np.zeros(2), np.zeros(2),
+                             np.full(2, 100.), np.full(2, 100.))
+        grid.tell_solver_need_reset()
+        self._check(env, "hvdcs", "hvdc_ids", "hvdc_ids", 1, "set_contingency_hvdcs", 2)
+
     def test_an_empty_contingency_is_refused(self):
         with self.assertRaises(RuntimeError):
             ContingencyAnalysis(self._env()).add_contingency()

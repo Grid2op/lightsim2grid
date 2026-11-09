@@ -79,7 +79,7 @@ OpenLoadFlow-style before the solve). `run()` reports, for each contingency, the
 what each row trips.
 
 A static generator, a storage unit, a static var compensator or an HVDC line can be tripped
-too. What the batch cannot do with a single analysis is reported ``BATCH_UNSUPPORTED`` for now: a
+too (`sgens`, `storages`, `svcs`, `hvdcs` of `add_contingency`, each listed in the results). What the batch cannot do with a single analysis is reported ``BATCH_UNSUPPORTED`` for now: a
 generator regulating a remote bus, a generator or storage unit on a bus a control group holds, a
 shunt that regulates a voltage when the algorithm runs a ShuntVoltageControl outer loop (its
 sections belong to that loop), a static var compensator regulating a voltage (or with a standby
