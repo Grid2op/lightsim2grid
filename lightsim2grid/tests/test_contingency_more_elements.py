@@ -468,6 +468,7 @@ class TestStaticVarCompensators(_ContingencyMoreElements):
 
 class TestHvdcLines(_ContingencyMoreElements):
     ARG = "hvdc_ids"
+    SETTER = "set_contingency_hvdcs"
     DROOP, REGULATING, FIXED = 0, 1, 2   # AC emulation, stations regulating at both ends, LCC at fixed P and Q
 
     def _setup_grid(self, grid):
@@ -506,6 +507,41 @@ class TestHvdcLines(_ContingencyMoreElements):
         for el_ids in ([self.FIXED], [self.REGULATING]):
             np.testing.assert_allclose(np.angle(V[self._row(ca, el_ids)]), np.angle(self._reference(el_ids, dc=True)),
                                        atol=1e-8, rtol=0.)
+
+    @staticmethod
+    def _container(grid):
+        return grid.get_dclines()
+
+    def test_scenario_sweep(self):
+        trips = [([self.FIXED], []), ([self.FIXED], [5])]
+        self._check_sweep(trips, self._sweep(trips))
+
+    def test_scenario_sweep_dc(self):
+        trips = [([self.FIXED], []), ([self.REGULATING], [])]
+        self._check_sweep(trips, self._sweep(trips, dc=True), dc=True, angles_only=True)
+
+    def test_scenario_sweep_what_it_leaves_out(self):
+        sweep = self._sweep([([self.DROOP], []), ([self.REGULATING], []), ([self.FIXED], [])])
+        sweep.compute(1.0 * self.v0, MAX_IT, TOL)
+        reasons = sweep.get_batch_unsupported_reasons()
+        self.assertIn("AC emulation", reasons[0])
+        self.assertIn("regulates a voltage", reasons[1])
+        self.assertEqual(reasons[2], "")
+        self.assertTrue(sweep.converged_mask()[2])
+
+    def test_scenario_sweep_redistribute_slack(self):
+        for gen in self.grid.get_generators():
+            self.grid.add_gen_slackbus(gen.id, 1.)
+        self.grid.tell_solver_need_reset()
+        sweep = self._sweep([([self.FIXED], [])], redistribute_slack=True)
+        sweep.compute(1.0 * self.v0, MAX_IT, TOL)
+        info = self.grid.get_dclines()[self.FIXED]
+        ref = copy.deepcopy(self.grid)
+        ref.deactivate_dcline(self.FIXED)
+        ref.redistribute_active_power(info.target_p1_mw + info.p2_mw)
+        ref.tell_solver_need_reset()
+        np.testing.assert_allclose(np.asarray(sweep.get_voltages())[0], ref.ac_pf(1.0 * self.v0, MAX_IT, TOL),
+                                   atol=1e-6, rtol=0.)
 
     def test_what_the_batch_leaves_out(self):
         ca = self._analysis([([self.DROOP], []), ([self.REGULATING], []), ([self.FIXED], [])],

@@ -492,6 +492,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         /**
+         * ScenarioSweep only: row i, column h True means "disconnect hvdc line h for step i":
+         * both its converter stations leave the row. One in AC emulation (or frozen at its
+         * limit), or with a station regulating a voltage, leaves the row out of the batch
+         * (BATCH_UNSUPPORTED): those live in the Jacobian.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_hvdcs(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_dclines().nb()), "set_contingency_hvdcs");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_hvdcs");
+            // settled once per batch, with the rows' Ybus edits (L2)
+            clear_batch_inputs();
+            ybus_policy_.hvdc_mask = mask;
+        }
+
+        /**
          * ScenarioSweep only: one topological action per row (a `TopoAction`, grid2op
          * semantics: set_bus on loads / generators / storage units / line and trafo
          * ends, set_line_status), played by that row on top of its injections and
@@ -2041,6 +2057,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ybus_policy_.shunt_mask = BoolMat();
             ybus_policy_.storage_mask = BoolMat();
             ybus_policy_.svc_mask = BoolMat();
+            ybus_policy_.hvdc_mask = BoolMat();
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _reset_ybus_policy() {}
@@ -2796,10 +2813,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id) if(_sgen_off_in_row(i, sgen_id)) res.push_back(sgen_id);
             return res;
         }
-        bool _hvdc_off_in_row(size_t i, int hvdc_id) const {
-            const ContingencyElements * cont = _row_contingency(i);
-            return cont != nullptr && cont->hvdcs.count(hvdc_id) > 0;
-        }
+        bool _hvdc_off_in_row(size_t i, int hvdc_id) const { return _is_tripped(InjectionTrip::HVDC, i, hvdc_id); }
 
         // the generators row i's ContingencyAnalysis contingency trips (a ScenarioSweep
         // reads its mask through _gen_off_in_row)
@@ -4601,14 +4615,12 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(storages.get_bus_id()(storage_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
                 lost -= storages.get_target_p()(storage_id);
             }
-            if(const ContingencyElements * cont = _row_contingency(i)){
-                // both stations of a tripped line, as they stood in the base grid
-                const auto & hvdc_lines = _grid_model.get_dclines();
-                for(int hvdc_id : cont->hvdcs){
-                    if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;
-                    lost += slack_redistribution::sum_hvdc_station_setpoints_if(
-                        hvdc_lines, [](int){ return true; }, [hvdc_id](int line){ return line != hvdc_id; });
-                }
+            // both stations of a tripped line, as they stood in the base grid
+            const auto & hvdc_lines = _grid_model.get_dclines();
+            for(int hvdc_id : _row_tripped(InjectionTrip::HVDC, i)){
+                if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;
+                lost += slack_redistribution::sum_hvdc_station_setpoints_if(
+                    hvdc_lines, [](int){ return true; }, [hvdc_id](int line){ return line != hvdc_id; });
             }
             return lost;
         }
@@ -4723,16 +4735,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _check_svc_trips(size_t) {}
 
-        // ContingencyAnalysis: an HVDC line in AC emulation (its active power is unknowns and
+        // An HVDC line in AC emulation (its active power is unknowns and
         // equations of the Jacobian, its limits an outer loop's), or a station regulating a
         // voltage (a PV bus or a control group that would lose it), is left out of the batch.
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _check_hvdc_trips(size_t nb_steps){
             const auto & hvdc_lines = _grid_model.get_dclines();
             const bool ac = _algo.ac_solver_used();
-            for(size_t row = 0; row < nb_steps && row < ybus_policy_.li_rows.size(); ++row){
-                for(int hvdc_id : ybus_policy_.li_rows[row].hvdcs){
+            for(size_t row = 0; row < nb_steps; ++row){
+                for(int hvdc_id : _row_tripped(InjectionTrip::HVDC, row)){
                     if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;
                     const char * why = nullptr;
                     if(hvdc_lines.is_droop_active(hvdc_id)) why = "which runs in AC emulation";
@@ -4749,8 +4760,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
             }
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _check_hvdc_trips(size_t) {}
 
         // Hand _switchable_buses_ to the member algorithm, pinned. Every switchable bus
@@ -5406,7 +5416,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 exc_ << algo_name() << "::" << fun_name << ": the injections and/or the contingency "
                         "masks were modified (modify_gen_p / modify_sgen_p / modify_load_p / "
                         "modify_load_q / set_contingency_lines / set_contingency_trafos / "
-                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / set_contingency_sgens / set_contingency_storages / set_contingency_svcs / "
+                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / set_contingency_sgens / set_contingency_storages / set_contingency_svcs / set_contingency_hvdcs / "
                         "set_topo_actions) after the "
                         "last compute(); call compute() again before reading the flows.";
                 throw std::runtime_error(exc_.str());

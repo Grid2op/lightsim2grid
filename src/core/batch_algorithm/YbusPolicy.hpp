@@ -21,7 +21,7 @@ namespace ls2g {
 /** The kinds of element a row trips by a per-element mask of YbusPolicy::Contingency on a
     ScenarioSweep (ContingencyElements on a ContingencyAnalysis): what they stamp is the same in
     every row, so what a row takes back is settled once per batch. **/
-enum class InjectionTrip { STORAGE, SVC };
+enum class InjectionTrip { STORAGE, SVC, HVDC };
 
 /** What one contingency of a ContingencyAnalysis trips: branches (lines then
     transformers, the gridmodel numbering every batch class uses), shunts, loads and
@@ -59,6 +59,7 @@ struct LS2G_API ContingencyElements {
     const std::set<int> & of(InjectionTrip kind) const {
         switch(kind){
             case InjectionTrip::SVC: return svcs;
+            case InjectionTrip::HVDC: return hvdcs;
             case InjectionTrip::STORAGE:
             default: return storages;
         }
@@ -160,8 +161,11 @@ struct LS2G_API YbusPolicy
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> storage_mask;
         // same, one column per SVC (ScenarioSweep set_contingency_svcs)
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> svc_mask;
+        // same, one column per hvdc line (ScenarioSweep set_contingency_hvdcs)
+        Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> hvdc_mask;
         const Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> & mask_of(InjectionTrip kind) const {
             switch(kind){
+                case InjectionTrip::HVDC: return hvdc_mask;
                 case InjectionTrip::SVC: return svc_mask;
                 case InjectionTrip::STORAGE:
                 default: return storage_mask;

@@ -562,6 +562,17 @@ class ScenarioSweep:
         self._set_element_mask("set_contingency_svcs", mask, self.grid2op_env.backend._grid.get_svcs(),
                                "static var compensators")
 
+    def set_contingency_hvdcs(self, mask):
+        """Per-step hvdc line contingency mask, shape ``(n_simul, n_hvdc)``, dtype bool.
+        ``True`` means "disconnect this line for this simulation": both its converter stations
+        leave the step's injection.
+
+        A step tripping one in AC emulation (or frozen at its limit), or with a station regulating
+        a voltage, is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
+        """
+        self._set_element_mask("set_contingency_hvdcs", mask, self.grid2op_env.backend._grid.get_dclines(),
+                               "hvdc lines")
+
     def set_topo_actions(self, actions):
         """One topological action per row, played by that row on top of its injections
         and contingency masks.
