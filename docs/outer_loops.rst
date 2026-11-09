@@ -549,7 +549,9 @@ part of the data, from the element tables and from the controllers of ``net.cont
        ``change_trafo_phase_tap``.
    * - ``ShuntVoltageControl``
      - one section per step, ``1`` .. ``max_step``, and the regulation of a ``DiscreteShuntController`` (``vm_set_pu``, a
-       deadband of twice ``tol``, its ``controlled_bus``).
+       deadband of twice ``tol``, its ``controlled_bus``). A tabular shunt (``step_dependency_table``) gets the rows of its
+       ``shunt_characteristic_table`` as sections, up to ``max_step`` or the last row. A table with power at step 0 or a
+       missing step cannot be sections: the shunt is converted at its current step and cannot move (with a warning).
    * - ``DistributedSlack``
      - the slack participants only, by default. With ``slack_weight_can_participate=True`` (also a ``loader_kwargs`` key of
        the backend), every generator with a positive ``slack_weight`` can participate, with that weight, ``slack=True`` or
@@ -557,8 +559,7 @@ part of the data, from the element tables and from the controllers of ``net.cont
    * - ``ReactiveLimits``
      - ``min_q_mvar`` / ``max_q_mvar`` of the generators (no capability curve), and ``min_p_mw`` / ``max_p_mw`` as active limits.
 
-Not converted: the second tap changer (``tap2_*``, applied at its position but not moved), tabular shunts
-(``step_dependency_table``), the controllers of three-winding transformers and of the transformers with a phase tap
+Not converted: the second tap changer (``tap2_*``, applied at its position but not moved), the controllers of three-winding transformers and of the transformers with a phase tap
 changer, and every other controller.
 
 pandapower's discrete tap controller stops at the first tap that brings the voltage within its band, while the loop
