@@ -196,14 +196,21 @@ class TestShuntReconnected(unittest.TestCase):
         if not HAS_PYPOWSYBL:
             self.skipTest("pypowsybl is not installed")
 
-    def _grid(self, bus="B9", target_kv=13.2, sections=(3, 1), off=()):
+    def _grid(self, bus="B9", target_kv=13.2, sections=(3, 1), off=(), moved=()):
         grid = _grid(_net(bus, target_kv, sections))
         grid.change_algorithm("NROuter_KLU")
         grid.clear_outer_loops()
         grid.add_outer_loop(ShuntVoltageControl())
         for shunt_id in self._ids(grid, off):
             grid.deactivate_shunt(shunt_id)
+        self._move(grid, moved)
         return grid
+
+    def _move(self, grid, names):
+        """Move shunts to a bus next to the one they started on, energized by a line."""
+        for shunt_id in self._ids(grid, names):
+            bus = grid.get_shunts()[shunt_id].regulated_bus  # they all start on the bus they regulate
+            grid.change_bus_shunt(shunt_id, next(l.bus2_id for l in grid.get_lines() if l.bus1_id == bus))
 
     @staticmethod
     def _ids(grid, names):
@@ -301,6 +308,74 @@ class TestShuntReconnected(unittest.TestCase):
         self.assertEqual(after, before + 1)
         self._solve(grid)
         self.assertEqual(self._analyzes(grid), after)
+
+    def test_all_shunts_moved_after_a_solve(self):
+        # moving a shunt between two energized buses renumbers no bus and adds no Ybus entry: the
+        # controls reserved at the previous bus stayed, and the bus missed its target
+        grid = self._grid()
+        self._solve(grid)
+        self._move(grid, SHUNTS)
+        self._assert_same_as_fresh(grid, self._solve(grid), moved=SHUNTS)
+
+    def test_one_shunt_moved_after_a_solve(self):
+        # the shunts of the bus become two controllers of the same regulated bus
+        for name in SHUNTS:
+            with self.subTest(moved=name):
+                grid = self._grid()
+                self._solve(grid)
+                self._move(grid, [name])
+                self._assert_same_as_fresh(grid, self._solve(grid), moved=[name])
+
+    def test_moved_from_the_previous_voltages(self):
+        grid = self._grid()
+        V = self._solve(grid)
+        self._move(grid, SHUNTS)
+        self._assert_same_as_fresh(grid, self._solve(grid, V), moved=SHUNTS)
+
+    def test_moved_there_and_back(self):
+        grid = self._grid()
+        V_start = self._solve(grid)
+        ids = self._ids(grid, SHUNTS)
+        home = [grid.get_shunts()[k].bus_id for k in ids]
+        self._move(grid, SHUNTS)
+        self._assert_same_as_fresh(grid, self._solve(grid), moved=SHUNTS)
+        for shunt_id, bus in zip(ids, home):
+            grid.change_bus_shunt(shunt_id, bus)
+        V = self._solve(grid)
+        self._assert_same_as_fresh(grid, V)
+        np.testing.assert_allclose(V, V_start, atol=1e-8, rtol=0.)
+
+    def test_move_rebuilds_once(self):
+        grid = self._grid()
+        self._solve(grid)
+        before = self._analyzes(grid)
+        self._move(grid, SHUNTS)
+        self._solve(grid)
+        after = self._analyzes(grid)
+        self.assertEqual(after, before + 1)
+        self._solve(grid)
+        self.assertEqual(self._analyzes(grid), after)
+
+    def test_move_to_the_same_bus_is_no_rebuild(self):
+        grid = self._grid()
+        self._solve(grid)
+        before = self._analyzes(grid)
+        for shunt_id in self._ids(grid, SHUNTS):
+            grid.change_bus_shunt(shunt_id, grid.get_shunts()[shunt_id].bus_id)
+        self._solve(grid)
+        self.assertEqual(self._analyzes(grid), before)
+
+    def test_no_rebuild_when_moving_a_shunt_that_does_not_regulate(self):
+        grid = self._grid()
+        shunt_id = self._ids(grid, ["SH-A"])[0]
+        shunt = grid.get_shunts()[shunt_id]
+        bus = shunt.regulated_bus
+        grid.set_shunt_section_regulation(shunt_id, False, shunt.target_vm_pu, shunt.target_deadband_pu, bus)
+        self._solve(grid)
+        before = self._analyzes(grid)
+        grid.change_bus_shunt(shunt_id, next(l.bus2_id for l in grid.get_lines() if l.bus1_id == bus))
+        self._solve(grid)
+        self.assertEqual(self._analyzes(grid), before)
 
     def test_no_rebuild_for_a_shunt_that_does_not_regulate(self):
         # switching such a shunt changes no control: the Newton keeps its factorization

@@ -318,6 +318,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   are solved after the batch, one at a time, by ``ac_pf`` on a copy of the grid (#280).
 - [FIXED] ``ShuntVoltageControl``: switching a regulating shunt off or on between two solves now rebuilds its
   control. The shunts of its bus silently stopped regulating.
+- [FIXED] ``ShuntVoltageControl``: moving a regulating shunt to another energized bus between two solves
+  now rebuilds its control, which stayed on the former bus.
 
 
 [1.3.0] 2026-11-03
