@@ -86,6 +86,8 @@ class ContingencyResult:
     shunt_ids: List[int] = field(default_factory=list)
     load_ids: List[int] = field(default_factory=list)
     gen_ids: List[int] = field(default_factory=list)
+    #: the static generators it trips
+    sgen_ids: List[int] = field(default_factory=list)
     #: why the batch could not solve this contingency (empty if it could), see
     #: `ContingencyAnalysis.get_batch_unsupported_reasons`
     batch_unsupported_reason: str = ""
@@ -819,15 +821,18 @@ class ContingencyAnalysis(object):
         self.__computed = False   # see add_single_contingency
 
     @staticmethod
-    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=(), *_):
+    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=(), sgens=(), *_):
         """internal: the key a contingency is known by on this side. A branch-only one is
         the flat tuple of its branch ids; one tripping shunts, loads or generators is the
-        nested tuple of its four lists. Each list sorted, every id once: the c++ side keeps
+        nested tuple of its four lists, followed by the other kinds when it trips any. Each list sorted, every id once: the c++ side keeps
         sets, and `my_contingencies` must give back the key that was registered. (This class
-        never opens a branch at one end only, nor trips anything else: the other lists
-        `my_contingencies` gives are empty.)"""
+        never opens a branch at one end only: those two lists `my_contingencies` gives are
+        empty.)"""
         def _ids(stuff):
             return tuple(sorted({int(el) for el in stuff}))
+        others = (sgens,)
+        if any(len(el) for el in others):
+            return (_ids(branches), _ids(shunts), _ids(loads), _ids(gens)) + tuple(_ids(el) for el in others)
         if not shunts and not loads and not gens:
             return _ids(branches)
         return (_ids(branches), _ids(shunts), _ids(loads), _ids(gens))
@@ -850,11 +855,20 @@ class ContingencyAnalysis(object):
             res.append(int(el))
         return res
 
-    def add_contingency(self, lines=(), shunts=(), loads=(), gens=(), name=None):
+    def _other_ids(self, stuff, getter, kind, names=None):
+        """internal: `_ids_of` for a kind grid2op does not name, by id or by the grid's name"""
+        if isinstance(stuff, (list, tuple)) and len(stuff) == 0:
+            return []  # the common case: nothing of that kind, no list of names to build
+        if names is None:
+            names = [el.name for el in getattr(self._ls_backend._grid, getter)()]
+        return self._ids_of(stuff, names, kind)
+
+    def add_contingency(self, lines=(), shunts=(), loads=(), gens=(), name=None, sgens=()):
         """
         Adds a single contingency tripping, together, powerlines (and transformers, both by
         `env.name_line` or id), shunts (`env.name_shunt` or id), loads (`env.name_load` or id)
-        and generators (`env.name_gen` or id). Any of the four may be empty, not all of them.
+        and generators (`env.name_gen` or id), and, by name in the grid or by id, static
+        generators (`sgens`). Any of them may be empty, not all of them.
 
         A shunt leaves the admittance matrix, a load and a generator the injection (a
         generator that is the last one regulating its bus turns that bus PQ); the
@@ -879,23 +893,25 @@ class ContingencyAnalysis(object):
         shunt_ids = self._ids_of(shunts, getattr(type(self._ls_backend), "name_shunt", []), "shunt")
         load_ids = self._ids_of(loads, type(self._ls_backend).name_load, "load")
         gen_ids = self._ids_of(gens, type(self._ls_backend).name_gen, "generator")
-        if not branch_ids and not shunt_ids and not load_ids and not gen_ids:
+        other_ids = {"sgen_ids": self._other_ids(sgens, "get_static_generators", "static generator")}
+        has_others = any(len(el) for el in other_ids.values())
+        if not branch_ids and not shunt_ids and not load_ids and not gen_ids and not has_others:
             # add_single_contingency() would register it (add_nk([])), the c++
             # add_contingency refuses it
             raise RuntimeError("Impossible to add the contingency: it trips nothing "
-                               "(lines, shunts, loads and gens are all empty).")
-        if not shunt_ids and not load_ids and not gen_ids:
+                               "(every list of elements is empty).")
+        if not shunt_ids and not load_ids and not gen_ids and not has_others:
             # a branch-only contingency: the same one as add_single_contingency's
             self.add_single_contingency(*branch_ids, name=name)
             return
-        key = self._cont_key(branch_ids, shunt_ids, load_ids, gen_ids)
+        key = self._cont_key(branch_ids, shunt_ids, load_ids, gen_ids, (), (), *other_ids.values())
         if key in self._contingency_order:
             return
         try:
-            self.computer.add_contingency(branch_ids, shunt_ids, load_ids, gen_ids)
+            self.computer.add_contingency(branch_ids, shunt_ids, load_ids, gen_ids, **other_ids)
         except Exception as exc_:
             raise RuntimeError(f"Impossible to add the contingency (lines={lines}, shunts={shunts}, "
-                               f"loads={loads}, gens={gens}): {exc_}") from exc_
+                               f"loads={loads}, gens={gens}, {other_ids}): {exc_}") from exc_
         self._contingency_order[key] = len(self._contingency_order)
         self._all_contingencies.append(key)
         self._contingency_names[key] = name
@@ -910,6 +926,10 @@ class ContingencyAnalysis(object):
         """A single contingency tripping these loads only (one id / name, or several). See
         `add_contingency`."""
         self.add_contingency(loads=loads, name=name)
+
+    def add_contingency_sgen(self, sgens, name=None):
+        """Adds a single contingency tripping static generators, see `add_contingency`."""
+        self.add_contingency(sgens=sgens, name=name)
 
     def add_contingency_gen(self, gens, name=None):
         """A single contingency tripping these generators only (one id / name, or several). See
@@ -1066,6 +1086,7 @@ class ContingencyAnalysis(object):
                 shunt_ids=list(all_conts[id_cpp][1]),
                 load_ids=list(all_conts[id_cpp][2]),
                 gen_ids=list(all_conts[id_cpp][3]),
+                sgen_ids=list(all_conts[id_cpp][6]),
                 batch_unsupported_reason=str(unsupported[id_cpp]) if id_cpp < len(unsupported) else "",
             )
             for id_me, id_cpp in enumerate(orders_)

@@ -14,6 +14,7 @@ import copy
 import unittest
 import warnings
 
+import grid2op
 import numpy as np
 import pandapower as pp
 import pandapower.networks as pn
@@ -24,6 +25,8 @@ with warnings.catch_warnings():
 from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP, ScenarioSweepCPP
 from lightsim2grid.algorithm import AlgorithmType
 from lightsim2grid.lightEnv import TopoAction, ElementType
+from lightsim2grid import LightSimBackend, ContingencyAnalysis
+from lightsim2grid.scenarioSweep import ScenarioSweep
 
 MAX_IT = 30
 TOL = 1e-10
@@ -584,6 +587,67 @@ class TestHvdcLines(_ContingencyMoreElements):
         self.assertTrue(ca.remove_contingency(hvdc_ids=[0, 1]))
         with self.assertRaises(RuntimeError):
             ca.add_contingency(hvdc_ids=[len(self.grid.get_dclines())])
+
+
+class TestWrappers(unittest.TestCase):
+    """`ContingencyAnalysis.add_contingency` and the `ScenarioSweep` setters, on a grid2op
+    environment: what they forward is what the c++ classes do."""
+    ENV_NAME = "l2rpn_case14_sandbox"
+
+    def _env(self, env_name=ENV_NAME):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            env = grid2op.make(env_name, test=True, backend=LightSimBackend())
+        self.addCleanup(env.close)
+        return env
+
+    def _setup_sgens(self, env):
+        env.backend._grid.init_sgens(np.array([8., 5.]), np.array([2., 0.]), np.zeros(2), np.full(2, 50.),
+                                     np.full(2, -50.), np.full(2, 50.), np.array([3, 12], dtype=np.int32))
+        env.backend._grid.tell_solver_need_reset()
+
+    def _check(self, env, keyword, cpp_kw, field, el_id, setter, nb_el):
+        ca = ContingencyAnalysis(env, compute_limit_violations=True)
+        ca.add_contingency(name="cont", **{keyword: [el_id]})
+        result = ca.run().post_contingency_results[0]
+        self.assertEqual(getattr(result, field), [el_id])
+        self.assertEqual(result.contingency_name, "cont")
+        self.assertTrue(result.converged)
+        backend = ca._ls_backend
+        cpp = ContingencyAnalysisCPP(backend._grid)
+        cpp.add_contingency(**{cpp_kw: [el_id]})
+        cpp.compute(1.0 * backend.V, backend.max_it, backend.tol)
+        np.testing.assert_allclose(ca.compute_V()[0], np.asarray(cpp.get_voltages())[0], atol=1e-8, rtol=0.)
+        # registered once, named or not
+        ca.add_contingency(**{keyword: el_id})
+        self.assertEqual(len(ca.computer.my_contingencies()), 1)
+        with self.assertRaises(RuntimeError):
+            ca.add_contingency(**{keyword: [nb_el]})
+
+        sweep = ScenarioSweep(env)
+        mask = np.zeros((1, nb_el), dtype=bool)
+        mask[0, el_id] = True
+        getattr(sweep, setter)(mask)
+        sweep.compute(1.0 * env.backend.V)
+        self.assertTrue(sweep.computer.converged_mask()[0])
+        with self.assertRaises(RuntimeError):
+            getattr(ScenarioSweep(env), setter)(np.zeros((1, nb_el + 1), dtype=bool))
+
+    def test_static_generators(self):
+        env = self._env()
+        self._setup_sgens(env)
+        self._check(env, "sgens", "sgen_ids", "sgen_ids", 1, "set_contingency_sgens", 2)
+
+    def test_an_empty_contingency_is_refused(self):
+        with self.assertRaises(RuntimeError):
+            ContingencyAnalysis(self._env()).add_contingency()
+
+    def test_the_shortcuts(self):
+        env = self._env()
+        self._setup_sgens(env)
+        ca = ContingencyAnalysis(env)
+        ca.add_contingency_sgen(0)
+        self.assertEqual([c[6] for c in ca.computer.my_contingencies()], [[0]])
 
 
 if __name__ == "__main__":
