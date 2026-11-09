@@ -23,6 +23,7 @@ import unittest
 import warnings
 
 import numpy as np
+import pandapower as pp
 import pandapower.networks as pn
 
 with warnings.catch_warnings():
@@ -43,6 +44,25 @@ def _grid():
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         grid = init_from_pandapower(pn.case14())
+    grid.deactivate_gen(GEN_ON_LEAF)
+    grid.init_svcs([2], np.ones(1), np.array([5.]), np.zeros(1), np.full(1, -0.5), np.full(1, 0.5),
+                   np.array([7], dtype=np.int32), np.array([7], dtype=np.int32))
+    grid.set_svc_standby([True], np.full(1, 0.9), np.full(1, 1.1))
+    grid.tell_solver_need_reset()
+    return grid
+
+
+def _grid_with_half_open_hvdc():
+    """the same fixture, with an HVDC line whose end 1 is open in the base case, on a bus nothing else
+    touches: the state the main-component clean-up leaves a line in"""
+    net = pn.case14()
+    dead_bus = pp.create_bus(net, vn_kv=net.bus.vn_kv.iloc[3])
+    pp.create_dcline(net, from_bus=dead_bus, to_bus=3, p_mw=0.0, loss_percent=0.0, loss_mw=0.0,
+                     vm_from_pu=1.0, vm_to_pu=1.02)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        grid = init_from_pandapower(net)
+    grid.deactivate_dcline_side1(0)
     grid.deactivate_gen(GEN_ON_LEAF)
     grid.init_svcs([2], np.ones(1), np.array([5.]), np.zeros(1), np.full(1, -0.5), np.full(1, 0.5),
                    np.array([7], dtype=np.int32), np.array([7], dtype=np.int32))
@@ -340,6 +360,40 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
         self.assertFalse(ca.converged()[0])
         self.assertIn("redistribute_slack", ca.get_batch_unsupported_reasons()[0])
         self.assertEqual([v.violation_type for v in ca.get_violations()[0]], [LimitViolationType.BATCH_UNSUPPORTED])
+
+    def test_undoing_a_half_open_hvdc_line_keeps_its_open_end_open(self):
+        """Issue #281, PR #292: the fallback undoes each row on a grid copy shared with the next rows.
+        Putting back an HVDC line that was already half-open in the base case reconnected its open end
+        too, on a bus nothing else touches: every later row on that copy had a singular Jacobian and
+        diverged, although each of them converges alone."""
+        grid = _grid_with_half_open_hvdc()
+        v0 = np.ones(grid.total_bus(), dtype=complex)
+        rows = [dict(svc_ids=[SVC], hvdc_ids=[0]),   # the row whose undo matters
+                dict(svc_ids=[SVC], load_ids=[2]),
+                dict(svc_ids=[SVC], branch_ids=[1])]
+
+        def run(contingencies):
+            ca = ContingencyAnalysisCPP(grid)
+            ca.batch_unsupported_fallback = True
+            for cont in contingencies:
+                ca.add_contingency(**cont)
+            ca.compute(1.0 * v0, MAX_IT, TOL)
+            return ca, np.asarray(ca.converged_mask()).astype(bool), np.asarray(ca.get_voltages())
+
+        ca, converged, voltages = run(rows)
+        # the object sorts its rows: check that the row undoing the HVDC line is not the last one
+        hvdc_rows = [i for i, cont in enumerate(ca.my_contingencies()) if len(cont[9])]
+        self.assertEqual(hvdc_rows, [0])
+        self.assertTrue(all(ca.get_batch_unsupported_reasons()))  # all three went through the fallback
+        self.assertTrue(converged.all(), f"rows converged: {converged}")
+        for row, cont in enumerate(ca.my_contingencies()):
+            kept = dict(svc_ids=list(cont[8]), hvdc_ids=list(cont[9]), load_ids=list(cont[2]), branch_ids=list(cont[0]))
+            _, alone_converged, alone = run([kept])
+            self.assertTrue(alone_converged[0])
+            np.testing.assert_allclose(voltages[row], alone[0], atol=1e-9, rtol=0.)
+        # the line stays half-open on the source grid, too
+        self.assertFalse(grid.get_dclines()[0].connected1)
+
 
 if __name__ == "__main__":
     unittest.main()

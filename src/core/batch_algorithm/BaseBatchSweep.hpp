@@ -4158,7 +4158,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // branch id (lines then trafos), and its global / side statuses before
             struct Branch { int id; bool global; bool side1; bool side2; };
             std::vector<Branch> branches;
-            std::vector<int> gens, loads, shunts, sgens, storages, svcs, hvdcs;
+            // HVDC line id and its per-end statuses before: one end can be open in the base case
+            struct Hvdc { int id; bool side1; bool side2; };
+            std::vector<Hvdc> hvdcs;
+            std::vector<int> gens, loads, shunts, sgens, storages, svcs;
             int n_line = 0;
             void apply(LSGrid & grid){
                 for(auto it = branches.rbegin(); it != branches.rend(); ++it){
@@ -4178,7 +4181,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 for(int s : sgens) grid.reactivate_sgen(s);
                 for(int s : storages) grid.reactivate_storage(s);
                 for(int s : svcs) grid.reactivate_svc(s);
-                for(int h : hvdcs) grid.reactivate_dcline(h);
+                for(const Hvdc & h : hvdcs){
+                    // reconnects both ends: an end open before the row goes back to open, or
+                    // its bus would enter the solver with nothing around it (a half-open line
+                    // has no droop, so opening the end through LSGrid changes nothing else)
+                    grid.reactivate_dcline(h.id);
+                    if(!h.side1) grid.deactivate_dcline_side1(h.id);
+                    if(!h.side2) grid.deactivate_dcline_side2(h.id);
+                }
                 branches.clear(); gens.clear(); loads.clear(); shunts.clear(); sgens.clear(); storages.clear(); svcs.clear();
                 hvdcs.clear();
             }
@@ -4247,9 +4257,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 undo.svcs.push_back(s);
             }
             for(int h : cont.hvdcs){
-                if(!grid.get_dclines().get_status_global()[static_cast<size_t>(h)]) continue;
+                const size_t el = static_cast<size_t>(h);
+                const HvdcLineContainer & dclines = grid.get_dclines();
+                if(!dclines.get_status_global()[el]) continue;
+                undo.hvdcs.push_back(typename FallbackUndo::Hvdc{h, dclines.get_status_side_1()[el], dclines.get_status_side_2()[el]});
                 grid.deactivate_dcline(h);
-                undo.hvdcs.push_back(h);
             }
         }
 
