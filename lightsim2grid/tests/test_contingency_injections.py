@@ -102,9 +102,9 @@ class TestContingencyAnalysisCPP(_Base):
         ca.add_contingency_load(1)
         conts = ca.my_contingencies()
         self.assertEqual(len(conts), 4)
-        self.assertIn(([], [0], [], [], [], [], [], []), [tuple(c) for c in conts])
-        self.assertIn(([], [], [1, 2], [], [], [], [], []), [tuple(c) for c in conts])
-        self.assertIn(([], [], [], [self.gen_alone], [], [], [], []), [tuple(c) for c in conts])
+        self.assertIn(([], [0], [], [], [], [], [], [], []), [tuple(c) for c in conts])
+        self.assertIn(([], [], [1, 2], [], [], [], [], [], []), [tuple(c) for c in conts])
+        self.assertIn(([], [], [], [self.gen_alone], [], [], [], [], []), [tuple(c) for c in conts])
         # my_defaults lists the branches only
         self.assertEqual(ca.my_defaults(), [[], [], [], []])
         self.assertTrue(ca.remove_contingency(load_ids=[1, 2]))
@@ -160,7 +160,7 @@ class TestOneSideTrips(_Base):
         ca.add_contingency(branch_ids_side1=[3, 5], branch_ids_side2=[3])
         ca.add_contingency(branch_ids=[4], branch_ids_side2=[4])
         conts = sorted(tuple(c) for c in ca.my_contingencies())
-        self.assertEqual(conts, [([3], [], [], [], [5], [], [], []), ([4], [], [], [], [], [], [], [])])
+        self.assertEqual(conts, [([3], [], [], [], [5], [], [], [], []), ([4], [], [], [], [], [], [], [], [])])
         self.assertTrue(ca.remove_contingency(branch_ids=[3], branch_ids_side1=[5]))
         self.assertEqual(len(ca.my_contingencies()), 1)
         with self.assertRaises(RuntimeError):

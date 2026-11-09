@@ -28,8 +28,8 @@ namespace ls2g {
     whose breaker opens at one end: it still carries its charging current from the
     other end). A branch is in one of the three branch sets at most.
 
-    `sgens`, `storages`: the static generators and storage units it trips (their injection
-    leaves the row). **/
+    `sgens`, `storages`, `svcs`: the static generators, storage units and static var
+    compensators it trips (what they stamp leaves the row). **/
 struct LS2G_API ContingencyElements {
     std::set<int> branches;
     std::set<int> shunts;
@@ -39,18 +39,19 @@ struct LS2G_API ContingencyElements {
     std::set<int> branches_side2;
     std::set<int> sgens;
     std::set<int> storages;
+    std::set<int> svcs;
 
     bool operator<(const ContingencyElements & other) const {
-        return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2, sgens, storages) <
-               std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2, other.sgens, other.storages);
+        return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2, sgens, storages, svcs) <
+               std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2, other.sgens, other.storages, other.svcs);
     }
     bool operator==(const ContingencyElements & other) const {
-        return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2, sgens, storages) ==
-               std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2, other.sgens, other.storages);
+        return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2, sgens, storages, svcs) ==
+               std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2, other.sgens, other.storages, other.svcs);
     }
     bool empty() const {
         return branches.empty() && shunts.empty() && loads.empty() && gens.empty() &&
-               branches_side1.empty() && branches_side2.empty() && sgens.empty() && storages.empty();
+               branches_side1.empty() && branches_side2.empty() && sgens.empty() && storages.empty() && svcs.empty();
     }
     /** every branch the contingency opens, at both ends or at one (sorted): what carries
         no flow worth reporting, and what the outer loops see as open **/
@@ -267,6 +268,14 @@ struct LS2G_API YbusPolicy
                                            bool ac_solver_used,
                                            const SolverBusIdVect & id_me_to_solver,
                                            std::vector<std::pair<int, cplx_type> > & sbus_dp);
+            // an SVC's b0 (a diagonal coefficient, AC) into `coeffs`, the reactive setpoint of one in
+            // REACTIVE_POWER mode into `sbus_dp` (one in VOLTAGE mode is left out of the batch)
+            static void _append_svc_trips(const std::set<int> & svc_ids,
+                                          const LSGrid & grid_model,
+                                          bool ac_solver_used,
+                                          const SolverBusIdVect & id_me_to_solver,
+                                          std::vector<Coeff> & coeffs,
+                                          std::vector<std::pair<int, cplx_type> > & sbus_dp);
             static void _append_storage_trips(const std::set<int> & storage_ids,
                                               const LSGrid & grid_model,
                                               bool ac_solver_used,

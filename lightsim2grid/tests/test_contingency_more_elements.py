@@ -272,5 +272,61 @@ class TestStorageUnits(_ContingencyMoreElements):
         self.assertTrue(ca.converged_mask()[self._row(ca, [self.PQ])])
 
 
+class TestStaticVarCompensators(_ContingencyMoreElements):
+    ARG = "svc_ids"
+    FIXED_Q, OFF_B0, VOLTAGE = 0, 1, 2   # REACTIVE_POWER, OFF with a b0, VOLTAGE
+
+    def _setup_grid(self, grid):
+        grid.init_svcs([2, 0, 1], np.array([1., 1., 1.03]), np.array([5., 0., 0.]),
+                       np.zeros(3), np.full(3, -0.5), np.full(3, 0.5),
+                       np.array([12, 13, 4], dtype=np.int32), np.array([12, 13, 4], dtype=np.int32))
+        grid.set_svc_b0(np.array([0.02, 0.03, 0.]))
+        grid.tell_solver_need_reset()
+
+    def _deactivate(self, grid, el_id):
+        grid.deactivate_svc(el_id)
+
+    def test_matches_a_one_off_powerflow(self):
+        trips = [([self.FIXED_Q], []), ([self.OFF_B0], []), ([self.FIXED_Q, self.OFF_B0], []), ([self.FIXED_Q], [5])]
+        ca = self._analysis(trips)
+        V = np.asarray(ca.get_voltages())
+        for el_ids, branches in trips:
+            row = self._row(ca, el_ids, branches)
+            self.assertEqual(ca.get_batch_unsupported_reasons()[row], "")
+            self.assertTrue(ca.converged_mask()[row])
+            np.testing.assert_allclose(V[row], self._reference(el_ids, branches), atol=1e-8, rtol=0.)
+
+    def test_dc_trips_nothing(self):
+        # no active power, no b0 in DC: the row is the base case
+        ca = self._analysis([([self.VOLTAGE], []), ([self.FIXED_Q], [5])], dc=True)
+        self.assertEqual(list(ca.get_batch_unsupported_reasons()), ["", ""])
+        V = np.asarray(ca.get_voltages())
+        np.testing.assert_allclose(V[self._row(ca, [self.VOLTAGE])], self._reference([], dc=True), atol=1e-8, rtol=0.)
+
+    def test_a_voltage_mode_one_is_left_out(self):
+        ca = self._analysis([([self.VOLTAGE], []), ([self.FIXED_Q], [])], compute_limit_violations=True)
+        row = self._row(ca, [self.VOLTAGE])
+        self.assertIn("regulates a voltage", ca.get_batch_unsupported_reasons()[row])
+        self.assertIn("static var compensator 2", ca.get_batch_unsupported_reasons()[row])
+        self.assertFalse(ca.converged_mask()[row])
+        self.assertTrue(ca.converged_mask()[self._row(ca, [self.FIXED_Q])])
+
+    def test_the_fallback_solves_it(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.batch_unsupported_fallback = True
+        ca.add_contingency(svc_ids=[self.VOLTAGE])
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        self.assertTrue(ca.converged_mask()[0])
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([self.VOLTAGE]), atol=1e-8, rtol=0.)
+
+    def test_registration(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.add_contingency(svc_ids=[1, 0])
+        self.assertEqual([c[8] for c in ca.my_contingencies()], [[0, 1]])
+        self.assertTrue(ca.remove_contingency(svc_ids=[0, 1]))
+        with self.assertRaises(RuntimeError):
+            ca.add_contingency(svc_ids=[len(self.grid.get_svcs())])
+
+
 if __name__ == "__main__":
     unittest.main()

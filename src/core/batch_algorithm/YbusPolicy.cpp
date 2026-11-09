@@ -270,6 +270,27 @@ void YbusPolicy::Contingency::_append_storage_trips(const std::set<int> & storag
     }
 }
 
+void YbusPolicy::Contingency::_append_svc_trips(const std::set<int> & svc_ids,
+                                                const LSGrid & grid_model,
+                                                bool ac_solver_used,
+                                                const SolverBusIdVect & id_me_to_solver,
+                                                std::vector<Coeff> & coeffs,
+                                                std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    if(!ac_solver_used) return;  // no active power, and DC has no reactive part nor b0
+    const auto & svcs = grid_model.get_svcs();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    for(int svc_id : svc_ids){
+        const int bus = live_solver_bus(svcs, svc_id, id_me_to_solver);
+        if(bus < 0) continue;
+        // the very coefficient SvcContainer::_fillYbus stamps, whatever the mode
+        const real_type b0 = svcs.get_b0_pu(svc_id);
+        if(b0 != 0.) coeffs.push_back({bus, bus, cplx_type(0., b0)});
+        if(svcs.get_regulation_mode(svc_id) != SvcContainer::RegulationMode::REACTIVE_POWER) continue;
+        sbus_dp.push_back({bus, -per_unit(cplx_type(0., svcs.get_target_q()(svc_id)), sn_mva)});
+    }
+}
+
 void YbusPolicy::Contingency::init_li_coeffs(
     const LSGrid & grid_model,
     bool ac_solver_used,
@@ -298,6 +319,7 @@ void YbusPolicy::Contingency::init_li_coeffs(
                           grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         _append_sgen_trips(this_cont.sgens, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         _append_storage_trips(this_cont.storages, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
+        _append_svc_trips(this_cont.svcs, grid_model, ac_solver_used, id_me_to_solver, coeffs, sbus_dp);
         li_coeffs.push_back(std::move(coeffs));
         ++cont_id;
     }

@@ -640,6 +640,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _check_shunt_trips(nb_steps);
         // the storage units the contingencies trip (ContingencyAnalysis)
         _prepare_storage_trips(nb_steps);
+        _check_svc_trips(nb_steps);
 
         // generator contingencies (ScenarioSweep and ContingencyAnalysis; no-op
         // elsewhere). Must run after
