@@ -189,15 +189,25 @@ class LS2G_API ShuntContainer final: public OneSideContainer_PQ, public Iterator
             solver_control.tell_one_el_changed_bus();
             solver_control.dc_algo_controler().tell_recompute_sbus();
         }
-        void _on_deactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
+        void _on_deactivate(int el_id, DualAlgoControl & solver_control) override {
             solver_control.tell_recompute_ybus();
             solver_control.tell_one_el_changed_bus();
             solver_control.dc_algo_controler().tell_recompute_sbus();
+            _tell_regulating_shunt_switched(el_id, solver_control);
         }
-        void _on_reactivate(int /*el_id*/, DualAlgoControl & solver_control) override {
+        void _on_reactivate(int el_id, DualAlgoControl & solver_control) override {
             solver_control.tell_recompute_ybus();
             solver_control.tell_one_el_changed_bus();
             solver_control.dc_algo_controler().tell_recompute_sbus();
+            _tell_regulating_shunt_switched(el_id, solver_control);
+        }
+        // The outer loops reserve the control of a regulating shunt when the Newton rebuilds
+        // (BaseOuterLoop::declare), among the shunts connected then. Switching a shunt only
+        // changes the diagonal of Ybus, which asks for no rebuild: without this, the controls
+        // of its bus stay the ones of the shunts connected at the last rebuild. Only for a
+        // shunt that regulates: the others keep the factorization.
+        void _tell_regulating_shunt_switched(int el_id, DualAlgoControl & solver_control) const {
+            if(has_sections(el_id) && get_section_regulating(el_id)) solver_control.ac_algo_controler().tell_pv_changed();
         }
 
         void _compute_res_pq(

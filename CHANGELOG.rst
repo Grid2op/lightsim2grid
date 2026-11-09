@@ -316,6 +316,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``get_batch_unsupported_reasons()``, instead of making ``compute()`` raise for the whole batch (#280).
 - [ADDED] ``ContingencyAnalysis.batch_unsupported_fallback``: the contingencies reported ``BATCH_UNSUPPORTED``
   are solved after the batch, one at a time, by ``ac_pf`` on a copy of the grid (#280).
+- [FIXED] ``ShuntVoltageControl``: switching a regulating shunt off or on between two solves now rebuilds its
+  control. The shunts of its bus silently stopped regulating.
 
 
 [1.3.0] 2026-11-03
