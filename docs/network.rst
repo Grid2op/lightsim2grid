@@ -629,7 +629,7 @@ each distinct contingency once:
         return {el.name: i for i, el in enumerate(elements)}
     branch_id = {name: i for i, name in enumerate(list(grid.get_line_names()) + list(grid.get_trafo_names()))}
     kinds = (branch_id, ids(grid.get_shunts()), ids(grid.get_loads()), ids(grid.get_generators()))
-    other_kinds = (ids(grid.get_static_generators()),)
+    other_kinds = (ids(grid.get_static_generators()), ids(grid.get_storages()))
 
     ca = ContingencyAnalysisCPP(grid)
     ca.handle_disconnected_grid = True
@@ -651,7 +651,7 @@ each distinct contingency once:
     V_unique = ca.get_voltages()[[row[key] for key in keys]]
     V = V_unique[inverse]   # one row per contingency added
 
-A shunt leaves the admittance matrix, a load, a generator and a static generator the injection (a generator that
+A shunt leaves the admittance matrix, a load, a generator, a static generator and a storage unit the injection (a generator that
 was the last one regulating its bus turns that bus PQ), and what the contingency loses is made
 up by the distributed slack. An element the grid does not model under that name (a branch fused
 away as a zero impedance one, for example) is left connected by the loop above; one the

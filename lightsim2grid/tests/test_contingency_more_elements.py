@@ -183,5 +183,94 @@ class TestStaticGenerators(_ContingencyMoreElements):
                                    atol=1e-8, rtol=0.)
 
 
+class TestStorageUnits(_ContingencyMoreElements):
+    ARG = "storage_ids"
+    REGULATING, PQ = 0, 1
+    BUS_REGULATING, BUS_PQ = 12, 13
+    TRIPS = [([REGULATING], []), ([PQ], []), ([REGULATING, PQ], []), ([PQ], [5])]
+
+    def _setup_grid(self, grid):
+        # one unit alone regulating its bus (nothing else does there), one that does not regulate
+        grid.init_storages_full(np.array([5., -3.]), np.array([0., 1.]), [True, False],
+                                np.array([1.03, 1.]), np.array([-50., -50.]), np.array([50., 50.]),
+                                np.array([self.BUS_REGULATING, self.BUS_PQ], dtype=np.int32))
+        grid.tell_solver_need_reset()
+
+    def _deactivate(self, grid, el_id):
+        grid.deactivate_storage(el_id)
+
+    def test_matches_a_one_off_powerflow(self):
+        ca = self._analysis(self.TRIPS)
+        V = np.asarray(ca.get_voltages())
+        for el_ids, branches in self.TRIPS:
+            row = self._row(ca, el_ids, branches)
+            self.assertTrue(ca.converged_mask()[row])
+            np.testing.assert_allclose(V[row], self._reference(el_ids, branches), atol=1e-8, rtol=0.)
+
+    def test_dc(self):
+        # the angles: DC does not solve a magnitude (and a batch keeps its seed's at the unit's bus)
+        ca = self._analysis(self.TRIPS, dc=True)
+        V = np.asarray(ca.get_voltages())
+        for el_ids, branches in self.TRIPS:
+            np.testing.assert_allclose(np.angle(V[self._row(ca, el_ids, branches)]),
+                                       np.angle(self._reference(el_ids, branches, dc=True)), atol=1e-8, rtol=0.)
+
+    def test_the_bus_it_regulated_turns_pq(self):
+        ca = self._analysis([([self.REGULATING], [])])
+        V = np.asarray(ca.get_voltages())[0]
+        self.assertGreater(abs(abs(V[self.BUS_REGULATING]) - 1.03), 1e-4)
+
+    def test_a_unit_of_the_slack_leaves_it(self):
+        for gen in self.grid.get_generators():
+            self.grid.add_gen_slackbus(gen.id, 1.)
+        self.grid.add_storage_slackbus(self.PQ, 1.)
+        self.grid.tell_solver_need_reset()
+        ca = self._analysis([([self.PQ], [])], compute_gen_results=True)
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([self.PQ]), atol=1e-8, rtol=0.)
+
+    def test_redistribute_slack_shares_what_it_loses(self):
+        for gen in self.grid.get_generators():
+            self.grid.add_gen_slackbus(gen.id, 1.)
+        self.grid.tell_solver_need_reset()
+        ca = self._analysis([([self.PQ], [])], redistribute_slack=True)
+        ref = copy.deepcopy(self.grid)
+        ref.deactivate_storage(self.PQ)
+        ref.redistribute_active_power(3.)  # it was producing 3 MW (-3 in the load convention)
+        ref.tell_solver_need_reset()
+        V_ref = ref.ac_pf(1.0 * self.v0, MAX_IT, TOL)
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], V_ref, atol=1e-6, rtol=0.)
+
+    def test_registration(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.add_contingency(storage_ids=[1, 0])
+        self.assertEqual([c[7] for c in ca.my_contingencies()], [[0, 1]])
+        self.assertTrue(ca.remove_contingency(storage_ids=[0, 1]))
+        with self.assertRaises(RuntimeError):
+            ca.add_contingency(storage_ids=[len(self.grid.get_storages())])
+
+    def test_fallback(self):
+        self.grid.set_gen_regulated_bus(GEN_REMOTE, REG_BUS)
+        self.grid.tell_solver_need_reset()
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.batch_unsupported_fallback = True
+        ca.add_contingency(gen_ids=[GEN_REMOTE], storage_ids=[self.PQ])
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        self.assertTrue(ca.converged_mask()[0])
+        self.assertIn("remote bus", ca.get_batch_unsupported_reasons()[0])
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0],
+                                   self._reference([self.PQ], gens=[GEN_REMOTE]), atol=1e-8, rtol=0.)
+
+    def test_a_regulating_unit_on_a_group_bus_is_left_out(self):
+        # a remote generator holds the bus the unit regulates: their group owns that bus
+        self.grid.set_gen_regulated_bus(GEN_REMOTE, self.BUS_REGULATING)
+        self.grid.change_v_gen(GEN_REMOTE, 1.03)
+        self.grid.tell_solver_need_reset()
+        ca = self._analysis([([self.REGULATING], []), ([self.PQ], [])], compute_limit_violations=True)
+        row = self._row(ca, [self.REGULATING])
+        self.assertIn("control group", ca.get_batch_unsupported_reasons()[row])
+        self.assertFalse(ca.converged_mask()[row])
+        self.assertTrue(ca.converged_mask()[self._row(ca, [self.PQ])])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -232,6 +232,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips storage units (``storage_ids``). Issue #281.
 - [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips static generators (``sgen_ids``). Issue #281.
   ``my_contingencies`` gains that list.
 - [ADDED] ``ContingencyPropagator.add_contingencies`` (and ``propagate_contingencies``) read powsybl's

@@ -8345,7 +8345,11 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
       :func:`lightsim2grid.network.ContingencyPropagator.opened_sides`). Its flows read 0, it is not checked against
       its current limits and the outer loops see it as open, as for a branch opened at both ends. A branch named at
       both sides, or also in ``branch_ids``, is opened at both;
-    - a static generator of ``sgen_ids`` leaves the injection, its active and reactive power.
+    - a static generator of ``sgen_ids`` leaves the injection, its active and reactive power;
+    - a storage unit of ``storage_ids`` too (its reactive setpoint when it does not regulate voltage), and the
+      distributed slack is re-weighted without it. When it is the last one regulating its bus, that bus turns PQ for
+      the contingency; a contingency tripping one that stands on a bus a control group holds is left out of the
+      batch (``LimitViolationType.BATCH_UNSUPPORTED``).
 
     What the contingency loses is made up by the distributed slack (``redistribute_slack`` shares it OLF-like before
     the solve), and a bus it strands is handled as a branch contingency strands one (``handle_disconnected_grid``).
@@ -8403,7 +8407,7 @@ const std::string DocContingencyAnalysis::my_contingencies = R"mydelimiter(
     Returns
     -------
     my_contingencies: ``list``
-        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2, sgen_ids)`` per contingency,
+        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2, sgen_ids, storage_ids)`` per contingency,
         each a sorted list (the last two: the branches opened at that side only).
         :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults` lists the branches opened at both
         ends only.

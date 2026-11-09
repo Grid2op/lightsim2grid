@@ -249,6 +249,27 @@ void YbusPolicy::Contingency::_append_sgen_trips(const std::set<int> & sgen_ids,
     }
 }
 
+void YbusPolicy::Contingency::_append_storage_trips(const std::set<int> & storage_ids,
+                                                    const LSGrid & grid_model,
+                                                    bool ac_solver_used,
+                                                    const SolverBusIdVect & id_me_to_solver,
+                                                    std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    const auto & storages = grid_model.get_storages();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    const Eigen::Ref<const RealVect> target_p = storages.get_target_p();
+    const Eigen::Ref<const RealVect> target_q = storages.get_target_q();
+    for(int storage_id : storage_ids){
+        const int bus = live_solver_bus(storages, storage_id, id_me_to_solver);
+        if(bus < 0) continue;
+        // load convention, what StorageContainer::_fillSbus takes: given back. A unit that
+        // regulates its bus stamps no reactive power
+        real_type q = 0.;
+        if(ac_solver_used && !storages.get_voltage_regulator_on(storage_id)) q = target_q(storage_id);
+        sbus_dp.push_back({bus, per_unit(cplx_type(target_p(storage_id), q), sn_mva)});
+    }
+}
+
 void YbusPolicy::Contingency::init_li_coeffs(
     const LSGrid & grid_model,
     bool ac_solver_used,
@@ -276,6 +297,7 @@ void YbusPolicy::Contingency::init_li_coeffs(
         _append_gen_trips(std::vector<int>(this_cont.gens.begin(), this_cont.gens.end()),
                           grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         _append_sgen_trips(this_cont.sgens, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
+        _append_storage_trips(this_cont.storages, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         li_coeffs.push_back(std::move(coeffs));
         ++cont_id;
     }
