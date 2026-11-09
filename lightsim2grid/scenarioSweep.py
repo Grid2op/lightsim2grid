@@ -539,6 +539,18 @@ class ScenarioSweep:
         self._set_element_mask("set_contingency_sgens", mask, self.grid2op_env.backend._grid.get_static_generators(),
                                "static generators")
 
+    def set_contingency_storages(self, mask):
+        """Per-step storage unit contingency mask, shape ``(n_simul, n_storage)``, dtype bool.
+        ``True`` means "disconnect this storage unit for this simulation".
+
+        It leaves the step's injection and its share of the distributed slack; the last
+        controller of a bus turns that bus PQ for the step. A step tripping one on a bus a
+        control group holds is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``),
+        and a step naming a unit in both this mask and its topological action is refused.
+        """
+        self._set_element_mask("set_contingency_storages", mask, self.grid2op_env.backend._grid.get_storages(),
+                               "storage units")
+
     def set_topo_actions(self, actions):
         """One topological action per row, played by that row on top of its injections
         and contingency masks.

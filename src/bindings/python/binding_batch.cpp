@@ -1135,6 +1135,13 @@ void bind_batch(py::module_& m) {
              "True means 'disconnect this static generator for this simulation': the step's "
              "active power (modify_sgen_p, or the grid's) and the reactive setpoint leave its "
              "injection, and the distributed slack makes up the balance.")
+        .def("set_contingency_storages", &ScenarioSweep::set_contingency_storages<>, py::arg("mask"),
+             "Per-step storage unit contingency mask, shape (n_simul, n_storage), dtype bool. "
+             "True means 'disconnect this storage unit for this simulation': it leaves the step's "
+             "injection and its share of the distributed slack; the last controller of a bus turns "
+             "that bus PQ. A step tripping one on a bus a control group holds is left out of the "
+             "batch (LimitViolationType.BATCH_UNSUPPORTED). A step naming a unit in both this mask "
+             "and its topological action is refused.")
         .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
              "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "
              "True means 'disconnect this load for this simulation': the step's own load "

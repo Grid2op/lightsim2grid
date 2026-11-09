@@ -18,6 +18,11 @@
 
 namespace ls2g {
 
+/** The kinds of element a row trips by a per-element mask of YbusPolicy::Contingency on a
+    ScenarioSweep (ContingencyElements on a ContingencyAnalysis): what they stamp is the same in
+    every row, so what a row takes back is settled once per batch. **/
+enum class InjectionTrip { STORAGE };
+
 /** What one contingency of a ContingencyAnalysis trips: branches (lines then
     transformers, the gridmodel numbering every batch class uses), shunts, loads and
     generators, by their own ids. Ordered field by field, branches first, so a set of
@@ -50,6 +55,12 @@ struct LS2G_API ContingencyElements {
     bool operator==(const ContingencyElements & other) const {
         return std::tie(branches, shunts, loads, gens, branches_side1, branches_side2, sgens, storages, svcs, hvdcs) ==
                std::tie(other.branches, other.shunts, other.loads, other.gens, other.branches_side1, other.branches_side2, other.sgens, other.storages, other.svcs, other.hvdcs);
+    }
+    const std::set<int> & of(InjectionTrip kind) const {
+        switch(kind){
+            case InjectionTrip::STORAGE:
+            default: return storages;
+        }
     }
     bool empty() const {
         return branches.empty() && shunts.empty() && loads.empty() && gens.empty() &&
@@ -144,6 +155,14 @@ struct LS2G_API YbusPolicy
         // convention as everywhere else in this file.
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> line_mask;
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> trafo_mask;
+        // same, one column per storage unit (ScenarioSweep set_contingency_storages)
+        Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> storage_mask;
+        const Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> & mask_of(InjectionTrip kind) const {
+            switch(kind){
+                case InjectionTrip::STORAGE:
+                default: return storage_mask;
+            }
+        }
         // same, one column per shunt (ScenarioSweep set_contingency_shunts): a shunt is
         // an admittance, so it lives with the branches, as a diagonal coefficient
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> shunt_mask;
@@ -213,6 +232,39 @@ struct LS2G_API YbusPolicy
         }
         bool gen_off_in_row(size_t row, int gen_id) const {
             return row < li_rows.size() && li_rows[row].gens.count(gen_id) > 0;
+        }
+        // what row `row` trips of that kind (sorted): its contingency (ContingencyAnalysis,
+        // li_rows) or its mask (ScenarioSweep)
+        std::vector<int> ids_for_row(InjectionTrip kind, size_t row) const {
+            if(row < li_rows.size()){
+                const std::set<int> & ids = li_rows[row].of(kind);
+                return std::vector<int>(ids.begin(), ids.end());
+            }
+            std::vector<int> res;
+            const auto & mask = mask_of(kind);
+            if(static_cast<Eigen::Index>(row) >= mask.rows()) return res;
+            for(Eigen::Index col = 0; col < mask.cols(); ++col){
+                if(mask(static_cast<Eigen::Index>(row), col)) res.push_back(static_cast<int>(col));
+            }
+            return res;
+        }
+        bool tripped_in_row(InjectionTrip kind, size_t row, int el_id) const {
+            if(row < li_rows.size()) return li_rows[row].of(kind).count(el_id) > 0;
+            const auto & mask = mask_of(kind);
+            return static_cast<Eigen::Index>(row) < mask.rows() && el_id < mask.cols() &&
+                   mask(static_cast<Eigen::Index>(row), el_id);
+        }
+        // whether some row trips an element of that kind satisfying `pred`
+        template<class Pred>
+        bool any_tripped(InjectionTrip kind, Pred pred) const {
+            for(const ContingencyElements & cont : li_rows){
+                for(int el_id : cont.of(kind)) if(pred(el_id)) return true;
+            }
+            const auto & mask = mask_of(kind);
+            for(Eigen::Index col = 0; col < mask.cols(); ++col){
+                if(mask.col(col).any() && pred(static_cast<int>(col))) return true;
+            }
+            return false;
         }
         // whether any contingency trips a generator (ContingencyAnalysis)
         bool has_gen_off() const {

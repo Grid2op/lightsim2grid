@@ -23,6 +23,7 @@ with warnings.catch_warnings():
     from lightsim2grid.gridmodel import init_from_pandapower
 from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP, ScenarioSweepCPP
 from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid.lightEnv import TopoAction, ElementType
 
 MAX_IT = 30
 TOL = 1e-10
@@ -265,6 +266,7 @@ class TestStaticGenerators(_ContingencyMoreElements):
 
 class TestStorageUnits(_ContingencyMoreElements):
     ARG = "storage_ids"
+    SETTER = "set_contingency_storages"
     REGULATING, PQ = 0, 1
     BUS_REGULATING, BUS_PQ = 12, 13
     TRIPS = [([REGULATING], []), ([PQ], []), ([REGULATING, PQ], []), ([PQ], [5])]
@@ -339,6 +341,46 @@ class TestStorageUnits(_ContingencyMoreElements):
         self.assertIn("remote bus", ca.get_batch_unsupported_reasons()[0])
         np.testing.assert_allclose(np.asarray(ca.get_voltages())[0],
                                    self._reference([self.PQ], gens=[GEN_REMOTE]), atol=1e-8, rtol=0.)
+
+    @staticmethod
+    def _container(grid):
+        return grid.get_storages()
+
+    def test_scenario_sweep(self):
+        self._check_sweep(self.TRIPS, self._sweep(self.TRIPS))
+
+    def test_scenario_sweep_dc(self):
+        self._check_sweep(self.TRIPS, self._sweep(self.TRIPS, dc=True), dc=True, angles_only=True)
+
+    def test_scenario_sweep_with_the_islands_handled(self):
+        self._check_sweep(self.TRIPS, self._sweep(self.TRIPS, handle_disconnected_grid=True))
+
+    def test_scenario_sweep_a_unit_of_the_slack_leaves_it(self):
+        for gen in self.grid.get_generators():
+            self.grid.add_gen_slackbus(gen.id, 1.)
+        self.grid.add_storage_slackbus(self.PQ, 1.)
+        self.grid.tell_solver_need_reset()
+        trips = [([self.PQ], [])]
+        self._check_sweep(trips, self._sweep(trips))
+
+    def test_scenario_sweep_a_regulating_unit_on_a_group_bus_is_left_out(self):
+        self.grid.set_gen_regulated_bus(GEN_REMOTE, self.BUS_REGULATING)
+        self.grid.change_v_gen(GEN_REMOTE, 1.03)
+        self.grid.tell_solver_need_reset()
+        sweep = self._sweep([([self.REGULATING], []), ([self.PQ], [])])
+        sweep.compute(1.0 * self.v0, MAX_IT, TOL)
+        self.assertIn("control group", sweep.get_batch_unsupported_reasons()[0])
+        self.assertFalse(sweep.converged_mask()[0])
+        self.assertTrue(sweep.converged_mask()[1])
+
+    def test_scenario_sweep_refuses_a_unit_also_in_the_action(self):
+        self.grid.set_storage_to_subid(np.array([self.BUS_REGULATING, self.BUS_PQ], dtype=np.int32))
+        act = TopoAction()
+        act.add_element(ElementType.storage, self.PQ, -1)
+        sweep = self._sweep([([self.PQ], [])])
+        sweep.set_topo_actions([act])
+        with self.assertRaisesRegex(RuntimeError, "set_contingency_storages"):
+            sweep.compute(1.0 * self.v0, MAX_IT, TOL)
 
     def test_a_regulating_unit_on_a_group_bus_is_left_out(self):
         # a remote generator holds the bus the unit regulates: their group owns that bus

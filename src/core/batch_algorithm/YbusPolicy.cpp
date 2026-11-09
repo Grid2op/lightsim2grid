@@ -431,6 +431,11 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
                                                            row_shift_dp);
         // its shunts (the loads and generators it trips are SbusPolicy::Vary's)
         _append_shunt_trips(shunt_ids_for_row(row), grid_model, ac_solver_used, id_me_to_solver, coeffs, row_shift_dp);
+        const auto ids_as_set = [this, row](InjectionTrip kind){
+            const std::vector<int> ids = ids_for_row(kind, static_cast<size_t>(row));
+            return std::set<int>(ids.begin(), ids.end());
+        };
+        _append_storage_trips(ids_as_set(InjectionTrip::STORAGE), grid_model, ac_solver_used, id_me_to_solver, row_shift_dp);
         if(static_cast<size_t>(row) < topo_branches_moved.size()){
             for(const BranchPlacement & placement : topo_branches_moved[static_cast<size_t>(row)]){
                 // the base contribution out (where there is one), the row's own in. A row

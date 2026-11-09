@@ -458,6 +458,24 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         /**
+         * ScenarioSweep only: row i, column s True means "disconnect storage unit s for step
+         * i". It leaves the row's injection and its share of the distributed slack; the last
+         * controller of a bus turns that bus PQ for the row, as set_contingency_gens does it.
+         * One standing on a bus a control group holds leaves the row out of the batch
+         * (BATCH_UNSUPPORTED). A row naming a unit in both this mask and its topological
+         * action is refused.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_storages(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_storages().nb()), "set_contingency_storages");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_storages");
+            // settled once per batch, with the rows' Ybus edits (L2)
+            clear_batch_inputs();
+            ybus_policy_.storage_mask = mask;
+        }
+
+        /**
          * ScenarioSweep only: one topological action per row (a `TopoAction`, grid2op
          * semantics: set_bus on loads / generators / storage units / line and trafo
          * ends, set_line_status), played by that row on top of its injections and
@@ -2005,6 +2023,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ybus_policy_.line_mask = BoolMat();
             ybus_policy_.trafo_mask = BoolMat();
             ybus_policy_.shunt_mask = BoolMat();
+            ybus_policy_.storage_mask = BoolMat();
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _reset_ybus_policy() {}
@@ -2505,11 +2524,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(v.loads.off.empty()) v.loads.off.assign(static_cast<std::size_t>(nb_load), 0);
                 for(int l : loads) if(l >= 0 && l < nb_load) v.loads.off[static_cast<std::size_t>(l)] = 1;
             }
-            const ContingencyElements * cont = _row_contingency(i);
-            if(cont != nullptr && !cont->storages.empty()){
+            const std::vector<int> storages = _row_tripped(InjectionTrip::STORAGE, i);
+            if(!storages.empty()){
                 const int nb_storage = _grid_model.get_storages().nb();
                 if(v.storages.off.empty()) v.storages.off.assign(static_cast<std::size_t>(nb_storage), 0);
-                for(int s : cont->storages) if(s >= 0 && s < nb_storage) v.storages.off[static_cast<std::size_t>(s)] = 1;
+                for(int s : storages) if(s >= 0 && s < nb_storage) v.storages.off[static_cast<std::size_t>(s)] = 1;
             }
         }
         // where the row's loops start: a row chained on the previous one (TimeSeries) from its
@@ -2743,6 +2762,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const ContingencyElements * cont = _row_contingency(i);
             return cont != nullptr && cont->sgens.count(sgen_id) > 0;
         }
+        // what row i trips of that kind (sorted ids), and whether it trips that element: its
+        // contingency or its mask, nothing where no row trips anything
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        std::vector<int> _row_tripped(InjectionTrip kind, size_t i) const { return ybus_policy_.ids_for_row(kind, i); }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        std::vector<int> _row_tripped(InjectionTrip, size_t) const { return std::vector<int>(); }
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool _is_tripped(InjectionTrip kind, size_t i, int el_id) const { return ybus_policy_.tripped_in_row(kind, i, el_id); }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        bool _is_tripped(InjectionTrip, size_t, int) const { return false; }
         // the static generators row i trips (sorted ids): its contingency or its mask
         std::vector<int> _row_tripped_sgens(size_t i) const {
             std::vector<int> res;
@@ -2914,16 +2943,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         bool _load_leaves_base_bus(size_t i, int load_id) const { return _load_off_in_row(i, load_id); }
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         bool _storage_leaves_base_bus(size_t i, int storage_id) const {
+            if(_is_tripped(InjectionTrip::STORAGE, i, storage_id)) return true;
             if(i >= sbus_policy_.topo_storages_off.size()) return false;
             const std::vector<int> & off = sbus_policy_.topo_storages_off[i];
             return std::find(off.begin(), off.end(), storage_id) != off.end();
         }
         // (ContingencyAnalysis: its contingency trips it)
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
-        bool _storage_leaves_base_bus(size_t i, int storage_id) const {
-            const ContingencyElements * cont = _row_contingency(i);
-            return cont != nullptr && cont->storages.count(storage_id) > 0;
-        }
+        bool _storage_leaves_base_bus(size_t i, int storage_id) const { return _is_tripped(InjectionTrip::STORAGE, i, storage_id); }
 
         // What the action changes in the active balance, generator convention, as power
         // LOST (what the remaining units make up): for each generator, load or storage
@@ -3850,6 +3877,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     if(sbus_policy_.load_off_in(static_cast<Eigen::Index>(row), l.el_id))
                         _throw_topo_overlap(row, "load", l.el_id, "set_contingency_loads");
                 }
+                for(const TopoElPlacement & st : _row_topo_[row].storages){
+                    if(ybus_policy_.tripped_in_row(InjectionTrip::STORAGE, row, st.el_id))
+                        _throw_topo_overlap(row, "storage unit", st.el_id, "set_contingency_storages");
+                }
             }
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
@@ -4547,13 +4578,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(sgens.get_bus_id()(sgen_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
                 lost += _sgen_target_p_in_row(i, sgen_id);
             }
+            const auto & storages = _grid_model.get_storages();
+            for(int storage_id : _row_tripped(InjectionTrip::STORAGE, i)){
+                if(!storages.get_status()[static_cast<size_t>(storage_id)]) continue;
+                if(storages.get_bus_id()(storage_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
+                lost -= storages.get_target_p()(storage_id);
+            }
             if(const ContingencyElements * cont = _row_contingency(i)){
-                const auto & storages = _grid_model.get_storages();
-                for(int storage_id : cont->storages){
-                    if(!storages.get_status()[static_cast<size_t>(storage_id)]) continue;
-                    if(storages.get_bus_id()(storage_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
-                    lost -= storages.get_target_p()(storage_id);
-                }
                 // both stations of a tripped line, as they stood in the base grid
                 const auto & hvdc_lines = _grid_model.get_dclines();
                 for(int hvdc_id : cont->hvdcs){
@@ -4599,40 +4630,39 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _check_shunt_trips(size_t) {}
 
         // whether some row's action takes out a storage unit that regulates its bus
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool _regulating_storage_tripped() const {
+            const auto & storages = _grid_model.get_storages();
+            return ybus_policy_.any_tripped(InjectionTrip::STORAGE,
+                                            [&storages](int storage_id){ return storages.is_local_voltage_controller(storage_id); });
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        bool _regulating_storage_tripped() const { return false; }
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         bool _has_regulating_storage_off() const {
+            if(_regulating_storage_tripped()) return true;
             const auto & storages = _grid_model.get_storages();
             for(const std::vector<int> & off : sbus_policy_.topo_storages_off){
                 for(int storage_id : off) if(storages.is_local_voltage_controller(storage_id)) return true;
             }
             return false;
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
-        bool _has_regulating_storage_off() const {
-            const auto & storages = _grid_model.get_storages();
-            for(const ContingencyElements & cont : ybus_policy_.li_rows){
-                for(int storage_id : cont.storages) if(storages.is_local_voltage_controller(storage_id)) return true;
-            }
-            return false;
-        }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<!Y::supports_contingency && !S::supports_vary, int>::type = 0>
-        bool _has_regulating_storage_off() const { return false; }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _has_regulating_storage_off() const { return _regulating_storage_tripped(); }
 
-        // ContingencyAnalysis: the storage units its contingencies trip. Their share of the
+        // the storage units the contingencies (or the masks) trip. Their share of the
         // distributed slack goes (_row_slack_weights), and one regulating a bus a control group
         // holds is left out of the batch, for the reason a generator there is (see
         // _maybe_prepare_gen_contingency). Runs after the checks that say which rows are skipped.
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _prepare_storage_trips(size_t nb_steps){
-            _row_slack_storages_off_.assign(nb_steps, std::vector<int>());
+            // (a topological action filled it just before, for the units it takes out)
+            if(!_topology_active_) _row_slack_storages_off_.assign(nb_steps, std::vector<int>());
             const auto & storages = _grid_model.get_storages();
             if(storages.nb() == 0) return;
             const std::set<int> & group_buses = _grid_model.get_ac_voltage_control_plan().group_controlled_buses();
-            for(size_t row = 0; row < nb_steps && row < ybus_policy_.li_rows.size(); ++row){
-                for(int storage_id : ybus_policy_.li_rows[row].storages){
+            for(size_t row = 0; row < nb_steps; ++row){
+                for(int storage_id : _row_tripped(InjectionTrip::STORAGE, row)){
                     if(!storages.get_status()[static_cast<size_t>(storage_id)]) continue;
                     if(abs(storages.get_slack_weight(storage_id)) > BaseConstants::_tol_equal_float){
                         _row_slack_storages_off_[row].push_back(storage_id);
@@ -4647,8 +4677,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
             }
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _prepare_storage_trips(size_t) {}
 
         // ContingencyAnalysis: an SVC in voltage mode is a controller of a group, which owns
@@ -5362,7 +5391,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 exc_ << algo_name() << "::" << fun_name << ": the injections and/or the contingency "
                         "masks were modified (modify_gen_p / modify_sgen_p / modify_load_p / "
                         "modify_load_q / set_contingency_lines / set_contingency_trafos / "
-                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / set_contingency_sgens / "
+                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / set_contingency_sgens / set_contingency_storages / "
                         "set_topo_actions) after the "
                         "last compute(); call compute() again before reading the flows.";
                 throw std::runtime_error(exc_.str());
