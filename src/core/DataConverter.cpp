@@ -348,16 +348,16 @@ std::tuple<RealVect,
     //  ym_mva = i0 / 100 * trafo_sn_mva
     RealVect ym_mva = trafo_i0_pct.array() * 0.01 * trafo_sn_mva.array();
     // b_mva_squared = np.square(ym_mva) - np.square(pfe_mw)
-    RealVect b_mva_squared = ym_mva.array() * ym_mva.array() - pfe_mw.array();
+    RealVect b_mva_squared = ym_mva.array() * ym_mva.array() - pfe_mw.array() * pfe_mw.array();
     // b_mva_squared[b_mva_squared < 0] = 0
     for(int i = 0; i<nb_trafo; ++i) {if (b_mva_squared(i) < 0.)  b_mva_squared(i) = 0.;}
     // b_mva = -np.sqrt(b_mva_squared)
     RealVect b_mva = -b_mva_squared.cwiseSqrt();
 
     // g_pu = g_mva / vnl_squared * baseZ * parallel / np.square(vn_trafo_lv / vn_lv_kv)
-    RealVect g_pu = g_mva.array() / vnl_squared.array() * baseZ.array() * vn_trafo_lv_1_vn_lv_sq.array();
+    RealVect g_pu = g_mva.array() / vnl_squared.array() * baseZ.array() / vn_trafo_lv_1_vn_lv_sq.array();
     // b_pu = b_mva / vnl_squared * baseZ * parallel / np.square(vn_trafo_lv / vn_lv_kv)
-    RealVect b_pu = b_mva.array() / vnl_squared.array() * baseZ.array() * vn_trafo_lv_1_vn_lv_sq.array();
+    RealVect b_pu = b_mva.array() / vnl_squared.array() * baseZ.array() / vn_trafo_lv_1_vn_lv_sq.array();
 
     //transform trafo from t model to pi model
     // adapted from _wye_delta in pandapower.build_branch

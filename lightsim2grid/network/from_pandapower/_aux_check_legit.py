@@ -51,9 +51,4 @@ def _aux_check_legit(pp_net):
     #     raise RuntimeError("In order to work, pandapower bus indexes should start at 0 and be contiguous. "
     #                        "Make sure that `pp_net.bus.index` have this property. You can write a github "
     #                        "issue if you want improvment on this regard.")
-    
-    if "_options" in pp_net and \
-       "trafo_model" in pp_net["_options"] and \
-       pp_net["_options"]["trafo_model"] != "t":
-        raise RuntimeError("Cannot handle pp_net with trafo not modeled in \"t\". Please change "
-                           "your network and load it again.")
+    # trafo_model "pi" is checked by `_aux_add_trafo`: only the pandapower 3 converter handles it

@@ -804,6 +804,13 @@ class LS2G_API LSGrid final
             const CplxVect half_b = 0.5 * trafo_b;
             trafos_.update_physical_parameters(trafo_r, trafo_x, half_b, half_b, algo_controler_);
         }
+        /// the same, with a shunt admittance per side (side 1: the high voltage one)
+        void update_trafos_parameters_full(const Eigen::Ref<const RealVect> & trafo_r,
+                                           const Eigen::Ref<const RealVect> & trafo_x,
+                                           const Eigen::Ref<const CplxVect> & trafo_h_1,
+                                           const Eigen::Ref<const CplxVect> & trafo_h_2){
+            trafos_.update_physical_parameters(trafo_r, trafo_x, trafo_h_1, trafo_h_2, algo_controler_);
+        }
 
         void init_generators(const Eigen::Ref<const RealVect> & generators_p,
                              const Eigen::Ref<const RealVect> & generators_v,

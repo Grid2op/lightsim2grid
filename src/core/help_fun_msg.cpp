@@ -4916,6 +4916,24 @@ const std::string DocLSGrid::update_trafos_parameters = R"mydelimiter(
 
 )mydelimiter";
 
+const std::string DocLSGrid::update_trafos_parameters_full = R"mydelimiter(
+    Same as :func:`update_trafos_parameters`, with the shunt admittance of each side given on its
+    own instead of a total split in two halves (a T model whose leakage impedance is not shared
+    equally between the windings gives a different one on each side).
+
+    Parameters
+    ----------
+    r: ``np.ndarray``, float
+        Series resistance (pu), one per transformer
+    x: ``np.ndarray``, float
+        Series reactance (pu), one per transformer
+    h_1: ``np.ndarray``, complex
+        Shunt admittance on side 1, the high voltage side (pu)
+    h_2: ``np.ndarray``, complex
+        Shunt admittance on side 2, the low voltage side (pu)
+
+)mydelimiter";
+
 const std::string DocLSGrid::get_lines = R"mydelimiter(
     This function allows to retrieve the powerlines (as a 
     :class:`lightsim2grid.elements.LineContainer` object,
