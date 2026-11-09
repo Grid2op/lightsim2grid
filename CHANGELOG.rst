@@ -232,6 +232,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [ADDED] ``ContingencyAnalysis.add_contingency``: trips storage units (``storages``). Issue #281.
 - [ADDED] ``ContingencyAnalysis.add_contingency``: trips static generators (``sgens``). Issue #281.
 - [ADDED] ``ScenarioSweep.set_contingency_hvdcs``: per-row trips of HVDC lines. Issue #281.
 - [ADDED] ``ScenarioSweep.set_contingency_svcs``: per-row trips of static var compensators. Issue #281.

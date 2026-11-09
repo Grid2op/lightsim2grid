@@ -638,6 +638,18 @@ class TestWrappers(unittest.TestCase):
         self._setup_sgens(env)
         self._check(env, "sgens", "sgen_ids", "sgen_ids", 1, "set_contingency_sgens", 2)
 
+    def test_storage_units(self):
+        env = self._env("educ_case14_storage")
+        self._check(env, "storages", "storage_ids", "storage_ids", 1, "set_contingency_storages", env.n_storage)
+
+    def test_storage_units_by_name(self):
+        env = self._env("educ_case14_storage")
+        ca = ContingencyAnalysis(env)
+        ca.add_contingency(storages=[env.name_storage[1]])
+        self.assertEqual([c[7] for c in ca.computer.my_contingencies()], [[1]])
+        with self.assertRaises(RuntimeError):
+            ca.add_contingency(storages=["not a storage unit"])
+
     def test_an_empty_contingency_is_refused(self):
         with self.assertRaises(RuntimeError):
             ContingencyAnalysis(self._env()).add_contingency()
