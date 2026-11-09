@@ -232,6 +232,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [IMPROVED] batches: a row can trip a voltage-mode static var compensator, which leaves its control group.
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,
   ``set_may_trip_voltage_controllers`` and ``set_tripped_voltage_controllers``. Rebuild plugins.
 - [IMPROVED] batches: a row can trip a generator of a voltage-control group (remote regulation included).

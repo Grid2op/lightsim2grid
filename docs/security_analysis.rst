@@ -82,8 +82,8 @@ A static generator, a storage unit, a static var compensator or an HVDC line can
 too (`sgens`, `storages`, `svcs`, `hvdcs` of `add_contingency`, each listed in the results). What the batch cannot do with a single analysis is reported ``BATCH_UNSUPPORTED`` for now: a
 row taking out every controller of the group regulating a slack bus, a storage unit on a bus a control group holds, a
 shunt that regulates a voltage when the algorithm runs a ShuntVoltageControl outer loop (its
-sections belong to that loop), a static var compensator regulating a voltage (or with a standby
-automaton, or frozen at a reactive limit), an HVDC line in AC emulation, or with a station
+sections belong to that loop), a static var compensator with a standby automaton or frozen at
+a reactive limit, an HVDC line in AC emulation, or with a station
 regulating a voltage.
 
 Handling contingencies that split the grid
@@ -333,8 +333,8 @@ could not solve, the ``batch_unsupported_reason`` (see below).
     ``LimitViolation`` with ``element_type == ViolationElementType.GRID`` and ``violation_type``
     ``LimitViolationType.NOT_SIMULATED`` (a pre-check -- eg it splits the grid in multiple
     connected components -- skipped this contingency without ever invoking the solver),
-    ``LimitViolationType.BATCH_UNSUPPORTED`` (the batch does not support what it trips, eg a static var
-    compensator regulating a voltage: ``batch_unsupported_reason`` / ``get_batch_unsupported_reasons()`` say why) or
+    ``LimitViolationType.BATCH_UNSUPPORTED`` (the batch does not support what it trips, eg an HVDC line
+    in AC emulation: ``batch_unsupported_reason`` / ``get_batch_unsupported_reasons()`` say why) or
     ``LimitViolationType.DIVERGENCE`` (the solver ran but did not converge, eg reached
     ``max_iter``). This is unlike a converged case with an empty ``limit_violations`` list, which
     genuinely means no violation was found.

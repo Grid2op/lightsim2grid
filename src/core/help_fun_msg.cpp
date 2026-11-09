@@ -8351,9 +8351,10 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
       distributed slack is re-weighted without it. When it is the last one regulating its bus, that bus turns PQ for
       the contingency; a contingency tripping one that stands on a bus a control group holds is left out of the
       batch (``LimitViolationType.BATCH_UNSUPPORTED``);
-    - a static var compensator of ``svc_ids`` leaves the grid with its fixed reactive injection and its ``b0``. A
-      contingency tripping one that regulates a voltage, carries a standby automaton or was frozen at a reactive limit
-      is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``): a control group owns its Jacobian rows;
+    - a static var compensator of ``svc_ids`` leaves the grid with its fixed reactive injection and its ``b0``; one
+      regulating a voltage leaves its control group, the regulated bus going free. A contingency tripping one that
+      carries a standby automaton or was frozen at a reactive limit is left out of the batch
+      (``LimitViolationType.BATCH_UNSUPPORTED``);
     - an HVDC line of ``hvdc_ids`` stops transmitting: both its converter stations leave the injection. A contingency
       tripping a line in AC emulation (or frozen at its limit), or one a station of which regulates a voltage, is left
       out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
@@ -8619,8 +8620,8 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
       solver was never invoked for it.
-    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg a static var
-      compensator regulating a voltage), so it was left out of the batch rather than failing all of it.
+    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg an hvdc line
+      in AC emulation), so it was left out of the batch rather than failing all of it.
       ``get_batch_unsupported_reasons()`` says why.
     - ``DIVERGENCE``: the solver was invoked for this contingency but did not converge.
 

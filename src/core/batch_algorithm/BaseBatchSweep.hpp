@@ -475,9 +475,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         /**
          * ScenarioSweep only: row i, column s True means "disconnect static var compensator
-         * s for step i": its fixed reactive injection and its b0 leave the row. One regulating
-         * a voltage, carrying a standby automaton or frozen at a reactive limit leaves the row
-         * out of the batch (BATCH_UNSUPPORTED): a control group owns its Jacobian rows.
+         * s for step i": its fixed reactive injection and its b0 leave the row, and one in
+         * voltage mode its control group. One carrying a standby automaton or frozen at a
+         * reactive limit leaves the row out of the batch (BATCH_UNSUPPORTED).
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -650,9 +650,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *    the distributed slack is re-weighted without it. The last controller of its bus
          *    turns that bus PQ, as a generator; one on a bus a control group holds is
          *    refused by compute().
-         *  - a static var compensator leaves the row: its fixed reactive injection and its b0.
-         *    One in voltage mode, carrying a standby automaton or frozen at a reactive limit
-         *    is refused by compute(): a control group holds its rows of the Jacobian.
+         *  - a static var compensator leaves the row: its fixed reactive injection and its b0;
+         *    in voltage mode, it leaves its control group, the regulated bus going free. One
+         *    carrying a standby automaton or frozen at a reactive limit is refused by compute().
          *  - an HVDC line stops transmitting: both converter stations leave the row's
          *    injection. One with AC emulation (or frozen at its limit), or a station regulating
          *    a voltage, is refused by compute(): those live in the Jacobian.
@@ -3972,6 +3972,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         if(ctrl.is_held(first + off)) continue;
                         if(ctrl.kind(first + off) == VoltageControlSolverData::GEN &&
                            _gen_off_in_row(row, ctrl.elem_id(first + off))) continue;  // the row trips it
+                        if(ctrl.kind(first + off) == VoltageControlSolverData::SVC &&
+                           _is_tripped(InjectionTrip::SVC, row, ctrl.elem_id(first + off))) continue;
                         some_live = !is_masked(masked, ctrl.bus(first + off));
                     }
                     if(some_live){ _skip_mask[row] = 1; break; }
@@ -4293,7 +4295,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // And it may take out a storage unit that regulates its bus: one controller
             // fewer there too.
             const bool has_gens_on = _has_gens_on();
-            if(!_any_gen_off() && !has_gens_on && !_has_regulating_storage_off()){
+            if(!_any_gen_off() && !has_gens_on && !_has_regulating_storage_off() && !_voltage_svc_tripped()){
                 // No mask this time. _algo is a member and outlives the compute() that
                 // reserved slots for it, so it has to be told the set is empty again --
                 // otherwise a bus a PREVIOUS compute() made switchable would keep its Vm
@@ -4343,7 +4345,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
 
-            // ---- 1. the generators that are controllers of a voltage-control group -----
+            // ---- 1. the generators and SVCs that are controllers of a voltage-control group
             // A remote controller, or a local one on a bus a group holds, lives in the
             // VoltageControl extension: its Q is an unknown of the Jacobian. The row tells the
             // algorithm it is gone, in a pattern reserved up front (_row_tripped_controllers_).
@@ -4352,9 +4354,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const VoltageControlSolverData & vc_ctrl = vc_plan.controllers();
             const std::set<int> & group_buses = vc_plan.group_controlled_buses();
             const std::set<int> & free_vm_slack = vc_plan.free_vm_slack_buses();
-            std::map<int, int> controller_of_gen;
+            std::map<int, int> controller_of_gen, controller_of_svc;
             for(int c = 0; c < vc_ctrl.n_controllers(); ++c){
                 if(vc_ctrl.kind(c) == VoltageControlSolverData::GEN) controller_of_gen[vc_ctrl.elem_id(c)] = c;
+                else if(vc_ctrl.kind(c) == VoltageControlSolverData::SVC) controller_of_svc[vc_ctrl.elem_id(c)] = c;
             }
             const bool can_trip = _algo.supports_tripped_voltage_controllers();
             for(size_t step = 0; step < nb_steps; ++step){
@@ -4372,6 +4375,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         << " cannot take a controller out of a row";
                     _mark_row_batch_unsupported(step, msg.str());
                     break;
+                }
+                // (_check_svc_trips has left out the rows an SVC cannot go from)
+                if(!_row_is_batch_unsupported(step)){
+                    for(int svc_id : _row_tripped(InjectionTrip::SVC, step)){
+                        const auto it = controller_of_svc.find(svc_id);
+                        if(it != controller_of_svc.end()) tripped.push_back(it->second);
+                    }
                 }
                 if(!_row_is_batch_unsupported(step) && !tripped.empty()){
                     std::sort(tripped.begin(), tripped.end());
@@ -4739,9 +4749,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _prepare_storage_trips(size_t) {}
 
-        // An SVC in voltage mode is a controller of a group, which owns
-        // Jacobian rows and columns nothing here reserves or masks; the automaton of a standby
-        // one and the release check of a frozen one read it too. Left out of the batch.
+        // An SVC in voltage mode leaves its group for the row (_maybe_prepare_gen_contingency),
+        // given an algorithm that can do it. The automaton of a standby one and the release
+        // check of a frozen one still read it: those rows are left out of the batch.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _check_svc_trips(size_t nb_steps){
             if(!_algo.ac_solver_used()) return;
@@ -4750,13 +4760,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 for(int svc_id : _row_tripped(InjectionTrip::SVC, row)){
                     if(!svcs.get_status(svc_id)) continue;
                     const char * why = nullptr;
-                    if(svcs.get_regulation_mode(svc_id) == SvcContainer::RegulationMode::VOLTAGE) why = "which regulates a voltage";
-                    else if(svcs.get_standby(svc_id)) why = "which carries a standby automaton";
+                    if(svcs.get_standby(svc_id)) why = "which carries a standby automaton";
+                    else if(svcs.get_regulation_mode(svc_id) == SvcContainer::RegulationMode::VOLTAGE &&
+                            !_algo.supports_tripped_voltage_controllers()) why = "which regulates a voltage";
                     else if(svcs.get_can_be_pv(svc_id)) why = "which an outer loop froze at a reactive limit";
                     if(why == nullptr) continue;
                     std::ostringstream msg;
                     msg << "disconnects static var compensator " << svc_id << ", " << why
-                        << ": only one injecting a fixed reactive power can be disconnected by the batch for now";
+                        << ": it cannot be disconnected by the batch for now";
                     _mark_row_batch_unsupported(row, msg.str());
                     break;
                 }
@@ -4764,6 +4775,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _check_svc_trips(size_t) {}
+        // whether some row trips an SVC in voltage mode
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool _voltage_svc_tripped() const {
+            const auto & svcs = _grid_model.get_svcs();
+            return ybus_policy_.any_tripped(InjectionTrip::SVC, [&svcs](int svc_id){
+                return svcs.get_status(svc_id) && svcs.get_regulation_mode(svc_id) == SvcContainer::RegulationMode::VOLTAGE; });
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        bool _voltage_svc_tripped() const { return false; }
 
         // An HVDC line in AC emulation (its active power is unknowns and
         // equations of the Jacobian, its limits an outer loop's), or a station regulating a

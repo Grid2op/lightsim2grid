@@ -553,7 +553,7 @@ TEST_CASE("tripping a remote-regulating generator solves in the batch as a one-o
 
 TEST_CASE("batch_unsupported_fallback solves the unsupported row as a one-off ac_pf does", "[batch][vctrl]")
 {
-    // a voltage-mode SVC: what the batch does not take out of a row
+    // a standby SVC: what the batch does not take out of a row
     auto with_svc = []() {
         LSGrid grid = make_skeleton();
         RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
@@ -565,15 +565,19 @@ TEST_CASE("batch_unsupported_fallback solves the unsupported row as a one-off ac
         gen_bus << 0;
         grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
         grid.add_gen_slackbus(0, 1.);
-        RealVect target_vm(1), q(1), slope(1), b_min(1), b_max(1);
+        RealVect target_vm(1), q(1), slope(1), b_min(1), b_max(1), low(1), high(1), none(1);
         target_vm << 1.;
-        q << 0.;
+        q << 5.;
         slope << 0.;
         b_min << -0.5;
         b_max << 0.5;
+        low << 0.5;
+        high << 1.5;
+        none << std::numeric_limits<real_type>::quiet_NaN();
         Eigen::VectorXi bus(1);
         bus << NB_BUS - 2;
-        grid.init_svcs(std::vector<int>{1}, target_vm, q, slope, b_min, b_max, bus, bus);
+        grid.init_svcs(std::vector<int>{2}, target_vm, q, slope, b_min, b_max, bus, bus);
+        grid.set_svc_standby(std::vector<bool>{true}, low, high, none, none);
         grid.tell_solver_need_reset();
         return grid;
     };

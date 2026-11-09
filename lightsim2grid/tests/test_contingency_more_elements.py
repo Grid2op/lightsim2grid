@@ -72,13 +72,16 @@ class _ContingencyMoreElements(unittest.TestCase):
         self.n_line = len(self.grid.get_lines())
         self.v0 = np.ones(self.grid.total_bus(), dtype=complex)
 
-    def _add_voltage_svc(self):
-        """a voltage-mode SVC, what the batch leaves out, standing on bus 4"""
-        self.grid.init_svcs([1], np.array([1.02]), np.zeros(1), np.zeros(1), np.full(1, -0.5), np.full(1, 0.5),
-                            np.array([4], dtype=np.int32), np.array([4], dtype=np.int32))
+    def _add_droop_hvdc(self):
+        """an AC emulation HVDC line, what the batch leaves out"""
+        big = np.full(1, 1e3)
+        self.grid.init_hvdc_lines(np.array([4], dtype=np.int32), np.array([11], dtype=np.int32), [0], [0], np.ones(1),
+                                  np.ones(1), [False], [False], np.ones(1), np.ones(1), np.zeros(1), np.zeros(1),
+                                  -big, big, -big, big, np.ones(1), np.ones(1), [0], np.array([3.]), np.ones(1),
+                                  np.full(1, 12.), [True], np.array([3.]), np.array([2.]), np.full(1, 100.), np.full(1, 100.))
         self.grid.tell_solver_need_reset()
 
-    def _reference(self, el_ids=(), branches=(), gens=(), dc=False, grid=None, svcs=()):
+    def _reference(self, el_ids=(), branches=(), gens=(), dc=False, grid=None, hvdcs=()):
         ref = copy.deepcopy(self.grid if grid is None else grid)
         for br in branches:
             if br < self.n_line:
@@ -87,8 +90,8 @@ class _ContingencyMoreElements(unittest.TestCase):
                 ref.deactivate_trafo(int(br) - self.n_line)
         for gen_id in gens:
             ref.deactivate_gen(int(gen_id))
-        for svc_id in svcs:
-            ref.deactivate_svc(int(svc_id))
+        for hvdc_id in hvdcs:
+            ref.deactivate_dcline(int(hvdc_id))
         for el_id in el_ids:
             self._deactivate(ref, int(el_id))
         ref.tell_solver_need_reset()
@@ -262,15 +265,15 @@ class TestStaticGenerators(_ContingencyMoreElements):
                                    atol=1e-8, rtol=0.)
 
     def test_fallback(self):
-        # a voltage-mode SVC takes the row out of the batch: the fallback trips the rest too
-        self._add_voltage_svc()
+        # an AC emulation line takes the row out of the batch: the fallback trips the rest too
+        self._add_droop_hvdc()
         ca = ContingencyAnalysisCPP(self.grid)
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(svc_ids=[0], sgen_ids=[0])
+        ca.add_contingency(hvdc_ids=[0], sgen_ids=[0])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertTrue(ca.converged_mask()[0])
-        self.assertIn("regulates a voltage", ca.get_batch_unsupported_reasons()[0])
-        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([0], svcs=[0]),
+        self.assertIn("AC emulation", ca.get_batch_unsupported_reasons()[0])
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([0], hvdcs=[0]),
                                    atol=1e-8, rtol=0.)
 
 
@@ -341,15 +344,15 @@ class TestStorageUnits(_ContingencyMoreElements):
             ca.add_contingency(storage_ids=[len(self.grid.get_storages())])
 
     def test_fallback(self):
-        self._add_voltage_svc()
+        self._add_droop_hvdc()
         ca = ContingencyAnalysisCPP(self.grid)
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(svc_ids=[0], storage_ids=[self.PQ])
+        ca.add_contingency(hvdc_ids=[0], storage_ids=[self.PQ])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertTrue(ca.converged_mask()[0])
-        self.assertIn("regulates a voltage", ca.get_batch_unsupported_reasons()[0])
+        self.assertIn("AC emulation", ca.get_batch_unsupported_reasons()[0])
         np.testing.assert_allclose(np.asarray(ca.get_voltages())[0],
-                                   self._reference([self.PQ], svcs=[0]), atol=1e-8, rtol=0.)
+                                   self._reference([self.PQ], hvdcs=[0]), atol=1e-8, rtol=0.)
 
     @staticmethod
     def _container(grid):
@@ -436,10 +439,15 @@ class TestStaticVarCompensators(_ContingencyMoreElements):
         trips = [([self.FIXED_Q], []), ([self.OFF_B0], []), ([self.FIXED_Q, self.OFF_B0], []), ([self.FIXED_Q], [5])]
         self._check_sweep(trips, self._sweep(trips))
 
-    def test_scenario_sweep_a_voltage_mode_one_is_left_out(self):
-        sweep = self._sweep([([self.VOLTAGE], []), ([self.FIXED_Q], [])])
+    def test_scenario_sweep_a_voltage_mode_one(self):
+        trips = [([self.VOLTAGE], []), ([self.VOLTAGE, self.FIXED_Q], [5])]
+        self._check_sweep(trips, self._sweep(trips))
+
+    def test_scenario_sweep_with_a_standby_one_is_left_out(self):
+        self._set_standby()
+        sweep = self._sweep([([self.FIXED_Q], []), ([self.OFF_B0], [])])
         sweep.compute(1.0 * self.v0, MAX_IT, TOL)
-        self.assertIn("regulates a voltage", sweep.get_batch_unsupported_reasons()[0])
+        self.assertIn("standby", sweep.get_batch_unsupported_reasons()[0])
         self.assertFalse(sweep.converged_mask()[0])
         self.assertTrue(sweep.converged_mask()[1])
 
@@ -450,21 +458,65 @@ class TestStaticVarCompensators(_ContingencyMoreElements):
         V = np.asarray(ca.get_voltages())
         np.testing.assert_allclose(V[self._row(ca, [self.VOLTAGE])], self._reference([], dc=True), atol=1e-8, rtol=0.)
 
-    def test_a_voltage_mode_one_is_left_out(self):
-        ca = self._analysis([([self.VOLTAGE], []), ([self.FIXED_Q], [])], compute_limit_violations=True)
-        row = self._row(ca, [self.VOLTAGE])
-        self.assertIn("regulates a voltage", ca.get_batch_unsupported_reasons()[row])
-        self.assertIn("static var compensator 2", ca.get_batch_unsupported_reasons()[row])
-        self.assertFalse(ca.converged_mask()[row])
-        self.assertTrue(ca.converged_mask()[self._row(ca, [self.FIXED_Q])])
+    def _set_standby(self):
+        """an automaton on the fixed-Q one, which the batch cannot take out of a row"""
+        self.grid.set_svc_standby([True, False, False], np.full(3, 0.9), np.full(3, 1.1))
+        self.grid.tell_solver_need_reset()
 
-    def test_the_fallback_solves_it(self):
+    def test_a_voltage_mode_one(self):
+        trips = [([self.VOLTAGE], []), ([self.VOLTAGE, self.FIXED_Q], []), ([self.VOLTAGE], [5])]
+        ca = self._analysis(trips)
+        V = np.asarray(ca.get_voltages())
+        for el_ids, branches in trips:
+            row = self._row(ca, el_ids, branches)
+            self.assertEqual(ca.get_batch_unsupported_reasons()[row], "")
+            self.assertTrue(ca.converged_mask()[row])
+            np.testing.assert_allclose(V[row], self._reference(el_ids, branches), atol=1e-8, rtol=0.)
+
+    def test_the_regulated_bus_goes_free(self):
+        ca = self._analysis([([self.VOLTAGE], [])])
+        self.assertGreater(abs(abs(np.asarray(ca.get_voltages())[0][4]) - 1.03), 1e-4)
+
+    def test_a_voltage_mode_one_with_a_slope_regulating_a_remote_bus(self):
+        self.grid.init_svcs([1], np.array([1.03]), np.zeros(1), np.array([0.02]), np.full(1, -0.5), np.full(1, 0.5),
+                            np.array([13], dtype=np.int32), np.array([8], dtype=np.int32))
+        self.grid.tell_solver_need_reset()
+        ca = self._analysis([([0], [])])
+        self.assertEqual(ca.get_batch_unsupported_reasons()[0], "")
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([0]), atol=1e-8, rtol=0.)
+
+    def test_with_outer_loops(self):
+        self.grid.change_algorithm("NROuter_SparseLU")
+        self.grid.tell_solver_need_reset()
+        trips = [([self.VOLTAGE], []), ([self.FIXED_Q], [])]
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.change_algorithm("NROuter_SparseLU")
+        for el_ids, branches in trips:
+            ca.add_contingency(branch_ids=list(branches), svc_ids=list(el_ids))
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        V = np.asarray(ca.get_voltages())
+        for el_ids, branches in trips:
+            row = self._row(ca, el_ids, branches)
+            self.assertTrue(ca.converged_mask()[row])
+            np.testing.assert_allclose(V[row], self._reference(el_ids, branches), atol=1e-8, rtol=0.)
+
+    def test_with_a_standby_automaton_is_left_out(self):
+        self._set_standby()
+        ca = self._analysis([([self.FIXED_Q], []), ([self.OFF_B0], [])], compute_limit_violations=True)
+        row = self._row(ca, [self.FIXED_Q])
+        self.assertIn("standby", ca.get_batch_unsupported_reasons()[row])
+        self.assertIn("static var compensator 0", ca.get_batch_unsupported_reasons()[row])
+        self.assertFalse(ca.converged_mask()[row])
+        self.assertTrue(ca.converged_mask()[self._row(ca, [self.OFF_B0])])
+
+    def test_the_fallback_solves_a_standby_one(self):
+        self._set_standby()
         ca = ContingencyAnalysisCPP(self.grid)
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(svc_ids=[self.VOLTAGE])
+        ca.add_contingency(svc_ids=[self.FIXED_Q])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertTrue(ca.converged_mask()[0])
-        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([self.VOLTAGE]), atol=1e-8, rtol=0.)
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([self.FIXED_Q]), atol=1e-8, rtol=0.)
 
     def test_registration(self):
         ca = ContingencyAnalysisCPP(self.grid)

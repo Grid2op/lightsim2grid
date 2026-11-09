@@ -767,8 +767,8 @@ void bind_batch(py::module_& m) {
                "The solver was invoked for this contingency but did not converge (element_type is "
                "ViolationElementType.GRID).")
         .value("BATCH_UNSUPPORTED", LimitViolationType::BATCH_UNSUPPORTED,
-               "The batch does not support what this contingency trips (eg a static var compensator "
-               "regulating a voltage): it was left out of the batch instead of failing the whole "
+               "The batch does not support what this contingency trips (eg an hvdc line in AC "
+               "emulation): it was left out of the batch instead of failing the whole "
                "compute(). Unlike NOT_SIMULATED, a one-off solve of it is possible. "
                "get_batch_unsupported_reasons() says why, per row (element_type is "
                "ViolationElementType.GRID).")
@@ -1144,8 +1144,8 @@ void bind_batch(py::module_& m) {
         .def("set_contingency_svcs", &ScenarioSweep::set_contingency_svcs<>, py::arg("mask"),
              "Per-step static var compensator contingency mask, shape (n_simul, n_svc), dtype bool. "
              "True means 'disconnect this SVC for this simulation': its fixed reactive injection "
-             "and its b0 leave the step. A step tripping one that regulates a voltage, carries a "
-             "standby automaton or was frozen at a reactive limit is left out of the batch "
+             "and its b0 leave the step, and one regulating a voltage its control group. A step "
+             "tripping one that carries a standby automaton or was frozen at a reactive limit is left out of the batch "
              "(LimitViolationType.BATCH_UNSUPPORTED).")
         .def("set_contingency_hvdcs", &ScenarioSweep::set_contingency_hvdcs<>, py::arg("mask"),
              "Per-step hvdc line contingency mask, shape (n_simul, n_hvdc), dtype bool. True means "
