@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [ADDED] ``ContingencyPropagator.add_contingencies`` (and ``propagate_contingencies``) read powsybl's
+  contingency lists, a json file included; ``contingency_ids`` gives their ids. Grouping ignores busbar names.
 - [FIXED] batches with outer loops: a voltage-control group losing a controller to an island, its other
   controllers held at a reactive limit, no longer fails: the islanded controller is gone, the regulated bus free.
 - [FIXED] ``DistributedSlack`` with ``redistribute_slack``: after sharing a contingency's lost power,

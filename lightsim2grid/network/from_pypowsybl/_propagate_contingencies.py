@@ -52,6 +52,9 @@ Two more of `NodeBreakerTraverser`'s rules decide which breakers open:
   walked through, and the breakers of that node open instead.
 """
 
+import json
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -96,6 +99,7 @@ class _PypowsyblTopology:
         self.tie_dangling = {}     # tie line id -> [dangling line ids]
         self.dangling_to_tie = {}  # dangling line id -> tie line id
         self.known = set()         # every id the contingency may name
+        self.busbar_sections = set()
         self.branches = set()      # lines, transformers, and dangling lines of a tie line
 
         # ---- the terminals: (element id, voltage level number, node, is a busbar section)
@@ -106,6 +110,8 @@ class _PypowsyblTopology:
                 getter = "get_boundary_lines"  # the old name is deprecated
             df = getattr(net, getter)(attributes=cols)
             self.known.update(df.index)
+            if getter == "get_busbar_sections":
+                self.busbar_sections.update(df.index)
             if len(sides) > 1:
                 self.branches.update(df.index)
             for side in sides:
@@ -301,6 +307,30 @@ class _PypowsyblTopology:
         return found, len(found) == 1 and found[0][0] in self.branches and not right_behind
 
 
+def _read_contingencies(contingencies):
+    """What `add_contingencies` is given, as a list of contingencies: read from the json file
+    when it is a path, out of the ``"contingencies"`` of a whole powsybl list when it is one."""
+    if isinstance(contingencies, (str, os.PathLike)):
+        with open(contingencies, encoding="utf-8") as f:
+            contingencies = json.load(f)
+    if isinstance(contingencies, dict):
+        if "contingencies" not in contingencies:
+            raise ValueError("add_contingencies: a dictionary must hold powsybl's \"contingencies\" list, "
+                             f"found the keys {sorted(contingencies)}.")
+        contingencies = contingencies["contingencies"]
+    return contingencies
+
+
+def _names_and_id(contingency):
+    """One contingency as `(element names, its id)`, the id None when it has none."""
+    if isinstance(contingency, str):
+        raise TypeError("add_contingencies: each contingency must be a list of names, "
+                        f"got the string {contingency!r}")
+    if isinstance(contingency, dict):
+        return [element["id"] for element in contingency["elements"]], contingency.get("id")
+    return list(contingency), None
+
+
 def _terminals_of(topo, name):
     """The nodes a contingency on `name` trips from (and the element ids it names)."""
     if name in topo.hvdc_stations:
@@ -321,9 +351,11 @@ class ContingencyPropagator:
 
     Each contingency is a list of element names (lines, transformers, generators, loads,
     shunts, batteries, static var compensators, dangling and tie lines, converter stations,
-    HVDC lines, busbar sections). Propagating it gives the same names, in the same order,
-    followed by the other equipment that goes down with them because it stands between the
-    same breakers (see this module's docstring). A name appears once.
+    HVDC lines, busbar sections), or a powsybl contingency, see :func:`add_contingencies`.
+    Propagating it gives the same names, in the same order, followed by the other equipment
+    that goes down with them because it stands between the same breakers (see this module's
+    docstring). A name appears once. A busbar section stays listed but is no equipment of the
+    solved grid: what it does is the n-k of what goes down with it.
 
     Examples
     --------
@@ -366,6 +398,7 @@ class ContingencyPropagator:
         """
         self._topo = _PypowsyblTopology(net, internal_connections)
         self._contingencies = []
+        self._ids = []         # aligned with _contingencies: the id each came with, or None
         self._propagated = []  # one entry per contingency, None until propagated
         self._sides = []       # aligned with _propagated: {branch: side opened}, see opened_sides
         self._dead_ends = []   # aligned with _propagated: {branch: side of the dead end}, see dead_ends
@@ -375,24 +408,37 @@ class ContingencyPropagator:
         """The contingencies added so far, as given (without repeated names)."""
         return [list(el) for el in self._contingencies]
 
+    @property
+    def contingency_ids(self):
+        """The id of each contingency added so far (as in a powsybl contingency list), None for
+        one given as a plain list of names."""
+        return list(self._ids)
+
     def add_contingencies(self, contingencies):
-        """Add contingencies, each a list of element names.
+        """Add contingencies.
+
+        `contingencies` is a list where each contingency is a list of element names or a powsybl
+        contingency, ``{"id": ..., "elements": [{"id": ..., "type": ...}, ...]}``. It can also be
+        a whole powsybl list (a dictionary with a ``"contingencies"`` entry), or the path of a
+        json file holding one of these. Only the ids of the elements are read: they are unique
+        in a network.
 
         Raises ``TypeError`` for a contingency given as a single string, and ``ValueError`` for
         a name that is not an element of the network; nothing is added then.
         """
         checked = []
-        for contingency in contingencies:
-            if isinstance(contingency, str):
-                raise TypeError("add_contingencies: each contingency must be a list of names, "
-                                f"got the string {contingency!r}")
-            names = list(dict.fromkeys(contingency))
+        ids = []
+        for contingency in _read_contingencies(contingencies):
+            names, cont_id = _names_and_id(contingency)
+            names = list(dict.fromkeys(names))
             for name in names:
                 if name not in self._topo.known:
                     raise ValueError(f"add_contingencies: '{name}' is not a line, transformer, injection, "
                                      f"converter station, HVDC line or busbar section of this network.")
             checked.append(names)
+            ids.append(cont_id)
         self._contingencies.extend(checked)
+        self._ids.extend(ids)
         self._propagated.extend([None] * len(checked))
         self._sides.extend([None] * len(checked))
         self._dead_ends.extend([None] * len(checked))
@@ -400,6 +446,7 @@ class ContingencyPropagator:
     def clear(self):
         """Remove every contingency (the topology read at construction is kept)."""
         self._contingencies = []
+        self._ids = []
         self._propagated = []
         self._sides = []
         self._dead_ends = []
@@ -475,7 +522,8 @@ class ContingencyPropagator:
         """
         # a branch at a dead end is simulated opened at that side: it tells the sets apart too
         sides = [{**opened, **dead} for opened, dead in zip(self.opened_sides(), self.dead_ends())]
-        return group_equivalent_contingencies(self.propagate_contingencies(), sides)
+        return group_equivalent_contingencies(self.propagate_contingencies(), sides,
+                                              ignored=self._topo.busbar_sections)
 
     def _propagate_one(self, contingency):
         topo = self._topo
@@ -553,7 +601,8 @@ class ContingencyPropagator:
 
 
 def propagate_contingencies(net, contingencies, internal_connections=None):
-    """Propagate contingencies in one call: a shortcut for
+    """Propagate contingencies in one call (`contingencies`: anything
+    :func:`ContingencyPropagator.add_contingencies` takes, a json file for example): a shortcut for
 
     .. code-block:: python
 
@@ -573,14 +622,16 @@ def propagate_contingencies(net, contingencies, internal_connections=None):
     return propagator.propagate_contingencies()
 
 
-def group_equivalent_contingencies(contingencies, opened_sides=None):
+def group_equivalent_contingencies(contingencies, opened_sides=None, ignored=()):
     """Find the contingencies that trip the same set of equipment, so each is simulated once.
 
     Meant for the output of :func:`ContingencyPropagator.propagate_contingencies`: tripping a line, or the load hanging
     on its feeder, ends in the same grid. Two contingencies are equivalent when they hold the same
     names, whatever the order, and (`opened_sides`, one dict per contingency as
     :func:`ContingencyPropagator.opened_sides` gives, optional) open the same branches at the
-    same single end.
+    same single end. The names in `ignored` do not count (the busbar sections, which
+    :func:`ContingencyPropagator.group_contingencies` leaves out: nothing but what goes down with
+    a busbar section is simulated).
 
     Returns
     -------
@@ -593,8 +644,9 @@ def group_equivalent_contingencies(contingencies, opened_sides=None):
     seen = {}
     unique = []
     inverse = []
+    ignored = frozenset(ignored)
     for pos, contingency in enumerate(contingencies):
-        key = frozenset(contingency)
+        key = frozenset(contingency) - ignored
         if opened_sides is not None and opened_sides[pos]:
             key = (key, frozenset(opened_sides[pos].items()))
         pos = seen.get(key)

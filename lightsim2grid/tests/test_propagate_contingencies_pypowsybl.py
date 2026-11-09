@@ -15,6 +15,10 @@ the breaker between nodes 5 and 6; the busbar section is node 0) to make it do s
 """
 
 import unittest
+import json
+import os
+import pathlib
+import tempfile
 
 try:
     import pypowsybl.network as pn
@@ -453,6 +457,67 @@ class TestDocumentedN1Example(unittest.TestCase):
                 continue
             np.testing.assert_allclose(V[k], ref_V(branch_ids=[branch_id[cont[0]]]), atol=1e-10, rtol=0.,
                                        err_msg=str(cont))
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestContingencyFile(unittest.TestCase):
+    """The contingencies as powsybl writes them, propagated then grouped."""
+    POWSYBL_LIST = [{"id": "by_line", "elements": [{"id": "LINE_S2S3", "type": "LINE"}]},
+                    {"id": "by_bbs", "elements": [{"id": "S1VL2_BBS1", "type": "BUSBAR_SECTION"}]}]
+
+    def _check(self, given):
+        propagator = ContingencyPropagator(pn.create_four_substations_node_breaker_network())
+        propagator.add_contingencies(given)
+        self.assertEqual(propagator.contingencies, [["LINE_S2S3"], ["S1VL2_BBS1"]])
+        self.assertEqual(propagator.contingency_ids, ["by_line", "by_bbs"])
+        self.assertEqual(propagator.propagate_contingencies(),
+                         [["LINE_S2S3"], ["S1VL2_BBS1", "SHUNT", "GH3", "GH2", "GH1", "TWT"]])
+
+    def test_a_list_of_powsybl_contingencies(self):
+        self._check(self.POWSYBL_LIST)
+
+    def test_a_powsybl_contingency_list(self):
+        self._check({"type": "default", "version": "1.0", "name": "list", "contingencies": self.POWSYBL_LIST})
+
+    def test_a_json_file(self):
+        with tempfile.TemporaryDirectory() as dir_:
+            path = os.path.join(dir_, "contingencies.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.POWSYBL_LIST, f)
+            self._check(path)
+            self._check(pathlib.Path(path))
+            net = pn.create_four_substations_node_breaker_network()
+            self.assertEqual(propagate_contingencies(net, path)[0], ["LINE_S2S3"])
+
+    def test_names_are_still_checked(self):
+        propagator = ContingencyPropagator(pn.create_four_substations_node_breaker_network())
+        with self.assertRaises(ValueError):
+            propagator.add_contingencies([{"id": "typo", "elements": [{"id": "NOT_THERE", "type": "LINE"}]}])
+        with self.assertRaises(ValueError):
+            propagator.add_contingencies({"name": "no contingencies in there"})
+        self.assertEqual(propagator.contingencies, [])
+        self.assertEqual(propagator.contingency_ids, [])
+
+    def test_plain_lists_have_no_id(self):
+        propagator = ContingencyPropagator(pn.create_four_substations_node_breaker_network())
+        propagator.add_contingencies([["LINE_S2S3"]])
+        self.assertEqual(propagator.contingency_ids, [None])
+        propagator.clear()
+        self.assertEqual(propagator.contingency_ids, [])
+
+    def test_a_busbar_section_does_not_tell_two_contingencies_apart(self):
+        # two sections going down with the same equipment end in the same grid; the one at the
+        # end of the file is represented by the first
+        self.assertEqual(group_equivalent_contingencies([["BBS1", "L1", "L2"], ["BBS2", "L2", "L1"], ["BBS2", "L3"]],
+                                                        ignored={"BBS1", "BBS2"}),
+                         ([["BBS1", "L1", "L2"], ["BBS2", "L3"]], [0, 0, 1]))
+        # without saying so, the names count
+        self.assertEqual(group_equivalent_contingencies([["BBS1", "L1"], ["BBS2", "L1"]])[1], [0, 1])
+        net = _net_with_a_transformer_bay(True)
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies([["S5VL1_BBS"], ["L5", "T5"]])
+        # the same two branches, but the section leaves each opened at that end only
+        self.assertEqual(propagator.group_contingencies()[1], [0, 1])
 
 
 if __name__ == "__main__":

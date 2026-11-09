@@ -579,6 +579,12 @@ For example, ``LINE_AB`` and ``LINE_BC`` meet at a junction with no breaker betw
     # unique  = [["LINE_AB", "LINE_BC"], ["LINE_DE", "LINE_DF"]]
     # inverse = [0, 0, 1, 1]
 
+The contingencies can also be given the way powsybl writes them: a list of
+``{"id": ..., "elements": [{"id": ..., "type": ...}, ...]}``, a whole powsybl contingency list, or the
+path of a json file holding either (``propagator.contingency_ids`` then gives their ids). A busbar
+section is an element like any other for the propagation: its contingency comes back as the n-k
+of what goes down with it, and two sections taking down the same equipment are grouped.
+
 Only ``unique`` needs simulating: the result of the ``i``-th contingency is the one of
 ``unique[inverse[i]]``. The order inside a contingency does not matter, and each group is
 represented by its first contingency, in its original order. The topology is read when the
