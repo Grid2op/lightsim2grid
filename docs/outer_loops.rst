@@ -559,11 +559,31 @@ part of the data, from the element tables and from the controllers of ``net.cont
    * - ``ReactiveLimits``
      - ``min_q_mvar`` / ``max_q_mvar`` of the generators (no capability curve), and ``min_p_mw`` / ``max_p_mw`` as active limits.
 
-Not converted: the second tap changer (``tap2_*``, applied at its position but not moved), the controllers of three-winding transformers and of the transformers with a phase tap
-changer, and every other controller.
+Not converted: the second tap changer (``tap2_*``, applied at its position but not moved), the controllers of
+three-winding transformers and of the transformers with a phase tap changer, and every other controller.
 
 pandapower's discrete tap controller stops at the first tap that brings the voltage within its band, while the loop
 solves the ratio continuously and rounds it to the closest tap: both end within the band, not always on the same tap.
+
+A tabular shunt (``step_dependency_table``) gives the voltages of ``pp.runpp`` at its current step, and at every step it
+is moved to. It differs from pandapower in the following:
+
+- **Some tables cannot be moved.** Sections draw no power when none is on and have no gap, so a shunt with power at
+  step 0, a step missing from its table below the last section, or a current step above ``max_step`` is converted at its
+  current step, with a warning, and has no sections. ``change_shunt_section_count`` raises for it, and a
+  ``DiscreteShuntController`` on it is ignored. pandapower can move it to any step of its table.
+- **max_step is a limit.** ``pp.runpp`` only reads the table, so a step set by hand can go past ``max_step``. Here,
+  ``change_shunt_section_count`` raises past ``max_step`` or past the last row.
+- **Step 0 without a row.** A table starting at step 1 still allows 0 sections, which draw no power; in pandapower
+  step 0 has no row and cannot be solved.
+- **Tables pandapower cannot read are refused.** No ``shunt_characteristic_table``, no ``id_characteristic_table``, no
+  row for the current step, or several rows for one step raise a ``RuntimeError``. ``pp.runpp`` fails on them too, except
+  on a grid with a single shunt whose step has no row: it then solves the grid without that shunt.
+- **The direction of the controller.** ``DiscreteShuntController`` moves in the direction given by the sign of the
+  ``q_mvar`` column of the shunt, even for a tabular one. If that sign disagrees with the table, it moves away from its
+  target. ``ShuntVoltageControl`` only reads the table.
+- **The step the controller ends on.** As for the taps, ``ShuntVoltageControl`` picks the closest section while the
+  controller stops at the first step within its band: both end within the band, not always on the same step.
 
 On a single-slack pandapower grid (one ``slack=True`` generator or one ext_grid) no unit off the slack bus can
 participate, so ``DistributedSlack`` has nothing to do and the slack bus takes all of the imbalance. The backend
