@@ -8356,7 +8356,7 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
       carries a standby automaton or was frozen at a reactive limit is left out of the batch
       (``LimitViolationType.BATCH_UNSUPPORTED``);
     - an HVDC line of ``hvdc_ids`` stops transmitting: both its converter stations leave the injection. A contingency
-      tripping a line in AC emulation (or frozen at its limit) is left out of the batch
+      tripping a line in AC emulation with a DC algorithm is left out of the batch
       (``LimitViolationType.BATCH_UNSUPPORTED``). The bus a regulating station was the last to hold turns PQ for the
       contingency, as for a generator.
 
@@ -8621,8 +8621,8 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
       solver was never invoked for it.
-    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg an hvdc line
-      in AC emulation), so it was left out of the batch rather than failing all of it.
+    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg a static var
+      compensator with a standby automaton), so it was left out of the batch rather than failing all of it.
       ``get_batch_unsupported_reasons()`` says why.
     - ``DIVERGENCE``: the solver was invoked for this contingency but did not converge.
 

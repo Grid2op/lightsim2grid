@@ -567,7 +567,7 @@ class ScenarioSweep:
         ``True`` means "disconnect this line for this simulation": both its converter stations
         leave the step's injection, the bus a regulating one was the last to hold turning PQ.
 
-        A step tripping one in AC emulation (or frozen at its limit) is left out of the batch
+        With a DC algorithm, a step tripping one in AC emulation is left out of the batch
         (``LimitViolationType.BATCH_UNSUPPORTED``).
         """
         self._set_element_mask("set_contingency_hvdcs", mask, self.grid2op_env.backend._grid.get_dclines(),

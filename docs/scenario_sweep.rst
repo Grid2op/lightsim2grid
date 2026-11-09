@@ -198,7 +198,7 @@ the row's active power (`modify_sgen_p`, or the grid's) and the reactive setpoin
 and turn PQ the bus they were the last to regulate. `set_contingency_svcs(mask)` takes out a static var
 compensator's fixed reactive injection and its b0, one in voltage mode leaving its control group; a row tripping
 one with a standby automaton or frozen at a reactive limit is reported `BATCH_UNSUPPORTED`. `set_contingency_hvdcs(mask)` takes both converter stations of an HVDC line out, the bus a
-regulating one was the last to hold turning PQ; a line in AC emulation is reported `BATCH_UNSUPPORTED`.
+regulating one was the last to hold turning PQ; in DC, a line in AC emulation is reported `BATCH_UNSUPPORTED`.
 
 .. warning::
 

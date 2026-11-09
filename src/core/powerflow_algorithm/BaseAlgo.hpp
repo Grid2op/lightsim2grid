@@ -539,6 +539,12 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual void set_may_trip_voltage_controllers(bool /*val*/) {}
         virtual void set_tripped_voltage_controllers(const std::vector<int> & /*controllers*/) {}
 
+        // A batch row tripping angle-droop hvdc lines (ids in the grid; empty: none), for the
+        // next solves: no flow, on Jacobian entries already declared. Leaving
+        // `supports_tripped_hvdc_lines` false sees such a row refused (BATCH_UNSUPPORTED).
+        virtual bool supports_tripped_hvdc_lines() const { return false; }
+        virtual void set_tripped_hvdc_lines(const std::vector<int> & /*hvdc_ids*/) {}
+
         // Per-solve set-points of the voltage-control groups (indexed like the grid's
         // plan, NaN = the grid's own): what a batch hands over for a row whose
         // generator set-points it varies, since a generator regulating a group-held

@@ -279,6 +279,12 @@ class LS2G_API AlgorithmSelector final
         void set_masked_buses(const std::vector<int>& solver_bus_ids) {
             get_prt_solver("set_masked_buses", false)->set_masked_buses(solver_bus_ids);
         }
+        bool supports_tripped_hvdc_lines() const {
+            return get_prt_solver("supports_tripped_hvdc_lines", false)->supports_tripped_hvdc_lines();
+        }
+        void set_tripped_hvdc_lines(const std::vector<int> & hvdc_ids) {
+            get_prt_solver("set_tripped_hvdc_lines", false)->set_tripped_hvdc_lines(hvdc_ids);
+        }
         bool supports_tripped_voltage_controllers() const {
             return get_prt_solver("supports_tripped_voltage_controllers", false)->supports_tripped_voltage_controllers();
         }

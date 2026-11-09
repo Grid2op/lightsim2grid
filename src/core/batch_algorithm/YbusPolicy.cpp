@@ -299,13 +299,15 @@ void YbusPolicy::Contingency::_append_hvdc_trips(const std::set<int> & hvdc_ids,
 {
     const auto & hvdc_lines = grid_model.get_dclines();
     const real_type sn_mva = grid_model.get_sn_mva();
+    // in AC a line in AC emulation has its active power in the Newton's Hvdc extension, not in Sbus
     const auto take_out = [&](const ConverterStationContainer & stations, int hvdc_id){
         const int bus = live_solver_bus(stations, hvdc_id, id_me_to_solver);
         if(bus < 0) return;
         // what ConverterStationContainer::fillSbus_station stamps, taken back
         real_type q = 0.;
         if(ac_solver_used && !stations.get_voltage_regulator_on(hvdc_id)) q = stations.get_target_q()(hvdc_id);
-        sbus_dp.push_back({bus, -per_unit(cplx_type(stations.get_target_p(hvdc_id), q), sn_mva)});
+        const real_type p = ac_solver_used && hvdc_lines.is_droop_active(hvdc_id) ? 0. : stations.get_target_p(hvdc_id);
+        sbus_dp.push_back({bus, -per_unit(cplx_type(p, q), sn_mva)});
     };
     for(int hvdc_id : hvdc_ids){
         if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;

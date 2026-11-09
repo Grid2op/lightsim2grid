@@ -72,16 +72,14 @@ class _ContingencyMoreElements(unittest.TestCase):
         self.n_line = len(self.grid.get_lines())
         self.v0 = np.ones(self.grid.total_bus(), dtype=complex)
 
-    def _add_droop_hvdc(self):
-        """an AC emulation HVDC line, what the batch leaves out"""
-        big = np.full(1, 1e3)
-        self.grid.init_hvdc_lines(np.array([4], dtype=np.int32), np.array([11], dtype=np.int32), [0], [0], np.ones(1),
-                                  np.ones(1), [False], [False], np.ones(1), np.ones(1), np.zeros(1), np.zeros(1),
-                                  -big, big, -big, big, np.ones(1), np.ones(1), [0], np.array([3.]), np.ones(1),
-                                  np.full(1, 12.), [True], np.array([3.]), np.array([2.]), np.full(1, 100.), np.full(1, 100.))
+    def _add_standby_svc(self):
+        """an SVC with a standby automaton, what the batch leaves out"""
+        self.grid.init_svcs([2], np.ones(1), np.array([5.]), np.zeros(1), np.full(1, -0.5), np.full(1, 0.5),
+                            np.array([4], dtype=np.int32), np.array([4], dtype=np.int32))
+        self.grid.set_svc_standby([True], np.full(1, 0.9), np.full(1, 1.1))
         self.grid.tell_solver_need_reset()
 
-    def _reference(self, el_ids=(), branches=(), gens=(), dc=False, grid=None, hvdcs=()):
+    def _reference(self, el_ids=(), branches=(), gens=(), dc=False, grid=None, svcs=()):
         ref = copy.deepcopy(self.grid if grid is None else grid)
         for br in branches:
             if br < self.n_line:
@@ -90,8 +88,8 @@ class _ContingencyMoreElements(unittest.TestCase):
                 ref.deactivate_trafo(int(br) - self.n_line)
         for gen_id in gens:
             ref.deactivate_gen(int(gen_id))
-        for hvdc_id in hvdcs:
-            ref.deactivate_dcline(int(hvdc_id))
+        for svc_id in svcs:
+            ref.deactivate_svc(int(svc_id))
         for el_id in el_ids:
             self._deactivate(ref, int(el_id))
         ref.tell_solver_need_reset()
@@ -265,15 +263,15 @@ class TestStaticGenerators(_ContingencyMoreElements):
                                    atol=1e-8, rtol=0.)
 
     def test_fallback(self):
-        # an AC emulation line takes the row out of the batch: the fallback trips the rest too
-        self._add_droop_hvdc()
+        # a standby SVC takes the row out of the batch: the fallback trips the rest too
+        self._add_standby_svc()
         ca = ContingencyAnalysisCPP(self.grid)
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(hvdc_ids=[0], sgen_ids=[0])
+        ca.add_contingency(svc_ids=[0], sgen_ids=[0])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertTrue(ca.converged_mask()[0])
-        self.assertIn("AC emulation", ca.get_batch_unsupported_reasons()[0])
-        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([0], hvdcs=[0]),
+        self.assertIn("standby", ca.get_batch_unsupported_reasons()[0])
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([0], svcs=[0]),
                                    atol=1e-8, rtol=0.)
 
 
@@ -344,15 +342,15 @@ class TestStorageUnits(_ContingencyMoreElements):
             ca.add_contingency(storage_ids=[len(self.grid.get_storages())])
 
     def test_fallback(self):
-        self._add_droop_hvdc()
+        self._add_standby_svc()
         ca = ContingencyAnalysisCPP(self.grid)
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(hvdc_ids=[0], storage_ids=[self.PQ])
+        ca.add_contingency(svc_ids=[0], storage_ids=[self.PQ])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertTrue(ca.converged_mask()[0])
-        self.assertIn("AC emulation", ca.get_batch_unsupported_reasons()[0])
+        self.assertIn("standby", ca.get_batch_unsupported_reasons()[0])
         np.testing.assert_allclose(np.asarray(ca.get_voltages())[0],
-                                   self._reference([self.PQ], hvdcs=[0]), atol=1e-8, rtol=0.)
+                                   self._reference([self.PQ], svcs=[0]), atol=1e-8, rtol=0.)
 
     @staticmethod
     def _container(grid):
@@ -581,8 +579,8 @@ class TestHvdcLines(_ContingencyMoreElements):
         trips = [([self.FIXED], []), ([self.REGULATING], [])]
         self._check_sweep(trips, self._sweep(trips, dc=True), dc=True, angles_only=True)
 
-    def test_scenario_sweep_what_it_leaves_out(self):
-        sweep = self._sweep([([self.DROOP], []), ([self.FIXED], [])])
+    def test_scenario_sweep_what_it_leaves_out_in_dc(self):
+        sweep = self._sweep([([self.DROOP], []), ([self.FIXED], [])], dc=True)
         sweep.compute(1.0 * self.v0, MAX_IT, TOL)
         reasons = sweep.get_batch_unsupported_reasons()
         self.assertIn("AC emulation", reasons[0])
@@ -662,20 +660,57 @@ class TestHvdcLines(_ContingencyMoreElements):
         np.testing.assert_allclose(np.asarray(sweep.get_voltages())[0], ref.ac_pf(1.0 * self.v0, MAX_IT, TOL),
                                    atol=1e-6, rtol=0.)
 
-    def test_what_the_batch_leaves_out(self):
-        ca = self._analysis([([self.DROOP], []), ([self.FIXED], [])], compute_limit_violations=True)
+    def test_what_the_batch_leaves_out_in_dc(self):
+        ca = self._analysis([([self.DROOP], []), ([self.FIXED], [])], dc=True, compute_limit_violations=True)
         reasons = ca.get_batch_unsupported_reasons()
         self.assertIn("AC emulation", reasons[self._row(ca, [self.DROOP])])
         self.assertEqual(reasons[self._row(ca, [self.FIXED])], "")
         self.assertFalse(ca.converged_mask()[self._row(ca, [self.DROOP])])
 
-    def test_the_fallback_solves_an_ac_emulation_line(self):
-        ca = ContingencyAnalysisCPP(self.grid)
-        ca.batch_unsupported_fallback = True
-        ca.add_contingency(hvdc_ids=[self.DROOP])
-        ca.compute(1.0 * self.v0, MAX_IT, TOL)
-        self.assertTrue(ca.converged_mask()[0])
-        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([self.DROOP]), atol=1e-8, rtol=0.)
+    AC_EMULATION_TRIPS = [([0], []), ([0, 1], []), ([0, 2], [])]
+
+    def test_an_ac_emulation_line(self):
+        self._check_trips(self.AC_EMULATION_TRIPS)
+
+    def test_an_ac_emulation_line_multithreaded(self):
+        self._check_trips(self.AC_EMULATION_TRIPS, nb_thread=3)
+
+    def test_an_ac_emulation_line_with_the_islands_handled(self):
+        self._check_trips(self.AC_EMULATION_TRIPS, handle_disconnected_grid=True)
+
+    def test_an_ac_emulation_line_with_outer_loops(self):
+        self.grid.change_algorithm("NROuter_SparseLU")
+        self.grid.tell_solver_need_reset()
+        self._check_trips(self.AC_EMULATION_TRIPS, algo="NROuter_SparseLU")
+
+    def test_scenario_sweep_an_ac_emulation_line(self):
+        trips = [([self.DROOP], []), ([self.DROOP, self.FIXED], [5])]
+        self._check_sweep(trips, self._sweep(trips))
+
+    def _single_droop_line(self, pmax, droop=True):
+        self.grid.init_hvdc_lines(np.array([4], dtype=np.int32), np.array([11], dtype=np.int32), [0], [0], np.ones(1),
+                                  np.ones(1), [False], [False], np.ones(1), np.ones(1), np.zeros(1), np.zeros(1),
+                                  np.full(1, -1e3), np.full(1, 1e3), np.full(1, -1e3), np.full(1, 1e3), np.ones(1), np.ones(1),
+                                  [0], np.array([3.]), np.ones(1), np.full(1, 12.), [droop], np.array([20.]), np.array([10.]),
+                                  np.full(1, pmax), np.full(1, pmax))
+
+    def test_a_saturated_ac_emulation_line_with_outer_loops(self):
+        # the limit binds in the "n" case: the loop saturates the line, the row takes it out
+        self._single_droop_line(pmax=2.)
+        self.grid.change_algorithm("NROuter_SparseLU")
+        self.grid.tell_solver_need_reset()
+        self._check_trips([([0], [])], algo="NROuter_SparseLU")
+
+    def test_a_line_frozen_at_its_ac_emulation_limit(self):
+        self._single_droop_line(pmax=2., droop=False)  # frozen: droop off, at a fixed set-point
+        self.grid.set_hvdc_ac_emulation_frozen([True])
+        self.grid.tell_solver_need_reset()
+        self._check_trips([([0], [])])
+
+    def test_the_lines_row_by_row_do_not_leak(self):
+        # a row with no trip next to one with: the line is back
+        trips = [([self.DROOP], []), ([self.FIXED], [])]
+        self._check_sweep(trips, self._sweep(trips))
 
     def test_redistribute_slack_shares_what_it_loses(self):
         for gen in self.grid.get_generators():
@@ -904,6 +939,18 @@ class TestRemoteVoltageControllers(unittest.TestCase):
         both = rows[tuple(sorted((1, slack.id)))]
         self.assertIn("slack bus", ca.get_batch_unsupported_reasons()[both])
         self.assertFalse(ca.converged_mask()[both])
+
+    def test_a_second_compute_of_the_same_batch(self):
+        # the last row trips: the "n" solve of the next compute() must not inherit it
+        grid = self._grid()
+        v0 = np.ones(grid.total_bus(), dtype=complex)
+        ca = ContingencyAnalysisCPP(grid)
+        ca.add_contingency(gen_ids=[1])
+        ca.add_contingency(gen_ids=[1, 2])
+        ca.compute(1.0 * v0, MAX_IT, TOL)
+        first = np.asarray(ca.get_voltages()).copy()
+        ca.compute(1.0 * v0, MAX_IT, TOL)
+        np.testing.assert_allclose(np.asarray(ca.get_voltages()), first, atol=1e-10, rtol=0.)
 
     def test_consecutive_computes_without_a_trip(self):
         # a second compute() with no such row is back to the plain pattern

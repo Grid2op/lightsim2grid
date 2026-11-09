@@ -713,7 +713,7 @@ class LS2G_API Hvdc
         void fill_feature_values(FeatureWriter& writer, const Eigen::Ref<const RealVect>& Va) const
         {
             for (int k = 0; k < my_size_; ++k) {
-                if (data_.status(k) != 0) continue;  // saturated: constant injection, zero slopes
+                if (data_.status(k) != 0 || off_[static_cast<std::size_t>(k)]) continue;  // saturated, or gone: zero slopes
                 const real_type raw = data_.p0(k) + data_.k(k) * (Va(data_.bus1(k)) - Va(data_.bus2(k)));
                 const bool side1_ctrl = raw >= 0.;
                 // d recv_pu / d |raw|, with recv = (1-lf_recv)(line_in - r line_in^2)
@@ -742,6 +742,7 @@ class LS2G_API Hvdc
         {
             real_type p1_flow, p2_flow;
             for (int k = 0; k < my_size_; ++k) {
+                if (off_[static_cast<std::size_t>(k)]) continue;  // the row trips it: no flow
                 const real_type theta_1 = std::arg(V_t(data_.bus1(k)));
                 const real_type theta_2 = std::arg(V_t(data_.bus2(k)));
                 const real_type raw = data_.p0(k) + data_.k(k) * (theta_1 - theta_2);
@@ -773,9 +774,14 @@ class LS2G_API Hvdc
             }
         }
 
+        // The droop lines a batch row trips (ids in the grid): no flow and zero slopes, in
+        // whatever regime, on the entries declared for every regime. For the next update_state().
+        void set_tripped_lines(const std::vector<int>& hvdc_ids) { tripped_lines_ = hvdc_ids; }
+
         void clear() {
             my_size_ = 0;
             data_.clear();
+            off_.clear();
             p_row_1_.clear();
             p_row_2_.clear();
             theta_col_1_.clear();
@@ -789,6 +795,8 @@ class LS2G_API Hvdc
     private:
         int                  my_size_;
         HvdcDroopSolverData  data_;
+        std::vector<int>     tripped_lines_;              // see set_tripped_lines
+        std::vector<char>    off_;                        // per droop line: whether the row trips it
         std::vector<int>     p_row_1_, p_row_2_;          // P row of each end bus (-1 if none)
         std::vector<int>     theta_col_1_, theta_col_2_;  // theta column of each end bus (-1 if none)
         std::vector<int>     h11_, h12_, h21_, h22_;      // FeatureSink handles (-1 if entry dropped)
@@ -1932,6 +1940,10 @@ public:
     void set_may_hold_voltage_controllers(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();
         if (vc != nullptr) vc->set_may_hold_controllers(val);
+    }
+    void set_tripped_hvdc_lines(const std::vector<int> & hvdc_ids) {
+        Hvdc* hvdc = _find_extension<Hvdc>();
+        if (hvdc != nullptr) hvdc->set_tripped_lines(hvdc_ids);
     }
     void set_may_trip_voltage_controllers(bool val) {
         VoltageControl* vc = _find_extension<VoltageControl>();

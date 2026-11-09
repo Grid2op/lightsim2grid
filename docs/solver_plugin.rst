@@ -396,7 +396,8 @@ algorithm that can do it overrides ``supports_tripped_voltage_controllers`` (``t
 ``set_may_mask_voltage_control``) and ``set_tripped_voltage_controllers`` (the positions of the
 row's controllers, in the plan's list). One deriving from the built-in Newton-Raphson forwards
 them to its ``NRSystem``. With the default (``false``), the batch reports those rows
-``BATCH_UNSUPPORTED``.
+``BATCH_UNSUPPORTED``. ``supports_tripped_hvdc_lines`` and ``set_tripped_hvdc_lines`` (the ids of the
+row's lines in AC emulation) work the same way for a row tripping such a line.
 
 Nothing to do: the outer-loop hooks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

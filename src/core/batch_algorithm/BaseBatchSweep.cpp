@@ -424,7 +424,7 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_compute_threaded(
         if(!_row_tripped_controllers_.empty()) algos[t]->set_may_trip_voltage_controllers(true);
         // the refactorize fallback the member algo got (see _maybe_prepare_masks /
         // _push_switchable_to_algo): a fresh algo starts without it
-        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary() ||
+        if(mask_mode || _has_pv_switching() || _row_slack_weights_vary() || !_row_tripped_droop_lines_.empty() ||
            (ac_solver_used && _has_voltage_control_groups())) algos[t]->set_refactor_fallback(true);
         // same for the PV/PQ relabelling slots: a freshly spawned algo has no sparsity
         // yet, so telling it here is enough -- its first build_J_sparsity() already
@@ -673,6 +673,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // let it fall back to a numeric factorize there, as for masking / PV pinning. A
     // bool store; the fallback only runs on a failure.
     if(_row_slack_weights_vary()) _algo.set_refactor_fallback(true);
+    // ... as does a row taking the slopes of a line in AC emulation out
+    if(!_row_tripped_droop_lines_.empty()) _algo.set_refactor_fallback(true);
 
     // DC theta-only fast path (see BaseAlgo::set_lazy_v): every DC compute() except
     // the "handle disconnected grid" masked one (which stays on the always-eager
@@ -686,6 +688,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // the "n" solve (L2 as well: it is what builds the ledger, the sparsity and the
     // factorization every row refactorizes into), plus this call's result buffers
     _base_row_view_.masked = _base_masked_.empty() ? nullptr : &_base_masked_;
+    // (whatever the last row of a previous compute() tripped is not the "n" case's)
+    _algo.set_tripped_voltage_controllers(std::vector<int>());
+    _algo.set_tripped_hvdc_lines(std::vector<int>());
     bool n_powerflow_has_conv = _finish_preprocessing(
         nb_steps, nb_total_bus, Vinit_solver, max_iter, tol, timer_preproc, use_dc_lazy_v
     );

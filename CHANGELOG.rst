@@ -237,7 +237,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   a field: rebuild plugins.
 - [IMPROVED] batches: a row can trip a voltage-mode static var compensator, which leaves its control group.
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,
-  ``set_may_trip_voltage_controllers`` and ``set_tripped_voltage_controllers``. Rebuild plugins.
+  ``set_may_trip_voltage_controllers``, ``set_tripped_voltage_controllers``, ``supports_tripped_hvdc_lines``
+  and ``set_tripped_hvdc_lines``. Rebuild plugins.
+- [IMPROVED] batches (AC): a row can trip an HVDC line in AC emulation.
 - [IMPROVED] batches: a row can trip a generator of a voltage-control group (remote regulation included).
   Reported ``BATCH_UNSUPPORTED`` only when every controller of a group regulating a slack bus goes.
 - [ADDED] ``ContingencyAnalysis.add_contingency``: trips HVDC lines (``hvdcs``). Issue #281.

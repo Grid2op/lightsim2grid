@@ -492,8 +492,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         /**
          * ScenarioSweep only: row i, column h True means "disconnect hvdc line h for step i":
          * both its converter stations leave the row, the bus a regulating one was the last to
-         * hold turning PQ. One in AC emulation (or frozen at its limit) leaves the row out of the
-         * batch (BATCH_UNSUPPORTED): its active power lives in the Jacobian.
+         * hold turning PQ. In DC, one in AC emulation leaves the row out of the batch
+         * (BATCH_UNSUPPORTED).
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -655,8 +655,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *    carrying a standby automaton or frozen at a reactive limit is refused by compute().
          *  - an HVDC line stops transmitting: both converter stations leave the row's
          *    injection. The bus a regulating station was the last to hold turns PQ, or it leaves
-         *    its control group. One with AC emulation (or frozen at its limit) is refused by
-         *    compute(): its active power lives in the Jacobian.
+         *    its control group. One in AC emulation stops too; compute() refuses that in DC.
          * What it loses is made up by the distributed slack (redistribute_slack shares
          * it OLF-like before the solve), and a bus it strands is handled as a branch
          * contingency strands one (handle_disconnected_grid).
@@ -4843,22 +4842,26 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         bool _voltage_svc_tripped() const { return false; }
 
-        // An HVDC line in AC emulation (its active power is unknowns and equations of the
-        // Jacobian, its limits an outer loop's) is left out of the batch. A station regulating a
-        // voltage is not: see _maybe_prepare_gen_contingency.
+        // An HVDC line in AC emulation: its active power is the Newton's Hvdc extension's, the
+        // row tells the algorithm the line is gone (_row_tripped_droop_lines_). In DC, where it is a
+        // term of the matrix, or with an algorithm that cannot do it, the row is left out of
+        // the batch. A station regulating a voltage: see _maybe_prepare_gen_contingency.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _check_hvdc_trips(size_t nb_steps){
+            _row_tripped_droop_lines_.clear();
             const auto & hvdc_lines = _grid_model.get_dclines();
+            const bool can_trip = _algo.ac_solver_used() && _algo.supports_tripped_hvdc_lines();
             for(size_t row = 0; row < nb_steps; ++row){
                 for(int hvdc_id : _row_tripped(InjectionTrip::HVDC, row)){
-                    if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;
-                    const char * why = nullptr;
-                    if(hvdc_lines.is_droop_active(hvdc_id)) why = "which runs in AC emulation";
-                    else if(hvdc_lines.get_ac_emulation_frozen(hvdc_id)) why = "which an outer loop froze at its AC emulation limit";
-                    if(why == nullptr) continue;
+                    if(!hvdc_lines.is_droop_active(hvdc_id)) continue;
+                    if(can_trip){
+                        if(_row_tripped_droop_lines_.empty()) _row_tripped_droop_lines_.assign(nb_steps, std::vector<int>());
+                        _row_tripped_droop_lines_[row].push_back(hvdc_id);
+                        continue;
+                    }
                     std::ostringstream msg;
-                    msg << "disconnects hvdc line " << hvdc_id << ", " << why
-                        << ": it cannot be disconnected by the batch for now";
+                    msg << "disconnects hvdc line " << hvdc_id << ", which runs in AC emulation: the algorithm "
+                        << _algo.get_name() << " cannot take it out of a row";
                     _mark_row_batch_unsupported(row, msg.str());
                     break;
                 }
@@ -5325,6 +5328,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
         // the controllers of the voltage-control groups row i trips, for its solves
         void _apply_row_tripped_controllers(size_t i, AlgorithmSelector & algo) const {
+            if(!_row_tripped_droop_lines_.empty()) algo.set_tripped_hvdc_lines(_row_tripped_droop_lines_[i]);
             if(_row_tripped_controllers_.empty()) return;
             algo.set_tripped_voltage_controllers(_row_tripped_controllers_[i]);
         }
@@ -5701,6 +5705,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // per row, the controllers of the voltage-control groups it trips (positions in the plan's
         // controller list, sorted). Empty when no row trips one (_maybe_prepare_gen_contingency).
         std::vector<std::vector<int> > _row_tripped_controllers_;
+        // per row, the lines in AC emulation it trips (ids). Empty when no row trips one (_check_hvdc_trips).
+        std::vector<std::vector<int> > _row_tripped_droop_lines_;
         // per row, why the batch cannot solve it (empty: it can), see get_batch_unsupported_reasons.
         // Sized by _reset_batch_unsupported_rows, filled by the checks that used to refuse the whole
         // batch (_check_shunt_trips, _maybe_prepare_gen_contingency).

@@ -8,14 +8,14 @@
 
 """A contingency the batch does not support is reported BATCH_UNSUPPORTED, the others still run (#280).
 
-Tripping an HVDC line in AC emulation is not supported by the batch yet (its
+Tripping a static var compensator with a standby automaton is not supported by the batch yet (its
 voltage control lives in Jacobian rows and columns the batch does not reserve per row). Such a
 contingency does not make ``compute()`` raise for the whole batch: that row alone is reported
 ``LimitViolationType.BATCH_UNSUPPORTED``, with its reason in ``get_batch_unsupported_reasons()``. With
 ``batch_unsupported_fallback``, those rows are then solved one at a time by ``ac_pf`` on a copy of the
 grid, and must match that one-off solve.
 
-Fixture: pandapower case14 with an AC emulation HVDC line from the leaf bus 7, whose generator is off.
+Fixture: pandapower case14 with a standby SVC on the leaf bus 7, whose generator is off.
 """
 
 import copy
@@ -36,7 +36,7 @@ TOL = 1e-11
 GEN_ON_LEAF = 3   # on bus 7, off
 TRAFO_BEHIND = 3  # buses 6-7: bus 7 is behind it, alone
 LOCAL_GEN = 1     # a generator regulating its own bus
-HVDC = 0          # in AC emulation, from bus 7: what the batch does not support
+SVC = 0           # with a standby automaton, on bus 7: what the batch does not support
 
 
 def _grid():
@@ -44,11 +44,9 @@ def _grid():
         warnings.filterwarnings("ignore")
         grid = init_from_pandapower(pn.case14())
     grid.deactivate_gen(GEN_ON_LEAF)
-    big = np.full(1, 1e3)
-    grid.init_hvdc_lines(np.array([7], dtype=np.int32), np.array([12], dtype=np.int32), [0], [0], np.ones(1), np.ones(1),
-                         [False], [False], np.ones(1), np.ones(1), np.zeros(1), np.zeros(1), -big, big, -big, big,
-                         np.ones(1), np.ones(1), [0], np.array([3.]), np.ones(1), np.full(1, 12.),
-                         [True], np.array([3.]), np.array([2.]), np.full(1, 100.), np.full(1, 100.))
+    grid.init_svcs([2], np.ones(1), np.array([5.]), np.zeros(1), np.full(1, -0.5), np.full(1, 0.5),
+                   np.array([7], dtype=np.int32), np.array([7], dtype=np.int32))
+    grid.set_svc_standby([True], np.full(1, 0.9), np.full(1, 1.1))
     grid.tell_solver_need_reset()
     return grid
 
@@ -78,16 +76,16 @@ class TestBatchUnsupportedContingencies(unittest.TestCase):
         ca.nb_thread = nb_thread
         for line_id in (0, 3, 7):
             ca.add_n1(line_id)
-        ca.add_contingency(hvdc_ids=[HVDC])
+        ca.add_contingency(svc_ids=[SVC])
         ca.add_contingency_gen(LOCAL_GEN)
-        ca.add_contingency(branch_ids=[5], hvdc_ids=[HVDC])
+        ca.add_contingency(branch_ids=[5], svc_ids=[SVC])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         return ca
 
     @staticmethod
-    def _row(ca, branches=(), gens=(), hvdcs=()):
+    def _row(ca, branches=(), gens=(), svcs=()):
         for row, cont in enumerate(ca.my_contingencies()):
-            if sorted(cont[0]) == sorted(branches) and sorted(cont[3]) == sorted(gens) and sorted(cont[9]) == sorted(hvdcs):
+            if sorted(cont[0]) == sorted(branches) and sorted(cont[3]) == sorted(gens) and sorted(cont[8]) == sorted(svcs):
                 return row
         raise AssertionError(f"no row for branches {branches}, generators {gens}")
 
@@ -95,12 +93,12 @@ class TestBatchUnsupportedContingencies(unittest.TestCase):
         reasons = ca.get_batch_unsupported_reasons()
         conts = ca.my_contingencies()
         self.assertEqual(len(reasons), len(conts))
-        unsupported = {self._row(ca, hvdcs=[HVDC]), self._row(ca, branches=[5], hvdcs=[HVDC])}
+        unsupported = {self._row(ca, svcs=[SVC]), self._row(ca, branches=[5], svcs=[SVC])}
         for row, cont in enumerate(conts):
             with self.subTest(row=row, contingency=cont):
                 if row in unsupported:
-                    self.assertIn("AC emulation", reasons[row])
-                    self.assertIn(f"hvdc line {HVDC}", reasons[row])
+                    self.assertIn("standby", reasons[row])
+                    self.assertIn(f"static var compensator {SVC}", reasons[row])
                     self.assertFalse(ca.converged()[row])
                     self.assertFalse(ca.converged_mask()[row])
                     viol = ca.get_violations()[row]
@@ -130,20 +128,20 @@ class TestBatchUnsupportedContingencies(unittest.TestCase):
         """as those of a row the connectivity check skips"""
         ca = self._analysis()
         amps = ca.compute_flows()
-        row = self._row(ca, hvdcs=[HVDC])
+        row = self._row(ca, svcs=[SVC])
         self.assertTrue(np.all(np.isnan(amps[row])))
         other = self._row(ca, gens=[LOCAL_GEN])
         self.assertTrue(np.any(amps[other] != 0.))
 
     def test_a_split_grid_stays_not_simulated(self):
-        """The connectivity check wins: a contingency that strands the converter station's own
+        """The connectivity check wins: a contingency that strands the SVC's own
         bus is NOT_SIMULATED, whatever else it trips -- no one-off solve can do better."""
         ca = ContingencyAnalysisCPP(self.grid)
         ca.compute_limit_violations = True
-        ca.add_contingency(branch_ids=[self.n_line + TRAFO_BEHIND], hvdc_ids=[HVDC])
+        ca.add_contingency(branch_ids=[self.n_line + TRAFO_BEHIND], svc_ids=[SVC])
         ca.add_n1(0)
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
-        row = self._row(ca, branches=[self.n_line + TRAFO_BEHIND], hvdcs=[HVDC])
+        row = self._row(ca, branches=[self.n_line + TRAFO_BEHIND], svcs=[SVC])
         self.assertEqual(ca.get_batch_unsupported_reasons()[row], "")
         self.assertEqual([v.violation_type for v in ca.get_violations()[row]],
                          [LimitViolationType.NOT_SIMULATED])
@@ -152,7 +150,7 @@ class TestBatchUnsupportedContingencies(unittest.TestCase):
         """Registering again (L2 cleared) and recomputing settles the reasons anew."""
         ca = self._analysis()
         self.assertEqual(sum(bool(r) for r in ca.get_batch_unsupported_reasons()), 2)
-        ca.remove_contingency(hvdc_ids=[HVDC])
+        ca.remove_contingency(svc_ids=[SVC])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertEqual(sum(bool(r) for r in ca.get_batch_unsupported_reasons()), 1)
         self.assertEqual(len(ca.get_batch_unsupported_reasons()), len(ca.my_contingencies()))
@@ -201,8 +199,8 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
             ref.deactivate_gen(int(g))
         for s in shunts:
             ref.deactivate_shunt(int(s))
-        for s in cont[9]:
-            ref.deactivate_dcline(int(s))
+        for s in cont[8]:
+            ref.deactivate_svc(int(s))
         for ld in loads:
             ref.deactivate_load(int(ld))
         return ref, ref.ac_pf(v_start, MAX_IT, TOL)
@@ -216,10 +214,10 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
         ca.nb_thread = nb_thread
         for line_id in (0, 3):
             ca.add_n1(line_id)
-        ca.add_contingency(hvdc_ids=[HVDC])
-        ca.add_contingency(branch_ids=[5], hvdc_ids=[HVDC])
-        ca.add_contingency(branch_ids_side1=[7], hvdc_ids=[HVDC])
-        ca.add_contingency(load_ids=[2], hvdc_ids=[HVDC])
+        ca.add_contingency(svc_ids=[SVC])
+        ca.add_contingency(branch_ids=[5], svc_ids=[SVC])
+        ca.add_contingency(branch_ids_side1=[7], svc_ids=[SVC])
+        ca.add_contingency(load_ids=[2], svc_ids=[SVC])
         ca.add_contingency_gen(LOCAL_GEN)
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         return ca
@@ -231,7 +229,7 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
         nb_fallback = 0
         for row, cont in enumerate(ca.my_contingencies()):
             with self.subTest(row=row, contingency=cont):
-                self.assertEqual(bool(reasons[row]), HVDC in cont[9])
+                self.assertEqual(bool(reasons[row]), SVC in cont[8])
                 nb_fallback += bool(reasons[row])
                 ref, V_ref = self._reference(grid, cont, init_from_n)
                 if V_ref.shape[0] == 0 and not reasons[row]:
@@ -274,7 +272,7 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
         ca.batch_unsupported_fallback = False
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertEqual(sum(not c for c in ca.converged()), 4)
-        row = TestBatchUnsupportedContingencies._row(ca, hvdcs=[HVDC])
+        row = TestBatchUnsupportedContingencies._row(ca, svcs=[SVC])
         self.assertEqual([v.violation_type for v in ca.get_violations()[row]], [LimitViolationType.BATCH_UNSUPPORTED])
 
     def test_source_grid_untouched(self):
@@ -298,25 +296,25 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
         """handle_disconnected_grid: the batch solves a split grid on its main component, and so
         does the fallback (consider_only_main_component on its own copy of the grid). The batch's
         own split row is checked against the same reference, so the two conventions agree."""
-        trafo = self.n_line + TRAFO_BEHIND  # the converter station's own bus is behind it
+        trafo = self.n_line + TRAFO_BEHIND  # the SVC's own bus is behind it
         ca = ContingencyAnalysisCPP(self.grid)
         ca.compute_limit_violations = True
         ca.handle_disconnected_grid = True
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(branch_ids=[trafo], hvdc_ids=[HVDC])
+        ca.add_contingency(branch_ids=[trafo], svc_ids=[SVC])
         ca.add_contingency(branch_ids=[trafo], gen_ids=[LOCAL_GEN])  # the batch's own
         ca.add_n1(0)
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         amps = ca.compute_flows()
-        for kw in ({"hvdcs": [HVDC]}, {"gens": [LOCAL_GEN]}):
+        for kw in ({"svcs": [SVC]}, {"gens": [LOCAL_GEN]}):
             with self.subTest(**kw):
                 row = TestBatchUnsupportedContingencies._row(ca, branches=[trafo], **kw)
-                self.assertEqual(bool(ca.get_batch_unsupported_reasons()[row]), "hvdcs" in kw)
+                self.assertEqual(bool(ca.get_batch_unsupported_reasons()[row]), "svcs" in kw)
                 self.assertTrue(ca.converged()[row])
                 ref = copy.deepcopy(self.grid)
                 ref.deactivate_trafo(TRAFO_BEHIND)
-                if "hvdcs" in kw:
-                    ref.deactivate_dcline(HVDC)
+                if "svcs" in kw:
+                    ref.deactivate_svc(SVC)
                 else:
                     ref.deactivate_gen(LOCAL_GEN)
                 ref.consider_only_main_component(False)
@@ -330,14 +328,14 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
                 live = [br for br in range(a_or.shape[0]) if br != trafo]
                 np.testing.assert_allclose(np.nan_to_num(amps[row][live]), a_or[live], rtol=1e-6, atol=1e-6)
         # the source grid of the analysis kept its element: only the fallback's copy lost it
-        self.assertTrue(self.grid.get_dclines()[HVDC].connected_global)
+        self.assertTrue(self.grid.get_svcs()[SVC].connected)
 
     def test_redistribute_slack_without_outer_loops_is_refused(self):
         ca = ContingencyAnalysisCPP(self.grid)
         ca.compute_limit_violations = True
         ca.redistribute_slack = True
         ca.batch_unsupported_fallback = True
-        ca.add_contingency(hvdc_ids=[HVDC])
+        ca.add_contingency(svc_ids=[SVC])
         ca.compute(1.0 * self.v0, MAX_IT, TOL)
         self.assertFalse(ca.converged()[0])
         self.assertIn("redistribute_slack", ca.get_batch_unsupported_reasons()[0])
