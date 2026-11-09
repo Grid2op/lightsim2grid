@@ -188,6 +188,7 @@ void bind_gridmodel(py::module_& m) {
         .def("init_trafo", &LSGrid::init_trafo, DocLSGrid::init_trafo.c_str())
         .def("update_powerlines_parameters", &LSGrid::update_powerlines_parameters, DocLSGrid::update_powerlines_parameters.c_str())
         .def("update_trafos_parameters", &LSGrid::update_trafos_parameters, DocLSGrid::update_trafos_parameters.c_str())
+        .def("update_trafos_parameters_full", &LSGrid::update_trafos_parameters_full, DocLSGrid::update_trafos_parameters_full.c_str())
         .def("init_generators", &LSGrid::init_generators, DocLSGrid::init_generators.c_str())
         .def("init_generators_full", &LSGrid::init_generators_full, DocLSGrid::init_generators_full.c_str())
         .def("init_loads", &LSGrid::init_loads, DocLSGrid::init_loads.c_str())

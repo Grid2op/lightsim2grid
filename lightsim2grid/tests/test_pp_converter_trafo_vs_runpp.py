@@ -1,0 +1,254 @@
+# Copyright (c) 2026, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
+
+"""issue #274: the pandapower transformer converter against ``pp.runpp``, one transformer
+variant at a time, on the smallest grid that has one (ext_grid -- trafo -- line -- load)."""
+
+import copy
+import unittest
+import warnings
+
+import numpy as np
+import pandapower as pp
+
+from lightsim2grid.network import init_from_pandapower
+from global_var_tests import MAX_PP2_DATAREADER, CURRENT_PP_VERSION
+
+# both solvers converge far below it: what is left is the model
+TOL_V = 1e-8
+
+
+def make_net(**trafo_kw):
+    net = pp.create_empty_network()
+    b_hv = pp.create_bus(net, vn_kv=110.)
+    b_lv = pp.create_bus(net, vn_kv=20.)
+    b_ld = pp.create_bus(net, vn_kv=20.)
+    pp.create_ext_grid(net, b_hv, vm_pu=1.02)
+    par = dict(sn_mva=40., vn_hv_kv=110., vn_lv_kv=20., vk_percent=10., vkr_percent=0.3, pfe_kw=30.,
+               i0_percent=0.1, shift_degree=0., tap_side="hv", tap_neutral=0, tap_min=-9, tap_max=9,
+               tap_pos=3, tap_step_percent=1.5, tap_step_degree=0., tap_changer_type="Ratio")
+    par.update(trafo_kw)
+    pp.create_transformer_from_parameters(net, b_hv, b_lv, **par)
+    pp.create_line_from_parameters(net, b_lv, b_ld, 2., 0.1, 0.3, 10., 0.4)
+    pp.create_load(net, b_ld, p_mw=25., q_mvar=8.)
+    return net
+
+
+def pp_voltages(net, trafo_model="t"):
+    net = copy.deepcopy(net)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        pp.runpp(net, calculate_voltage_angles=True, init="flat", trafo_model=trafo_model,
+                 tolerance_mva=1e-11, lightsim2grid=False, numba=False)
+    return net.res_bus["vm_pu"].to_numpy() * np.exp(1j * np.deg2rad(net.res_bus["va_degree"].to_numpy()))
+
+
+def ls_model(net, trafo_model="t"):
+    net = copy.deepcopy(net)
+    net._options = dict(trafo_model=trafo_model)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return init_from_pandapower(net, pp_orig_file="pandapower_v3")
+
+
+def ls_voltages(model, n_bus):
+    V = model.ac_pf(np.full(model.total_bus(), 1. + 0j), 20, 1e-11)
+    assert V.shape[0] > 0, "the lightsim2grid powerflow diverged"
+    return V[:n_bus]
+
+
+def with_table(net, angle_deg=0.):
+    """a tabular tap changer on transformer 0: ratio, angle, vk and vkr per step"""
+    import pandas as pd
+    steps = np.arange(-9, 10)
+    net.trafo_characteristic_table = pd.DataFrame({
+        "id_characteristic": 0, "step": steps,
+        "voltage_ratio": 1. + 0.012 * steps, "angle_deg": angle_deg * steps,
+        "vk_percent": 10. + 0.2 * steps, "vkr_percent": 0.3 + 0.01 * steps})
+    net.trafo["tap_dependency_table"] = True
+    net.trafo["id_characteristic_table"] = 0
+    return net
+
+
+class _Base(unittest.TestCase):
+    def setUp(self):
+        if CURRENT_PP_VERSION <= MAX_PP2_DATAREADER:
+            self.skipTest("compares with the pandapower 3 transformer model")
+
+    def assert_same_as_pp(self, net, trafo_model="t"):
+        V_pp = pp_voltages(net, trafo_model)
+        V_ls = ls_voltages(ls_model(net, trafo_model), V_pp.shape[0])
+        np.testing.assert_allclose(V_ls, V_pp, rtol=0., atol=TOL_V)
+
+
+class TestTrafoVsRunpp(_Base):
+    def test_ratio_tap(self):
+        """the plain case: a ratio tap changer off neutral, with iron losses and a magnetising
+        current (the magnetising susceptance used pfe instead of pfe**2, issue #274)"""
+        self.assert_same_as_pp(make_net())
+
+    def test_ratio_tap_lv(self):
+        """issue #274: with the tap on the low voltage side, the magnetising admittance was
+        multiplied by (vn_trafo_lv / vn_lv)**2 where pandapower divides by it"""
+        self.assert_same_as_pp(make_net(tap_side="lv"))
+
+    def test_ratio_tap_neutral(self):
+        self.assert_same_as_pp(make_net(tap_neutral=2, tap_pos=5))
+
+    def test_shift_degree(self):
+        self.assert_same_as_pp(make_net(shift_degree=30.))
+        self.assert_same_as_pp(make_net(shift_degree=30., tap_side="lv"))
+
+    def test_asymmetrical_tap(self):
+        """issue #274: a tap with both a step in % and a step angle moves the voltage along a
+        complex step; pandapower puts the angle of the result in the phase shift, which was
+        lost here (the angle only entered the impedance base)"""
+        self.assert_same_as_pp(make_net(tap_step_degree=30.))
+        self.assert_same_as_pp(make_net(tap_step_degree=30., tap_side="lv"))
+        self.assert_same_as_pp(make_net(tap_step_degree=30., shift_degree=30., tap_neutral=1, tap_pos=-4))
+
+    def test_off_nominal_rated_voltages(self):
+        """issue #274: a transformer rated for other voltages than its buses' (vn_hv_kv / vn_lv_kv
+        != the buses' vn_kv) has an off-nominal ratio, and pandapower moves the tap from the rated
+        voltage; the bus voltages were used for both here, which dropped that ratio"""
+        self.assert_same_as_pp(make_net(vn_hv_kv=115.))
+        self.assert_same_as_pp(make_net(vn_lv_kv=21.))
+        self.assert_same_as_pp(make_net(vn_lv_kv=21., tap_side="lv"))
+        self.assert_same_as_pp(make_net(vn_hv_kv=107., vn_lv_kv=21., tap_step_degree=30.))
+
+    def test_tap_ignored_by_pandapower(self):
+        """issue #274: pandapower 3 applies a tap only for a "Ratio", "Symmetrical" (or "Ideal")
+        tap_changer_type and a tap_side of "hv" or "lv"; without them the transformer is at
+        ratio 1 whatever tap_pos says, where this converter applied the tap anyway"""
+        self.assert_same_as_pp(make_net(tap_changer_type=None))
+        self.assert_same_as_pp(make_net(tap_side=None))
+
+    def test_ideal_phase_shifter(self):
+        """issue #274: an "Ideal" tap changer only shifts the phase, by the step angle per step
+        (or 2.arcsin(step % / 2) without one); it was refused"""
+        self.assert_same_as_pp(make_net(tap_changer_type="Ideal", tap_step_percent=np.nan, tap_step_degree=2.))
+        self.assert_same_as_pp(make_net(tap_changer_type="Ideal", tap_step_percent=np.nan, tap_step_degree=2.,
+                                        tap_side="lv", shift_degree=30.))
+        self.assert_same_as_pp(make_net(tap_changer_type="Ideal", tap_step_percent=2., tap_neutral=1, tap_pos=-3))
+
+    def test_ideal_phase_shifter_both_steps_refused(self):
+        """pandapower refuses an ideal tap changer with both a step angle and a step in %"""
+        with self.assertRaises(RuntimeError):
+            ls_model(make_net(tap_changer_type="Ideal", tap_step_degree=2.))
+
+    def test_parallel(self):
+        """issue #274: `parallel` identical transformers in one row were refused"""
+        self.assert_same_as_pp(make_net(parallel=2))
+        self.assert_same_as_pp(make_net(parallel=3, tap_side="lv", tap_step_degree=30.))
+
+    def test_pi_model(self):
+        """issue #274: a grid whose transformers are computed with trafo_model "pi" was refused
+        by the element checks, although the pandapower 3 converter handles it"""
+        self.assert_same_as_pp(make_net(), trafo_model="pi")
+        self.assert_same_as_pp(make_net(tap_side="lv", tap_step_degree=30., vn_lv_kv=21.), trafo_model="pi")
+
+    def test_tabular_tap(self):
+        """issue #274: a tabular tap changer (tap_dependency_table) takes its ratio, angle, vk
+        and vkr at the current step from net.trafo_characteristic_table; the table was ignored
+        and the tap computed from tap_step_percent"""
+        self.assert_same_as_pp(with_table(make_net()))
+        self.assert_same_as_pp(with_table(make_net(tap_side="lv", tap_pos=-4), angle_deg=1.5))
+        self.assert_same_as_pp(with_table(make_net(tap_changer_type="Ideal", tap_step_percent=np.nan,
+                                                   tap_step_degree=2.), angle_deg=2.))
+
+    def test_tabular_tap_without_row_refused(self):
+        """a tabular transformer whose table has no row at its tap_pos is refused, rather than
+        built from pandapower's fallback values"""
+        net = with_table(make_net(tap_pos=3))
+        net.trafo_characteristic_table = net.trafo_characteristic_table.query("step != 3")
+        with self.assertRaisesRegex(RuntimeError, "no row at their tap_pos"):
+            ls_model(net)
+
+    def test_second_tap_changer(self):
+        """issue #274: pandapower applies a second tap changer (the tap2_* columns) after the
+        first; it was ignored"""
+        def add_tap2(net, **kw):
+            par = dict(tap2_side="lv", tap2_neutral=0, tap2_min=-5, tap2_max=5, tap2_pos=2,
+                       tap2_step_percent=1., tap2_step_degree=0., tap2_changer_type="Ratio")
+            par.update(kw)
+            for k, v in par.items():
+                net.trafo[k] = v
+            return net
+        self.assert_same_as_pp(add_tap2(make_net()))
+        self.assert_same_as_pp(add_tap2(make_net(tap_step_degree=30.), tap2_side="hv", tap2_step_degree=10.))
+        self.assert_same_as_pp(add_tap2(make_net(), tap2_changer_type="Ideal", tap2_step_percent=np.nan,
+                                        tap2_step_degree=3.))
+
+    def test_leakage_ratio(self):
+        """issue #274: with the leakage impedance not split half and half between the windings
+        (leakage_resistance_ratio_hv / leakage_reactance_ratio_hv != 0.5), the T model gives a
+        different shunt admittance on each side; the converter used 0.5 for both"""
+        net = make_net()
+        net.trafo["leakage_resistance_ratio_hv"] = 0.3
+        net.trafo["leakage_reactance_ratio_hv"] = 0.7
+        self.assert_same_as_pp(net)
+        net = make_net(tap_side="lv", tap_step_degree=30., parallel=2)
+        net.trafo["leakage_reactance_ratio_hv"] = 0.2
+        self.assert_same_as_pp(net)
+        self.assert_same_as_pp(net, trafo_model="pi")  # no effect on the pi model
+
+    def test_symmetrical_tap(self):
+        """issue #274: pandapower 3 computes a "Symmetrical" tap changer as a "Ratio" one"""
+        self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical"))
+        self.assert_same_as_pp(make_net(tap_changer_type="Symmetrical", tap_step_degree=30.))
+
+
+class TestTapStateVsRunpp(_Base):
+    """issue #274: the tap is a state of the transformer, not a ratio baked in at load time:
+    converted at one position and moved to another (`change_trafo_ratio_tap` /
+    `change_trafo_phase_tap`), the grid is what pp.runpp computes at the new position."""
+    VARIANTS = {
+        "ratio hv": dict(),
+        "ratio lv, off-nominal": dict(tap_side="lv", vn_lv_kv=21.),
+        "asymmetrical hv": dict(tap_step_degree=30.),
+        "asymmetrical lv, parallel": dict(tap_step_degree=30., tap_side="lv", parallel=2),
+        "symmetrical": dict(tap_changer_type="Symmetrical", tap_step_degree=10.),
+        "ideal hv": dict(tap_changer_type="Ideal", tap_step_percent=np.nan, tap_step_degree=2.),
+        "ideal lv, percent": dict(tap_changer_type="Ideal", tap_step_percent=1.5, tap_side="lv"),
+    }
+
+    def check_moves(self, make, phase):
+        model = ls_model(make(3))
+        trafo = model.get_trafos()[0]
+        self.assertEqual(trafo.has_phase_tap_changer, phase)
+        self.assertEqual(trafo.has_ratio_tap_changer, not phase)
+        for pos in (-9, -2, 0, 5, 9):
+            with self.subTest(pos=pos):
+                if phase:
+                    model.change_trafo_phase_tap(0, pos)
+                else:
+                    model.change_trafo_ratio_tap(0, pos)
+                V_pp = pp_voltages(make(pos))
+                np.testing.assert_allclose(ls_voltages(model, V_pp.shape[0]), V_pp, rtol=0., atol=TOL_V)
+
+    def test_moved_tap(self):
+        for name, kw in self.VARIANTS.items():
+            phase = kw.get("tap_step_degree", 0.) != 0. or kw.get("tap_changer_type") == "Ideal"
+            with self.subTest(name):
+                self.check_moves(lambda pos, kw=kw: make_net(tap_pos=pos, **kw), phase)
+
+    def test_moved_tabular_tap(self):
+        """a tabular tap changer: a ratio one when its table has no angle, a phase one otherwise"""
+        self.check_moves(lambda pos: with_table(make_net(tap_pos=pos)), False)
+        self.check_moves(lambda pos: with_table(make_net(tap_pos=pos, tap_side="lv"), angle_deg=1.5), True)
+
+    def test_tabular_tap_with_a_hole(self):
+        """no tap changer when the table misses a position within tap_min .. tap_max"""
+        net = with_table(make_net())
+        net.trafo_characteristic_table = net.trafo_characteristic_table.query("step != -5")
+        trafo = ls_model(net).get_trafos()[0]
+        self.assertFalse(trafo.has_ratio_tap_changer or trafo.has_phase_tap_changer)
+
+
+if __name__ == "__main__":
+    unittest.main()

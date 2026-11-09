@@ -316,6 +316,36 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``get_batch_unsupported_reasons()``, instead of making ``compute()`` raise for the whole batch (#280).
 - [ADDED] ``ContingencyAnalysis.batch_unsupported_fallback``: the contingencies reported ``BATCH_UNSUPPORTED``
   are solved after the batch, one at a time, by ``ac_pf`` on a copy of the grid (#280).
+- [FIXED] pandapower converter: the ``leakage_resistance_ratio_hv`` warning fired for the supported 0.5
+  and never for another value (#274).
+- [FIXED] pandapower converter: a missing ``tap_side`` became the low voltage side without a warning;
+  the tap is now ignored, with a warning, as pandapower does (#274).
+- [FIXED] pandapower converter: the "Ideal" tap changer check of the 3-winding transformers could
+  not be reached (#274).
+- [FIXED] pandapower 3 converter: the magnetising susceptance of a transformer subtracted ``pfe`` instead of
+  ``pfe**2`` from ``(i0 . sn)**2`` (#274).
+- [FIXED] pandapower 3 converter: with the tap on the low voltage side, the magnetising admittance was
+  multiplied by the square of the tap ratio instead of divided by it (#274).
+- [FIXED] pandapower converter: the angle of a tap with a ``tap_step_degree`` (asymmetrical or symmetrical)
+  is added to the phase shift and its ratio is the modulus of the complex step, as pandapower (#274).
+- [FIXED] pandapower converter: a transformer rated for other voltages than its buses (``vn_hv_kv`` /
+  ``vn_lv_kv``) lost its off-nominal ratio and impedance base (#274).
+- [FIXED] pandapower converter: the tap of a transformer without a ``"Ratio"`` / ``"Symmetrical"``
+  ``tap_changer_type`` was applied, where pandapower ignores it (#274).
+- [ADDED] pandapower converter: ideal phase shifters (``tap_changer_type="Ideal"``, ``tap_phase_shifter``),
+  no longer refused (#274).
+- [ADDED] pandapower converter: transformers with ``parallel != 1``, no longer refused (#274).
+- [ADDED] pandapower converter: grids with ``trafo_model="pi"`` (pandapower 3 data), no longer refused (#274).
+- [ADDED] pandapower converter: tabular tap changers (``tap_dependency_table``): ratio, angle, ``vk`` and
+  ``vkr`` at the current step from ``trafo_characteristic_table``, which was ignored (#274).
+- [ADDED] pandapower converter: the second tap changer (``tap2_*`` columns), applied after the first as
+  pandapower does; it was ignored (#274).
+- [ADDED] pandapower 3 converter: ``leakage_resistance_ratio_hv`` / ``leakage_reactance_ratio_hv`` other than
+  0.5 (a shunt admittance per side), which were replaced by 0.5 (#274).
+- [ADDED] ``LSGrid.update_trafos_parameters_full``: replace the transformers' r, x and the shunt admittance
+  of each side.
+- [ADDED] pandapower converter: a phase tap changer (``set_trafo_phase_tap_changer``) for the taps that move the
+  phase (asymmetrical, symmetrical, ideal, tabular with an angle), and a ratio one for tabular taps (#274).
 
 
 [1.3.0] 2026-11-03
