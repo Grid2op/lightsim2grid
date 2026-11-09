@@ -551,6 +551,17 @@ class ScenarioSweep:
         self._set_element_mask("set_contingency_storages", mask, self.grid2op_env.backend._grid.get_storages(),
                                "storage units")
 
+    def set_contingency_svcs(self, mask):
+        """Per-step static var compensator contingency mask, shape ``(n_simul, n_svc)``, dtype bool.
+        ``True`` means "disconnect this SVC for this simulation": its fixed reactive injection
+        and its b0 leave the step.
+
+        A step tripping one that regulates a voltage, carries a standby automaton or was frozen
+        at a reactive limit is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
+        """
+        self._set_element_mask("set_contingency_svcs", mask, self.grid2op_env.backend._grid.get_svcs(),
+                               "static var compensators")
+
     def set_topo_actions(self, actions):
         """One topological action per row, played by that row on top of its injections
         and contingency masks.

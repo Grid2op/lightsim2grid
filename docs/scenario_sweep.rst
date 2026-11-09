@@ -195,7 +195,9 @@ generator. A row naming a load in both the mask and its topological action is re
 `set_contingency_sgens(mask)` (shape `(n_simul, n_sgen)`) does the same for the static generators:
 the row's active power (`modify_sgen_p`, or the grid's) and the reactive setpoint leave its injection.
 `set_contingency_storages(mask)` does it for the storage units, which also leave the distributed slack
-and turn PQ the bus they were the last to regulate.
+and turn PQ the bus they were the last to regulate. `set_contingency_svcs(mask)` takes out a static var
+compensator's fixed reactive injection and its b0; a row tripping one that regulates a voltage is reported
+`BATCH_UNSUPPORTED`.
 
 .. warning::
 

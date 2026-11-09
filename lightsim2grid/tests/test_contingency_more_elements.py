@@ -396,6 +396,7 @@ class TestStorageUnits(_ContingencyMoreElements):
 
 class TestStaticVarCompensators(_ContingencyMoreElements):
     ARG = "svc_ids"
+    SETTER = "set_contingency_svcs"
     FIXED_Q, OFF_B0, VOLTAGE = 0, 1, 2   # REACTIVE_POWER, OFF with a b0, VOLTAGE
 
     def _setup_grid(self, grid):
@@ -417,6 +418,21 @@ class TestStaticVarCompensators(_ContingencyMoreElements):
             self.assertEqual(ca.get_batch_unsupported_reasons()[row], "")
             self.assertTrue(ca.converged_mask()[row])
             np.testing.assert_allclose(V[row], self._reference(el_ids, branches), atol=1e-8, rtol=0.)
+
+    @staticmethod
+    def _container(grid):
+        return grid.get_svcs()
+
+    def test_scenario_sweep(self):
+        trips = [([self.FIXED_Q], []), ([self.OFF_B0], []), ([self.FIXED_Q, self.OFF_B0], []), ([self.FIXED_Q], [5])]
+        self._check_sweep(trips, self._sweep(trips))
+
+    def test_scenario_sweep_a_voltage_mode_one_is_left_out(self):
+        sweep = self._sweep([([self.VOLTAGE], []), ([self.FIXED_Q], [])])
+        sweep.compute(1.0 * self.v0, MAX_IT, TOL)
+        self.assertIn("regulates a voltage", sweep.get_batch_unsupported_reasons()[0])
+        self.assertFalse(sweep.converged_mask()[0])
+        self.assertTrue(sweep.converged_mask()[1])
 
     def test_dc_trips_nothing(self):
         # no active power, no b0 in DC: the row is the base case

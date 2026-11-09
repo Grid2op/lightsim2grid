@@ -476,6 +476,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         /**
+         * ScenarioSweep only: row i, column s True means "disconnect static var compensator
+         * s for step i": its fixed reactive injection and its b0 leave the row. One regulating
+         * a voltage, carrying a standby automaton or frozen at a reactive limit leaves the row
+         * out of the batch (BATCH_UNSUPPORTED): a control group owns its Jacobian rows.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_svcs(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_svcs().nb()), "set_contingency_svcs");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_svcs");
+            // a Ybus edit (its b0) and what is settled per row (L2)
+            clear_batch_inputs();
+            ybus_policy_.svc_mask = mask;
+        }
+
+        /**
          * ScenarioSweep only: one topological action per row (a `TopoAction`, grid2op
          * semantics: set_bus on loads / generators / storage units / line and trafo
          * ends, set_line_status), played by that row on top of its injections and
@@ -2024,6 +2040,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ybus_policy_.trafo_mask = BoolMat();
             ybus_policy_.shunt_mask = BoolMat();
             ybus_policy_.storage_mask = BoolMat();
+            ybus_policy_.svc_mask = BoolMat();
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _reset_ybus_policy() {}
@@ -4680,16 +4697,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _prepare_storage_trips(size_t) {}
 
-        // ContingencyAnalysis: an SVC in voltage mode is a controller of a group, which owns
+        // An SVC in voltage mode is a controller of a group, which owns
         // Jacobian rows and columns nothing here reserves or masks; the automaton of a standby
         // one and the release check of a frozen one read it too. Left out of the batch.
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _check_svc_trips(size_t nb_steps){
             if(!_algo.ac_solver_used()) return;
             const auto & svcs = _grid_model.get_svcs();
-            for(size_t row = 0; row < nb_steps && row < ybus_policy_.li_rows.size(); ++row){
-                for(int svc_id : ybus_policy_.li_rows[row].svcs){
+            for(size_t row = 0; row < nb_steps; ++row){
+                for(int svc_id : _row_tripped(InjectionTrip::SVC, row)){
                     if(!svcs.get_status(svc_id)) continue;
                     const char * why = nullptr;
                     if(svcs.get_regulation_mode(svc_id) == SvcContainer::RegulationMode::VOLTAGE) why = "which regulates a voltage";
@@ -4704,8 +4720,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 }
             }
         }
-        template<class Y = YbusPolicy, class S = SbusPolicy,
-                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _check_svc_trips(size_t) {}
 
         // ContingencyAnalysis: an HVDC line in AC emulation (its active power is unknowns and
@@ -5391,7 +5406,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 exc_ << algo_name() << "::" << fun_name << ": the injections and/or the contingency "
                         "masks were modified (modify_gen_p / modify_sgen_p / modify_load_p / "
                         "modify_load_q / set_contingency_lines / set_contingency_trafos / "
-                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / set_contingency_sgens / set_contingency_storages / "
+                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / set_contingency_sgens / set_contingency_storages / set_contingency_svcs / "
                         "set_topo_actions) after the "
                         "last compute(); call compute() again before reading the flows.";
                 throw std::runtime_error(exc_.str());

@@ -1142,6 +1142,12 @@ void bind_batch(py::module_& m) {
              "that bus PQ. A step tripping one on a bus a control group holds is left out of the "
              "batch (LimitViolationType.BATCH_UNSUPPORTED). A step naming a unit in both this mask "
              "and its topological action is refused.")
+        .def("set_contingency_svcs", &ScenarioSweep::set_contingency_svcs<>, py::arg("mask"),
+             "Per-step static var compensator contingency mask, shape (n_simul, n_svc), dtype bool. "
+             "True means 'disconnect this SVC for this simulation': its fixed reactive injection "
+             "and its b0 leave the step. A step tripping one that regulates a voltage, carries a "
+             "standby automaton or was frozen at a reactive limit is left out of the batch "
+             "(LimitViolationType.BATCH_UNSUPPORTED).")
         .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
              "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "
              "True means 'disconnect this load for this simulation': the step's own load "
