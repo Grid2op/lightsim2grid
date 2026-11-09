@@ -582,13 +582,71 @@ class TestHvdcLines(_ContingencyMoreElements):
         self._check_sweep(trips, self._sweep(trips, dc=True), dc=True, angles_only=True)
 
     def test_scenario_sweep_what_it_leaves_out(self):
-        sweep = self._sweep([([self.DROOP], []), ([self.REGULATING], []), ([self.FIXED], [])])
+        sweep = self._sweep([([self.DROOP], []), ([self.FIXED], [])])
         sweep.compute(1.0 * self.v0, MAX_IT, TOL)
         reasons = sweep.get_batch_unsupported_reasons()
         self.assertIn("AC emulation", reasons[0])
-        self.assertIn("regulates a voltage", reasons[1])
-        self.assertEqual(reasons[2], "")
-        self.assertTrue(sweep.converged_mask()[2])
+        self.assertEqual(reasons[1], "")
+        self.assertTrue(sweep.converged_mask()[1])
+
+    def test_scenario_sweep_a_regulating_line(self):
+        trips = [([self.REGULATING], []), ([self.REGULATING, self.FIXED], [5])]
+        self._check_sweep(trips, self._sweep(trips))
+
+    def _check_trips(self, trips, algo=None, **attributes):
+        ca = ContingencyAnalysisCPP(self.grid)
+        if algo is not None:
+            ca.change_algorithm(algo)
+        for name, value in attributes.items():
+            setattr(ca, name, value)
+        for el_ids, gens in trips:
+            ca.add_contingency(gen_ids=list(gens), hvdc_ids=list(el_ids))
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        rows = {(tuple(c[9]), tuple(c[3])): row for row, c in enumerate(ca.my_contingencies())}
+        V = np.asarray(ca.get_voltages())
+        for el_ids, gens in trips:
+            with self.subTest(el_ids=el_ids, gens=gens):
+                row = rows[(tuple(el_ids), tuple(gens))]
+                self.assertEqual(ca.get_batch_unsupported_reasons()[row], "")
+                self.assertTrue(ca.converged_mask()[row])
+                np.testing.assert_allclose(V[row], self._reference(el_ids, gens=gens), atol=1e-8, rtol=0.)
+        return ca, rows, V
+
+    REGULATING_TRIPS = [([1], []), ([1, 2], [])]
+
+    def test_a_regulating_line(self):
+        self._check_trips(self.REGULATING_TRIPS)
+
+    def test_a_regulating_line_multithreaded(self):
+        self._check_trips(self.REGULATING_TRIPS, nb_thread=3)
+
+    def test_a_regulating_line_with_the_islands_handled(self):
+        self._check_trips(self.REGULATING_TRIPS, handle_disconnected_grid=True)
+
+    def test_a_regulating_line_with_outer_loops(self):
+        self.grid.change_algorithm("NROuter_SparseLU")
+        self.grid.tell_solver_need_reset()
+        self._check_trips(self.REGULATING_TRIPS, algo="NROuter_SparseLU")
+
+    def test_outer_loops_ignore_a_tripped_station(self):
+        # Q = 0 is outside what the stations may produce: they are gone, nothing checks them
+        for q_range in ((5., 6.), (-1., 1.)):
+            with self.subTest(q_range=q_range):
+                lo, hi = np.full(1, q_range[0]), np.full(1, q_range[1])
+                self.grid.init_hvdc_lines(np.array([10], dtype=np.int32), np.array([11], dtype=np.int32), [0], [0],
+                                          np.ones(1), np.ones(1), [True], [True], np.full(1, 1.03), np.full(1, 1.03),
+                                          np.zeros(1), np.zeros(1), lo, hi, lo, hi, np.ones(1), np.ones(1), [0],
+                                          np.array([3.]), np.ones(1), np.full(1, 12.), [False], np.zeros(1), np.zeros(1),
+                                          np.full(1, 100.), np.full(1, 100.))
+                self.grid.change_algorithm("NROuter_SparseLU")
+                self.grid.tell_solver_need_reset()
+                self._check_trips([([0], [])], algo="NROuter_SparseLU")
+
+    def test_its_buses_turn_pq(self):
+        _, rows, V = self._check_trips([([1], [])])
+        row = V[rows[((1,), ())]]
+        for bus in (10, 11):
+            self.assertGreater(abs(abs(row[bus]) - 1.03), 1e-4)
 
     def test_scenario_sweep_redistribute_slack(self):
         for gen in self.grid.get_generators():
@@ -605,24 +663,19 @@ class TestHvdcLines(_ContingencyMoreElements):
                                    atol=1e-6, rtol=0.)
 
     def test_what_the_batch_leaves_out(self):
-        ca = self._analysis([([self.DROOP], []), ([self.REGULATING], []), ([self.FIXED], [])],
-                            compute_limit_violations=True)
+        ca = self._analysis([([self.DROOP], []), ([self.FIXED], [])], compute_limit_violations=True)
         reasons = ca.get_batch_unsupported_reasons()
         self.assertIn("AC emulation", reasons[self._row(ca, [self.DROOP])])
-        self.assertIn("regulates a voltage", reasons[self._row(ca, [self.REGULATING])])
         self.assertEqual(reasons[self._row(ca, [self.FIXED])], "")
         self.assertFalse(ca.converged_mask()[self._row(ca, [self.DROOP])])
 
-    def test_the_fallback_solves_them(self):
-        for line in (self.DROOP, self.REGULATING):
-            with self.subTest(line=line):
-                ca = ContingencyAnalysisCPP(self.grid)
-                ca.batch_unsupported_fallback = True
-                ca.add_contingency(hvdc_ids=[line])
-                ca.compute(1.0 * self.v0, MAX_IT, TOL)
-                self.assertTrue(ca.converged_mask()[0])
-                np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([line]),
-                                           atol=1e-8, rtol=0.)
+    def test_the_fallback_solves_an_ac_emulation_line(self):
+        ca = ContingencyAnalysisCPP(self.grid)
+        ca.batch_unsupported_fallback = True
+        ca.add_contingency(hvdc_ids=[self.DROOP])
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        self.assertTrue(ca.converged_mask()[0])
+        np.testing.assert_allclose(np.asarray(ca.get_voltages())[0], self._reference([self.DROOP]), atol=1e-8, rtol=0.)
 
     def test_redistribute_slack_shares_what_it_loses(self):
         for gen in self.grid.get_generators():
@@ -645,6 +698,77 @@ class TestHvdcLines(_ContingencyMoreElements):
         self.assertTrue(ca.remove_contingency(hvdc_ids=[0, 1]))
         with self.assertRaises(RuntimeError):
             ca.add_contingency(hvdc_ids=[len(self.grid.get_dclines())])
+
+
+class TestRegulatingStationsSharingABus(_ContingencyMoreElements):
+    """A converter station regulating the bus of something else that also does."""
+    ARG = "hvdc_ids"
+
+    def _setup_grid(self, grid):
+        gen = next(g for g in grid.get_generators() if not g.is_slack)
+        self.gen_id, self.bus, self.vm = gen.id, gen.bus_id, gen.target_vm_pu
+        big = np.full(2, 1e3)
+        grid.init_hvdc_lines(np.array([self.bus, self.bus], dtype=np.int32), np.array([13, 12], dtype=np.int32),
+                             [0, 0], [0, 0], np.ones(2), np.ones(2), [True, True], [False, False],
+                             np.full(2, self.vm), np.ones(2), np.zeros(2), np.zeros(2), -big, big, -big, big,
+                             np.ones(2), np.ones(2), [0, 0], np.array([1., 2.]), np.ones(2), np.full(2, 12.),
+                             [False, False], np.zeros(2), np.zeros(2), np.full(2, 100.), np.full(2, 100.))
+        grid.tell_solver_need_reset()
+
+    def _deactivate(self, grid, el_id):
+        grid.deactivate_dcline(el_id)
+
+    def _solve(self, algo=None, **add):
+        ca = ContingencyAnalysisCPP(self.grid)
+        if algo is not None:
+            ca.change_algorithm(algo)
+        ca.add_contingency(**add)
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        self.assertEqual(ca.get_batch_unsupported_reasons()[0], "")
+        self.assertTrue(ca.converged_mask()[0])
+        return np.asarray(ca.get_voltages())[0]
+
+    def test_a_generator_tripped_next_to_a_regulating_station(self):
+        # the stations still hold the bus: it stays at their set-point
+        V = self._solve(gen_ids=[self.gen_id])
+        self.assertAlmostEqual(abs(V[self.bus]), self.vm, places=8)
+        np.testing.assert_allclose(V, self._reference(gens=[self.gen_id]), atol=1e-8, rtol=0.)
+
+    def test_a_station_tripped_next_to_a_generator(self):
+        V = self._solve(hvdc_ids=[0, 1])
+        self.assertAlmostEqual(abs(V[self.bus]), self.vm, places=8)
+        np.testing.assert_allclose(V, self._reference([0, 1]), atol=1e-8, rtol=0.)
+
+    def test_one_of_two_lines_keeps_the_bus(self):
+        V = self._solve(hvdc_ids=[0], gen_ids=[self.gen_id])
+        self.assertAlmostEqual(abs(V[self.bus]), self.vm, places=8)
+        np.testing.assert_allclose(V, self._reference([0], gens=[self.gen_id]), atol=1e-8, rtol=0.)
+
+    def test_every_controller_of_the_bus_turns_it_pq(self):
+        V = self._solve(hvdc_ids=[0, 1], gen_ids=[self.gen_id])
+        self.assertGreater(abs(abs(V[self.bus]) - self.vm), 1e-4)
+        np.testing.assert_allclose(V, self._reference([0, 1], gens=[self.gen_id]), atol=1e-8, rtol=0.)
+
+    def test_with_outer_loops(self):
+        self.grid.change_algorithm("NROuter_SparseLU")
+        self.grid.tell_solver_need_reset()
+        for add, ref in (({"hvdc_ids": [0, 1], "gen_ids": [self.gen_id]}, ([0, 1], [self.gen_id])),
+                         ({"gen_ids": [self.gen_id]}, ([], [self.gen_id]))):
+            with self.subTest(add=add):
+                np.testing.assert_allclose(self._solve(algo="NROuter_SparseLU", **add),
+                                           self._reference(ref[0], gens=ref[1]), atol=1e-8, rtol=0.)
+
+    def test_a_station_of_a_control_group(self):
+        # a remote generator regulating the bus of the stations: they are all of its group
+        other = next(g.id for g in self.grid.get_generators() if not g.is_slack and g.id != self.gen_id)
+        self.grid.set_gen_regulated_bus(other, self.bus)
+        self.grid.change_v_gen(other, self.vm)
+        self.grid.tell_solver_need_reset()
+        self.assertIn(self.bus, set(self.grid.get_group_controlled_buses()))
+        for add, ref in (({"hvdc_ids": [0]}, ([0], [])), ({"hvdc_ids": [0, 1]}, ([0, 1], [])),
+                         ({"hvdc_ids": [0, 1], "gen_ids": [other, self.gen_id]}, ([0, 1], [other, self.gen_id]))):
+            with self.subTest(add=add):
+                np.testing.assert_allclose(self._solve(**add), self._reference(ref[0], gens=ref[1]), atol=1e-8, rtol=0.)
 
 
 class TestRemoteVoltageControllers(unittest.TestCase):

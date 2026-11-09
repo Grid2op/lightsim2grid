@@ -8356,8 +8356,9 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
       carries a standby automaton or was frozen at a reactive limit is left out of the batch
       (``LimitViolationType.BATCH_UNSUPPORTED``);
     - an HVDC line of ``hvdc_ids`` stops transmitting: both its converter stations leave the injection. A contingency
-      tripping a line in AC emulation (or frozen at its limit), or one a station of which regulates a voltage, is left
-      out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
+      tripping a line in AC emulation (or frozen at its limit) is left out of the batch
+      (``LimitViolationType.BATCH_UNSUPPORTED``). The bus a regulating station was the last to hold turns PQ for the
+      contingency, as for a generator.
 
     What the contingency loses is made up by the distributed slack (``redistribute_slack`` shares it OLF-like before
     the solve), and a bus it strands is handled as a branch contingency strands one (``handle_disconnected_grid``).

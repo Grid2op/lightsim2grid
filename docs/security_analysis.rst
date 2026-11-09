@@ -83,8 +83,7 @@ too (`sgens`, `storages`, `svcs`, `hvdcs` of `add_contingency`, each listed in t
 row taking out every controller of the group regulating a slack bus, a storage unit on a bus a control group holds, a
 shunt that regulates a voltage when the algorithm runs a ShuntVoltageControl outer loop (its
 sections belong to that loop), a static var compensator with a standby automaton or frozen at
-a reactive limit, an HVDC line in AC emulation, or with a station
-regulating a voltage.
+a reactive limit, an HVDC line in AC emulation.
 
 Handling contingencies that split the grid
 -------------------------------------------

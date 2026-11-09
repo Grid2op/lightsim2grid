@@ -193,6 +193,7 @@ inline void build_bus_q_plan(const OuterGridView & view, BusQPlan & out)
     // a station always regulates the bus it stands on, so it is either a group controller
     // or an ordinary PV pin -- `station_is_voltage_controller` covers both
     for(int hvdc_id = 0; hvdc_id < nb_hvdc; ++hvdc_id){
+        if(!view.hvdc_on(hvdc_id)) continue;  // this row takes the line out
         for(int side = 1; side <= 2; ++side){
             const bool is_ctrl = (side == 1 ? st1_is_ctrl : st2_is_ctrl)[static_cast<std::size_t>(hvdc_id)] != 0;
             if(!is_ctrl && !hvdcs.station_is_voltage_controller(hvdc_id, side)) continue;

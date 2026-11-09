@@ -163,6 +163,12 @@ real_type OuterGridView::gen_target_p_override(const std::vector<real_type> & lo
     return std::numeric_limits<real_type>::quiet_NaN();
 }
 
+bool OuterGridView::hvdc_on(int hvdc_id) const
+{
+    if (row_ == nullptr || static_cast<std::size_t>(hvdc_id) >= row_->hvdc_off.size()) return true;
+    return row_->hvdc_off[static_cast<std::size_t>(hvdc_id)] == 0;
+}
+
 // ----- storage units -------------------------------------------------------------------
 
 bool OuterGridView::storage_on(int storage_id) const

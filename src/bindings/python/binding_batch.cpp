@@ -1150,8 +1150,8 @@ void bind_batch(py::module_& m) {
         .def("set_contingency_hvdcs", &ScenarioSweep::set_contingency_hvdcs<>, py::arg("mask"),
              "Per-step hvdc line contingency mask, shape (n_simul, n_hvdc), dtype bool. True means "
              "'disconnect this line for this simulation': both its converter stations leave the "
-             "step's injection. A step tripping one in AC emulation (or frozen at its limit), or "
-             "with a station regulating a voltage, is left out of the batch "
+             "step's injection, the bus a regulating one was the last to hold turning PQ. A step "
+             "tripping one in AC emulation (or frozen at its limit) is left out of the batch "
              "(LimitViolationType.BATCH_UNSUPPORTED).")
         .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
              "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "

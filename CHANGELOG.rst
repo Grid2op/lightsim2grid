@@ -232,6 +232,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [FIXED] batches: tripping a generator or storage unit no longer turns PQ a bus a converter station still regulates.
+- [IMPROVED] batches: a row can trip an HVDC line with a station regulating a voltage. ``OuterRowView`` gains
+  a field: rebuild plugins.
 - [IMPROVED] batches: a row can trip a voltage-mode static var compensator, which leaves its control group.
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,
   ``set_may_trip_voltage_controllers`` and ``set_tripped_voltage_controllers``. Rebuild plugins.
