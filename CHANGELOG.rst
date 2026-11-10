@@ -244,21 +244,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [IMPROVED] batches (AC): a row can trip an HVDC line in AC emulation.
 - [IMPROVED] batches: a row can trip a generator of a voltage-control group (remote regulation included).
   Reported ``BATCH_UNSUPPORTED`` only when every controller of a group regulating a slack bus goes.
-- [ADDED] ``ContingencyAnalysis.add_contingency``: trips HVDC lines (``hvdcs``). Issue #281.
-- [ADDED] ``ContingencyAnalysis.add_contingency``: trips static var compensators (``svcs``). Issue #281.
-- [ADDED] ``ContingencyAnalysis.add_contingency``: trips storage units (``storages``). Issue #281.
-- [ADDED] ``ContingencyAnalysis.add_contingency``: trips static generators (``sgens``). Issue #281.
-- [ADDED] ``ScenarioSweep.set_contingency_hvdcs``: per-row trips of HVDC lines. Issue #281.
-- [ADDED] ``ScenarioSweep.set_contingency_svcs``: per-row trips of static var compensators. Issue #281.
-- [ADDED] ``ScenarioSweep.set_contingency_storages``: per-row trips of storage units. Issue #281.
-- [ADDED] ``ScenarioSweep.set_contingency_sgens``: per-row trips of static generators. Issue #281.
-- [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips HVDC lines (``hvdc_ids``). AC emulation and
-  voltage-regulating stations are reported ``BATCH_UNSUPPORTED``. Issue #281.
-- [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips static var compensators (``svc_ids``). Those a
-  control group holds are reported ``BATCH_UNSUPPORTED``. Issue #281.
-- [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips storage units (``storage_ids``). Issue #281.
-- [ADDED] ``ContingencyAnalysisCPP.add_contingency``: trips static generators (``sgen_ids``). Issue #281.
-  ``my_contingencies`` gains that list.
+- [ADDED] ``ContingencyAnalysis.add_contingency`` and ``ContingencyAnalysisCPP.add_contingency``: trip static
+  generators, storage units, static var compensators and HVDC lines (``sgens``, ``storages``, ``svcs``, ``hvdcs``,
+  ``_ids`` in C++). ``my_contingencies`` returns their lists. Issue #281.
+- [ADDED] ``ScenarioSweep``: per-row trips of static generators, storage units, static var compensators and HVDC
+  lines (``set_contingency_sgens``, ``_storages``, ``_svcs``, ``_hvdcs``). Issue #281.
 - [ADDED] ``ContingencyPropagator.add_contingencies`` (and ``propagate_contingencies``) read powsybl's
   contingency lists, a json file included; ``contingency_ids`` gives their ids. Grouping ignores busbar names.
 - [FIXED] batches with outer loops: a voltage-control group losing a controller to an island, its other
