@@ -592,7 +592,10 @@ class LS2G_API LSGrid final
          * and the custom rows of the Newton (distributed slack, voltage-control
          * groups, HVDC) do not get the coupling term in it.
          *
-         * Copied with the grid, part of `get_state` / the binary format.
+         * Copied with the grid, so a batch algorithm built from it inherits it (its
+         * "n" solve and the rows seeded from the caller's voltage, see
+         * BaseBatchSolverSynch::_publish_uniform_start); part of `get_state` / the
+         * binary format.
          */
         void set_uniform_voltage_start(bool uniform) noexcept {uniform_voltage_start_ = uniform;}
         [[nodiscard]] bool get_uniform_voltage_start() const noexcept {return uniform_voltage_start_;}
@@ -1365,6 +1368,15 @@ class LS2G_API LSGrid final
          */
         [[nodiscard]] const RealVect & get_ac_uniform_start_vm() const {
             return ac_cache_.uniform_start_vm;
+        }
+        /**
+         * Publish the starting magnitudes the Newton-Raphson reads (see
+         * `get_ac_uniform_start_vm`) for a caller solving a system of its own in the
+         * labelling `build_solver_input` published -- the batches, which seed each row
+         * themselves. Empty: nothing to start from (a row starting from a solved state).
+         */
+        void set_ac_uniform_start_vm(const RealVect & vm) {
+            ac_cache_.uniform_start_vm = vm;
         }
         [[nodiscard]] const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
 

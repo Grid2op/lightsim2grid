@@ -28,6 +28,7 @@ import numpy as np
 
 from lightsim2grid.network import LSGrid
 from lightsim2grid.algorithm import AlgorithmType
+from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP, TimeSeriesCPP
 
 MAX_IT = 20
 TOL = 1e-8
@@ -40,6 +41,8 @@ LINES = [(1, 5, 0.05403, 0.22304, 0.0492), (2, 5, 0.05695, 0.17388, 0.0346), (6,
 STIFF = (2, 15, 2.7e-6, 1.1e-5, 0.)
 GENS = [(1, 232.4, 1.06), (2, 40., 1.045)]  # bus, p_mw, vm_pu (bus 1 is the slack)
 SHUNTS = [(9, -19.)]  # bus, q_mvar
+# a second line 1-5, so that a contingency can trip one without splitting the grid
+PARALLEL = (1, 5, 0.05403, 0.22304, 0.0492)
 
 
 def _grid(lines, algo=AlgorithmType.NR_KLU, uniform=False):
@@ -159,6 +162,93 @@ class TestUniformVoltageStart(unittest.TestCase):
                         res.append(grid.ac_pf(_flat(buses), 1000, TOL))
                 self.assertGreater(res[0].shape[0], 0)
                 np.testing.assert_array_equal(res[0], res[1])
+
+
+class TestUniformStartBatch(unittest.TestCase):
+    """The batches inherit the option, and their "n" solve and every row starting from the
+    voltage passed take the uniform start; a row starting from a solved state does not."""
+
+    def test_inherited_and_own_property(self):
+        grid, _ = _grid(LINES)
+        self.assertFalse(ContingencyAnalysisCPP(grid).uniform_voltage_start)
+        self.assertFalse(TimeSeriesCPP(grid).uniform_voltage_start)
+        grid.set_uniform_voltage_start(True)
+        self.assertTrue(ContingencyAnalysisCPP(grid).uniform_voltage_start)
+        ts = TimeSeriesCPP(grid)
+        self.assertTrue(ts.uniform_voltage_start)
+        ts.uniform_voltage_start = False
+        self.assertFalse(ts.uniform_voltage_start)
+        self.assertTrue(grid.get_uniform_voltage_start())
+
+    def test_contingency_analysis(self):
+        # issue #284 in a batch: the "n" solve diverges without the option (the analysis
+        # then refuses to run), and with it every row matches a single solve of its own
+        lines = LINES + [PARALLEL, STIFF]
+        trips = [len(LINES), 0]  # either of the two parallel lines
+        grid, buses = _grid(lines)
+        ca = ContingencyAnalysisCPP(grid)
+        for line_id in trips:
+            ca.add_n1(line_id)
+        with self.assertRaises(RuntimeError):
+            ca.compute(_flat(buses), MAX_IT, TOL)
+
+        for init_from_n in (False, True):
+            with self.subTest(init_from_n=init_from_n):
+                grid, buses = _grid(lines, uniform=True)
+                ca = ContingencyAnalysisCPP(grid)
+                ca.init_from_n_powerflow = init_from_n
+                for line_id in trips:
+                    ca.add_n1(line_id)
+                ca.compute(_flat(buses), MAX_IT, TOL)
+                Vs = np.array(ca.get_voltages())
+                for row, line_id in enumerate(trips):
+                    single, _ = _grid(lines, uniform=True)
+                    single.deactivate_powerline(line_id)
+                    V = single.ac_pf(_flat(buses), MAX_IT, TOL)
+                    self.assertGreater(V.shape[0], 0)
+                    np.testing.assert_allclose(Vs[row], V, atol=1e-8, rtol=0.)
+
+    def test_time_series(self):
+        # the first row takes the uniform start, the next ones start from the previous
+        # solution, exactly as without the option
+        scales = np.array([1.0, 1.05, 0.95])
+        gen_mat = np.outer(scales, [g[1] for g in GENS])
+        empty = np.zeros((len(scales), 0))
+
+        grid, buses = _grid(LINES + [STIFF], uniform=True)
+        ts = TimeSeriesCPP(grid)
+        self.assertEqual(ts.compute_Vs(gen_mat, empty, empty, empty, _flat(buses), MAX_IT, TOL), 1)
+        Vs = np.array(ts.get_voltages())
+        for row, scale in enumerate(scales):
+            single, _ = _grid(LINES + [STIFF], uniform=True)
+            for gen_id, gen in enumerate(GENS):
+                single.change_p_gen(gen_id, scale * gen[1])
+            V = single.ac_pf(_flat(buses), MAX_IT, TOL)
+            self.assertGreater(V.shape[0], 0)
+            np.testing.assert_allclose(Vs[row], V, atol=1e-8, rtol=0.)
+
+        # on a grid where both starts converge, a chained row is solved the same way
+        nb_iter = []
+        for uniform in (False, True):
+            grid, buses = _grid(LINES, uniform=uniform)
+            ts = TimeSeriesCPP(grid)
+            self.assertEqual(ts.compute_Vs(gen_mat, empty, empty, empty, _flat(buses), MAX_IT, TOL), 1)
+            nb_iter.append(list(ts.get_row_nb_iter()))
+        self.assertEqual(nb_iter[0][1:], nb_iter[1][1:])
+
+    def test_changing_it_drops_the_base_case(self):
+        grid, buses = _grid(LINES + [PARALLEL])
+        ca = ContingencyAnalysisCPP(grid)
+        ca.add_n1(len(LINES))
+        ca.compute(_flat(buses), MAX_IT, TOL)
+        ca.compute(_flat(buses), MAX_IT, TOL)
+        self.assertTrue(ca.base_case_was_reused())
+        ca.uniform_voltage_start = True
+        ca.compute(_flat(buses), MAX_IT, TOL)
+        self.assertFalse(ca.base_case_was_reused())
+        ca.uniform_voltage_start = True
+        ca.compute(_flat(buses), MAX_IT, TOL)
+        self.assertTrue(ca.base_case_was_reused())
 
 
 class TestUniformStartVoltageControlGroup(unittest.TestCase):

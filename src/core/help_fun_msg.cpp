@@ -6623,8 +6623,10 @@ const std::string DocLSGrid::set_uniform_voltage_start = R"mydelimiter(
     (distributed slack, voltage-control groups, HVDC) do not see the targets move in it.
 
     Only the Newton-Raphson algorithms (``NR*``, outer loops included) take this step; the
-    others solve exactly as before. The option is copied with the grid and kept by a pickle
-    and by :func:`save_binary`.
+    others solve exactly as before. The option is copied with the grid, so the batch
+    algorithms built from it inherit it (their "n" solve and the rows starting from the
+    voltage passed take the uniform start, not a row starting from a solved state), and kept
+    by a pickle and by :func:`save_binary`.
 
     Parameters
     ----------
