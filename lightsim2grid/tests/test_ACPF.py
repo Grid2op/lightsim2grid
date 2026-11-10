@@ -42,8 +42,12 @@ def create_transformers(n_pdp):
     trafo_and_bus = n_pdp.trafo
     n_tap = np.where(~np.isnan(trafo_and_bus['tap_pos']) & ~np.isnan(trafo_and_bus['tap_neutral']) & ~np.isnan(trafo_and_bus['tap_step_percent']),
                      1.0 + (trafo_and_bus['tap_pos'] - trafo_and_bus['tap_neutral']) * trafo_and_bus['tap_step_percent'] / 100.0, 1.0)
-    rated_u1 = np.where(trafo_and_bus['tap_side'] == "hv", trafo_and_bus['vn_hv_kv'] * n_tap, trafo_and_bus['vn_hv_kv'])
-    rated_u2 = np.where(trafo_and_bus['tap_side'] == "lv", trafo_and_bus['vn_lv_kv'] * n_tap, trafo_and_bus['vn_lv_kv'])
+    # trafo_and_bus["tap_side"] is a pandas "string" column (with pd.NA) in pandapower >= 4:
+    # compare with .eq(...).fillna(False) and not with == which yields pd.NA
+    tap_side_is_hv = trafo_and_bus["tap_side"].eq("hv").fillna(False).to_numpy(dtype=bool)
+    tap_side_is_lv = trafo_and_bus["tap_side"].eq("lv").fillna(False).to_numpy(dtype=bool)
+    rated_u1 = np.where(tap_side_is_hv, trafo_and_bus['vn_hv_kv'] * n_tap, trafo_and_bus['vn_hv_kv'])
+    rated_u2 = np.where(tap_side_is_lv, trafo_and_bus['vn_lv_kv'] * n_tap, trafo_and_bus['vn_lv_kv'])
     c = n_pdp.sn_mva / n_pdp.trafo['sn_mva']
     rk = trafo_and_bus['vkr_percent'] / 100 * c
     zk = trafo_and_bus['vk_percent'] / 100 * c
@@ -463,8 +467,11 @@ class TestACPF(unittest.TestCase):
         tap_pos[~np.isfinite(tap_pos)] = 0.
         shift_ = 1.0 * pp_net.trafo["shift_degree"].values
         shift_[~np.isfinite(shift_)] = 0.
-        is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
-        is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
+        # see lightsim2grid/network/from_pandapower/_aux_add_trafo.py: "tap_side" is a
+        # pandas "string" column with pd.NA in pandapower >= 4
+        tap_side = pp_net.trafo["tap_side"]
+        is_tap_hv_side = tap_side.eq("hv").fillna(False).to_numpy(dtype=bool, copy=True)
+        is_tap_hv_side[tap_side.isna().to_numpy(dtype=bool)] = True
         # if np.any(pp_net.trafo["tap_phase_shifter"].values):
             # raise RuntimeError("ideal phase shifter are not modeled. Please remove all trafo with "
                             #    "pp_net.trafo[\"tap_phase_shifter\"] set to True.")

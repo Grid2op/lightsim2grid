@@ -59,25 +59,37 @@ def _aux_add_trafo(
     tap_pos[~np.isfinite(tap_pos)] = 0.
 
     shift_ = pp_net.trafo["shift_degree"].to_numpy().copy()
-    if np.any(~np.isfinite(tap_pos)):
+    if np.any(~np.isfinite(shift_)):
         warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
     shift_[~np.isfinite(shift_)] = 0.
 
-    is_tap_hv_side = pp_net.trafo["tap_side"].to_numpy() == "hv"
-    if np.any(~np.isfinite(is_tap_hv_side)):
+    # NB: "tap_side" (and "tap_changer_type") are pandas "string" (StringDtype) columns
+    # in pandapower >= 4 and they can contain pd.NA. Comparing them with == yields a
+    # *nullable* boolean array, so .to_numpy() gives back objects and any numpy boolean
+    # reduction (np.any, ~, np.isfinite) raises "boolean value of NA is ambiguous".
+    # Hence the .fillna(False) (before .to_numpy()) + dtype=bool.
+    # copy=True: with an *object* dtype column (pandapower 2/3 data) .to_numpy(dtype=bool)
+    # returns a read-only array under pandas 3, and the assignment below would fail.
+    # A missing tap_side means "no tap changer" for pandapower (build_branch uses ""),
+    # but lightsim2grid has always documented NA as "hv": we keep that behaviour here
+    # (it only matters when tap_step_percent is not NA, otherwise the tap is a no-op).
+    tap_side = pp_net.trafo["tap_side"]
+    is_tap_hv_side = tap_side.eq("hv").fillna(False).to_numpy(dtype=bool, copy=True)
+    is_na_tap_side = tap_side.isna().to_numpy(dtype=bool)
+    if np.any(is_na_tap_side):
         warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"], they have been replaced by \"hv\"")
-    is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
+    is_tap_hv_side[is_na_tap_side] = True
     
     if "tap_phase_shifter" in pp_net.trafo:
-        if np.any(pp_net.trafo["tap_phase_shifter"].to_numpy()):
+        if np.any(pp_net.trafo["tap_phase_shifter"].fillna(False).to_numpy(dtype=bool)):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all trafos with "
                                "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
     elif "tap_changer_type" in pp_net.trafo:
-        if np.any(pp_net.trafo["tap_changer_type"].to_numpy() == "Ideal"):
+        if np.any(pp_net.trafo["tap_changer_type"].eq("Ideal").fillna(False).to_numpy(dtype=bool)):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 2-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
     elif "tap_changer_type" in pp_net.trafo3w:
-        if np.any(pp_net.trafo3w["tap_changer_type"].to_numpy() == "Ideal"):
+        if np.any(pp_net.trafo3w["tap_changer_type"].eq("Ideal").fillna(False).to_numpy(dtype=bool)):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
             
