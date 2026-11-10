@@ -767,8 +767,8 @@ void bind_batch(py::module_& m) {
                "The solver was invoked for this contingency but did not converge (element_type is "
                "ViolationElementType.GRID).")
         .value("BATCH_UNSUPPORTED", LimitViolationType::BATCH_UNSUPPORTED,
-               "The batch does not support what this contingency trips (eg a generator regulating "
-               "a remote bus): it was left out of the batch instead of failing the whole "
+               "The batch does not support what this contingency trips (eg a static var "
+               "compensator with a standby automaton): it was left out of the batch instead of failing the whole "
                "compute(). Unlike NOT_SIMULATED, a one-off solve of it is possible. "
                "get_batch_unsupported_reasons() says why, per row (element_type is "
                "ViolationElementType.GRID).")
@@ -1117,11 +1117,10 @@ void bind_batch(py::module_& m) {
              "candidate generators is negligible; masking every generator on the grid "
              "grows the Jacobian's dimension by roughly the number of PV buses, and "
              "every factorization and solve pays for it.\n\n"
-             "Only generators regulating their OWN bus are supported. A step whose mask "
-             "names a generator that regulates a remote bus, or one whose bus a control "
-             "group holds (a remote generator, an SVC or an HVDC converter station), is "
-             "left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see get_batch_unsupported_reasons): remote "
-             "voltage control is not supported yet.")
+             "A generator that is a controller of a voltage-control group leaves its group for "
+             "the step, the others keep regulating. A step taking out every controller of a group "
+             "regulating a slack bus is left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see get_batch_unsupported_reasons): remote "
+             "the batch cannot free that bus' magnitude.")
         .def("set_contingency_shunts", &ScenarioSweep::set_contingency_shunts<>, py::arg("mask"),
              "Per-step shunt contingency mask, shape (n_simul, n_shunt), dtype bool. "
              "True means 'disconnect this shunt for this simulation'. A shunt is an "
@@ -1130,6 +1129,30 @@ void bind_batch(py::module_& m) {
              "running the ShuntVoltageControl outer loop, a step naming a shunt that "
              "regulates a voltage is left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see "
              "get_batch_unsupported_reasons): that loop owns its sections.")
+        .def("set_contingency_sgens", &ScenarioSweep::set_contingency_sgens<>, py::arg("mask"),
+             "Per-step static generator contingency mask, shape (n_simul, n_sgen), dtype bool. "
+             "True means 'disconnect this static generator for this simulation': the step's "
+             "active power (modify_sgen_p, or the grid's) and the reactive setpoint leave its "
+             "injection, and the distributed slack makes up the balance.")
+        .def("set_contingency_storages", &ScenarioSweep::set_contingency_storages<>, py::arg("mask"),
+             "Per-step storage unit contingency mask, shape (n_simul, n_storage), dtype bool. "
+             "True means 'disconnect this storage unit for this simulation': it leaves the step's "
+             "injection and its share of the distributed slack; the last controller of a bus turns "
+             "that bus PQ. A step tripping one on a bus a control group holds is left out of the "
+             "batch (LimitViolationType.BATCH_UNSUPPORTED). A step naming a unit in both this mask "
+             "and its topological action is refused.")
+        .def("set_contingency_svcs", &ScenarioSweep::set_contingency_svcs<>, py::arg("mask"),
+             "Per-step static var compensator contingency mask, shape (n_simul, n_svc), dtype bool. "
+             "True means 'disconnect this SVC for this simulation': its fixed reactive injection "
+             "and its b0 leave the step, and one regulating a voltage its control group. A step "
+             "tripping one that carries a standby automaton or was frozen at a reactive limit is left out of the batch "
+             "(LimitViolationType.BATCH_UNSUPPORTED).")
+        .def("set_contingency_hvdcs", &ScenarioSweep::set_contingency_hvdcs<>, py::arg("mask"),
+             "Per-step hvdc line contingency mask, shape (n_simul, n_hvdc), dtype bool. True means "
+             "'disconnect this line for this simulation': both its converter stations leave the "
+             "step's injection, the bus a regulating one was the last to hold turning PQ. A step "
+             "tripping one in AC emulation in DC is left out of the batch "
+             "(LimitViolationType.BATCH_UNSUPPORTED).")
         .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
              "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "
              "True means 'disconnect this load for this simulation': the step's own load "
@@ -1424,6 +1447,8 @@ void bind_batch(py::module_& m) {
              py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
              py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
              py::arg("branch_ids_side1") = std::vector<int>(), py::arg("branch_ids_side2") = std::vector<int>(),
+             py::arg("sgen_ids") = std::vector<int>(), py::arg("storage_ids") = std::vector<int>(),
+             py::arg("svc_ids") = std::vector<int>(), py::arg("hvdc_ids") = std::vector<int>(),
              DocContingencyAnalysis::add_contingency.c_str())
         // the shortcuts take one id (an n-1 of that element) or a list (one contingency
         // tripping them all)
@@ -1452,6 +1477,8 @@ void bind_batch(py::module_& m) {
              py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
              py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
              py::arg("branch_ids_side1") = std::vector<int>(), py::arg("branch_ids_side2") = std::vector<int>(),
+             py::arg("sgen_ids") = std::vector<int>(), py::arg("storage_ids") = std::vector<int>(),
+             py::arg("svc_ids") = std::vector<int>(), py::arg("hvdc_ids") = std::vector<int>(),
              DocContingencyAnalysis::remove_contingency.c_str())
 
         // inspect

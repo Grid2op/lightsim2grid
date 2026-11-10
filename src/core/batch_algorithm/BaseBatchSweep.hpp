@@ -390,11 +390,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * (see _maybe_prepare_gen_contingency / NRSystem::set_pv_pinned_buses). One
          * analysis, one factorization, refactorizations after that -- as before.
          *
-         * Only generators that regulate their OWN bus are supported. A generator that
-         * regulates a remote bus, or one whose bus is held by an SVC or an HVDC
-         * converter station, is rejected by compute(): those go through the
-         * VoltageControl extension, whose own Jacobian rows and columns this does not
-         * yet know how to reserve and mask.
+         * A generator that is a controller of a voltage-control group leaves its group for
+         * the row (see _maybe_prepare_gen_contingency); a row taking out every controller of
+         * a group regulating a slack bus is left out of the batch.
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -442,6 +440,69 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // an injection, as modify_load_p: rebuilt at every compute(), nothing settled
             // about the batch depends on it
             sbus_policy_.load_off = mask;
+        }
+
+        /**
+         * ScenarioSweep only: row i, column s True means "disconnect static generator s for
+         * step i". An injection only, as set_contingency_loads: the row's active power (its
+         * own modify_sgen_p row, or the grid's) and the reactive setpoint leave its Sbus.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_sgens(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_static_generators().nb()), "set_contingency_sgens");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_sgens");
+            sbus_policy_.sgen_off = mask;
+        }
+
+        /**
+         * ScenarioSweep only: row i, column s True means "disconnect storage unit s for step
+         * i". It leaves the row's injection and its share of the distributed slack; the last
+         * controller of a bus turns that bus PQ for the row, as set_contingency_gens does it.
+         * One standing on a bus a control group holds leaves the row out of the batch
+         * (BATCH_UNSUPPORTED). A row naming a unit in both this mask and its topological
+         * action is refused.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_storages(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_storages().nb()), "set_contingency_storages");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_storages");
+            // settled once per batch, with the rows' Ybus edits (L2)
+            clear_batch_inputs();
+            ybus_policy_.storage_mask = mask;
+        }
+
+        /**
+         * ScenarioSweep only: row i, column s True means "disconnect static var compensator
+         * s for step i": its fixed reactive injection and its b0 leave the row, and one in
+         * voltage mode its control group. One carrying a standby automaton or frozen at a
+         * reactive limit leaves the row out of the batch (BATCH_UNSUPPORTED).
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_svcs(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_svcs().nb()), "set_contingency_svcs");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_svcs");
+            // a Ybus edit (its b0) and what is settled per row (L2)
+            clear_batch_inputs();
+            ybus_policy_.svc_mask = mask;
+        }
+
+        /**
+         * ScenarioSweep only: row i, column h True means "disconnect hvdc line h for step i":
+         * both its converter stations leave the row, the bus a regulating one was the last to
+         * hold turning PQ. In DC, one in AC emulation leaves the row out of the batch
+         * (BATCH_UNSUPPORTED).
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_contingency_hvdcs(const Eigen::Ref<const BoolMat> & mask) {
+            _check_cols_bool(mask, static_cast<Eigen::Index>(_grid_model.get_dclines().nb()), "set_contingency_hvdcs");
+            _lock_or_check_nb_steps(mask.rows(), "set_contingency_hvdcs");
+            // settled once per batch, with the rows' Ybus edits (L2)
+            clear_batch_inputs();
+            ybus_policy_.hvdc_mask = mask;
         }
 
         /**
@@ -576,15 +637,25 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *    one that does not regulate voltage), and the distributed slack is
          *    re-weighted without it. When it is the last one regulating its own bus,
          *    that bus turns PQ for the row, as set_contingency_gens does it on a
-         *    ScenarioSweep (the same machinery, see _maybe_prepare_gen_contingency, and
-         *    the same scope: a generator regulating a remote bus, or on a bus a control
-         *    group holds, is refused by compute()).
+         *    ScenarioSweep (the same machinery, see _maybe_prepare_gen_contingency). A
+         *    controller of a voltage-control group leaves its group for the row.
          *  - a branch of `branch_ids_side1` (`branch_ids_side2`) is opened at side 1 (2)
          *    only: its other end stays connected and keeps the Kron-reduced part of the
          *    branch (its charging), as a branch open at one end in the grid does. That
          *    is OpenLoadFlow's model of a branch whose breaker opens at one end only.
          *    For the flows, the current checks and the outer loops it counts as open.
          *    Named at both ends, or also in `branch_ids`, it is opened at both.
+         *  - a static generator leaves the row's injection (its active and reactive power).
+         *  - a storage unit too (its reactive setpoint when it does not regulate voltage), and
+         *    the distributed slack is re-weighted without it. The last controller of its bus
+         *    turns that bus PQ, as a generator; one on a bus a control group holds is
+         *    refused by compute().
+         *  - a static var compensator leaves the row: its fixed reactive injection and its b0;
+         *    in voltage mode, it leaves its control group, the regulated bus going free. One
+         *    carrying a standby automaton or frozen at a reactive limit is refused by compute().
+         *  - an HVDC line stops transmitting: both converter stations leave the row's
+         *    injection. The bus a regulating station was the last to hold turns PQ, or it leaves
+         *    its control group. One in AC emulation stops too; compute() refuses that in DC.
          * What it loses is made up by the distributed slack (redistribute_slack shares
          * it OLF-like before the solve), and a bus it strands is handled as a branch
          * contingency strands one (handle_disconnected_grid).
@@ -596,9 +667,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                              const std::vector<int> & load_ids,
                              const std::vector<int> & gen_ids,
                              const std::vector<int> & branch_ids_side1 = std::vector<int>(),
-                             const std::vector<int> & branch_ids_side2 = std::vector<int>()){
+                             const std::vector<int> & branch_ids_side2 = std::vector<int>(),
+                             const std::vector<int> & sgen_ids = std::vector<int>(),
+                             const std::vector<int> & storage_ids = std::vector<int>(),
+                             const std::vector<int> & svc_ids = std::vector<int>(),
+                             const std::vector<int> & hvdc_ids = std::vector<int>()){
             const ContingencyElements cont = _checked_contingency(branch_ids, shunt_ids, load_ids, gen_ids, "add_contingency",
-                                                                  branch_ids_side1, branch_ids_side2);
+                                                                  branch_ids_side1, branch_ids_side2, sgen_ids, storage_ids, svc_ids, hvdc_ids);
             // a contingency registration (L2), as add_nk
             clear_batch_inputs();
             ybus_policy_.li_defaults.insert(cont);
@@ -633,9 +708,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                 const std::vector<int> & load_ids,
                                 const std::vector<int> & gen_ids,
                                 const std::vector<int> & branch_ids_side1 = std::vector<int>(),
-                                const std::vector<int> & branch_ids_side2 = std::vector<int>()){
+                                const std::vector<int> & branch_ids_side2 = std::vector<int>(),
+                                const std::vector<int> & sgen_ids = std::vector<int>(),
+                                const std::vector<int> & storage_ids = std::vector<int>(),
+                                const std::vector<int> & svc_ids = std::vector<int>(),
+                                const std::vector<int> & hvdc_ids = std::vector<int>()){
             const ContingencyElements cont = _checked_contingency(branch_ids, shunt_ids, load_ids, gen_ids, "remove_contingency",
-                                                                  branch_ids_side1, branch_ids_side2);
+                                                                  branch_ids_side1, branch_ids_side2, sgen_ids, storage_ids, svc_ids, hvdc_ids);
             clear_batch_inputs();
             return ybus_policy_.li_defaults.erase(cont) >= 1;
         }
@@ -699,8 +778,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return res;
         }
         // everything each contingency trips, in row order: (branches, shunts, loads,
-        // generators, branches opened at side 1 only, at side 2 only), each sorted
+        // generators, branches opened at side 1 only, at side 2 only, static generators, storage
+        // units, static var compensators, hvdc lines), each sorted
         using ContingencyTuple = std::tuple<std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>,
+                                            std::vector<int>, std::vector<int>, std::vector<int>, std::vector<int>,
                                             std::vector<int>, std::vector<int> >;
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
@@ -713,7 +794,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                std::vector<int>(cont.loads.begin(), cont.loads.end()),
                                                std::vector<int>(cont.gens.begin(), cont.gens.end()),
                                                std::vector<int>(cont.branches_side1.begin(), cont.branches_side1.end()),
-                                               std::vector<int>(cont.branches_side2.begin(), cont.branches_side2.end())));
+                                               std::vector<int>(cont.branches_side2.begin(), cont.branches_side2.end()),
+                                               std::vector<int>(cont.sgens.begin(), cont.sgens.end()),
+                                               std::vector<int>(cont.storages.begin(), cont.storages.end()),
+                                               std::vector<int>(cont.svcs.begin(), cont.svcs.end()),
+                                               std::vector<int>(cont.hvdcs.begin(), cont.hvdcs.end())));
             }
             return res;
         }
@@ -1579,7 +1664,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                                  const std::vector<int> & gen_ids,
                                                  const char * fun_name,
                                                  const std::vector<int> & branch_ids_side1 = std::vector<int>(),
-                                                 const std::vector<int> & branch_ids_side2 = std::vector<int>()) const {
+                                                 const std::vector<int> & branch_ids_side2 = std::vector<int>(),
+                                                 const std::vector<int> & sgen_ids = std::vector<int>(),
+                                                 const std::vector<int> & storage_ids = std::vector<int>(),
+                                                 const std::vector<int> & svc_ids = std::vector<int>(),
+                                                 const std::vector<int> & hvdc_ids = std::vector<int>()) const {
             ContingencyElements res;
             for(int el : branch_ids){ _check_ok_id(el, static_cast<int>(n_total_), "powerline / trafo", fun_name); res.branches.insert(el); }
             for(int el : branch_ids_side1){ _check_ok_id(el, static_cast<int>(n_total_), "powerline / trafo", fun_name); res.branches_side1.insert(el); }
@@ -1592,6 +1681,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             for(int el : shunt_ids){ _check_ok_id(el, _grid_model.get_shunts().nb(), "shunt", fun_name); res.shunts.insert(el); }
             for(int el : load_ids){ _check_ok_id(el, _grid_model.get_loads().nb(), "load", fun_name); res.loads.insert(el); }
             for(int el : gen_ids){ _check_ok_id(el, _grid_model.get_generators().nb(), "generator", fun_name); res.gens.insert(el); }
+            for(int el : sgen_ids){ _check_ok_id(el, _grid_model.get_static_generators().nb(), "static generator", fun_name); res.sgens.insert(el); }
+            for(int el : storage_ids){ _check_ok_id(el, _grid_model.get_storages().nb(), "storage unit", fun_name); res.storages.insert(el); }
+            for(int el : svc_ids){ _check_ok_id(el, _grid_model.get_svcs().nb(), "static var compensator", fun_name); res.svcs.insert(el); }
+            for(int el : hvdc_ids){ _check_ok_id(el, _grid_model.get_dclines().nb(), "hvdc line", fun_name); res.hvdcs.insert(el); }
             if(res.empty()){
                 std::ostringstream exc_;
                 exc_ << algo_name() << "::" << fun_name << ": the contingency trips nothing (every list is empty).";
@@ -1959,6 +2052,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ybus_policy_.line_mask = BoolMat();
             ybus_policy_.trafo_mask = BoolMat();
             ybus_policy_.shunt_mask = BoolMat();
+            ybus_policy_.storage_mask = BoolMat();
+            ybus_policy_.svc_mask = BoolMat();
+            ybus_policy_.hvdc_mask = BoolMat();
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _reset_ybus_policy() {}
@@ -2459,6 +2555,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(v.loads.off.empty()) v.loads.off.assign(static_cast<std::size_t>(nb_load), 0);
                 for(int l : loads) if(l >= 0 && l < nb_load) v.loads.off[static_cast<std::size_t>(l)] = 1;
             }
+            const std::vector<int> hvdcs = _row_tripped(InjectionTrip::HVDC, i);
+            if(!hvdcs.empty()){
+                v.hvdc_off.assign(static_cast<std::size_t>(_grid_model.get_dclines().nb()), 0);
+                for(int h : hvdcs) v.hvdc_off[static_cast<std::size_t>(h)] = 1;
+            }
+            const std::vector<int> storages = _row_tripped(InjectionTrip::STORAGE, i);
+            if(!storages.empty()){
+                const int nb_storage = _grid_model.get_storages().nb();
+                if(v.storages.off.empty()) v.storages.off.assign(static_cast<std::size_t>(nb_storage), 0);
+                for(int s : storages) if(s >= 0 && s < nb_storage) v.storages.off[static_cast<std::size_t>(s)] = 1;
+            }
         }
         // where the row's loops start: a row chained on the previous one (TimeSeries) from its
         // equations -- the buses its loops froze, the taps they moved, ... (the loops undo what
@@ -2673,6 +2780,43 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         std::vector<int> _row_tripped_shunts(size_t) const { return std::vector<int>(); }
+        // what row i's ContingencyAnalysis contingency trips, nullptr anywhere else
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
+        const ContingencyElements * _row_contingency(size_t i) const {
+            return i < ybus_policy_.li_rows.size() ? &ybus_policy_.li_rows[i] : nullptr;
+        }
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<!(Y::supports_contingency && !S::supports_vary), int>::type = 0>
+        const ContingencyElements * _row_contingency(size_t) const { return nullptr; }
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _sgen_off_in_row(size_t i, int sgen_id) const {
+            return sbus_policy_.sgen_off_in(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(sgen_id));
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _sgen_off_in_row(size_t i, int sgen_id) const {
+            const ContingencyElements * cont = _row_contingency(i);
+            return cont != nullptr && cont->sgens.count(sgen_id) > 0;
+        }
+        // what row i trips of that kind (sorted ids), and whether it trips that element: its
+        // contingency or its mask, nothing where no row trips anything
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        std::vector<int> _row_tripped(InjectionTrip kind, size_t i) const { return ybus_policy_.ids_for_row(kind, i); }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        std::vector<int> _row_tripped(InjectionTrip, size_t) const { return std::vector<int>(); }
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool _is_tripped(InjectionTrip kind, size_t i, int el_id) const { return ybus_policy_.tripped_in_row(kind, i, el_id); }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        bool _is_tripped(InjectionTrip, size_t, int) const { return false; }
+        // the static generators row i trips (sorted ids): its contingency or its mask
+        std::vector<int> _row_tripped_sgens(size_t i) const {
+            std::vector<int> res;
+            const int nb_sgen = _grid_model.get_static_generators().nb();
+            for(int sgen_id = 0; sgen_id < nb_sgen; ++sgen_id) if(_sgen_off_in_row(i, sgen_id)) res.push_back(sgen_id);
+            return res;
+        }
+        bool _hvdc_off_in_row(size_t i, int hvdc_id) const { return _is_tripped(InjectionTrip::HVDC, i, hvdc_id); }
+
         // the generators row i's ContingencyAnalysis contingency trips (a ScenarioSweep
         // reads its mask through _gen_off_in_row)
         template<class Y = YbusPolicy, class S = SbusPolicy,
@@ -2832,12 +2976,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         bool _load_leaves_base_bus(size_t i, int load_id) const { return _load_off_in_row(i, load_id); }
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         bool _storage_leaves_base_bus(size_t i, int storage_id) const {
+            if(_is_tripped(InjectionTrip::STORAGE, i, storage_id)) return true;
             if(i >= sbus_policy_.topo_storages_off.size()) return false;
             const std::vector<int> & off = sbus_policy_.topo_storages_off[i];
             return std::find(off.begin(), off.end(), storage_id) != off.end();
         }
+        // (ContingencyAnalysis: its contingency trips it)
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
-        bool _storage_leaves_base_bus(size_t, int) const { return false; }
+        bool _storage_leaves_base_bus(size_t i, int storage_id) const { return _is_tripped(InjectionTrip::STORAGE, i, storage_id); }
 
         // What the action changes in the active balance, generator convention, as power
         // LOST (what the remaining units make up): for each generator, load or storage
@@ -2992,7 +3138,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
             std::vector<bool> storage_no_share;
             for(int storage_id = 0; storage_id < nb_storage; ++storage_id){
-                if(!_row_takes_no_share(i, ViolationElementType::STORAGE, storage_id)) continue;
+                if(!_row_takes_no_share(i, ViolationElementType::STORAGE, storage_id) &&
+                   !_storage_leaves_base_bus(i, storage_id)) continue;
                 if(storage_no_share.empty()) storage_no_share.assign(static_cast<std::size_t>(nb_storage), false);
                 storage_no_share[storage_id] = true;
             }
@@ -3082,7 +3229,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     _gen_p_plan_, slack, _physical_tol_mva_, masked,
                     [this, i](ViolationElementType el_type, int el_id){ return this->_row_target_p(i, el_type, el_id); },
                     [this, i](ViolationElementType el_type, int el_id){
-                        return (el_type == ViolationElementType::GENERATOR) && this->_gen_off_in_row(i, el_id); },
+                        return (el_type == ViolationElementType::GENERATOR) ? this->_gen_off_in_row(i, el_id)
+                                                                            : this->_storage_leaves_base_bus(i, el_id); },
                     [this, i](ViolationElementType el_type, int el_id){ return this->_row_takes_no_share(i, el_type, el_id); },
                     _physical_violations_[i]);
             }
@@ -3762,6 +3910,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     if(sbus_policy_.load_off_in(static_cast<Eigen::Index>(row), l.el_id))
                         _throw_topo_overlap(row, "load", l.el_id, "set_contingency_loads");
                 }
+                for(const TopoElPlacement & st : _row_topo_[row].storages){
+                    if(ybus_policy_.tripped_in_row(InjectionTrip::STORAGE, row, st.el_id))
+                        _throw_topo_overlap(row, "storage unit", st.el_id, "set_contingency_storages");
+                }
             }
         }
         template<class Y = YbusPolicy, class S = SbusPolicy,
@@ -3823,6 +3975,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     bool some_live = false;
                     for(int off = 0; off < ctrl.grp_count(g) && !some_live; ++off){
                         if(ctrl.is_held(first + off)) continue;
+                        if(ctrl.kind(first + off) == VoltageControlSolverData::GEN &&
+                           _gen_off_in_row(row, ctrl.elem_id(first + off))) continue;  // the row trips it
+                        if(ctrl.kind(first + off) == VoltageControlSolverData::SVC &&
+                           _is_tripped(InjectionTrip::SVC, row, ctrl.elem_id(first + off))) continue;
+                        if((ctrl.kind(first + off) == VoltageControlSolverData::HVDC_SIDE_1 ||
+                            ctrl.kind(first + off) == VoltageControlSolverData::HVDC_SIDE_2) &&
+                           _is_tripped(InjectionTrip::HVDC, row, ctrl.elem_id(first + off))) continue;
                         some_live = !is_masked(masked, ctrl.bus(first + off));
                     }
                     if(some_live){ _skip_mask[row] = 1; break; }
@@ -3999,7 +4158,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // branch id (lines then trafos), and its global / side statuses before
             struct Branch { int id; bool global; bool side1; bool side2; };
             std::vector<Branch> branches;
-            std::vector<int> gens, loads, shunts;
+            // HVDC line id and its per-end statuses before: one end can be open in the base case
+            struct Hvdc { int id; bool side1; bool side2; };
+            std::vector<Hvdc> hvdcs;
+            std::vector<int> gens, loads, shunts, sgens, storages, svcs;
             int n_line = 0;
             void apply(LSGrid & grid){
                 for(auto it = branches.rbegin(); it != branches.rend(); ++it){
@@ -4016,7 +4178,19 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 for(int g : gens) grid.reactivate_gen(g);
                 for(int l : loads) grid.reactivate_load(l);
                 for(int s : shunts) grid.reactivate_shunt(s);
-                branches.clear(); gens.clear(); loads.clear(); shunts.clear();
+                for(int s : sgens) grid.reactivate_sgen(s);
+                for(int s : storages) grid.reactivate_storage(s);
+                for(int s : svcs) grid.reactivate_svc(s);
+                for(const Hvdc & h : hvdcs){
+                    // reconnects both ends: an end open before the row goes back to open, or
+                    // its bus would enter the solver with nothing around it (a half-open line
+                    // has no droop, so opening the end through LSGrid changes nothing else)
+                    grid.reactivate_dcline(h.id);
+                    if(!h.side1) grid.deactivate_dcline_side1(h.id);
+                    if(!h.side2) grid.deactivate_dcline_side2(h.id);
+                }
+                branches.clear(); gens.clear(); loads.clear(); shunts.clear(); sgens.clear(); storages.clear(); svcs.clear();
+                hvdcs.clear();
             }
         };
 
@@ -4067,6 +4241,28 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 grid.deactivate_shunt(s);
                 undo.shunts.push_back(s);
             }
+            for(int s : cont.sgens){
+                if(!grid.get_static_generators().get_status(s)) continue;
+                grid.deactivate_sgen(s);
+                undo.sgens.push_back(s);
+            }
+            for(int s : cont.storages){
+                if(!grid.get_storages().get_status(s)) continue;
+                grid.deactivate_storage(s);
+                undo.storages.push_back(s);
+            }
+            for(int s : cont.svcs){
+                if(!grid.get_svcs().get_status(s)) continue;
+                grid.deactivate_svc(s);
+                undo.svcs.push_back(s);
+            }
+            for(int h : cont.hvdcs){
+                const size_t el = static_cast<size_t>(h);
+                const HvdcLineContainer & dclines = grid.get_dclines();
+                if(!dclines.get_status_global()[el]) continue;
+                undo.hvdcs.push_back(typename FallbackUndo::Hvdc{h, dclines.get_status_side_1()[el], dclines.get_status_side_2()[el]});
+                grid.deactivate_dcline(h);
+            }
         }
 
         // what the batch records of a converged row beyond its voltages and violations, read
@@ -4103,6 +4299,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _maybe_prepare_gen_contingency(size_t nb_steps){
+            _row_tripped_controllers_.clear();
             _switchable_buses_.clear();
             _row_pv_to_pq_.clear();
             _row_pv_pinned_.clear();
@@ -4118,7 +4315,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // And it may take out a storage unit that regulates its bus: one controller
             // fewer there too.
             const bool has_gens_on = _has_gens_on();
-            if(!_any_gen_off() && !has_gens_on && !_has_regulating_storage_off()){
+            if(!_any_gen_off() && !has_gens_on && !_has_regulating_storage_off() && !_voltage_svc_tripped() &&
+               !_regulating_hvdc_tripped()){
                 // No mask this time. _algo is a member and outlives the compute() that
                 // reserved slots for it, so it has to be told the set is empty again --
                 // otherwise a bus a PREVIOUS compute() made switchable would keep its Vm
@@ -4168,31 +4366,85 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
 
-            // ---- 1. leave out what this version cannot model -----------------------
-            // Only a generator pinning its OWN bus is in scope. A remote controller --
-            // or a bus a group (remote generator, SVC, HVDC station) controls -- lives
-            // in the VoltageControl extension, which owns Jacobian columns and rows of
-            // its own that nothing here reserves or masks. A row taking out such a
-            // generator is left out of the batch (see _mark_row_batch_unsupported); the steps below skip it,
-            // so it reserves nothing in the Jacobian either.
-            const std::set<int> & group_buses = _grid_model.get_ac_voltage_control_plan().group_controlled_buses();
+            // ---- 1. the generators, SVCs and stations that are controllers of a voltage-control group
+            // A remote controller, or a local one on a bus a group holds, lives in the
+            // VoltageControl extension: its Q is an unknown of the Jacobian. The row tells the
+            // algorithm it is gone, in a pattern reserved up front (_row_tripped_controllers_).
+            // What cannot be done that way leaves the row out of the batch; the steps below skip it.
+            const VoltageControlPlan & vc_plan = _grid_model.get_ac_voltage_control_plan();
+            const VoltageControlSolverData & vc_ctrl = vc_plan.controllers();
+            const std::set<int> & group_buses = vc_plan.group_controlled_buses();
+            const std::set<int> & free_vm_slack = vc_plan.free_vm_slack_buses();
+            std::map<int, int> controller_of_gen, controller_of_svc;
+            std::map<std::pair<int, int>, int> controller_of_station;  // (hvdc line, side)
+            for(int c = 0; c < vc_ctrl.n_controllers(); ++c){
+                if(vc_ctrl.kind(c) == VoltageControlSolverData::GEN) controller_of_gen[vc_ctrl.elem_id(c)] = c;
+                else if(vc_ctrl.kind(c) == VoltageControlSolverData::SVC) controller_of_svc[vc_ctrl.elem_id(c)] = c;
+                else if(vc_ctrl.kind(c) == VoltageControlSolverData::HVDC_SIDE_1) controller_of_station[std::make_pair(vc_ctrl.elem_id(c), 1)] = c;
+                else if(vc_ctrl.kind(c) == VoltageControlSolverData::HVDC_SIDE_2) controller_of_station[std::make_pair(vc_ctrl.elem_id(c), 2)] = c;
+            }
+            const bool can_trip = _algo.supports_tripped_voltage_controllers();
             for(size_t step = 0; step < nb_steps; ++step){
+                std::vector<int> tripped;
                 for(int gen_id : gens_off[step]){
-                    const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
-                    const bool remote = generators.is_remote_voltage_controller(gen_id);
-                    const bool in_group = bus_id_me != BaseConstants::_deactivated_bus_id &&
-                                          group_buses.find(bus_id_me) != group_buses.end();
-                    if(!remote && !in_group) continue;
+                    const auto it = controller_of_gen.find(gen_id);
+                    if(it != controller_of_gen.end() && can_trip){
+                        tripped.push_back(it->second);
+                        continue;
+                    }
+                    if(it == controller_of_gen.end() && !generators.is_remote_voltage_controller(gen_id)) continue;
                     std::ostringstream msg;
-                    msg << "disconnects generator " << gen_id
-                        << (remote ? ", which regulates the voltage of a remote bus"
-                                   : ", which stands on a bus whose voltage a control group holds (a remote "
-                                     "generator, an SVC or an HVDC converter station)")
-                        << ": only generators regulating their own bus can be disconnected by the batch for now";
+                    msg << "disconnects generator " << gen_id << ", which regulates the voltage of a remote bus or "
+                           "stands on a bus a control group holds: the algorithm " << _algo.get_name()
+                        << " cannot take a controller out of a row";
                     _mark_row_batch_unsupported(step, msg.str());
                     break;
                 }
+                // (_check_svc_trips has left out the rows an SVC cannot go from)
+                if(!_row_is_batch_unsupported(step)){
+                    for(int svc_id : _row_tripped(InjectionTrip::SVC, step)){
+                        const auto it = controller_of_svc.find(svc_id);
+                        if(it != controller_of_svc.end()) tripped.push_back(it->second);
+                    }
+                    for(int hvdc_id : _row_tripped(InjectionTrip::HVDC, step)){
+                        for(int side = 1; side <= 2; ++side){
+                            const auto it = controller_of_station.find(std::make_pair(hvdc_id, side));
+                            if(it == controller_of_station.end()) continue;
+                            if(can_trip) tripped.push_back(it->second);
+                            else {
+                                std::ostringstream msg;
+                                msg << "disconnects hvdc line " << hvdc_id << ", a station of which stands on a bus a "
+                                       "control group holds: the algorithm " << _algo.get_name()
+                                    << " cannot take a controller out of a row";
+                                _mark_row_batch_unsupported(step, msg.str());
+                            }
+                        }
+                    }
+                }
+                if(!_row_is_batch_unsupported(step) && !tripped.empty()){
+                    std::sort(tripped.begin(), tripped.end());
+                    // a group left with nobody regulating frees its regulated bus: not a slack bus,
+                    // whose magnitude nothing would hold any more
+                    for(int g = 0; g < vc_ctrl.n_groups(); ++g){
+                        if(free_vm_slack.count(vc_ctrl.reg_bus(g)) == 0) continue;
+                        bool someone_left = false, one_tripped = false;
+                        for(int c = vc_ctrl.grp_start(g); c < vc_ctrl.grp_start(g) + vc_ctrl.grp_count(g); ++c){
+                            if(std::binary_search(tripped.begin(), tripped.end(), c)) one_tripped = true;
+                            else if(!vc_ctrl.is_held(c)) someone_left = true;
+                        }
+                        if(!one_tripped || someone_left) continue;
+                        std::ostringstream msg;
+                        msg << "disconnects every controller of the group regulating a slack bus (solver bus "
+                            << vc_ctrl.reg_bus(g) << "): that bus' magnitude cannot be freed by the batch for now";
+                        _mark_row_batch_unsupported(step, msg.str());
+                        break;
+                    }
+                }
                 if(_row_is_batch_unsupported(step)) gens_off[step].clear();
+                else if(!tripped.empty()){
+                    if(_row_tripped_controllers_.empty()) _row_tripped_controllers_.assign(nb_steps, std::vector<int>());
+                    _row_tripped_controllers_[step].swap(tripped);
+                }
             }
 
             // ---- 2. which bus does each local voltage controller pin? --------------
@@ -4202,6 +4454,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::map<int, std::vector<int> > gens_of_bus;  // solver bus -> its local controllers
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
                 if(!generators.is_local_voltage_controller(gen_id)) continue;
+                if(controller_of_gen.count(gen_id) > 0) continue;  // a group holds its bus, not the PV path
                 const int bus_id_me = generators.get_bus_id()(gen_id).cast_int();
                 if(bus_id_me == BaseConstants::_deactivated_bus_id) continue;
                 const int bus_solver = id_me_to_solver[bus_id_me].cast_int();
@@ -4224,6 +4477,25 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 storages_of_bus[bus_solver].push_back(storage_id);
             }
 
+            // ... and the converter stations holding their own bus through the PV path (one a
+            // group holds is a controller, step 1)
+            const auto & hvdc_lines = _grid_model.get_dclines();
+            std::map<int, std::vector<int> > stations_of_bus;  // solver bus -> the lines of its regulating stations
+            std::vector<std::vector<std::pair<int, int> > > pv_stations_of_line(static_cast<size_t>(hvdc_lines.nb()));  // (side, bus)
+            for(int hvdc_id = 0; hvdc_id < static_cast<int>(hvdc_lines.nb()); ++hvdc_id){
+                if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;
+                for(int side = 1; side <= 2; ++side){
+                    if(!hvdc_lines.station_is_voltage_controller(hvdc_id, side)) continue;
+                    if(controller_of_station.count(std::make_pair(hvdc_id, side)) > 0) continue;
+                    const int bus_id_me = hvdc_lines.get_station_bus(hvdc_id, side).cast_int();
+                    if(bus_id_me == BaseConstants::_deactivated_bus_id) continue;
+                    const int bus_solver = id_me_to_solver[bus_id_me].cast_int();
+                    if(bus_solver == BaseConstants::_deactivated_bus_id) continue;
+                    stations_of_bus[bus_solver].push_back(hvdc_id);
+                    pv_stations_of_line[static_cast<size_t>(hvdc_id)].push_back(std::make_pair(side, bus_solver));
+                }
+            }
+
             // ---- 3. per row: the buses that lose EVERY one of their controllers ----
             // Only a bus one of whose controllers the row takes out can: the buses of the
             // generators it has out and of the storage units it takes off, in ascending order
@@ -4243,6 +4515,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         }
                     }
                 }
+                for(int hvdc_id : _row_tripped(InjectionTrip::HVDC, static_cast<size_t>(step))){
+                    for(const auto & side_and_bus : pv_stations_of_line[static_cast<size_t>(hvdc_id)]) candidate_buses.push_back(side_and_bus.second);
+                }
                 std::sort(candidate_buses.begin(), candidate_buses.end());
                 candidate_buses.erase(std::unique(candidate_buses.begin(), candidate_buses.end()), candidate_buses.end());
                 for(int bus_solver : candidate_buses){
@@ -4260,6 +4535,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     if(all_off && bus_storages != storages_of_bus.end()){
                         for(int storage_id : bus_storages->second){
                             if(!_storage_leaves_base_bus(static_cast<size_t>(step), storage_id)){
+                                all_off = false;
+                                break;
+                            }
+                        }
+                    }
+                    const auto bus_stations = stations_of_bus.find(bus_solver);
+                    if(all_off && bus_stations != stations_of_bus.end()){
+                        for(int hvdc_id : bus_stations->second){
+                            if(!_hvdc_off_in_row(static_cast<size_t>(step), hvdc_id)){
                                 all_off = false;
                                 break;
                             }
@@ -4411,9 +4695,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _push_switchable_to_algo();
         }
 
-        // what the loads and shunts row i's contingency trips take out of the balance, as
-        // power LOST (generator convention): minus their consumption, each counted once,
-        // where it stood in the base grid (the slack pre-pass' term (e))
+        // what the loads, shunts, static generators and storage units row i's contingency trips take out
+        // of the balance, as power LOST (generator convention): their injection, each counted
+        // once, where it stood in the base grid (the slack pre-pass' term (e))
         real_type _row_trip_lost_mw(size_t i) const {
             real_type lost = 0.;
             const auto & loads = _grid_model.get_loads();
@@ -4427,6 +4711,25 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 if(!shunts.get_status()[static_cast<size_t>(shunt_id)]) continue;
                 if(shunts.get_bus_id()(shunt_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
                 lost -= shunts.get_target_p()(shunt_id);
+            }
+            const auto & sgens = _grid_model.get_static_generators();
+            for(int sgen_id : _row_tripped_sgens(i)){
+                if(!sgens.get_status()[static_cast<size_t>(sgen_id)]) continue;
+                if(sgens.get_bus_id()(sgen_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
+                lost += _sgen_target_p_in_row(i, sgen_id);
+            }
+            const auto & storages = _grid_model.get_storages();
+            for(int storage_id : _row_tripped(InjectionTrip::STORAGE, i)){
+                if(!storages.get_status()[static_cast<size_t>(storage_id)]) continue;
+                if(storages.get_bus_id()(storage_id).cast_int() == BaseConstants::_deactivated_bus_id) continue;
+                lost -= storages.get_target_p()(storage_id);
+            }
+            // both stations of a tripped line, as they stood in the base grid
+            const auto & hvdc_lines = _grid_model.get_dclines();
+            for(int hvdc_id : _row_tripped(InjectionTrip::HVDC, i)){
+                if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;
+                lost += slack_redistribution::sum_hvdc_station_setpoints_if(
+                    hvdc_lines, [](int){ return true; }, [hvdc_id](int line){ return line != hvdc_id; });
             }
             return lost;
         }
@@ -4465,8 +4768,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _check_shunt_trips(size_t) {}
 
         // whether some row's action takes out a storage unit that regulates its bus
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool _regulating_storage_tripped() const {
+            const auto & storages = _grid_model.get_storages();
+            return ybus_policy_.any_tripped(InjectionTrip::STORAGE,
+                                            [&storages](int storage_id){ return storages.is_local_voltage_controller(storage_id); });
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        bool _regulating_storage_tripped() const { return false; }
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         bool _has_regulating_storage_off() const {
+            if(_regulating_storage_tripped()) return true;
             const auto & storages = _grid_model.get_storages();
             for(const std::vector<int> & off : sbus_policy_.topo_storages_off){
                 for(int storage_id : off) if(storages.is_local_voltage_controller(storage_id)) return true;
@@ -4474,7 +4786,111 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return false;
         }
         template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
-        bool _has_regulating_storage_off() const { return false; }
+        bool _has_regulating_storage_off() const { return _regulating_storage_tripped(); }
+
+        // the storage units the contingencies (or the masks) trip. Their share of the
+        // distributed slack goes (_row_slack_weights), and one regulating a bus a control group
+        // holds is left out of the batch, for the reason a generator there is (see
+        // _maybe_prepare_gen_contingency). Runs after the checks that say which rows are skipped.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _prepare_storage_trips(size_t nb_steps){
+            // (a topological action filled it just before, for the units it takes out)
+            if(!_topology_active_) _row_slack_storages_off_.assign(nb_steps, std::vector<int>());
+            const auto & storages = _grid_model.get_storages();
+            if(storages.nb() == 0) return;
+            const std::set<int> & group_buses = _grid_model.get_ac_voltage_control_plan().group_controlled_buses();
+            for(size_t row = 0; row < nb_steps; ++row){
+                for(int storage_id : _row_tripped(InjectionTrip::STORAGE, row)){
+                    if(!storages.get_status()[static_cast<size_t>(storage_id)]) continue;
+                    if(abs(storages.get_slack_weight(storage_id)) > BaseConstants::_tol_equal_float){
+                        _row_slack_storages_off_[row].push_back(storage_id);
+                    }
+                    if(!_algo.ac_solver_used() || !storages.is_local_voltage_controller(storage_id)) continue;
+                    if(group_buses.find(storages.get_bus_id()(storage_id).cast_int()) == group_buses.end()) continue;
+                    std::ostringstream msg;
+                    msg << "disconnects storage unit " << storage_id << ", which stands on a bus whose voltage a "
+                           "control group holds (a remote generator, an SVC or an HVDC converter station): only "
+                           "units regulating their own bus can be disconnected by the batch for now";
+                    _mark_row_batch_unsupported(row, msg.str());
+                }
+            }
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        void _prepare_storage_trips(size_t) {}
+
+        // An SVC in voltage mode leaves its group for the row (_maybe_prepare_gen_contingency),
+        // given an algorithm that can do it. The automaton of a standby one and the release
+        // check of a frozen one still read it: those rows are left out of the batch.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _check_svc_trips(size_t nb_steps){
+            if(!_algo.ac_solver_used()) return;
+            const auto & svcs = _grid_model.get_svcs();
+            for(size_t row = 0; row < nb_steps; ++row){
+                for(int svc_id : _row_tripped(InjectionTrip::SVC, row)){
+                    if(!svcs.get_status(svc_id)) continue;
+                    const char * why = nullptr;
+                    if(svcs.get_standby(svc_id)) why = "which carries a standby automaton";
+                    else if(svcs.get_regulation_mode(svc_id) == SvcContainer::RegulationMode::VOLTAGE &&
+                            !_algo.supports_tripped_voltage_controllers()) why = "which regulates a voltage";
+                    else if(svcs.get_can_be_pv(svc_id)) why = "which an outer loop froze at a reactive limit";
+                    if(why == nullptr) continue;
+                    std::ostringstream msg;
+                    msg << "disconnects static var compensator " << svc_id << ", " << why
+                        << ": it cannot be disconnected by the batch for now";
+                    _mark_row_batch_unsupported(row, msg.str());
+                    break;
+                }
+            }
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        void _check_svc_trips(size_t) {}
+        // whether some row trips an SVC in voltage mode
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool _voltage_svc_tripped() const {
+            const auto & svcs = _grid_model.get_svcs();
+            return ybus_policy_.any_tripped(InjectionTrip::SVC, [&svcs](int svc_id){
+                return svcs.get_status(svc_id) && svcs.get_regulation_mode(svc_id) == SvcContainer::RegulationMode::VOLTAGE; });
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        bool _voltage_svc_tripped() const { return false; }
+
+        // An HVDC line in AC emulation: its active power is the Newton's Hvdc extension's, the
+        // row tells the algorithm the line is gone (_row_tripped_droop_lines_). In DC, where it is a
+        // term of the matrix, or with an algorithm that cannot do it, the row is left out of
+        // the batch. A station regulating a voltage: see _maybe_prepare_gen_contingency.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void _check_hvdc_trips(size_t nb_steps){
+            _row_tripped_droop_lines_.clear();
+            const auto & hvdc_lines = _grid_model.get_dclines();
+            const bool can_trip = _algo.ac_solver_used() && _algo.supports_tripped_hvdc_lines();
+            for(size_t row = 0; row < nb_steps; ++row){
+                for(int hvdc_id : _row_tripped(InjectionTrip::HVDC, row)){
+                    if(!hvdc_lines.is_droop_active(hvdc_id)) continue;
+                    if(can_trip){
+                        if(_row_tripped_droop_lines_.empty()) _row_tripped_droop_lines_.assign(nb_steps, std::vector<int>());
+                        _row_tripped_droop_lines_[row].push_back(hvdc_id);
+                        continue;
+                    }
+                    std::ostringstream msg;
+                    msg << "disconnects hvdc line " << hvdc_id << ", which runs in AC emulation: the algorithm "
+                        << _algo.get_name() << " cannot take it out of a row";
+                    _mark_row_batch_unsupported(row, msg.str());
+                    break;
+                }
+            }
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        void _check_hvdc_trips(size_t) {}
+        // whether some row trips an hvdc line one station of which regulates a voltage
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool _regulating_hvdc_tripped() const {
+            const auto & hvdc_lines = _grid_model.get_dclines();
+            return ybus_policy_.any_tripped(InjectionTrip::HVDC, [&hvdc_lines](int hvdc_id){
+                return hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)] &&
+                       (hvdc_lines.station_is_voltage_controller(hvdc_id, 1) || hvdc_lines.station_is_voltage_controller(hvdc_id, 2)); });
+        }
+        template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
+        bool _regulating_hvdc_tripped() const { return false; }
 
         // Hand _switchable_buses_ to the member algorithm, pinned. Every switchable bus
         // is PV in the "n" case -- that is where its controller still stands -- so the
@@ -4483,6 +4899,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // included: _algo is a member, and what a previous compute() reserved on it has
         // to be taken back or the next one solves a bus as PQ that nothing pins.
         void _push_switchable_to_algo(){
+            _algo.set_may_trip_voltage_controllers(!_row_tripped_controllers_.empty());
+            _algo.set_tripped_voltage_controllers(std::vector<int>());
             _algo.set_switchable_vm_buses(_switchable_buses_);
             _algo.set_pv_pinned_buses(_switchable_buses_);
             // same reason as in _maybe_prepare_masks: a Q row pinned to identity in
@@ -4835,7 +5253,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         generators, 1., in_island,
                         [&](int gen_id){ return gen_off(gen_id) ? 0. : gen_p_row(gen_id); });
                     lost_mw += slack_redistribution::sum_setpoints_if(
-                        sgens, 1., in_island, [this, i](int sgen_id){ return this->_sgen_target_p_in_row(i, sgen_id); });
+                        sgens, 1., in_island, [this, i](int sgen_id){
+                            return this->_sgen_off_in_row(i, sgen_id) ? 0. : this->_sgen_target_p_in_row(i, sgen_id); });
                     lost_mw += slack_redistribution::sum_setpoints_if(
                         loads, -1., in_island, [this, i](int load_id){
                             return this->_load_leaves_base_bus(i, load_id) ? 0. : this->_load_target_p_in_row(i, load_id); });
@@ -4846,15 +5265,15 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         shunts, -1., in_island, [this, i, &shunts](int shunt_id){
                             return this->_shunt_off_in_row(i, shunt_id) ? 0. : shunts.get_target_p()(shunt_id); });
                     lost_mw += slack_redistribution::sum_hvdc_station_setpoints_if(
-                        _grid_model.get_dclines(), in_island);
+                        _grid_model.get_dclines(), in_island, [this, i](int hvdc_id){ return this->_hvdc_off_in_row(i, hvdc_id); });
                 }
                 // (c) the row's own injection change
                 lost_mw += _row_injection_change_lost_mw(i);
                 // (d) what the row's topological action moves, disconnects or reactivates
                 lost_mw += _row_topo_lost_mw(i, in_island_solver);
-                // (e) the loads and shunts the row's contingency trips (its generators are
-                // (a)): their consumption leaves the balance, stranded or not ((b) leaves
-                // them out)
+                // (e) the loads, shunts, static generators, storage units and hvdc lines the row's contingency trips
+                // (its generators are (a)): their injection leaves the balance, stranded or
+                // not ((b) leaves them out)
                 lost_mw += _row_trip_lost_mw(i);
                 if(outer){
                     // the DistributedSlack loop shares it (see OuterRowView::lost_p_mw). Even
@@ -4917,6 +5336,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     dp_row.swap(merged);
                 }
             }
+        }
+
+        // the controllers of the voltage-control groups row i trips, for its solves
+        void _apply_row_tripped_controllers(size_t i, AlgorithmSelector & algo) const {
+            if(!_row_tripped_droop_lines_.empty()) algo.set_tripped_hvdc_lines(_row_tripped_droop_lines_[i]);
+            if(_row_tripped_controllers_.empty()) return;
+            algo.set_tripped_voltage_controllers(_row_tripped_controllers_[i]);
         }
 
         // whether row i turns some switchable bus PQ -- only then is the algorithm's
@@ -4992,6 +5418,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         YbusPolicy::Contingency::remove_from_Ybus(Ybus, coeffs_modif, ac_solver_used, algo);
                         timer_modif_ybus += t1.duration();
 
+                        _apply_row_tripped_controllers(cont_id, algo);
                         const bool own_mask = masked != _base_masked_;
                         if(own_mask) algo.set_masked_buses(masked);
                         // generator contingencies: release the pinning of the buses
@@ -5128,7 +5555,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 exc_ << algo_name() << "::" << fun_name << ": the injections and/or the contingency "
                         "masks were modified (modify_gen_p / modify_sgen_p / modify_load_p / "
                         "modify_load_q / set_contingency_lines / set_contingency_trafos / "
-                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / "
+                        "set_contingency_gens / set_contingency_shunts / set_contingency_loads / set_contingency_sgens / set_contingency_storages / set_contingency_svcs / set_contingency_hvdcs / "
                         "set_topo_actions) after the "
                         "last compute(); call compute() again before reading the flows.";
                 throw std::runtime_error(exc_.str());
@@ -5287,6 +5714,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<char> _cont_connected_;
         BusGraph bus_graph_;
         std::vector<char> _skip_mask;
+        // per row, the controllers of the voltage-control groups it trips (positions in the plan's
+        // controller list, sorted). Empty when no row trips one (_maybe_prepare_gen_contingency).
+        std::vector<std::vector<int> > _row_tripped_controllers_;
+        // per row, the lines in AC emulation it trips (ids). Empty when no row trips one (_check_hvdc_trips).
+        std::vector<std::vector<int> > _row_tripped_droop_lines_;
         // per row, why the batch cannot solve it (empty: it can), see get_batch_unsupported_reasons.
         // Sized by _reset_batch_unsupported_rows, filled by the checks that used to refuse the whole
         // batch (_check_shunt_trips, _maybe_prepare_gen_contingency).

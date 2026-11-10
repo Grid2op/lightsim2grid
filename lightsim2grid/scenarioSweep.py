@@ -472,10 +472,10 @@ class ScenarioSweep:
         merely masks the equation of the buses that are still PV. The whole sweep keeps
         running on a single analysis, as it did before this axis existed.
 
-        Only generators regulating their **own** bus are supported for now. A step
-        whose mask names a generator that regulates a remote bus, or one whose bus a
-        control group holds (a remote generator, an SVC or an HVDC converter station),
-        is left out of the batch: ``LimitViolationType.BATCH_UNSUPPORTED``, with the reason in
+        A generator that is a controller of a voltage-control group (it regulates a remote
+        bus, or a bus such a group holds) leaves its group for the step, the others keep
+        regulating. A step taking out every controller of a group regulating a slack bus is
+        left out of the batch: ``LimitViolationType.BATCH_UNSUPPORTED``, with the reason in
         ``get_batch_unsupported_reasons()``.
         """
         mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
@@ -519,6 +519,59 @@ class ScenarioSweep:
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_loads(mask)
         self.__computed = False
+
+    def _set_element_mask(self, setter, mask, container, kind):
+        """internal: a per-step mask of the elements of one kind of the grid"""
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        if mask.shape[1] != len(container):
+            raise RuntimeError(f"The number of {kind} on the grid ({len(container)}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        getattr(self.computer, setter)(mask)
+        self.__computed = False
+
+    def set_contingency_sgens(self, mask):
+        """Per-step static generator contingency mask, shape ``(n_simul, n_sgen)``, dtype bool.
+        ``True`` means "disconnect this static generator for this simulation".
+
+        An injection only: the step's active power (:func:`modify_sgen_p`, or the grid's) and
+        the reactive setpoint leave the injection, and the distributed slack makes up the balance.
+        """
+        self._set_element_mask("set_contingency_sgens", mask, self.grid2op_env.backend._grid.get_static_generators(),
+                               "static generators")
+
+    def set_contingency_storages(self, mask):
+        """Per-step storage unit contingency mask, shape ``(n_simul, n_storage)``, dtype bool.
+        ``True`` means "disconnect this storage unit for this simulation".
+
+        It leaves the step's injection and its share of the distributed slack; the last
+        controller of a bus turns that bus PQ for the step. A step tripping one on a bus a
+        control group holds is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``),
+        and a step naming a unit in both this mask and its topological action is refused.
+        """
+        self._set_element_mask("set_contingency_storages", mask, self.grid2op_env.backend._grid.get_storages(),
+                               "storage units")
+
+    def set_contingency_svcs(self, mask):
+        """Per-step static var compensator contingency mask, shape ``(n_simul, n_svc)``, dtype bool.
+        ``True`` means "disconnect this SVC for this simulation": its fixed reactive injection
+        and its b0 leave the step, and one regulating a voltage its control group.
+
+        A step tripping one that carries a standby automaton or was frozen at a reactive limit is
+        left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
+        """
+        self._set_element_mask("set_contingency_svcs", mask, self.grid2op_env.backend._grid.get_svcs(),
+                               "static var compensators")
+
+    def set_contingency_hvdcs(self, mask):
+        """Per-step hvdc line contingency mask, shape ``(n_simul, n_hvdc)``, dtype bool.
+        ``True`` means "disconnect this line for this simulation": both its converter stations
+        leave the step's injection, the bus a regulating one was the last to hold turning PQ.
+
+        With a DC algorithm, a step tripping one in AC emulation is left out of the batch
+        (``LimitViolationType.BATCH_UNSUPPORTED``).
+        """
+        self._set_element_mask("set_contingency_hvdcs", mask, self.grid2op_env.backend._grid.get_dclines(),
+                               "hvdc lines")
 
     def set_topo_actions(self, actions):
         """One topological action per row, played by that row on top of its injections

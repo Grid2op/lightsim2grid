@@ -120,6 +120,14 @@ struct LS2G_API SbusPolicy
             return load_off.rows() > 0 && i < load_off.rows() && l < load_off.cols() && load_off(i, l);
         }
 
+        // per-step static generator contingency mask, one row per step, one column per
+        // static generator (ScenarioSweep only, see BaseBatchSweep::set_contingency_sgens).
+        // An injection only, as load_off: fill_row takes the row's p and the q back.
+        BoolMat sgen_off;
+        bool sgen_off_in(Eigen::Index i, Eigen::Index s) const {
+            return sgen_off.rows() > 0 && i < sgen_off.rows() && s < sgen_off.cols() && sgen_off(i, s);
+        }
+
         // ---- what a row's topological action disconnects (ScenarioSweep
         // set_topo_actions; filled once per compute() by
         // BaseBatchSweep::_maybe_resolve_topology, empty otherwise) ----------------
@@ -170,11 +178,12 @@ struct LS2G_API SbusPolicy
             gen_v = RealMat();
             gen_off = BoolMat();
             load_off = BoolMat();
+            sgen_off = BoolMat();
             clear_topo();
             storage_pu_ = CplxVect();
             sbuses.reset();
             gen_bus_.clear(); sgen_bus_.clear(); load_bus_.clear(); storage_bus_.clear();
-            gen_target_p_ = RealVect(); sgen_target_p_ = RealVect();
+            gen_target_p_ = RealVect(); sgen_target_p_ = RealVect(); sgen_target_q_ = RealVect();
             load_target_p_ = RealVect(); load_target_q_ = RealVect();
             gen_target_q_ = RealVect(); gen_vreg_.clear();
             constant_pu_ = CplxVect();
@@ -245,6 +254,7 @@ struct LS2G_API SbusPolicy
         std::vector<int> gen_bus_, sgen_bus_, load_bus_, storage_bus_;   // solver bus per element, -1 if inactive
         RealVect gen_target_p_, sgen_target_p_, load_target_p_, load_target_q_;  // the grid's own
         RealVect gen_target_q_;          // a non-regulating generator's reactive setpoint
+        RealVect sgen_target_q_;         // a static generator's: constant_pu_ carries it
         std::vector<char> gen_vreg_;     // whether each generator regulates voltage
         CplxVect constant_pu_;
         // each storage unit's own per-unit injection (StorageContainer::_fillSbus,
@@ -252,6 +262,7 @@ struct LS2G_API SbusPolicy
         // what a row placing it adds
         CplxVect storage_pu_;
         real_type sn_mva_ = 1.;
+        bool ac_solver_used_ = true;
         int nb_buses_solver_ = 0;
         Eigen::Index nb_steps_ = 0;
 

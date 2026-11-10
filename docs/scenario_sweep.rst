@@ -171,11 +171,11 @@ the change in the losses it causes is left to the powerflow's distributed slack.
 
 .. warning::
 
-    Only generators that regulate their **own** bus are supported for now. `compute()`
-    raises if the mask names a generator that regulates a remote bus, or one standing on
-    a bus whose voltage a control group holds (a remote generator, an SVC or an HVDC
-    converter station). Those go through a different part of the Jacobian, with columns
-    and rows of their own that this feature does not yet reserve and mask.
+    A generator that is a controller of a voltage-control group (it regulates a remote bus, or
+    a bus such a group holds) is taken out of its group for the row: the others keep regulating,
+    and the regulated bus is free when none is left. A row taking out every controller of a group
+    that regulates a slack bus is reported `BATCH_UNSUPPORTED`, and so is one with an algorithm
+    that cannot take a controller out of a row (a plugin without the capability).
 
 Shunt and load contingencies
 ------------------------------------
@@ -191,6 +191,14 @@ Shunt and load contingencies
 What that changes in the balance is made up by the distributed slack, and with
 `redistribute_slack = True` it is shared OpenLoadFlow-style before the solve, as for a
 generator. A row naming a load in both the mask and its topological action is refused.
+
+`set_contingency_sgens(mask)` (shape `(n_simul, n_sgen)`) does the same for the static generators:
+the row's active power (`modify_sgen_p`, or the grid's) and the reactive setpoint leave its injection.
+`set_contingency_storages(mask)` does it for the storage units, which also leave the distributed slack
+and turn PQ the bus they were the last to regulate. `set_contingency_svcs(mask)` takes out a static var
+compensator's fixed reactive injection and its b0, one in voltage mode leaving its control group; a row tripping
+one with a standby automaton or frozen at a reactive limit is reported `BATCH_UNSUPPORTED`. `set_contingency_hvdcs(mask)` takes both converter stations of an HVDC line out, the bus a
+regulating one was the last to hold turning PQ; in DC, a line in AC emulation is reported `BATCH_UNSUPPORTED`.
 
 .. warning::
 

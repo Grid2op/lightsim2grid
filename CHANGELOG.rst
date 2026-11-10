@@ -232,6 +232,25 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [FIXED] batches: tripping a generator or storage unit no longer turns PQ a bus a converter station still regulates.
+- [FIXED] ``batch_unsupported_fallback``: undoing a row no longer reconnects the open end of a half-open HVDC line,
+  which made the following rows diverge.
+- [IMPROVED] batches: a row can trip an HVDC line with a station regulating a voltage. ``OuterRowView`` gains
+  a field: rebuild plugins.
+- [IMPROVED] batches: a row can trip a voltage-mode static var compensator, which leaves its control group.
+- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,
+  ``set_may_trip_voltage_controllers``, ``set_tripped_voltage_controllers``, ``supports_tripped_hvdc_lines``
+  and ``set_tripped_hvdc_lines``. Rebuild plugins.
+- [IMPROVED] batches (AC): a row can trip an HVDC line in AC emulation.
+- [IMPROVED] batches: a row can trip a generator of a voltage-control group (remote regulation included).
+  Reported ``BATCH_UNSUPPORTED`` only when every controller of a group regulating a slack bus goes.
+- [ADDED] ``ContingencyAnalysis.add_contingency`` and ``ContingencyAnalysisCPP.add_contingency``: trip static
+  generators, storage units, static var compensators and HVDC lines (``sgens``, ``storages``, ``svcs``, ``hvdcs``,
+  ``_ids`` in C++). ``my_contingencies`` returns their lists. Issue #281.
+- [ADDED] ``ScenarioSweep``: per-row trips of static generators, storage units, static var compensators and HVDC
+  lines (``set_contingency_sgens``, ``_storages``, ``_svcs``, ``_hvdcs``). Issue #281.
+- [ADDED] ``ContingencyPropagator.add_contingencies`` (and ``propagate_contingencies``) read powsybl's
+  contingency lists, a json file included; ``contingency_ids`` gives their ids. Grouping ignores busbar names.
 - [FIXED] batches with outer loops: a voltage-control group losing a controller to an island, its other
   controllers held at a reactive limit, no longer fails: the islanded controller is gone, the regulated bus free.
 - [FIXED] ``DistributedSlack`` with ``redistribute_slack``: after sharing a contingency's lost power,

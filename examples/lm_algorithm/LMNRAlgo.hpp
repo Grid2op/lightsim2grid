@@ -125,6 +125,13 @@ public:
     }
 
     bool supports_bus_masking() const override { return true; }
+    bool supports_tripped_hvdc_lines() const override { return true; }
+    void set_tripped_hvdc_lines(const std::vector<int>& hvdc_ids) override { _system.set_tripped_hvdc_lines(hvdc_ids); }
+    bool supports_tripped_voltage_controllers() const override { return true; }
+    void set_may_trip_voltage_controllers(bool val) override { _system.set_may_trip_voltage_controllers(val); }
+    void set_tripped_voltage_controllers(const std::vector<int>& controllers) override {
+        _system.set_tripped_voltage_controllers(controllers);
+    }
     void set_masked_buses(const std::vector<int>& solver_bus_ids) override {
         _system.set_masked_buses(solver_bus_ids);
     }

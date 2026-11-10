@@ -8337,14 +8337,28 @@ const std::string DocContingencyAnalysis::add_contingency = R"mydelimiter(
     - a generator leaves it too (its active power, and the reactive setpoint of one that does not regulate voltage)
       and the distributed slack is re-weighted without it. When it is the last one regulating its own bus, that bus
       turns PQ for the contingency, as :func:`lightsim2grid.scenarioSweep.ScenarioSweepCPP.set_contingency_gens`
-      does it. A contingency tripping a generator regulating a remote bus, or standing on a bus a control group
-      holds, is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``);
+      does it. A generator that is a controller of a voltage-control group leaves its group for the contingency, the
+      others keep regulating and the regulated bus is free when none is left. A contingency taking out every controller
+      of a group regulating a slack bus is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``);
     - a branch of ``branch_ids_side1`` (``branch_ids_side2``) is opened at side 1 (side 2) only: its other end stays
       connected and still carries the branch's charging, as a branch open at one end in the grid does. This is how
       OpenLoadFlow models a branch whose breaker opens at one end only (see
       :func:`lightsim2grid.network.ContingencyPropagator.opened_sides`). Its flows read 0, it is not checked against
       its current limits and the outer loops see it as open, as for a branch opened at both ends. A branch named at
-      both sides, or also in ``branch_ids``, is opened at both.
+      both sides, or also in ``branch_ids``, is opened at both;
+    - a static generator of ``sgen_ids`` leaves the injection, its active and reactive power;
+    - a storage unit of ``storage_ids`` too (its reactive setpoint when it does not regulate voltage), and the
+      distributed slack is re-weighted without it. When it is the last one regulating its bus, that bus turns PQ for
+      the contingency; a contingency tripping one that stands on a bus a control group holds is left out of the
+      batch (``LimitViolationType.BATCH_UNSUPPORTED``);
+    - a static var compensator of ``svc_ids`` leaves the grid with its fixed reactive injection and its ``b0``; one
+      regulating a voltage leaves its control group, the regulated bus going free. A contingency tripping one that
+      carries a standby automaton or was frozen at a reactive limit is left out of the batch
+      (``LimitViolationType.BATCH_UNSUPPORTED``);
+    - an HVDC line of ``hvdc_ids`` stops transmitting: both its converter stations leave the injection. A contingency
+      tripping a line in AC emulation with a DC algorithm is left out of the batch
+      (``LimitViolationType.BATCH_UNSUPPORTED``). The bus a regulating station was the last to hold turns PQ for the
+      contingency, as for a generator.
 
     What the contingency loses is made up by the distributed slack (``redistribute_slack`` shares it OLF-like before
     the solve), and a bus it strands is handled as a branch contingency strands one (``handle_disconnected_grid``).
@@ -8402,7 +8416,7 @@ const std::string DocContingencyAnalysis::my_contingencies = R"mydelimiter(
     Returns
     -------
     my_contingencies: ``list``
-        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2)`` per contingency,
+        One tuple ``(branch_ids, shunt_ids, load_ids, gen_ids, branch_ids_side1, branch_ids_side2, sgen_ids, storage_ids, svc_ids, hvdc_ids)`` per contingency,
         each a sorted list (the last two: the branches opened at that side only).
         :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP.my_defaults` lists the branches opened at both
         ends only.
@@ -8607,8 +8621,8 @@ const std::string DocContingencyAnalysis::LimitViolationType = R"mydelimiter(
 
     - ``NOT_SIMULATED``: a pre-check (eg graph connectivity) skipped this contingency -- the
       solver was never invoked for it.
-    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg a generator
-      regulating a remote bus), so it was left out of the batch rather than failing all of it.
+    - ``BATCH_UNSUPPORTED``: the batch does not support what this contingency trips (eg a static var
+      compensator with a standby automaton), so it was left out of the batch rather than failing all of it.
       ``get_batch_unsupported_reasons()`` says why.
     - ``DIVERGENCE``: the solver was invoked for this contingency but did not converge.
 
