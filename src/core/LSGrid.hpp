@@ -125,7 +125,8 @@ class LS2G_API LSGrid final
                 // the grid-level settings copy() keeps (appended), without which a grid read
                 // back solves differently: keep_vinit_at_group_controlled_buses,
                 // hold_frozen_regulators, dc_distribute_slack_on_can_participate,
-                // reactive_dispatch_olf (0 / 1), then the reference slack bus (-1: none)
+                // reactive_dispatch_olf (0 / 1), the reference slack bus (-1: none),
+                // then uniform_voltage_start (0 / 1; absent before 1.3.1, read as 0)
                 std::vector<int>,
                 // OpenLoadFlow's reactive data (empty: none): set_gen_reactive_range_max,
                 // set_station_reactive_range_max (side 1, side 2), set_gen_raw_target_q
@@ -190,6 +191,7 @@ class LS2G_API LSGrid final
           compute_results_(true),
           init_vm_pu_(1.04),
           keep_vinit_group_controlled_(false),
+          uniform_voltage_start_(false),
           hold_frozen_regulators_(false),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
@@ -551,6 +553,49 @@ class LS2G_API LSGrid final
          */
         void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
         [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
+
+        /**
+         * Start the Newton-Raphson from the caller's voltage at the buses whose
+         * magnitude is held (the PV buses and the slack), as OpenLoadFlow's uniform
+         * start does, instead of from their voltage targets.
+         *
+         * false (the default): the targets are written into the starting voltage,
+         * and the first Newton step is taken from there.
+         *
+         * true: the targets are still written into the voltage handed to the
+         * algorithm -- so an algorithm that does not know this option (the FDPF,
+         * Gauss-Seidel, DC, an external plugin) solves exactly as before -- but the
+         * magnitudes the caller passed are kept alongside
+         * (`get_ac_uniform_start_vm`). A Newton-Raphson (any `NR*` algorithm, outer
+         * loops included) then evaluates its first mismatch and Jacobian at the
+         * caller's magnitudes and moves the held magnitudes to their targets within
+         * that first step, through their column of the Jacobian: the step
+         * OpenLoadFlow takes, whose equation `V = target` is linear and so met
+         * exactly after one iteration. Later iterations are unchanged.
+         *
+         * Why: a held bus tied to another bus by a very low impedance branch starts
+         * with a large flow on that branch when only the held end is moved to its
+         * target, and the first step can throw the rest of the grid far enough that
+         * the Newton never comes back. Started from the caller's magnitudes, the
+         * first step moves both ends together.
+         *
+         * A bus whose magnitude is itself a Newton unknown (one a voltage-control
+         * group regulates, or every regulated bus of an outer-loop algorithm, which
+         * gives each a voltage row) simply starts from the caller's magnitude too,
+         * and its voltage row brings it to the target.
+         *
+         * It changes the starting point only: targets and results are the same.
+         * It makes no difference to a warm start (a converged voltage already holds
+         * the targets), nor where the seeded voltage already converges. The buses
+         * `set_keep_vinit_at_group_controlled_buses` holds keep the caller's
+         * magnitude either way. That first step is a full one (no step scaling),
+         * and the custom rows of the Newton (distributed slack, voltage-control
+         * groups, HVDC) do not get the coupling term in it.
+         *
+         * Copied with the grid, part of `get_state` / the binary format.
+         */
+        void set_uniform_voltage_start(bool uniform) noexcept {uniform_voltage_start_ = uniform;}
+        [[nodiscard]] bool get_uniform_voltage_start() const noexcept {return uniform_voltage_start_;}
 
 
         /**
@@ -1310,6 +1355,16 @@ class LS2G_API LSGrid final
          */
         [[nodiscard]] const VoltageControlPlan & get_ac_voltage_control_plan() const {
             return ac_cache_.voltage_control;
+        }
+        /**
+         * The starting magnitudes of the AC family's last build, in its own bus
+         * labelling, as the caller passed them -- before the voltage targets were
+         * written in. Empty unless `set_uniform_voltage_start` is on (and for
+         * `check_solution`, which seeds nothing). Read by the Newton-Raphson through
+         * its `lsgrid_ptr`, in the same window as `get_ac_voltage_control_plan`.
+         */
+        [[nodiscard]] const RealVect & get_ac_uniform_start_vm() const {
+            return ac_cache_.uniform_start_vm;
         }
         [[nodiscard]] const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
 
@@ -3593,6 +3648,7 @@ class LS2G_API LSGrid final
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
+        bool uniform_voltage_start_;  // see set_uniform_voltage_start
         bool hold_frozen_regulators_;  // see set_hold_frozen_regulators
         real_type sn_mva_;
         // An init_* / init_bus was called since the last successful check_grid() (see

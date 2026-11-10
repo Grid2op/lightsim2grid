@@ -355,8 +355,12 @@ class LS2G_API Base
         // this run; caller-set (see set_switchable_vm_buses), consumed by
         // register_in, and NOT reset per solve. Empty unless a caller asked.
         std::set<int> switchable_vm_buses_;
+        // the caller's starting magnitudes, before the targets were written in
+        // (LSGrid::set_uniform_voltage_start); set by update_state, empty when off
+        RealVect uniform_start_vm_;
 
     public:
+        const RealVect & uniform_start_vm() const { return uniform_start_vm_; }
         Eigen::Ref<const IntVect> pv() const { return pv_; }
         Eigen::Ref<const IntVect> pq() const { return pq_; }
         Eigen::Ref<const IntVect> pvpq() const { return pvpq_; }
@@ -2109,6 +2113,32 @@ public:
     // corrector to start from.
     void cpf_predict_into(CplxVect& V_pred, const Eigen::Ref<const RealVect>& z, real_type coeff) const;
 
+    // ----- uniform start (LSGrid::set_uniform_voltage_start) ----------------------
+    //
+    // The first iteration of a solve whose grid published the caller's starting
+    // magnitudes, taken as OpenLoadFlow takes it from its uniform start. A bus whose
+    // magnitude is an unknown just starts from the caller's magnitude (seeded at a
+    // target, it has a voltage row to reach it). A bus with none (PV, slack pinned by
+    // a local regulator), or kept still by a masked / PV-pinned identity row, holds the
+    // magnitude it was seeded with, its target; this iteration starts it from the
+    // caller's magnitude too, and moves it to its target within the step:
+    //
+    //   begin_vm_lift()      puts the buses at the caller's magnitudes (returns false,
+    //                        and changes nothing, when none differs or when this solve
+    //                        already did it: once per update_state);
+    //   add_vm_lift_rhs(res) once J is filled there, moves the jump of the held
+    //                        magnitudes to the right-hand side through their dS/dVm
+    //                        column -- J . dx = res - dS/dVm . dVm, the step of a system
+    //                        where `Vm = target` is one more (linear) equation;
+    //   end_vm_lift()        after apply_step, puts them at their targets.
+    //
+    // Only the dS-derived P / Q rows get the coupling term: the custom rows of the
+    // extensions are left as they are, so for them this first step is a quasi-Newton
+    // one. Masked and PV-pinned rows are left at zero, like their residual.
+    bool begin_vm_lift();
+    void add_vm_lift_rhs(Eigen::Ref<RealVect> res) const;
+    void end_vm_lift();
+
     // ----- Housekeeping ----------------------------------------------------------
 
     void clear_jacobian() {
@@ -2508,6 +2538,13 @@ private:
 
     // Holds the base things
     Base                                   base_;
+
+    // the uniform start (see begin_vm_lift): whether this solve may still take it,
+    // and, while it is being taken, the buses it moved and their targets
+    bool                                   vm_lift_pending_ = false;
+    std::vector<int>                       vm_lift_buses_;
+    std::vector<real_type>                 vm_lift_target_;
+    mutable CplxVect                       vm_lift_dS_;
 
     // Holds the state for HVDC, DistSlack, etc.
     std::tuple<Rest...>                    extensions_;

@@ -6594,6 +6594,50 @@ const std::string DocLSGrid::get_keep_vinit_at_group_controlled_buses = R"mydeli
 
 )mydelimiter";
 
+const std::string DocLSGrid::set_uniform_voltage_start = R"mydelimiter(
+    Start the Newton-Raphson from the magnitudes passed to :func:`ac_pf` at the buses whose
+    magnitude is held (PV buses, the slack), as OpenLoadFlow's uniform start does, instead of
+    from their voltage targets.
+
+    With ``False`` (the default), the targets are written into the starting voltage and the
+    first Newton step is taken from there.
+
+    With ``True``, the first mismatch and Jacobian are evaluated at the magnitudes passed, and
+    the held magnitudes move to their targets within that first step, the rest of the grid
+    following them through the Jacobian. This is the step OpenLoadFlow takes from its
+    ``UNIFORM_VALUES`` voltage initialisation. A bus whose magnitude is itself an unknown of
+    the Newton-Raphson (regulated by a voltage-control group, or any regulated bus of an
+    ``NROuter_*`` algorithm) also starts from the magnitude passed, and its voltage equation
+    brings it to the target. Later iterations are unchanged, and so are the targets and the
+    solution: only the path to it differs.
+
+    Use it when a held bus is tied to another bus by a very low impedance branch: starting
+    only the held end at its target puts a large flow on that branch, and the first step can
+    throw the rest of the grid too far for the Newton to come back. Or use it to follow
+    OpenLoadFlow's iterations from a uniform start.
+
+    It makes no difference to a warm start (a converged voltage already holds the targets),
+    nor when the voltage passed already converges. The buses
+    :func:`set_keep_vinit_at_group_controlled_buses` holds keep the magnitude passed either
+    way. The first step is a full one (no step scaling), and the extra rows of the Newton
+    (distributed slack, voltage-control groups, HVDC) do not see the targets move in it.
+
+    Only the Newton-Raphson algorithms (``NR*``, outer loops included) take this step; the
+    others solve exactly as before. The option is copied with the grid and kept by a pickle
+    and by :func:`save_binary`.
+
+    Parameters
+    ----------
+    uniform: ``bool``
+        ``True`` to start the held buses from the magnitudes passed.
+
+)mydelimiter";
+
+const std::string DocLSGrid::get_uniform_voltage_start = R"mydelimiter(
+    Get the value set by :func:`set_uniform_voltage_start` (``False`` by default).
+
+)mydelimiter";
+
 const std::string DocLSGrid::set_hold_frozen_regulators = R"mydelimiter(
     Keep, in the voltage-control group it would join, every generator an outer loop froze at a
     reactive limit and that would regulate a REMOTE bus if released -- flagged with
