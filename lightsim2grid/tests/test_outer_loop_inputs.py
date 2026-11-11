@@ -361,7 +361,9 @@ class TestPoisonedOuterState(unittest.TestCase):
 
     def test_grid_settings_of_the_wrong_length_are_rejected(self):
         settings = list(_get_at(self.state, (STATE, GRID_SETTINGS_ID)))
-        for bad in (settings[:-1], settings + [0], []):
+        # settings[:-1] is the 1.3.0 layout (no uniform_voltage_start), which is read
+        # back on purpose: one entry fewer than that is the short case
+        for bad in (settings[:-2], settings + [0], []):
             with self.assertRaises(RuntimeError):
                 _rebuild(self._replace((GRID_SETTINGS_ID,), bad))
 
