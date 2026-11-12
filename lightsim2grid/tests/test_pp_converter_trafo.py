@@ -54,19 +54,23 @@ class _TestTrafoConverter:
         shift_ = 1.0 * pp_net.trafo["shift_degree"].values
         shift_[~np.isfinite(shift_)] = 0.
 
-        is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
-        is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
+        # "tap_side" is a pandas "string" column (with pd.NA) in pandapower >= 4:
+        # .eq(...).fillna(False).to_numpy(dtype=bool, copy=True) is needed, see
+        # lightsim2grid/network/from_pandapower/_aux_add_trafo.py
+        tap_side = pp_net.trafo["tap_side"]
+        is_tap_hv_side = tap_side.eq("hv").fillna(False).to_numpy(dtype=bool, copy=True)
+        is_tap_hv_side[tap_side.isna().to_numpy(dtype=bool)] = True
 
         if "tap_phase_shifter" in pp_net.trafo:
-            if np.any(pp_net.trafo["tap_phase_shifter"].values):
+            if np.any(pp_net.trafo["tap_phase_shifter"].fillna(False).to_numpy(dtype=bool)):
                 raise RuntimeError("Ideal phase shifters are not modeled. Please remove all trafos with "
                                 "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
         elif "tap_changer_type" in pp_net.trafo:
-            if np.any(pp_net.trafo["tap_changer_type"].values == "Ideal"):
+            if np.any(pp_net.trafo["tap_changer_type"].eq("Ideal").fillna(False).to_numpy(dtype=bool)):
                 raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 2-winding trafos "
                                 "with \"tap_changer_type\" set to \"Ideal\".")
         elif "tap_changer_type" in pp_net.trafo3w:
-            if np.any(pp_net.trafo3w["tap_changer_type"].values == "Ideal"):
+            if np.any(pp_net.trafo3w["tap_changer_type"].eq("Ideal").fillna(False).to_numpy(dtype=bool)):
                 raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                 "with \"tap_changer_type\" set to \"Ideal\".")
 

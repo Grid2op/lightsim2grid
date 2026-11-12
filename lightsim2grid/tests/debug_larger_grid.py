@@ -647,21 +647,25 @@ if np.any(~np.isfinite(tap_pos)):
 tap_pos[~np.isfinite(tap_pos)] = 0.
 
 shift_ = 1.0 * pp_net.trafo["shift_degree"].values
-if np.any(~np.isfinite(tap_pos)):
+if np.any(~np.isfinite(shift_)):
     warnings.warn("There were some Nan in the pp_net.trafo[\"shift_degree\"], they have been replaced by 0")
 shift_[~np.isfinite(shift_)] = 0.
 
-is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
-if np.any(~np.isfinite(is_tap_hv_side)):
+# see lightsim2grid/network/from_pandapower/_aux_add_trafo.py: "tap_side" is a
+# pandas "string" column with pd.NA in pandapower >= 4
+tap_side = pp_net.trafo["tap_side"]
+is_tap_hv_side = tap_side.eq("hv").fillna(False).to_numpy(dtype=bool, copy=True)
+is_na_tap_side = tap_side.isna().to_numpy(dtype=bool)
+if np.any(is_na_tap_side):
     warnings.warn("There were some Nan in the pp_net.trafo[\"tap_side\"], they have been replaced by \"hv\"")
-is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
+is_tap_hv_side[is_na_tap_side] = True
 
-if np.any(pp_net.trafo["tap_phase_shifter"].values):
+if np.any(pp_net.trafo["tap_phase_shifter"].fillna(False).to_numpy(dtype=bool)):
     raise RuntimeError("ideal phase shifter are not modeled. Please remove all trafo with "
                        "pp_net.trafo[\"tap_phase_shifter\"] set to True.")
 
 tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
-if np.any(~np.isfinite(tap_pos)):
+if np.any(~np.isfinite(tap_angles_)):
     warnings.warn("There were some Nan in the pp_net.trafo[\"tap_step_degree\"], they have been replaced by 0")
 tap_angles_[~np.isfinite(tap_angles_)] = 0.
 tap_angles_ = np.deg2rad(tap_angles_)

@@ -54,7 +54,7 @@ def _aux_add_trafo(
 
     # not attached to the 2-winding checks: those always find their column
     if "trafo3w" in pp_net and "tap_changer_type" in pp_net.trafo3w:
-        if np.any(pp_net.trafo3w["tap_changer_type"].to_numpy() == "Ideal"):
+        if np.any(_str_eq(pp_net.trafo3w["tap_changer_type"], "Ideal")):
             raise RuntimeError("Ideal phase shifters are not modeled. Please remove all 3-winding trafos "
                                "with \"tap_changer_type\" set to \"Ideal\".")
 
@@ -180,7 +180,16 @@ def _aux_add_trafo(
     with_steps = _aux_trafo_tap_changers(model, pp_net, tap1, tap_table, trafo_params, trafo_r, trafo_x, trafo_b)
     _aux_trafo_tap_regulation(model, pp_net, pp_to_ls, with_steps)
 
-
+    
+def _str_eq(series, value):
+    """`series == value` as a plain numpy boolean array, a missing value counting as different.
+    Needed since pandapower 4, whose text columns ("tap_side", "tap_changer_type", ...) are of the
+    pandas "string" dtype: there a missing value is pd.NA, and comparing to it gives pd.NA rather
+    than False ("boolean value of NA is ambiguous" in any later numpy test). copy=True because with
+    an object column, pandas 3 can hand back a read-only array."""
+    return series.eq(value).to_numpy(dtype=bool, na_value=False, copy=True)
+  
+  
 def _read_tap_changer(pp_net, prefix):
     """One tap changer of the transformers, from the `prefix`_* columns ("tap" or "tap2"), with the
     missing values filled and the kind of tap pandapower applies (`_calc_tap_from_dataframe`):
@@ -192,7 +201,7 @@ def _read_tap_changer(pp_net, prefix):
 
     def column(name, fill, what):
         col = f"{prefix}_{name}"
-        vals = trafo[col].to_numpy(dtype=float).copy() if col in trafo else np.full(nb, np.nan)
+        vals = trafo[col].to_numpy(dtype=float, na_value=np.nan, copy=True) if col in trafo else np.full(nb, np.nan)
         if col in trafo and np.any(~np.isfinite(vals)):
             warnings.warn(f"There were some Nan in the pp_net.trafo[\"{col}\"], they have been replaced by {what}")
         bad = ~np.isfinite(vals)
@@ -204,9 +213,13 @@ def _read_tap_changer(pp_net, prefix):
     tc.step_pct = column("step_percent", 0., "0")
     tc.pos = column("pos", tc.neutral, f"the neutral position (pp_net.trafo[\"{prefix}_neutral\"])")
     tc.step_degree = column("step_degree", 0., "0")  # in degree
-    side = trafo[f"{prefix}_side"].to_numpy() if f"{prefix}_side" in trafo else np.full(nb, None)
-    tc.on_hv = side == "hv"
-    applies = np.isin(side, ["hv", "lv"])
+    if f"{prefix}_side" in trafo:
+        side = trafo[f"{prefix}_side"]
+        tc.on_hv = _str_eq(side, "hv")
+        applies = tc.on_hv | _str_eq(side, "lv")
+    else:
+        tc.on_hv = np.zeros(nb, dtype=bool)
+        applies = np.zeros(nb, dtype=bool)
     has_step = (tc.step_pct != 0.) & (tc.pos != tc.neutral)
     if np.any(~applies & has_step):
         warnings.warn(f"There were some Nan in the pp_net.trafo[\"{prefix}_side\"]: the tap of these "
@@ -219,9 +232,9 @@ def _read_tap_changer(pp_net, prefix):
             raise RuntimeError(f"Tabular tap changers (pp_net.trafo[\"{prefix}_dependency_table\"]) are only "
                                "handled for the first tap changer.")
     if f"{prefix}_changer_type" in trafo:
-        changer_type = trafo[f"{prefix}_changer_type"].to_numpy()
-        is_ideal = changer_type == "Ideal"
-        is_complex = np.isin(changer_type, ["Ratio", "Symmetrical"])
+        changer_type = trafo[f"{prefix}_changer_type"]
+        is_ideal = _str_eq(changer_type, "Ideal")
+        is_complex = _str_eq(changer_type, "Ratio") | _str_eq(changer_type, "Symmetrical")
         if np.any(~is_complex & ~is_ideal & ~tc.is_tabular & applies & has_step):
             warnings.warn(f"Some transformers have a tap but no pp_net.trafo[\"{prefix}_changer_type\"]: their "
                           "tap is ignored, as pandapower does.")
