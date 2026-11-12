@@ -485,6 +485,8 @@ Gauss-Seidel and DC solve as before. The batch algorithms inherit it and have a
 ``uniform_voltage_start`` property of their own: their "n" solve and every row starting from the
 voltage passed take the uniform start, a row starting from a solved state (the "n" solve's with
 ``init_from_n_powerflow``, the previous row's in a time series) does not.
+With grid2op, set it on the backend rather than on its grid, so that ``env.reset()`` keeps it:
+``LightSimBackend(uniform_voltage_start=True)`` or ``env.backend.set_uniform_voltage_start(True)``.
 
 A generator an outer loop froze at a reactive limit (``LSGrid.set_gen_can_be_pv``, its voltage
 regulation off) is an ordinary PQ machine for the Newton-Raphson. When it would regulate a REMOTE

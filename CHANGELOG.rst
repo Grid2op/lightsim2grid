@@ -373,7 +373,7 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``shunt_characteristic_table``, which was ignored, and its rows as sections, to move them or regulate.
 - [ADDED] ``LSGrid.set_uniform_voltage_start``, off by default: the Newton-Raphson starts held buses from the
   voltage passed, as OpenLoadFlow's uniform start does. Fixes a divergence next to a very low impedance branch (#284).
-  The batches inherit it (``uniform_voltage_start``).
+  The batches inherit it, and ``LightSimBackend`` takes it (``uniform_voltage_start``), kept by ``env.reset()``.
 
 
 [1.3.0] 2026-11-03
