@@ -23,7 +23,7 @@ def _aux_add_gen(model, pp_net, pp_to_ls):
     if "parallel" in pp_net.gen and np.any(pp_net.gen["parallel"].to_numpy() != 1):
         raise RuntimeError("Cannot handle 'parallel' gen columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.line[\"parallel\"] != 1 it is not handled by lightsim yet.")
-    model.init_generators(pp_net.gen["p_mw"].to_numpy(),
+    model.init_generators(_gen_p_mw(pp_net),
                           pp_net.gen["vm_pu"].to_numpy(),
                           pp_net.gen["min_q_mvar"].to_numpy(),
                           pp_net.gen["max_q_mvar"].to_numpy(),
@@ -33,6 +33,16 @@ def _aux_add_gen(model, pp_net, pp_to_ls):
         if not is_connected:
             # generator is deactivated
             model.deactivate_gen(gen_id)
+
+
+def _gen_p_mw(pp_net):
+    """The active power set-point of the generators, as pandapower uses it: ``p_mw * scaling``."""
+    p_mw = pp_net.gen["p_mw"].to_numpy(dtype=float)
+    if "scaling" not in pp_net.gen:
+        return p_mw
+    scaling = pp_net.gen["scaling"].to_numpy(dtype=float).copy()
+    scaling[~np.isfinite(scaling)] = 1.
+    return p_mw * scaling
 
 
 def _aux_add_gen_p_limits(model, pp_net):

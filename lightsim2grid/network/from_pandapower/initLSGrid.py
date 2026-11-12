@@ -41,24 +41,11 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     """
     Convert a pandapower network as input into a LSGrid.
 
-    This can fail to convert the grid and still not throw any error, use with care (for example, you can run a powerflow
-    after this conversion, run a powerflow with pandapower, and compare the results to make sure they match !)
-
-    Cases for which conversion is not possible include, but are not limited to:
-
-    - the pandapower grid has 3 winding transformers
-    - the pandapower grid has xwards
-    - the pandapower grid has dcline
-    - the pandapower grid has switch, motor, assymetric loads, etc.
-    - the pandapower grid any parrallel "elements" (at least one of the column "parrallel" is not 1)
-    - the bus indexes in pandapower do not start at 0 or are not contiguous (you can check `pp_net.bus.index`)
-    - some `g_us_per_km` for some lines are not zero ? TODO not sure if that is still the case !
-    - some `p_mw` for some shunts are not zero ? TODO not sure if that is still the case !
-
-    if you really need any of the above, please submit a github issue and we will work on their support.
-
-    This conversion has been extensively studied for the case118() of pandapower.networks and should work
-    really well for this grid. Actually, this grid is used for testing the LSGrid class.
+    The result solves, as far as it is converted, to the grid ``pp.runpp`` solves. What is
+    converted and how, what is refused (three winding transformers, motors, wards, ...) and
+    where the two still differ (switches, voltage dependent loads, several ext_grids,
+    ``pp.runpp`` options) is in the documentation page "Loading a pandapower grid"
+    (``docs/from_pandapower.rst``).
 
     Parameters
     ----------

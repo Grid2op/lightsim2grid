@@ -71,6 +71,9 @@ from pandapower is, in this respect, indistinguishable from one built from any o
     ``loader_method`` argument (``"pandapower"``, ``"pypowsybl"`` or ``"matpower"``). See
     :ref:`lightsimbackend_matpower` for the MATPOWER case.
 
+What the pandapower converter models, what it refuses and where it differs from ``pp.runpp`` is in
+:ref:`from_pandapower`.
+
 For example, you can init it from a pandapower grid like (NOT RECOMMENDED, though sometimes needed):
 
 .. code-block:: python

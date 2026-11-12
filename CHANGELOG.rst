@@ -374,6 +374,18 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``LSGrid.set_uniform_voltage_start``, off by default: the Newton-Raphson starts held buses from the
   voltage passed, as OpenLoadFlow's uniform start does. Fixes a divergence next to a very low impedance branch (#284).
   The batches inherit it, and ``LightSimBackend`` takes it (``uniform_voltage_start``), kept by ``env.reset()``.
+- [FIXED] pandapower converter: the ``scaling`` of the generators was not read (pandapower multiplies ``p_mw``
+  by it).
+- [FIXED] pandapower converter: the ``scaling`` of the storage units was not read (pandapower multiplies
+  ``p_mw`` and ``q_mvar`` by it).
+- [FIXED] pandapower converter: an ext_grid out of service was still made a slack; a grid with no slack left
+  is refused with a clear error.
+- [FIXED] pandapower converter: svc, tcsc, ssc, vsc, asymmetric static generators and DC-grid elements were
+  dropped without a word; they are refused, as motors and wards already were.
+- [IMPROVED] pandapower converter: warns when a load has a voltage dependent part (``const_z_*`` /
+  ``const_i_*``), which is not modeled (the load draws a constant power).
+- [ADDED] docs: "Loading a pandapower grid" (``from_pandapower.rst``), what the pandapower converter models,
+  refuses, and where it differs from ``pp.runpp``.
 
 
 [1.3.0] 2026-11-03

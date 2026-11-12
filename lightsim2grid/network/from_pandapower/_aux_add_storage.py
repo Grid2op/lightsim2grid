@@ -28,8 +28,13 @@ def _aux_add_storage(model, pp_net, pp_to_ls):
                            "Please duplicate the rows if that is the case. "
                            "Some pp_net.storage[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
-    model.init_storages(pp_net.storage["p_mw"].to_numpy(),
-                        pp_net.storage["q_mvar"].to_numpy(),
+    # as pandapower: p_mw and q_mvar times scaling
+    ratio = 1.0
+    if "scaling" in pp_net.storage:
+        ratio = pp_net.storage["scaling"].to_numpy(dtype=float).copy()
+        ratio[~np.isfinite(ratio)] = 1.0
+    model.init_storages(pp_net.storage["p_mw"].to_numpy() * ratio,
+                        pp_net.storage["q_mvar"].to_numpy() * ratio,
                         pp_bus_to_ls(pp_net.storage["bus"].to_numpy(), pp_to_ls)
                         )
     for stor_id, is_connected in enumerate(pp_net.storage["in_service"].to_numpy()):

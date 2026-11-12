@@ -12,6 +12,7 @@ import numpy as np
 
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
 from ._my_const import ALLOWED_PP_ORIG_FILE
+from ._aux_add_gen import _gen_p_mw
 
 
 def _aux_add_slack(
@@ -43,6 +44,8 @@ def _aux_add_slack(
 
     """
     # TODO handle that better maybe, and warn only one slack bus is implemented
+    # as pandapower, an ext_grid out of service is not a slack
+    ext_grid = pp_net.ext_grid.loc[pp_net.ext_grid["in_service"].astype(bool)]
     slack_coeff = None
     added_gen_bus = np.array([], dtype=int)  # no generator added, unless said otherwise below
     if np.any(pp_net.gen["slack"].to_numpy()):
@@ -70,8 +73,8 @@ def _aux_add_slack(
             
         # in this case the ext grid is not taken into account, i raise a warning if
         # there is one
-        slack_bus_ids = pp_bus_to_ls(pp_net.ext_grid["bus"].to_numpy(), pp_to_ls)
-        if pp_net.ext_grid.shape[0] >= 1:
+        slack_bus_ids = pp_bus_to_ls(ext_grid["bus"].to_numpy(), pp_to_ls)
+        if ext_grid.shape[0] >= 1:
             warnings.warn("LightSim will not consider the pandapower \"ext_grid\" as there "
                           "are already generators tagged as slack bus")
     else:
@@ -80,8 +83,11 @@ def _aux_add_slack(
                       "I will attempt to add some from the ext_grid.")
         # first i try to see if a generator is connected to a slack bus
         # TODO SLACK: deactivate warnings (will be done at the end when more tests will be done)
-        slack_bus_ids = pp_bus_to_ls(pp_net.ext_grid["bus"].to_numpy(), pp_to_ls)
-        # if pp_net.ext_grid.shape[0] >= 2:
+        if ext_grid.shape[0] == 0:
+            raise RuntimeError("No slack in the pandapower network: no generator with slack=True and no ext_grid "
+                               "in service.")
+        slack_bus_ids = pp_bus_to_ls(ext_grid["bus"].to_numpy(), pp_to_ls)
+        # if ext_grid.shape[0] >= 2:
         #     warnings.warn("LightSim cannot handle multiple slack bus at the moment. Only the first "
         #                   "slack bus of pandapower will be used.")
 
@@ -102,8 +108,8 @@ def _aux_add_slack(
             # at least one slack bus has no generator connected to it
             # so I assume i need to add as many generators as number of slack bus
             nb_slack = len(slack_bus_ids)
-            if "slack_weight" in pp_net.ext_grid:
-                slack_coeff = pp_net.ext_grid["slack_weight"].to_numpy().copy()
+            if "slack_weight" in ext_grid:
+                slack_coeff = ext_grid["slack_weight"].to_numpy().copy()
             else:
                 slack_coeff = np.ones(nb_slack)
             slack_coeff_norm = slack_coeff / slack_coeff.sum()
@@ -117,9 +123,10 @@ def _aux_add_slack(
                 slack_coeff[:] = 1.0
                 
             slack_gen_ids = np.arange(nb_slack) + pp_net.gen.shape[0]
-            slack_contrib = -1.0 * (np.sum(pp_net.gen["p_mw"]) - np.sum(pp_net.load["p_mw"]) ) * slack_coeff_norm
-            vm_pu = 1.0 * pp_net.ext_grid["vm_pu"].to_numpy()
-            gen_p = np.concatenate((pp_net.gen["p_mw"].to_numpy(), slack_contrib))
+            gen_p_mw = _gen_p_mw(pp_net)
+            slack_contrib = -1.0 * (np.sum(gen_p_mw) - np.sum(pp_net.load["p_mw"]) ) * slack_coeff_norm
+            vm_pu = 1.0 * ext_grid["vm_pu"].to_numpy()
+            gen_p = np.concatenate((gen_p_mw, slack_contrib))
             gen_v = np.concatenate((pp_net.gen["vm_pu"].to_numpy(), vm_pu))
             gen_bus = np.concatenate((pp_bus_to_ls(pp_net.gen["bus"].to_numpy(), pp_to_ls), slack_bus_ids))
             gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].to_numpy(), [-999999. for _ in range(nb_slack)]))
