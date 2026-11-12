@@ -736,9 +736,6 @@ class LightSimBackend(Backend):
     # ---- outer loops (NROuter_* algorithms) ----
     #: the state of a loop list put back to OpenLoadFlow's default one (:func:`reset_outer_loops`)
     _OUTER_LOOPS_DEFAULT = "default"
-    #: where an NROuter_* algorithm keeps `resume_outer_state` in its AC AlgoConfig: after the
-    #: Newton's own integer parameters
-    _RESUME_OUTER_STATE_IDX = 5
 
     @staticmethod
     def _aux_outer_loops_to_state(loops: Sequence[BaseOuterLoop]) -> List[Tuple[str, list, list]]:
@@ -826,14 +823,9 @@ class LightSimBackend(Backend):
             return
         if not self._grid.get_algo().supports_outer_loops():
             return
-        config = self._grid.get_ac_algo_config()
-        int_params = list(config.int_params)
-        idx = type(self)._RESUME_OUTER_STATE_IDX
-        value = 1 if self.__current_resume_outer_state else 0
-        if len(int_params) > idx and int_params[idx] != value:
-            int_params[idx] = value
-            config.int_params = int_params
-            self._grid.set_ac_algo_config(config)
+        # the grid knows where its algorithm keeps the flag in that AlgoConfig
+        if bool(self._grid.get_resume_outer_state()) != self.__current_resume_outer_state:
+            self._grid.set_resume_outer_state(self.__current_resume_outer_state)
 
     def _aux_apply_uniform_voltage_start(self) -> None:
         """Put the stored `uniform_voltage_start` on the grid (a reset rebuilds the grid
@@ -981,10 +973,7 @@ class LightSimBackend(Backend):
     def get_resume_outer_state(self) -> bool:
         """See :func:`set_resume_outer_state`."""
         if self._grid is not None and self._grid.get_algo().supports_outer_loops():
-            int_params = self._grid.get_ac_algo_config().int_params
-            idx = type(self)._RESUME_OUTER_STATE_IDX
-            if len(int_params) > idx:
-                return bool(int_params[idx])
+            return bool(self._grid.get_resume_outer_state())
         return bool(self.__current_resume_outer_state)
 
     def _aux_merge_solver_type_algo_type(

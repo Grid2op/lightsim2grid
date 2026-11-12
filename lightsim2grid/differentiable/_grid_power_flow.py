@@ -37,10 +37,6 @@ from ._batch_cpu_power_flow import _torch
 
 __all__ = ["GridPowerFlow"]
 
-#: where an NROuter_* algorithm keeps `resume_outer_state` in its AC AlgoConfig (after the
-#: Newton's own integer parameters), as LightSimBackend reads it
-_RESUME_OUTER_STATE_IDX = 5
-
 
 class GridPowerFlow:
     """One AC powerflow, differentiable with respect to the grid's injections and
@@ -175,12 +171,8 @@ class GridPowerFlow:
         graph, run again for its backward, would not land where its forward did."""
         if not self._grid.get_algo().supports_outer_loops():
             return
-        config = self._grid.get_ac_algo_config()
-        int_params = list(config.int_params)
-        if len(int_params) > _RESUME_OUTER_STATE_IDX and int_params[_RESUME_OUTER_STATE_IDX] != 0:
-            int_params[_RESUME_OUTER_STATE_IDX] = 0
-            config.int_params = int_params
-            self._grid.set_ac_algo_config(config)
+        if self._grid.get_resume_outer_state():
+            self._grid.set_resume_outer_state(False)
 
     def _as_input(self, x, n_cols, name):
         torch = _torch()
