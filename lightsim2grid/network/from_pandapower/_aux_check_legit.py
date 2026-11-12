@@ -41,6 +41,20 @@ def _aux_check_legit(pp_net):
     if "xward" in pp_net and pp_net.xward.shape[0]:
         raise RuntimeError("Unsupported element found (Extended Ward - \"pp_net.xward\") "
                            "in pandapower network")
+    # not modeled either: refused rather than dropped without a word
+    for table, what in (("asymmetric_sgen", "Asymmetric Static Generator"),
+                        ("svc", "Static Var Compensator"),
+                        ("tcsc", "Thyristor-Controlled Series Capacitor"),
+                        ("ssc", "Static Synchronous Compensator"),
+                        ("vsc", "Voltage Source Converter"),
+                        ("vsc_bipolar", "Bipolar Voltage Source Converter"),
+                        ("vsc_stacked", "Stacked Voltage Source Converter"),
+                        ("bus_dc", "DC bus"),
+                        ("line_dc", "DC line of a DC grid"),
+                        ("load_dc", "DC load"),
+                        ("source_dc", "DC source")):
+        if table in pp_net and pp_net[table].shape[0]:
+            raise RuntimeError(f"Unsupported element found ({what} - \"pp_net.{table}\") in pandapower network")
     # supported now
     # if "dcline" in pp_net and pp_net.dcline.shape[0]:
     #     raise RuntimeError("Unsupported element found (DC Line - \"pp_net.dcline\") "

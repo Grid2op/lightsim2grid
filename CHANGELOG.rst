@@ -380,6 +380,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``p_mw`` and ``q_mvar`` by it).
 - [FIXED] pandapower converter: an ext_grid out of service was still made a slack; a grid with no slack left
   is refused with a clear error.
+- [FIXED] pandapower converter: svc, tcsc, ssc, vsc, asymmetric static generators and DC-grid elements were
+  dropped without a word; they are refused, as motors and wards already were.
 
 
 [1.3.0] 2026-11-03

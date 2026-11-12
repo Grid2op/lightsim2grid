@@ -102,7 +102,25 @@ class TestElementsVsRunpp(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "No slack"):
             ls_model(net)
 
-
+    def test_unsupported_elements_refused(self):
+        """elements the converter does not model were dropped without a word when they were in
+        an svc, tcsc, ssc, vsc or asymmetric_sgen table; they are refused, as the motors, wards,
+        impedances and asymmetric loads already were"""
+        builders = {
+            "svc": lambda n: pp.create_svc(n, 3, x_l_ohm=100., x_cvar_ohm=-50., set_vm_pu=1.,
+                                           thyristor_firing_angle_degree=140., controllable=False),
+            "asymmetric_sgen": lambda n: pp.create_asymmetric_sgen(n, 3, p_a_mw=1., p_b_mw=1., p_c_mw=1.),
+            "tcsc": lambda n: pp.create_tcsc(n, 1, 2, x_l_ohm=1., x_cvar_ohm=-10., set_p_to_mw=5.,
+                                             thyristor_firing_angle_degree=150., controllable=False),
+            "ssc": lambda n: pp.create_ssc(n, 3, r_ohm=0., x_ohm=5., set_vm_pu=1., vm_internal_pu=1.,
+                                           va_internal_degree=0., controllable=False),
+        }
+        for table, build in builders.items():
+            with self.subTest(table):
+                net = make_net()
+                build(net)
+                with self.assertRaisesRegex(RuntimeError, table):
+                    ls_model(net)
 
 
 if __name__ == "__main__":
