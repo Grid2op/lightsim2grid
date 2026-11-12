@@ -376,6 +376,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   The batches inherit it, and ``LightSimBackend`` takes it (``uniform_voltage_start``), kept by ``env.reset()``.
 - [FIXED] pandapower converter: the ``scaling`` of the generators was not read (pandapower multiplies ``p_mw``
   by it).
+- [FIXED] pandapower converter: the ``scaling`` of the storage units was not read (pandapower multiplies
+  ``p_mw`` and ``q_mvar`` by it).
 
 
 [1.3.0] 2026-11-03

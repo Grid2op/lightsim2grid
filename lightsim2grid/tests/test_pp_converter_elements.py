@@ -82,6 +82,12 @@ class TestElementsVsRunpp(unittest.TestCase):
         net.gen["scaling"] = 0.5
         self.assert_same_as_pp(net)
 
+    def test_storage_scaling(self):
+        """pandapower multiplies a storage unit's p_mw and q_mvar by its `scaling`; the converter
+        did not read it"""
+        net = make_net()
+        net.storage["scaling"] = 0.5
+        self.assert_same_as_pp(net)
 
 
 
