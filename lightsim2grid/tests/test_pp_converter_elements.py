@@ -89,6 +89,18 @@ class TestElementsVsRunpp(unittest.TestCase):
         net.storage["scaling"] = 0.5
         self.assert_same_as_pp(net)
 
+    def test_ext_grid_out_of_service(self):
+        """an ext_grid out of service is not a slack for pandapower; the converter made it one"""
+        net = make_net()
+        pp.create_ext_grid(net, 2, vm_pu=1.0, in_service=False)
+        self.assert_same_as_pp(net)
+
+    def test_no_slack_refused(self):
+        """with its only ext_grid out of service and no slack generator, the grid has no slack"""
+        net = make_net()
+        net.ext_grid["in_service"] = False
+        with self.assertRaisesRegex(RuntimeError, "No slack"):
+            ls_model(net)
 
 
 
