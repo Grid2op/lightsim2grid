@@ -122,13 +122,13 @@ class GridPowerFlow:
 
     def forward(self, load_p=None, load_q=None, gen_p=None, sgen_p=None, gen_v=None):
         """Solve; returns complex ``V`` of shape ``(n_bus,)``, per unit, in grid bus
-        numbering -- NaN where the powerflow did not converge.
+        numbering -- NaN where the powerflow did not converge. The inputs::
 
-        load_p, load_q : (n_load,) MW / MVAr     differentiable
-        gen_p          : (n_gen,)  MW            differentiable
-        sgen_p         : (n_sgen,) MW            differentiable
-        gen_v          : (n_gen,)  vm_pu         differentiable; generators on one
-                                                 bus must agree (see BatchCPUPowerFlow)
+            load_p, load_q : (n_load,) MW / MVAr     differentiable
+            gen_p          : (n_gen,)  MW            differentiable
+            sgen_p         : (n_sgen,) MW            differentiable
+            gen_v          : (n_gen,)  vm_pu         differentiable; generators on one
+                                                     bus must agree (see BatchCPUPowerFlow)
         """
         inputs = {"load_p": self._as_input(load_p, self.n_load, "load_p"),
                   "load_q": self._as_input(load_q, self.n_load, "load_q"),
