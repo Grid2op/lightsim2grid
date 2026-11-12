@@ -95,6 +95,20 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             _grid_model.set_keep_vinit_at_group_controlled_buses(keep);
         }
 
+        // The batch's own copy of LSGrid::set_uniform_voltage_start, inherited from the
+        // grid it was built from: whether the Newton of the "n" solve and of every row
+        // seeded from the caller's voltage starts from its magnitudes (see
+        // _publish_uniform_start).
+        bool get_uniform_voltage_start() const noexcept {
+            return _grid_model.get_uniform_voltage_start();
+        }
+        void set_uniform_voltage_start(bool uniform) {
+            if(uniform == get_uniform_voltage_start()) return;
+            // L2: the "n" solve starts from it, and a kept base case was solved with it
+            clear_batch_inputs();
+            _grid_model.set_uniform_voltage_start(uniform);
+        }
+
         // Whether the elements of this batch may be solved concurrently. This is a
         // property of the algorithm, not a user setting: it is false exactly when one
         // element is initialized with the result of the element before it, because
@@ -966,6 +980,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             }
             // check if we init the n-1 cases with results from the n cases or not
             if(conv && _init_from_n_powerflow) Vinit_solver = _base_case_v_solver_;
+            // ... in which case the rows start from a solved state: nothing to lift
+            if(_init_from_n_powerflow) _grid_model.set_ac_uniform_start_vm(RealVect());
             if(use_dc_lazy_v && conv) _init_dc_base_vm(Vinit_solver, nb_total_bus);
 
             // everything init from n-case above
@@ -1049,6 +1065,21 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // never reused, so there is nothing to remember about them.
         bool _grid_cache_valid_ = false;
         bool _batch_inputs_valid_ = false;
+
+        // LSGrid::set_uniform_voltage_start: the caller's magnitudes on this batch's
+        // buses, before any target is written in, published on the grid the Newton
+        // reads them from (its lsgrid_ptr is _grid_model, the worker algorithms' too).
+        // Published once per compute(), before the "n" solve, and read-only while rows
+        // run, so concurrent rows share it. A zero entry (a bus the caller's voltage
+        // does not cover, seeded by the batch) starts where the batch seeded it.
+        void _publish_uniform_start(const Eigen::Ref<const CplxVect> & Vinit, bool ac_solver_used){
+            if(ac_solver_used && get_uniform_voltage_start()){
+                _grid_model.set_ac_uniform_start_vm(
+                    Vinit(active_layout().id_solver_to_me.as_eigen()).array().abs());
+            } else {
+                _grid_model.set_ac_uniform_start_vm(RealVect());
+            }
+        }
 
         // see prepare_solver_input_base and set_keep_vinit_at_group_controlled_buses
         std::vector<int> _group_controlled_solver_buses_;

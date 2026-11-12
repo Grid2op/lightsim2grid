@@ -471,6 +471,23 @@ it before calling ``dc_pf``, not only before ``ac_pf``. The batch
 algorithms inherit the option from the grid they are built from, and have a
 ``keep_vinit_at_group_controlled_buses`` property of their own.
 
+``LSGrid.set_uniform_voltage_start(True)`` goes further, the way OpenLoadFlow's uniform start does:
+the Newton-Raphson starts every bus from the magnitude passed to ``ac_pf``, the held ones included
+(PV buses, the slack). Their targets are still what the solve reaches. The first mismatch and Jacobian
+are evaluated at the magnitudes passed, and the held magnitudes move to their targets within that
+first step, the rest of the grid following through the Jacobian. Later iterations are unchanged. It
+helps when a held bus is tied to another bus by a very low impedance branch: starting only the held
+end at its target puts a large flow on that branch, and the first step can throw the rest of the grid
+out of reach. A warm start, or a start that already converges, is not affected. That first step is
+never damped, and the distributed-slack, voltage-control and HVDC rows do not see the targets move in
+it. Only the Newton-Raphson algorithms (outer loops included) read the option; the FDPF,
+Gauss-Seidel and DC solve as before. The batch algorithms inherit it and have a
+``uniform_voltage_start`` property of their own: their "n" solve and every row starting from the
+voltage passed take the uniform start, a row starting from a solved state (the "n" solve's with
+``init_from_n_powerflow``, the previous row's in a time series) does not.
+With grid2op, set it on the backend rather than on its grid, so that ``env.reset()`` keeps it:
+``LightSimBackend(uniform_voltage_start=True)`` or ``env.backend.set_uniform_voltage_start(True)``.
+
 A generator an outer loop froze at a reactive limit (``LSGrid.set_gen_can_be_pv``, its voltage
 regulation off) is an ordinary PQ machine for the Newton-Raphson. When it would regulate a REMOTE
 bus if released, ``LSGrid.set_hold_frozen_regulators(True)`` keeps it in the voltage-control group

@@ -39,6 +39,7 @@ LSGrid::LSGrid(const LSGrid & other)
 {
     init_vm_pu_ = other.init_vm_pu_;
     keep_vinit_group_controlled_ = other.keep_vinit_group_controlled_;
+    uniform_voltage_start_ = other.uniform_voltage_start_;
     hold_frozen_regulators_ = other.hold_frozen_regulators_;
     sn_mva_ = other.sn_mva_;
     _has_just_been_init = other._has_just_been_init;
@@ -228,7 +229,8 @@ LSGrid::StateRes LSGrid::get_state() const
                                       hold_frozen_regulators_ ? 1 : 0,
                                       dc_slack_on_can_participate_ ? 1 : 0,
                                       reactive_dispatch_olf_ ? 1 : 0,
-                                      _forced_ref_slack_bus_id};
+                                      _forced_ref_slack_bus_id,
+                                      uniform_voltage_start_ ? 1 : 0};
     const auto to_std = [](const RealVect & vect) {
         std::vector<double> res_(static_cast<std::size_t>(vect.size()));
         for (Eigen::Index i = 0; i < vect.size(); ++i) res_[static_cast<std::size_t>(i)] = static_cast<double>(vect(i));
@@ -464,15 +466,18 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // the reference bus against the grid restored above)
     {
         const std::vector<int> & settings = std::get<GRID_SETTINGS_ID>(my_state);
-        if (settings.size() != 5) {
+        // 5 entries: written before set_uniform_voltage_start existed (1.3.0), which
+        // is then off -- the behaviour such a grid was saved with
+        if (settings.size() != 5 && settings.size() != 6) {
             throw std::runtime_error("LSGrid::set_state: the serialized grid settings are inconsistent "
-                                     "(expected 4 flags and the reference slack bus).");
+                                     "(expected 4 flags, the reference slack bus and an optional fifth flag).");
         }
         set_keep_vinit_at_group_controlled_buses(settings[0] != 0);
         set_hold_frozen_regulators(settings[1] != 0);
         set_dc_distribute_slack_on_can_participate(settings[2] != 0);
         set_reactive_dispatch_olf(settings[3] != 0);
         set_reference_slack_bus(settings[4]);
+        set_uniform_voltage_start(settings.size() > 5 && settings[5] != 0);
 
         const auto to_eigen = [](const std::vector<double> & vect) {
             RealVect res_(static_cast<Eigen::Index>(vect.size()));
@@ -1772,6 +1777,14 @@ CplxVect LSGrid::_build_into_cache(
         }
         V(bus_solver_id) = Vinit(bus_me_id.cast_int());
     }
+    // the caller's magnitudes, kept before the targets are written over them below:
+    // what a Newton-Raphson starts from with set_uniform_voltage_start (AC only -- a
+    // DC solve echoes the seeded magnitudes back as its result)
+    if(init_pv_vm_targets && uniform_voltage_start_ && is_ac_family){
+        cache.uniform_start_vm = V.array().abs();
+    } else {
+        cache.uniform_start_vm.resize(0);
+    }
     if(init_pv_vm_targets){
         // The three set_vm calls below are last-writer-wins, so this is where two
         // elements asking one bus for two magnitudes would be silently resolved -- and
@@ -2102,6 +2115,9 @@ CplxVect LSGrid::_build_foreign_cache(
     mine.bus_pv = out.bus_pv;
     mine.bus_pq = out.bus_pq;
     mine.voltage_control = out.voltage_control;
+    // the batches seed every row themselves: a start left over from an own solve of
+    // this grid must not be read during theirs
+    mine.uniform_start_vm.resize(0);
     return V;
 }
 

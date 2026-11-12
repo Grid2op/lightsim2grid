@@ -202,7 +202,7 @@ void bind_batch_shared(py::class_<T> & cls)
                       "It is dropped, and rebuilt on the next compute(), whenever something it is "
                       "made of changes: clear(), change_algorithm(), algo_config, any contingency "
                       "registration, handle_disconnected_grid, nb_thread, init_from_n_powerflow, "
-                      "keep_vinit_at_group_controlled_buses, "
+                      "keep_vinit_at_group_controlled_buses, uniform_voltage_start, "
                       "or a different number of simulations. Every such modifier says so itself -- "
                       "internally each names one of three nested cache levels (the grid, this "
                       "batch's inputs, the results) and dropping one drops the levels below it. "
@@ -234,6 +234,18 @@ void bind_batch_shared(py::class_<T> & cls)
                       "every row, instead of being set to their set-point first.\n\n"
                       "Defaults to the value of the grid this object was built from (see "
                       ":func:`LSGrid.set_keep_vinit_at_group_controlled_buses`, ``False`` unless "
+                      "set there). Changing it drops the kept base case.")
+        .def_property("uniform_voltage_start",
+                      [](const T & self){ return self.get_uniform_voltage_start(); },
+                      [](T & self, bool val){ self.set_uniform_voltage_start(val); },
+                      "Whether the Newton-Raphson of the 'n' solve, and of every row starting from "
+                      "the voltage passed to compute(), starts the buses whose magnitude is held (PV "
+                      "buses, the slack) from that voltage instead of from their targets, as "
+                      "OpenLoadFlow's uniform start does (see :func:`LSGrid.set_uniform_voltage_start`). "
+                      "A row starting from a solved state -- the 'n' solve's with "
+                      "``init_from_n_powerflow``, the previous row's in a time series -- is not "
+                      "affected.\n\n"
+                      "Defaults to the value of the grid this object was built from (``False`` unless "
                       "set there). Changing it drops the kept base case.")
 
         // reverse-mode differentiation (see BatchAdjoint.hpp)

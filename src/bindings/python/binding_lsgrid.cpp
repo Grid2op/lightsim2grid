@@ -164,6 +164,10 @@ void bind_gridmodel(py::module_& m) {
              py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
         .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
              DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
+        .def("set_uniform_voltage_start", &LSGrid::set_uniform_voltage_start,
+             py::arg("uniform"), DocLSGrid::set_uniform_voltage_start.c_str())
+        .def("get_uniform_voltage_start", &LSGrid::get_uniform_voltage_start,
+             DocLSGrid::get_uniform_voltage_start.c_str())
         .def("get_group_controlled_buses",
              [](const LSGrid & self){
                  const std::set<int> buses = self.get_group_controlled_buses();

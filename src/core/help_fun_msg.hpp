@@ -657,6 +657,8 @@ struct LS2G_API DocLSGrid
     static const std::string set_resume_outer_state;
     static const std::string get_resume_outer_state;
     static const std::string get_keep_vinit_at_group_controlled_buses;
+    static const std::string set_uniform_voltage_start;
+    static const std::string get_uniform_voltage_start;
     static const std::string set_hold_frozen_regulators;
     static const std::string get_hold_frozen_regulators;
     static const std::string set_sn_mva;

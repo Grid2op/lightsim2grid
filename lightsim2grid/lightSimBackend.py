@@ -130,6 +130,7 @@ class LightSimBackend(Backend):
                  outer_loops: Optional[Sequence[BaseOuterLoop]] = None,
                  outer_loop_driver_params: Optional[OuterLoopDriverParams] = None,
                  resume_outer_state: Optional[bool] = None,
+                 uniform_voltage_start: Optional[bool] = None,
                  ):
         #: ``int`` maximum number of iteration allowed for the solver
         #: if the solver has not converge after this, it will
@@ -164,6 +165,13 @@ class LightSimBackend(Backend):
             self.__current_outer_driver_params = self._aux_driver_params_to_state(outer_loop_driver_params)
         if resume_outer_state is not None:
             self.__current_resume_outer_state = bool(resume_outer_state)
+
+        #: LSGrid.set_uniform_voltage_start, set with the kwarg `uniform_voltage_start` or
+        #: :func:`set_uniform_voltage_start`. ``None``: never set, the grid keeps its own
+        #: value. Re-applied after `load_grid` and every `env.reset()`, kept by `backend.copy()`.
+        self.__current_uniform_voltage_start = None
+        if uniform_voltage_start is not None:
+            self.__current_uniform_voltage_start = bool(uniform_voltage_start)
 
         #: does the "turned off" generators (including when p=0)
         #: are pv buses
@@ -786,7 +794,9 @@ class LightSimBackend(Backend):
         driver = self.__current_outer_driver_params
         return {"outer_loops": loops_kwarg,
                 "outer_loop_driver_params": None if driver is None else self._aux_driver_params_from_state(driver),
-                "resume_outer_state": self.__current_resume_outer_state}
+                "resume_outer_state": self.__current_resume_outer_state,
+                # not an outer-loop setting, but kept the same way and for the same reason
+                "uniform_voltage_start": self.__current_uniform_voltage_start}
 
     def _aux_update_my_kwargs(self) -> None:
         if hasattr(self, "_my_kwargs"):
@@ -824,6 +834,13 @@ class LightSimBackend(Backend):
             int_params[idx] = value
             config.int_params = int_params
             self._grid.set_ac_algo_config(config)
+
+    def _aux_apply_uniform_voltage_start(self) -> None:
+        """Put the stored `uniform_voltage_start` on the grid (a reset rebuilds the grid
+        from the one taken at load time, which may not have had it)."""
+        if self.__current_uniform_voltage_start is None or self._grid is None:
+            return
+        self._grid.set_uniform_voltage_start(self.__current_uniform_voltage_start)
 
     def _aux_change_algorithm(self, algo_type) -> None:
         self._grid.change_algorithm(algo_type)
@@ -941,6 +958,25 @@ class LightSimBackend(Backend):
         self.__current_resume_outer_state = bool(value)
         self._aux_apply_resume_outer_state()
         self._aux_update_my_kwargs()
+
+    def set_uniform_voltage_start(self, value: bool) -> None:
+        """
+        Start the Newton-Raphson from the voltage passed rather than from the voltage
+        targets at the PV buses and the slack, as OpenLoadFlow's uniform start does (see
+        :func:`lightsim2grid.lightsim2grid_cpp.LSGrid.set_uniform_voltage_start`). It
+        helps a grid where a voltage-controlled bus is tied to another one by a very low
+        impedance branch. Off by default. Remembered: it survives `env.reset()`,
+        `backend.copy()` and a change of algorithm.
+        """
+        self.__current_uniform_voltage_start = bool(value)
+        self._aux_apply_uniform_voltage_start()
+        self._aux_update_my_kwargs()
+
+    def get_uniform_voltage_start(self) -> bool:
+        """See :func:`set_uniform_voltage_start`."""
+        if self._grid is not None:
+            return bool(self._grid.get_uniform_voltage_start())
+        return bool(self.__current_uniform_voltage_start)
 
     def get_resume_outer_state(self) -> bool:
         """See :func:`set_resume_outer_state`."""
@@ -1636,6 +1672,7 @@ class LightSimBackend(Backend):
         # the outer-loop configuration given before the grid was loaded (kwargs or setters)
         self._aux_apply_outer_loops(self._grid)
         self._aux_apply_resume_outer_state()
+        self._aux_apply_uniform_voltage_start()
         self._warn_if_outer_loops_idle()
                     
         # handle multiple busbar per substations
@@ -2535,6 +2572,7 @@ class LightSimBackend(Backend):
         res.__current_outer_loops = copy.deepcopy(self.__current_outer_loops)
         res.__current_outer_driver_params = copy.deepcopy(self.__current_outer_driver_params)
         res.__current_resume_outer_state = self.__current_resume_outer_state
+        res.__current_uniform_voltage_start = self.__current_uniform_voltage_start
         res.__nb_powerline = self.__nb_powerline
         res.__nb_bus_before = self.__nb_bus_before
         res.cst_1 = dt_float(1.0)
@@ -2697,6 +2735,7 @@ class LightSimBackend(Backend):
             self._grid.set_dc_algo_config(self._aux_algo_config_from_state(self.__current_dc_algo_config))
         self._aux_apply_outer_loops(self._grid)
         self._aux_apply_resume_outer_state()
+        self._aux_apply_uniform_voltage_start()
         self._handle_turnedoff_pv()
         self._grid.tell_solver_need_reset()
         self.comp_time = 0.

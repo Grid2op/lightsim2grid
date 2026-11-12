@@ -4048,11 +4048,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const bool resume_from_n = outer && _init_from_n_powerflow;
             if(outer) grid.set_resume_outer_state(false);
 
-            // the batch's seed, on the grid's buses (the caller's Vinit off the batch's layout)
+            // the batch's seed, on the grid's buses (the caller's Vinit off the batch's layout).
+            // With set_uniform_voltage_start, a seed that is not a solved state keeps the
+            // caller's magnitudes, which the grid copy's own ac_pf then starts from.
             const GlobalBusIdVect & solver_to_me = active_layout().id_solver_to_me;
+            const bool uniform = grid.get_uniform_voltage_start() && !_init_from_n_powerflow;
             CplxVect V_seed = Vinit;
             for(size_t s = 0; s < solver_to_me.size(); ++s){
-                V_seed(solver_to_me[s].cast_int()) = Vinit_solver(static_cast<Eigen::Index>(s));
+                const int bus_me = solver_to_me[s].cast_int();
+                const cplx_type v = Vinit_solver(static_cast<Eigen::Index>(s));
+                const real_type vm0 = std::abs(Vinit(bus_me));
+                V_seed(bus_me) = uniform && vm0 > 0. ? std::polar(vm0, std::arg(v)) : v;
             }
             CplxVect V_solver(static_cast<Eigen::Index>(solver_to_me.size()));
 

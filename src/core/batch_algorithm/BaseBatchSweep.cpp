@@ -173,6 +173,12 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_range(
             bool invertible = true;
             _run_one_step(i, algo, control, Ybus, V, sbus_scratch, sw_scratch, ac_solver_used, max_iter, tol_solver,
                           nb_solved, nb_converged, timer_solver, timer_modif_ybus, conv, invertible, outer_view);
+            // a chained row starts from the previous one's solution (TimeSeries, single
+            // threaded): only the first takes the uniform start, if it was not withdrawn
+            // already (init_from_n_powerflow)
+            if(INIT == BatchInitKind::FromPreviousStep && i == step_begin){
+                _grid_model.set_ac_uniform_start_vm(RealVect());
+            }
 
             control.tell_none_changed();
             if(!ac_solver_used) control.tell_recompute_sbus();
@@ -609,6 +615,14 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         _maybe_reserve_union_pattern(ac_solver_used);
     }
     _maybe_seed_extra_buses(Vinit_solver);
+    // LSGrid::set_uniform_voltage_start: what the "n" solve and the rows seeded from
+    // Vinit start from, withdrawn when this call returns, however it does -- nothing
+    // solved on this batch's grid afterwards started from this Vinit
+    _publish_uniform_start(Vinit, ac_solver_used);
+    struct UniformStartWithdrawal {
+        LSGrid & grid;
+        ~UniformStartWithdrawal() { grid.set_ac_uniform_start_vm(RealVect()); }
+    } uniform_start_withdrawal{_grid_model};
 
     // ---- L2: what is built for THIS batch from that grid ---------------------------
     if(!_batch_inputs_valid_){

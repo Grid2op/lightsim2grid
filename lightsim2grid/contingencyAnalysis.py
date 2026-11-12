@@ -251,6 +251,24 @@ class ContingencyAnalysis(object):
         self.computer.keep_vinit_at_group_controlled_buses = bool(val)
 
     @property
+    def uniform_voltage_start(self):
+        """Whether the Newton-Raphson starts the buses whose magnitude is held (PV buses, the
+        slack) from the voltage passed to compute() rather than from their targets, as
+        OpenLoadFlow's uniform start does, in the "n" solve and in every row starting from that
+        voltage (not in a row starting from a solved state). The solution is the same. Defaults
+        to the grid's own setting (see
+        :func:`lightsim2grid.lightsim2grid_cpp.LSGrid.set_uniform_voltage_start`), ``False``
+        unless set there.
+        """
+        return self.computer.uniform_voltage_start
+
+    @uniform_voltage_start.setter
+    def uniform_voltage_start(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `uniform_voltage_start` attribute must be a boolean.")
+        self.computer.uniform_voltage_start = bool(val)
+
+    @property
     def handle_disconnected_grid(self):
         """Whether a contingency that splits the grid into several connected components is
         simulated on its largest component instead of being skipped. Default: ``False``,
