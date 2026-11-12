@@ -255,5 +255,57 @@ class TestGridPowerFlowParkedAtTheLastCheck(unittest.TestCase):
             self.assertAlmostEqual(gen_p.grad[k].item(), fd, places=6,
                                    msg=f"gen_p[{k}]: adjoint {gen_p.grad[k].item()} vs fd {fd}")
 
+
+@unittest.skipUnless(TORCH_AVAILABLE and PP_AVAILABLE, "needs pytorch and pandapower")
+class TestGridPowerFlowKeepsTheSlack(unittest.TestCase):
+    """PR #298 (review of the 1.3.1 release): a forward wrote every input back on its grid with
+    the grid's own setters, the ones left at None included, and `LSGrid.change_p_gen` puts a
+    generator flagged "can participate in the slack" back into the slack. A grid whose
+    generators are flagged without being slack participants (what `init_from_pypowsybl`
+    builds, and `init_from_pandapower(slack_weight_can_participate=True)`) was then solved
+    with other slack participants than its own `ac_pf`.
+
+    Checks that a forward given nothing but the grid's own loads lands on `ac_pf`'s voltages,
+    and leaves the slack participants of its grid as they were."""
+
+    TOL = 1e-10
+
+    @staticmethod
+    def _grid(algo):
+        import pandapower.networks as pn
+        from lightsim2grid.network import init_from_pandapower
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(pn.case14())
+        # every generator out of the slack can share it, none of them does
+        flags = [not gen.is_slack for gen in grid.get_generators()]
+        grid.set_gen_can_participate_slack(flags, np.where(flags, 1., 0.))
+        grid.change_algorithm(algo)
+        return grid
+
+    def _check(self, algo):
+        from lightsim2grid.differentiable import GridPowerFlow
+        warnings.filterwarnings("ignore")
+        grid = self._grid(algo)
+        slack = [gen.is_slack for gen in grid.get_generators()]
+        self.assertTrue(any(gen.can_participate_slack_weight > 0. and not gen.is_slack
+                            for gen in grid.get_generators()), "the grid does not show the case")
+        v_init = np.ones(grid.total_bus(), dtype=complex)
+        ref = np.asarray(grid.copy().ac_pf(v_init, 30, self.TOL))
+        self.assertEqual(ref.shape[0], grid.total_bus())
+
+        pf = GridPowerFlow(grid, tol=self.TOL, max_iter=30)
+        V = pf(load_p=torch.tensor(np.asarray(grid.get_load_target_p()).copy()))
+        self.assertTrue(pf.converged())
+        self.assertEqual([gen.is_slack for gen in pf.grid.get_generators()], slack)
+        np.testing.assert_allclose(V.numpy(), ref, rtol=0., atol=1e-8)
+
+    def test_newton_sharing_the_slack(self):
+        self._check("NR_SparseLU")
+
+    def test_outer_loops(self):
+        self._check("NROuter_SparseLU")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -388,6 +388,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   refuses, and where it differs from ``pp.runpp``.
 - [FIXED] pandapower converter: a grid with a tap controller could not be converted with pandapower 2,
   which names the controller's transformer ``tid`` / ``trafotype``.
+- [FIXED] ``GridPowerFlow``: a forward put the generators flagged "can participate in the slack" into the
+  slack of its grid, and solved another system than ``ac_pf``.
+- [ADDED] ``LSGrid.change_p_gen_keep_slack``: ``change_p_gen`` without putting the generator back into the slack.
 
 
 [1.3.0] 2026-11-03

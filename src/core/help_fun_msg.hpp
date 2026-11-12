@@ -742,6 +742,7 @@ struct LS2G_API DocLSGrid
     static const std::string change_p_load;
     static const std::string change_q_load;
     static const std::string change_p_gen;
+    static const std::string change_p_gen_keep_slack;
     static const std::string change_v_gen;
     static const std::string change_p_shunt;
     static const std::string change_q_shunt;

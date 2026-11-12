@@ -515,6 +515,7 @@ void bind_gridmodel(py::module_& m) {
         .def("change_bus_gen", &LSGrid::change_bus_gen_python, DocLSGrid::change_bus_gen.c_str())
         .def("get_bus_gen", &LSGrid::get_bus_gen, DocLSGrid::get_bus_gen.c_str())
         .def("change_p_gen", &LSGrid::change_p_gen, DocLSGrid::change_p_gen.c_str())
+        .def("change_p_gen_keep_slack", &LSGrid::change_p_gen_keep_slack, DocLSGrid::change_p_gen_keep_slack.c_str())
         .def("change_v_gen", &LSGrid::change_v_gen, DocLSGrid::change_v_gen.c_str())
         .def("set_gen_regulated_bus", &LSGrid::set_gen_regulated_bus, DocLSGrid::set_gen_regulated_bus.c_str())
         .def("set_gen_reactive_key", &LSGrid::set_gen_reactive_key, DocLSGrid::set_gen_reactive_key.c_str())

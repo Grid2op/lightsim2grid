@@ -82,8 +82,11 @@ class GridPowerFlow:
             "sgen_p": np.array([el.target_p_mw for el in sgens], dtype=np.float64),
             "gen_v": np.array([el.target_vm_pu for el in gens], dtype=np.float64),
         }
+        # gen_p: the set-point alone. LSGrid.change_p_gen also puts a generator that can
+        # participate in the slack into it, and every input is written at every forward
+        # (see _write_inputs): the grid solved would not be the one given
         self._setters = {"load_p": g.change_p_load, "load_q": g.change_q_load,
-                         "gen_p": g.change_p_gen, "sgen_p": g.change_p_sgen,
+                         "gen_p": g.change_p_gen_keep_slack, "sgen_p": g.change_p_sgen,
                          "gen_v": g.change_v_gen}
 
         lines, trafos = g.get_lines(), g.get_trafos()

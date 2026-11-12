@@ -7261,6 +7261,21 @@ const std::string DocLSGrid::change_p_gen = R"mydelimiter(
     :attr:`~lightsim2grid.elements.GenInfo.target_p_mw`), see :func:`change_p_load` for the
     "never throws" note.
 
+    A generator flagged "can participate in the slack" that is not a slack participant becomes
+    one when its setpoint stands within its active limits (see
+    :func:`set_gen_can_participate_slack`). :func:`change_p_gen_keep_slack` changes the
+    setpoint alone.
+
+)mydelimiter";
+
+const std::string DocLSGrid::change_p_gen_keep_slack = R"mydelimiter(
+    Change generator ``gen_id``'s active power setpoint as :func:`change_p_gen` does, and
+    leave the slack participants as they are: a generator flagged "can participate in the
+    slack" stays out of it. For a caller that changes an injection and must keep solving the
+    same system, as :class:`lightsim2grid.differentiable.GridPowerFlow` does.
+
+    .. versionadded:: 1.3.1
+
 )mydelimiter";
 
 // (change_v_storage is defined next to init_storages_full)

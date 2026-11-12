@@ -1964,6 +1964,12 @@ class LS2G_API LSGrid final
             generators_.change_p_nothrow(gen_id, new_p, algo_controler_);
             generators_.rejoin_slackbus_if_able(gen_id, algo_controler_);
         }
+        // change_p_gen without its second half: the set-point alone, the slack participants
+        // left as they are. For a caller writing an injection that must not change which
+        // system is solved (GridPowerFlow, whose forward is a function of its inputs only).
+        void change_p_gen_keep_slack(int gen_id, real_type new_p) {
+            generators_.change_p_nothrow(gen_id, new_p, algo_controler_);
+        }
         void change_q_gen(int gen_id, real_type new_q) {generators_.change_q_nothrow(gen_id, new_q, algo_controler_); }
         void change_v_gen(int gen_id, real_type new_v_pu) {generators_.change_v_nothrow(gen_id, new_v_pu, algo_controler_); }
         [[nodiscard]] int get_bus_gen(int gen_id) const {return generators_.get_bus(gen_id).cast_int();}
