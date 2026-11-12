@@ -374,6 +374,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``LSGrid.set_uniform_voltage_start``, off by default: the Newton-Raphson starts held buses from the
   voltage passed, as OpenLoadFlow's uniform start does. Fixes a divergence next to a very low impedance branch (#284).
   The batches inherit it, and ``LightSimBackend`` takes it (``uniform_voltage_start``), kept by ``env.reset()``.
+- [FIXED] pandapower converter: the ``scaling`` of the generators was not read (pandapower multiplies ``p_mw``
+  by it).
 
 
 [1.3.0] 2026-11-03

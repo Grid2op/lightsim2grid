@@ -12,6 +12,7 @@ import numpy as np
 
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
 from ._my_const import ALLOWED_PP_ORIG_FILE
+from ._aux_add_gen import _gen_p_mw
 
 
 def _aux_add_slack(
@@ -117,9 +118,10 @@ def _aux_add_slack(
                 slack_coeff[:] = 1.0
                 
             slack_gen_ids = np.arange(nb_slack) + pp_net.gen.shape[0]
-            slack_contrib = -1.0 * (np.sum(pp_net.gen["p_mw"]) - np.sum(pp_net.load["p_mw"]) ) * slack_coeff_norm
+            gen_p_mw = _gen_p_mw(pp_net)
+            slack_contrib = -1.0 * (np.sum(gen_p_mw) - np.sum(pp_net.load["p_mw"]) ) * slack_coeff_norm
             vm_pu = 1.0 * pp_net.ext_grid["vm_pu"].to_numpy()
-            gen_p = np.concatenate((pp_net.gen["p_mw"].to_numpy(), slack_contrib))
+            gen_p = np.concatenate((gen_p_mw, slack_contrib))
             gen_v = np.concatenate((pp_net.gen["vm_pu"].to_numpy(), vm_pu))
             gen_bus = np.concatenate((pp_bus_to_ls(pp_net.gen["bus"].to_numpy(), pp_to_ls), slack_bus_ids))
             gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].to_numpy(), [-999999. for _ in range(nb_slack)]))
