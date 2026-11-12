@@ -1131,8 +1131,8 @@ void bind_batch(py::module_& m) {
              "every factorization and solve pays for it.\n\n"
              "A generator that is a controller of a voltage-control group leaves its group for "
              "the step, the others keep regulating. A step taking out every controller of a group "
-             "regulating a slack bus is left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see get_batch_unsupported_reasons): remote "
-             "the batch cannot free that bus' magnitude.")
+             "regulating a slack bus is left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see "
+             "get_batch_unsupported_reasons): the batch cannot free that bus' magnitude.")
         .def("set_contingency_shunts", &ScenarioSweep::set_contingency_shunts<>, py::arg("mask"),
              "Per-step shunt contingency mask, shape (n_simul, n_shunt), dtype bool. "
              "True means 'disconnect this shunt for this simulation'. A shunt is an "
