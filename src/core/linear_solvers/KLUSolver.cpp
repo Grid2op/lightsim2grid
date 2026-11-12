@@ -7,7 +7,7 @@
 // This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
 #include "KLUSolver.hpp"
-#include "KLUStaticPivotSolver.hpp"  // constrained_amd_order
+#include "KLUStaticPivotSolver.hpp"  // constrained_order
 
 #include <iostream>
 
@@ -34,13 +34,13 @@ ErrorType KLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
     klu_defaults(&common_);
     auto * Ap = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr());
     auto * Ai = const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr());
-    if(ordering_constraints_.empty()){
+    if(ordering_constraints_.empty() && fill_reducing_ordering_ == FillReducingOrdering::AMD){
         symbolic_.reset(klu_analyze(n, Ap, Ai, &common_));
     } else {
         // the order is the one given: BTF's strongly connected components would reorder it
         common_.btf = 0;
         std::vector<int> perm;
-        if(!constrained_amd_order(static_cast<int>(n), Ap, Ai, ordering_constraints_, perm)) return ErrorType::SolverAnalyze;
+        if(!constrained_order(static_cast<int>(n), Ap, Ai, ordering_constraints_, fill_reducing_ordering_, perm)) return ErrorType::SolverAnalyze;
         symbolic_.reset(klu_analyze_given(n, Ap, Ai, perm.data(), perm.data(), &common_));
     }
     if(common_.status != KLU_OK) return ErrorType::SolverAnalyze;
@@ -64,6 +64,7 @@ ErrorType KLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
 }
 
 ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
+    last_rgrowth_ = std::numeric_limits<real_type>::quiet_NaN();
     // J is const here, but `klu_refactor` signature expects arrays and not const arrays
     // so I const_cast
     int ok = klu_refactor(const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.outerIndexPtr()),
@@ -79,6 +80,7 @@ ErrorType KLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
                          const_cast<Eigen::SparseMatrix<real_type>::StorageIndex *>(J.innerIndexPtr()),
                          const_cast<real_type*>(J.valuePtr()),
                          symbolic_.get(), numeric_.get(), &common_);
+        if(ok == 1) last_rgrowth_ = common_.rgrowth;
         if(ok != 1 || !(common_.rgrowth >= rgrowth_threshold_)) return ErrorType::SolverReFactor;
     }
     if(guard_pivot_growth_ && rcond_ref_ > 0.){

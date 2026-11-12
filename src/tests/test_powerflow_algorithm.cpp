@@ -23,6 +23,7 @@
 // are built by hand through the init_* API, like test_lsgrid.cpp: no python,
 // no grid2op, no external file. C++14 only (project policy).
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <set>
@@ -34,6 +35,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "LSGrid.hpp"
+#include "Solvers.hpp"
 #include "powerflow_algorithm/NRSystem.hpp"
 
 using Catch::Approx;
@@ -569,6 +571,122 @@ TEST_CASE("bus masking replaces the masked rows by the identity", "[NRSystem][ma
 }
 
 
+TEST_CASE("the masked rows stay the identity in a J rebuilt with another pattern", "[NRSystem][mask]")
+{
+    // a driver that rebuilds J in the middle of a solve (a PV bus turned PQ) while the mask
+    // set before it still holds: the identity goes to the rows of the new pattern
+    LSGrid grid = make_radial_skeleton(5);
+    add_generators(grid, {0, 2}, {1.02, 1.01}, {2000., 2000.});
+    grid.add_gen_slackbus(0, 1.);
+    grid.tell_solver_need_reset();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    REQUIRE(in.pv.size() == 1);
+    const int masked_bus = in.pq(in.pq.size() - 1);
+
+    MultiSlackNRSystem sys;
+    sys.set_masked_buses(std::vector<int>{masked_bus});
+    build_system(sys, in, &grid);
+    const Eigen::Index dim_before = sys.J().rows();
+
+    // the PV bus becomes PQ: one more row and column, the masked bus' rows move
+    IntVect pv_after(0);
+    IntVect pq_after(in.pq.size() + 1);
+    pq_after << in.pv(0), in.pq;
+    sys.update_state(&grid, in.Ybus, in.V, in.Sbus, in.slack_weights);
+    sys.init_topology(in.slack_ids, in.slack_weights, pv_after, pq_after);
+    sys.build_J_sparsity();
+    sys.fill_internal_variables();
+    sys.fill_J();
+    const SpMatReal J = sys.J();
+    REQUIRE(J.rows() == dim_before + 1);
+
+    const int p_row = sys.p_to_J_row()[masked_bus];
+    const int q_row = sys.q_to_J_row()[masked_bus];
+    const int theta_col = sys.theta_to_J_col()[masked_bus];
+    const int vm_col = sys.vm_to_J_col()[masked_bus];
+    REQUIRE(p_row >= 0);
+    REQUIRE(q_row >= 0);
+    int nb_ones = 0;
+    for (int col = 0; col < static_cast<int>(J.cols()); ++col) {
+        for (int p = J.outerIndexPtr()[col]; p < J.outerIndexPtr()[col + 1]; ++p) {
+            const int row = J.innerIndexPtr()[p];
+            const bool is_one = ((row == p_row) && (col == theta_col)) || ((row == q_row) && (col == vm_col));
+            INFO("entry (" << row << ", " << col << ")");
+            if (is_one) {
+                CHECK(J.valuePtr()[p] == 1.);
+                ++nb_ones;
+            } else if (row == p_row || row == q_row) {
+                CHECK(J.valuePtr()[p] == 0.);
+            }
+        }
+    }
+    CHECK(nb_ones == 2);
+}
+
+TEST_CASE("the masked and pinned rows follow every change of their sets, the same set given again included", "[NRSystem][mask]")
+{
+    // an outer-loop driver hands its pinned buses over before every Newton, most of the time
+    // unchanged: J must hold the identity on exactly the rows of the current sets, and the
+    // Jacobian's own values everywhere else
+    LSGrid grid = make_radial_grid(5);
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    REQUIRE(in.pq.size() >= 2);
+    MultiSlackNRSystem plain;
+    build_system(plain, in, &grid);
+    const std::vector<real_type> values_plain = values_of(SpMatReal(plain.J()));
+
+    MultiSlackNRSystem sys;
+    build_system(sys, in, &grid);
+    const int bus_a = in.pq(in.pq.size() - 1);
+    const int bus_b = in.pq(in.pq.size() - 2);
+
+    // J against what the sets say: the identity on the rows of the masked buses (P and Q)
+    // and of the pinned ones (Q only), plain's values on every other row
+    auto check_J = [&](const std::vector<int> & masked, const std::vector<int> & pinned){
+        const SpMatReal J = sys.J();
+        std::vector<int> one_col(J.rows(), -2);  // -2: a row left alone
+        for (int b : masked) {
+            one_col[sys.p_to_J_row()[b]] = sys.theta_to_J_col()[b];
+            one_col[sys.q_to_J_row()[b]] = sys.vm_to_J_col()[b];
+        }
+        for (int b : pinned) one_col[sys.q_to_J_row()[b]] = sys.vm_to_J_col()[b];
+        for (int col = 0; col < static_cast<int>(J.cols()); ++col) {
+            for (int p = J.outerIndexPtr()[col]; p < J.outerIndexPtr()[col + 1]; ++p) {
+                const int row = J.innerIndexPtr()[p];
+                INFO("entry (" << row << ", " << col << ")");
+                if (one_col[row] == -2) CHECK(J.valuePtr()[p] == values_plain[p]);
+                else CHECK(J.valuePtr()[p] == (one_col[row] == col ? 1. : 0.));
+            }
+        }
+    };
+    auto refill = [&](){ sys.fill_internal_variables(); sys.fill_J(); };
+
+    sys.set_masked_buses({bus_a});
+    refill();
+    check_J({bus_a}, {});
+    sys.set_masked_buses({bus_a});  // the same set again
+    refill();
+    check_J({bus_a}, {});
+    sys.set_masked_buses({bus_b});  // another one: bus_a's rows get their values back
+    refill();
+    check_J({bus_b}, {});
+
+    sys.set_pv_pinned_buses({bus_a});
+    refill();
+    check_J({bus_b}, {bus_a});
+    sys.set_pv_pinned_buses({bus_a});  // the same set again
+    refill();
+    check_J({bus_b}, {bus_a});
+    sys.set_pv_pinned_buses({bus_b});  // the bus masked already: masking wins, same rows
+    refill();
+    check_J({bus_b}, {bus_b});
+
+    sys.set_masked_buses({});
+    sys.set_pv_pinned_buses({});
+    refill();
+    check_J({}, {});
+}
+
 // ===========================================================================
 // MultiSlack
 // ===========================================================================
@@ -668,6 +786,99 @@ TEST_CASE("the initial slack_absorbed is read off the residual, not off sum(Sbus
     // correcting in place is an optimisation, not a different answer
     const RealVect F_again = sys.mismatch();
     CHECK((F - F_again).cwiseAbs().maxCoeff() < 1e-12);
+}
+
+namespace {
+
+// the distributed-slack grid with bus 0 alone in the slack set: bus 1 is an ordinary PV bus
+LSGrid make_single_slack_twin(int n_bus = 4)
+{
+    LSGrid grid = make_radial_skeleton(n_bus);
+    add_generators(grid, {0, 1}, {1.02, 1.02}, {2000., 2000.});
+    grid.add_gen_slackbus(0, 1.);
+    return grid;
+}
+
+RealVect two_bus_weights(int nb_bus, real_type w0, real_type w1)
+{
+    RealVect w = RealVect::Zero(nb_bus);
+    w(0) = w0;
+    w(1) = w1;
+    return w;
+}
+
+}  // anonymous namespace
+
+TEST_CASE("MultiSlack shares on participant buses that keep their own rows", "[NRSystem][slack]")
+{
+    // the reference: buses 0 and 1 both in the slack set, 70 / 30 %
+    LSGrid ref = make_dist_slack_grid();
+    const SolverInputs in_ref = solved_inputs(ref, AlgorithmType::NR_SparseLU);
+    const real_type sa_ref = ref.get_slack_absorbed_solver();
+
+    // the same grid with bus 0 the only slack bus: bus 1 stays a PV bus of the Newton, and
+    // takes its 30 % as a participant, through its own P row. Every solve starts from the
+    // twin's solution, which holds the generators' magnitudes (LSGrid seeds them, not NRAlgo)
+    LSGrid grid = make_single_slack_twin();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    REQUIRE(in.slack_ids.size() == 1);
+    REQUIRE(std::find(in.pv.data(), in.pv.data() + in.pv.size(), 1) != in.pv.data() + in.pv.size());
+
+    ls2g::NR_SparseLU algo;
+    algo.system().set_slack_participant_buses({1});
+    const RealVect w = two_bus_weights(in.nb_bus(), 0.7, 0.3);
+    REQUIRE(algo.compute_pf(in.Ybus, in.V, in.Sbus, in.slack_ids, w, in.pv, in.pq, 30, 1e-10));
+    CHECK((algo.get_V() - in_ref.V).cwiseAbs().maxCoeff() < 1e-9);
+    CHECK(algo.get_slack_absorbed() == Approx(sa_ref).margin(1e-9));
+
+    // bus 1 owns one P row and one theta column (Base's): the participant adds no
+    // equation, only its entry in the slack_absorbed column, worth its weight
+    const auto & sys = algo.system();
+    check_system_invariants(sys, in.nb_bus());
+    CHECK(static_cast<int>(sys.total_state_variables()) == expected_dim(in, grid, 0, true));
+    const SpMatReal J = sys.J();
+    const int slack_col = sys.slack_col();
+    REQUIRE(slack_col >= 0);
+    std::vector<int> rows;
+    for (int p = J.outerIndexPtr()[slack_col]; p < J.outerIndexPtr()[slack_col + 1]; ++p) {
+        rows.push_back(J.innerIndexPtr()[p]);
+    }
+    CHECK(rows.size() == 2);
+    CHECK(std::find(rows.begin(), rows.end(), sys.p_to_J_row()[0]) != rows.end());
+    CHECK(std::find(rows.begin(), rows.end(), sys.p_to_J_row()[1]) != rows.end());
+}
+
+TEST_CASE("participant weights change by value, without a new analysis", "[NRSystem][slack]")
+{
+    LSGrid grid = make_single_slack_twin();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+
+    ls2g::NR_SparseLU algo;
+    algo.system().set_slack_participant_buses({1});
+    REQUIRE(algo.compute_pf(in.Ybus, in.V, in.Sbus, in.slack_ids,
+                            two_bus_weights(in.nb_bus(), 0.7, 0.3), in.pv, in.pq, 30, 1e-10));
+
+    // the next solve: same topology, the weights set on the system after the setup
+    ls2g::AlgoControl nothing;
+    nothing.tell_none_changed();
+    algo.tell_solver_control(nothing);
+    bool need_init = false;
+    REQUIRE(algo.setup(in.Ybus, in.V, in.Sbus, in.slack_ids,
+                       two_bus_weights(in.nb_bus(), 0.7, 0.3), in.pv, in.pq, need_init, []() {}));
+    CHECK_FALSE(need_init);
+    algo.system().set_slack_weights(two_bus_weights(in.nb_bus(), 0., 1.));
+    REQUIRE(algo.newton(30, 1e-10, need_init));
+    algo.finalize();  // the results (get_V and friends) of that newton
+    CHECK(algo.get_nb_iter() > 0);
+    CHECK(algo.get_linear_solver_stats().nb_analyze == 1);
+
+    // the same as a fresh solve where bus 1 takes everything
+    ls2g::NR_SparseLU fresh;
+    fresh.system().set_slack_participant_buses({1});
+    REQUIRE(fresh.compute_pf(in.Ybus, in.V, in.Sbus, in.slack_ids,
+                             two_bus_weights(in.nb_bus(), 0., 1.), in.pv, in.pq, 30, 1e-10));
+    CHECK((algo.get_V() - fresh.get_V()).cwiseAbs().maxCoeff() < 1e-9);
+    CHECK(algo.get_slack_absorbed() == Approx(fresh.get_slack_absorbed()).margin(1e-9));
 }
 
 TEST_CASE("calibrating the slack is a no-op without the MultiSlack extension", "[NRSystem][slack]")
@@ -1118,4 +1329,78 @@ TEST_CASE("a grid exercising every NR extension at once stays consistent", "[NRS
     build_system(sys, in, &grid);
     CHECK(pattern_of(SpMatReal(sys.J())) == pattern);
     CHECK(values_of(SpMatReal(sys.J())) == values);
+}
+
+TEST_CASE("a requested factorize replaces the refactorize, the analysis kept", "[NRSystem]")
+{
+    LSGrid grid = make_radial_grid(4);
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+    const CplxVect V0 = flat_start(grid);
+
+    ls2g::NR_SparseLU algo;
+    REQUIRE(algo.compute_pf(in.Ybus, V0, in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, 30, 1e-10));
+    const ls2g::LinearSolverStats first = algo.get_linear_solver_stats();
+    REQUIRE(first.nb_analyze == 1);
+
+    // the same topology again: no analysis; the first iteration factorizes, as asked
+    ls2g::AlgoControl nothing;
+    nothing.tell_none_changed();
+    algo.tell_solver_control(nothing);
+    bool need_init = false;
+    REQUIRE(algo.setup(in.Ybus, V0, in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, need_init, []() {}));
+    CHECK_FALSE(need_init);
+    algo.request_factorize();
+    REQUIRE(algo.newton(30, 1e-10, need_init));
+    const ls2g::LinearSolverStats asked = algo.get_linear_solver_stats();
+    CHECK(asked.nb_analyze == 1);
+    CHECK(asked.nb_factorize == first.nb_factorize + 1);
+    const auto refactorized = asked.nb_refactorize - first.nb_refactorize;  // the later iterations
+
+    // once only: the next newton refactorizes on its first iteration again
+    algo.tell_solver_control(nothing);
+    REQUIRE(algo.setup(in.Ybus, V0, in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, need_init, []() {}));
+    REQUIRE(algo.newton(30, 1e-10, need_init));
+    const ls2g::LinearSolverStats after = algo.get_linear_solver_stats();
+    CHECK(after.nb_analyze == 1);
+    CHECK(after.nb_factorize == asked.nb_factorize);
+    CHECK(after.nb_refactorize - asked.nb_refactorize == refactorized + 1);
+}
+
+TEST_CASE("the controllers' reactive outputs handed back survive a new setup", "[NRSystem][vctrl]")
+{
+    // two generators remotely regulating bus 3: one group, two reactive-output unknowns
+    LSGrid grid = make_radial_skeleton(4);
+    add_generators(grid, {0, 1, 2}, {1.02, 1.04, 1.04}, {2000., 2000., 500.});
+    grid.add_gen_slackbus(0, 1.);
+    grid.set_gen_regulated_bus(1, 3);
+    grid.set_gen_regulated_bus(2, 3);
+    grid.tell_solver_need_reset();
+    const SolverInputs in = solved_inputs(grid, AlgorithmType::NR_SparseLU);
+
+    ls2g::NR_SparseLU algo;
+    algo.set_lsgrid(&grid);
+    REQUIRE(algo.compute_pf(in.Ybus, flat_start(grid), in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, 30, 1e-10));
+    const RealVect q = algo.system().controller_q();
+    REQUIRE(q.size() == 2);
+    REQUIRE(q.cwiseAbs().maxCoeff() > 1e-6);
+    const CplxVect V = algo.get_V();
+
+    // a new setup at the converged voltages restarts the outputs from the plan...
+    ls2g::AlgoControl nothing;
+    nothing.tell_none_changed();
+    algo.tell_solver_control(nothing);
+    bool need_init = false;
+    REQUIRE(algo.setup(in.Ybus, V, in.Sbus, in.slack_ids, in.slack_weights, in.pv, in.pq, need_init, []() {}));
+    CHECK((RealVect(algo.system().controller_q()) - q).cwiseAbs().maxCoeff() > 1e-6);
+
+    // ... and the ones handed back make it the converged state again: no iteration
+    algo.system().set_controller_q(q);
+    CHECK((RealVect(algo.system().controller_q()) - q).cwiseAbs().maxCoeff() == 0.);
+    REQUIRE(algo.newton(30, 1e-8, need_init));
+    algo.finalize();
+    CHECK(algo.get_nb_iter() == 0);
+
+    // a vector of another size is ignored
+    algo.system().set_controller_q(RealVect::Zero(3));
+    CHECK((RealVect(algo.system().controller_q()) - q).cwiseAbs().maxCoeff() == 0.);
 }

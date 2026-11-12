@@ -165,6 +165,24 @@ class ScenarioSweep:
         self.computer.keep_vinit_at_group_controlled_buses = bool(val)
 
     @property
+    def uniform_voltage_start(self):
+        """Whether the Newton-Raphson starts the buses whose magnitude is held (PV buses, the
+        slack) from the voltage passed to compute() rather than from their targets, as
+        OpenLoadFlow's uniform start does, in the "n" solve and in every row starting from that
+        voltage (not in a row starting from a solved state). The solution is the same. Defaults
+        to the grid's own setting (see
+        :func:`lightsim2grid.lightsim2grid_cpp.LSGrid.set_uniform_voltage_start`), ``False``
+        unless set there.
+        """
+        return self.computer.uniform_voltage_start
+
+    @uniform_voltage_start.setter
+    def uniform_voltage_start(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `uniform_voltage_start` attribute must be a boolean.")
+        self.computer.uniform_voltage_start = bool(val)
+
+    @property
     def handle_disconnected_grid(self):
         """Whether a row whose contingency splits the grid into several connected
         components is simulated on its largest component instead of being skipped.
@@ -201,7 +219,8 @@ class ScenarioSweep:
         clamp anything. Needs an algorithm with a distributed slack: ``compute`` refuses it
         with a single-slack one (``NRSing_*``, Gauss-Seidel). With outer loops (``NROuter_*``),
         the ``DistributedSlack`` loop shares the loss itself before the row's first solve, from
-        the targets in force, as OpenLoadFlow's security analysis does. Same name/semantics as
+        the targets in force, and what is left afterwards from those same targets (the result is
+        the whole imbalance shared at once), as OpenLoadFlow's security analysis does. Same name/semantics as
         :attr:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.redistribute_slack`.
         """
         return self.computer.redistribute_slack
@@ -471,10 +490,11 @@ class ScenarioSweep:
         merely masks the equation of the buses that are still PV. The whole sweep keeps
         running on a single analysis, as it did before this axis existed.
 
-        Only generators regulating their **own** bus are supported for now.
-        :func:`compute` raises if the mask names a generator that regulates a remote
-        bus, or one whose bus a control group holds (a remote generator, an SVC or an
-        HVDC converter station).
+        A generator that is a controller of a voltage-control group (it regulates a remote
+        bus, or a bus such a group holds) leaves its group for the step, the others keep
+        regulating. A step taking out every controller of a group regulating a slack bus is
+        left out of the batch: ``LimitViolationType.BATCH_UNSUPPORTED``, with the reason in
+        ``get_batch_unsupported_reasons()``.
         """
         mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
         if mask.shape[1] != self.grid2op_env.n_gen:
@@ -517,6 +537,59 @@ class ScenarioSweep:
                                f"differs from the number of columns of the mask ({mask.shape[1]}).")
         self.computer.set_contingency_loads(mask)
         self.__computed = False
+
+    def _set_element_mask(self, setter, mask, container, kind):
+        """internal: a per-step mask of the elements of one kind of the grid"""
+        mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
+        if mask.shape[1] != len(container):
+            raise RuntimeError(f"The number of {kind} on the grid ({len(container)}) "
+                               f"differs from the number of columns of the mask ({mask.shape[1]}).")
+        getattr(self.computer, setter)(mask)
+        self.__computed = False
+
+    def set_contingency_sgens(self, mask):
+        """Per-step static generator contingency mask, shape ``(n_simul, n_sgen)``, dtype bool.
+        ``True`` means "disconnect this static generator for this simulation".
+
+        An injection only: the step's active power (:func:`modify_sgen_p`, or the grid's) and
+        the reactive setpoint leave the injection, and the distributed slack makes up the balance.
+        """
+        self._set_element_mask("set_contingency_sgens", mask, self.grid2op_env.backend._grid.get_static_generators(),
+                               "static generators")
+
+    def set_contingency_storages(self, mask):
+        """Per-step storage unit contingency mask, shape ``(n_simul, n_storage)``, dtype bool.
+        ``True`` means "disconnect this storage unit for this simulation".
+
+        It leaves the step's injection and its share of the distributed slack; the last
+        controller of a bus turns that bus PQ for the step. A step tripping one on a bus a
+        control group holds is left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``),
+        and a step naming a unit in both this mask and its topological action is refused.
+        """
+        self._set_element_mask("set_contingency_storages", mask, self.grid2op_env.backend._grid.get_storages(),
+                               "storage units")
+
+    def set_contingency_svcs(self, mask):
+        """Per-step static var compensator contingency mask, shape ``(n_simul, n_svc)``, dtype bool.
+        ``True`` means "disconnect this SVC for this simulation": its fixed reactive injection
+        and its b0 leave the step, and one regulating a voltage its control group.
+
+        A step tripping one that carries a standby automaton or was frozen at a reactive limit is
+        left out of the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
+        """
+        self._set_element_mask("set_contingency_svcs", mask, self.grid2op_env.backend._grid.get_svcs(),
+                               "static var compensators")
+
+    def set_contingency_hvdcs(self, mask):
+        """Per-step hvdc line contingency mask, shape ``(n_simul, n_hvdc)``, dtype bool.
+        ``True`` means "disconnect this line for this simulation": both its converter stations
+        leave the step's injection, the bus a regulating one was the last to hold turning PQ.
+
+        With a DC algorithm, a step tripping one in AC emulation is left out of the batch
+        (``LimitViolationType.BATCH_UNSUPPORTED``).
+        """
+        self._set_element_mask("set_contingency_hvdcs", mask, self.grid2op_env.backend._grid.get_dclines(),
+                               "hvdc lines")
 
     def set_topo_actions(self, actions):
         """One topological action per row, played by that row on top of its injections
@@ -644,6 +717,13 @@ class ScenarioSweep:
         ``converged`` here, by design -- see :attr:`compute_limit_violations`).
         """
         return self.computer.get_violations()
+
+    def get_batch_unsupported_reasons(self):
+        """Per row: why the batch could not solve it, or an empty string for a row it
+        supports. Such a row is reported with a ``LimitViolationType.BATCH_UNSUPPORTED`` violation
+        (with :attr:`compute_limit_violations`) and a zero row of voltages, instead of making
+        :func:`compute` raise."""
+        return self.computer.get_batch_unsupported_reasons()
 
     def get_violations_n(self):
         """List of :class:`LimitViolation` for the pre-batch ("n") case (no injection

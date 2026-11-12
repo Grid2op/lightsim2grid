@@ -10,6 +10,7 @@
 #ifndef KLSOLVER_H
 #define KLSOLVER_H
 #include <iostream>
+#include <limits>
 #include <memory>
 
 // eigen is necessary to easily pass data from numpy to c++ without any copy.
@@ -88,16 +89,25 @@ class LS2G_API KLULinearSolver final
         // refactorization. 0 (the default): no check, klu_refactor alone.
         void set_rgrowth_threshold(real_type val) noexcept { rgrowth_threshold_ = val; }
         real_type rgrowth_threshold() const noexcept { return rgrowth_threshold_; }
+        // the reciprocal pivot growth (klu_rgrowth) of the last refactorize, NaN when it did not
+        // measure it (no threshold, or klu_refactor itself failed)
+        real_type last_rgrowth() const noexcept { return last_rgrowth_; }
 
         // Indices to eliminate after others, for the next analyze() (see OrderingConstraints and
         // KLUStaticPivotLinearSolver, which orders the same way). Given some, analyze orders with
-        // constrained_amd_order, without the block-triangular preordering, which would reorder
+        // constrained_order, without the block-triangular preordering, which would reorder
         // the block. Empty: KLU's own ordering, as always. A Newton hands its system's over only
         // when told to (NRAlgo::set_constrained_ordering): off by default, so that NR_KLU and
         // NROuter_KLU keep their results bit for bit unless asked.
         static constexpr bool ORDERS_WITH_CONSTRAINTS_BY_DEFAULT = false;
         void set_ordering_constraints(OrderingConstraints constraints) { ordering_constraints_ = std::move(constraints); }
         const OrderingConstraints & ordering_constraints() const noexcept { return ordering_constraints_; }
+
+        // The fill-reducing ordering the next analyze() starts from (see FillReducingOrdering).
+        // AMD, the default, keeps KLU's own analysis; minimum fill orders with
+        // constrained_order, without the block-triangular preordering, constraints or not.
+        void set_fill_reducing_ordering(FillReducingOrdering ordering) noexcept { fill_reducing_ordering_ = ordering; }
+        FillReducingOrdering fill_reducing_ordering() const noexcept { return fill_reducing_ordering_; }
 
     private:
         bool   guard_pivot_growth_ = false;
@@ -132,7 +142,9 @@ class LS2G_API KLULinearSolver final
         std::unique_ptr<klu_symbolic, SymbolicDeleter> symbolic_;
         std::unique_ptr<klu_numeric, NumericDeleter> numeric_;
         real_type rgrowth_threshold_ = 0.;
+        real_type last_rgrowth_ = std::numeric_limits<real_type>::quiet_NaN();
         OrderingConstraints ordering_constraints_;
+        FillReducingOrdering fill_reducing_ordering_ = FillReducingOrdering::AMD;
 
         // no copy allowed
         KLULinearSolver(const KLULinearSolver&) = delete;

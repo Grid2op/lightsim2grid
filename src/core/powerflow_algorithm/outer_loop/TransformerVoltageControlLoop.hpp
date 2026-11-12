@@ -130,6 +130,9 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
         void _fix_controls(OuterContext & ctx, const std::vector<ClosedBranch> & closed);
         int _closest_tap(const OuterContext & ctx, int trafo, real_type value) const;
         void _set_on(OuterContext & ctx, int trafo, bool on);
+        // groups() of the solve's view, computed once per solve (see OuterSolveCache): asked
+        // by _is_needed, _initialize and _detect of the same solve
+        const std::vector<Group> & _solve_groups(const OuterContext & ctx) const;
 
         // per solve, see _initialize
         std::vector<Group> groups_;
@@ -139,6 +142,10 @@ class LS2G_API TransformerVoltageControlLoop final : public BaseOuterLoop
         std::vector<char> controller_;     // per transformer: in a group
         std::vector<Ratio> ratios_;        // per transformer
         std::vector<Frozen> frozen_;
+        // _solve_groups': the groups, and the solve they were computed for
+        mutable std::vector<Group> solve_groups_;
+        mutable const OuterSolveCache * solve_groups_cache_ = nullptr;
+        mutable std::uint64_t solve_groups_generation_ = 0;
 
         const Params params_;
 };

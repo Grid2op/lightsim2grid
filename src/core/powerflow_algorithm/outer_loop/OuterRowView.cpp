@@ -102,11 +102,18 @@ int unit_bus_solver(const Container & container, const OuterRowView::Units * u, 
 
 }  // namespace
 
+int OuterGridView::bus_solver(int bus_me) const { return to_solver(id_me_to_solver(), bus_me); }
+
 // ----- generators ----------------------------------------------------------------------
 
 bool OuterGridView::gen_on(int gen_id) const
 {
     return unit_on(grid_.get_generators(), row_ != nullptr ? &row_->gens : nullptr, gen_id);
+}
+
+real_type OuterGridView::sn_mva() const
+{
+    return grid_.get_sn_mva();
 }
 
 int OuterGridView::gen_bus_solver(int gen_id) const
@@ -154,6 +161,12 @@ real_type OuterGridView::gen_target_p_override(const std::vector<real_type> & lo
     if (_value(loops, gen_id, res)) return res;
     if (row_ != nullptr && _value(row_->gens.target_p, gen_id, res)) return res;
     return std::numeric_limits<real_type>::quiet_NaN();
+}
+
+bool OuterGridView::hvdc_on(int hvdc_id) const
+{
+    if (row_ == nullptr || static_cast<std::size_t>(hvdc_id) >= row_->hvdc_off.size()) return true;
+    return row_->hvdc_off[static_cast<std::size_t>(hvdc_id)] == 0;
 }
 
 // ----- storage units -------------------------------------------------------------------

@@ -12,6 +12,7 @@
 #include "Utils.hpp"
 #include "powerflow_algorithm/ScalingPolicies.hpp"
 #include "powerflow_algorithm/RefactorPolicies.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 
 using namespace ls2g;
 
@@ -77,6 +78,11 @@ void bind_enums(py::module_& m) {
         .value("AlwaysRefactor", RefactorPolicyType::AlwaysRefactor, "Rebuild and refactorize J every iteration (default)")
         .value("EveryN",         RefactorPolicyType::EveryN,         "Refactorize every N iterations; update values only in between")
         .value("Chord",          RefactorPolicyType::Chord,          "Build J once on the first iteration; reuse factorization throughout")
+        .export_values();
+
+    py::enum_<FillReducingOrdering>(m, "FillReducingOrdering", "Fill-reducing ordering the KLU-based linear solvers start from")
+        .value("AMD",     FillReducingOrdering::AMD,     "Approximate minimum degree, KLU's own (default)")
+        .value("MinFill", FillReducingOrdering::MinFill, "Minimum fill (Tinney and Walker's scheme 3): fewer refactorization operations, a costlier analysis")
         .export_values();
 
     py::enum_<ErrorType>(m, "ErrorType", "This enum controls the error encountered in the solver")

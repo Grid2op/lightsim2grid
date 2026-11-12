@@ -32,6 +32,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     total_nr_iterations_ = 0;
     unrealistic_ = false;
     solve_cache_.reset();  // a new solve: a new view (the row, its grid)
+    in_last_solve_.assign(loops_.size(), 0);
 
     // the loops edit these, never the grid's
     Sbus_init_ = Sbus;
@@ -85,6 +86,7 @@ bool OuterLoopAlgo<Inner>::compute_pf(
     injections_.Sbus_target = &Sbus_target_;
     injections_.gen_target_p.clear();
     injections_.storage_target_p.clear();
+    injections_.unsolved_q_mvar = 0.;
     inner_.controls().reset_states();
     // a resumed solve (a time series' next step, a batch row from its "n" solve) starts from
     // where that solve left the loops; any other from the grid
@@ -104,8 +106,10 @@ bool OuterLoopAlgo<Inner>::compute_pf(
             ctx.Va = nullptr;
             ctx.Vm = nullptr;
         }
-        for (auto & loop : loops_) {
-            if (loop->is_needed(ctx)) active.push_back(loop.get());
+        for (std::size_t k = 0; k < loops_.size(); ++k) {
+            if (!loops_[k]->is_needed(ctx)) continue;
+            active.push_back(loops_[k].get());
+            in_last_solve_[k] = 1;
         }
         for (BaseOuterLoop * loop : active) {
             const std::size_t first_decision = stats_.decisions.size();
@@ -127,6 +131,19 @@ bool OuterLoopAlgo<Inner>::compute_pf(
 
     bool solver_ok = _solve(max_iter, tol, need_init, check_unrealistic);
 
+    // A change that a re-solve meets with no Newton step at all left every bus within
+    // tolerance: V did not move, and the change still sits in the residuals of the buses it
+    // touched (a move spread so thinly that no bus exceeds the tolerance). Checked again on
+    // that state, the loop that made it would read what made it act as if nothing had been
+    // done, and act again -- DistributedSlack moving its units a second time for the same
+    // mismatch. Its change is done: that loop is not checked again until a solve moves V.
+    // A loop working in steps says CHECK_AGAIN instead (PhaseControl's first check, which
+    // only asks for its next one): it is checked again after the re-solve, whatever it took.
+    // `v_version` counts the solves that moved V, `done_at[i]` is the version on which loop
+    // i's change was done (-1: none).
+    int v_version = 0;
+    std::vector<int> done_at(active.size(), -1);
+
     OuterLoopStatus last_status = OuterLoopStatus::STABLE;
     std::string last_name;
     const BaseOuterLoop * last_unstable = nullptr;
@@ -143,25 +160,38 @@ bool OuterLoopAlgo<Inner>::compute_pf(
                     break;
                 }
                 // runOuterLoop: re-solve until this loop is stable
-                OuterLoopStatus status;
-                do {
+                OuterLoopStatus status = OuterLoopStatus::STABLE;
+                if (done_at[i] != v_version) do {
                     OuterContext ctx = _context();
                     ctx.iteration = stats_.loop_iterations[i].second;
                     const std::size_t first_decision = stats_.decisions.size();
                     status = loop->check(ctx);
+                    const bool changed = status == OuterLoopStatus::UNSTABLE;
                     for (std::size_t d = first_decision; d < stats_.decisions.size(); ++d) {
                         stats_.decisions[d].loop = loop->name();
                         stats_.decisions[d].outer_iteration = stats_.nb_outer_iterations;
                     }
                     last_status = status;
                     last_name = loop->name();
-                    if (status == OuterLoopStatus::UNSTABLE) {
+                    if (changed || status == OuterLoopStatus::CHECK_AGAIN) {
                         last_unstable = loop;
                         solver_ok = _solve(max_iter, tol, need_init, check_unrealistic);
                         ++stats_.nb_outer_iterations;
                         ++stats_.loop_iterations[i].second;
+                        if (nr_iter_ > 0) {
+                            ++v_version;
+                        } else if (solver_ok && changed) {
+                            done_at[i] = v_version;
+                            status = OuterLoopStatus::STABLE;
+                            last_status = status;
+                            OuterContext done_ctx = _context();
+                            done_ctx.record("SETTLED", true, ViolationElementType::GRID, -1,
+                                            LimitViolationType::NOT_SIMULATED, 0., 0.);
+                            stats_.decisions.back().loop = loop->name();
+                            stats_.decisions.back().outer_iteration = stats_.nb_outer_iterations;
+                        }
                     }
-                } while (status == OuterLoopStatus::UNSTABLE && solver_ok &&
+                } while ((status == OuterLoopStatus::UNSTABLE || status == OuterLoopStatus::CHECK_AGAIN) && solver_ok &&
                          stats_.nb_outer_iterations < params_.max_outer_iterations);
 
                 if (!check_unrealistic && static_cast<int>(i) == last_fixing && solver_ok &&
@@ -235,6 +265,7 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
     Vm_ = inner_.algo().get_Vm();
     mis_bus_ = inner_.algo().get_bus_mismatch();
     err_ = inner_.algo().get_error();
+    _fold_slack_share();
     // the residual is published against the units' targets: the reactive power a loop froze
     // into the algorithm's (a bus held at a limit) is its units' output, which the results
     // and the physical checks read off this residual. Overwritten by the next solve's copy.
@@ -258,6 +289,47 @@ bool OuterLoopAlgo<Inner>::_solve(int max_iter, real_type tol, bool & need_init,
         converged = false;
     }
     return converged;
+}
+
+template<class Inner>
+void OuterLoopAlgo<Inner>::_fold_slack_share()
+{
+    // A distributed-slack Newton (NROuterDist_*) shared the slack inside its Jacobian: each unit
+    // taking part gets its share added to its target, so that whatever reads the solve -- the
+    // loops, the results, a solve resuming from this one -- finds the units' outputs in their
+    // targets and the reference bus' leftover in its mismatch, as after a single-slack Newton.
+    // The share enters the mismatch only through `+ slack_absorbed * weight`, so moving it into
+    // the injection leaves the mismatch where it is.
+    const real_type sa = inner_.take_slack_absorbed();
+    if (sa == 0.) return;
+    const SlackShareControl * share = inner_.controls().slack_share();
+    const real_type total = share != nullptr ? share->total_weight() : 0.;
+    // the units' targets are the grid's: with no grid (the algorithm used on its own) there is
+    // no unit to give a share to, and the reference bus keeps it all, as below
+    if (total > 0. && lsgrid_ptr_ != nullptr) {
+        const OuterGridView view(*lsgrid_ptr_, row_);
+        const real_type sn_mva = view.sn_mva();
+        for (const auto & unit : share->units()) {
+            // the target Q of a unit that does not regulate follows its P: that, the solve did
+            // not see
+            const real_type q_before = std::imag(Sbus_(unit.bus_solver));
+            // generation convention; slack_absorbed < 0 when the units produce more
+            const real_type mw = -sa * sn_mva * unit.weight / total;
+            if (unit.kind == slack_redistribution::UnitKind::GENERATOR) {
+                injections_.move_gen_target_p(view, unit.el_id, unit.bus_solver,
+                                              injections_.gen_target_p_in_force(view, unit.el_id) + mw);
+            } else {
+                // load convention
+                injections_.move_storage_target_p(view, unit.el_id, unit.bus_solver,
+                                                  injections_.storage_target_p_in_force(view, unit.el_id) - mw);
+            }
+            injections_.unsolved_q_mvar += std::abs(std::imag(Sbus_(unit.bus_solver)) - q_before) * sn_mva;
+        }
+    } else {
+        // the reference bus took it all (weight 1): what is left on it, as a single slack leaves it
+        const int ref = inner_.reference_bus();
+        if (ref >= 0 && ref < mis_bus_.size()) mis_bus_(ref) -= cplx_type(sa, 0.);
+    }
 }
 
 template<class Inner>
@@ -424,4 +496,32 @@ OuterContext OuterLoopAlgo<Inner>::_context()
     ctx.solve_cache = &solve_cache_;
     inner_.fill_context(ctx, controller_q_);
     return ctx;
+}
+
+template<class Inner>
+void OuterLoopAlgo<Inner>::get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const
+{
+    inner_.algo().get_adjoint_solve_info(vm_buses, out);
+    OuterAdjointTerms terms;
+    for(std::size_t k = 0; k < loops_.size() && k < in_last_solve_.size(); ++k){
+        if(in_last_solve_[k]) loops_[k]->adjoint_terms(terms);
+    }
+    if(terms.q_slopes.empty() && terms.fixed_p.empty()) return;
+    const IntVect p_row = inner_.algo().get_p_to_J_row_python();
+    const IntVect q_row = inner_.algo().get_q_to_J_row_python();
+    const auto row_of = [](const IntVect & map, int bus) { return bus >= 0 && bus < map.size() ? map(bus) : -1; };
+    std::vector<int> fixed;
+    for(const auto & unit : terms.fixed_p){
+        fixed.push_back(unit.first);
+        const int row = row_of(p_row, unit.second);
+        if(row >= 0) out.gen_p_terms.push_back(AdjointSolveInfo::GenPTerm{unit.first, row, -terms.inv_sn});
+    }
+    for(const OuterQSlope & slope : terms.q_slopes){
+        // a unit whose P is held does not move its limit either
+        if(std::find(fixed.begin(), fixed.end(), slope.gen_id) != fixed.end()) continue;
+        // a held controller's row pins its output; a frozen bus' Q row carries it in Sbus
+        const int row = slope.ctrl_pos >= 0 ? inner_.algo().system().controller_hold_row(slope.ctrl_pos)
+                                            : row_of(q_row, slope.bus_solver);
+        if(row >= 0) out.gen_p_terms.push_back(AdjointSolveInfo::GenPTerm{slope.gen_id, row, slope.dq_dp});
+    }
 }

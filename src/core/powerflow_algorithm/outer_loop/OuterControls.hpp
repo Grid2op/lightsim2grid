@@ -18,10 +18,44 @@
 #include <vector>
 
 #include "Utils.hpp"
+#include "element_container/SlackRedistribution.hpp"
 
 namespace ls2g {
 
 class OuterControls;
+
+/**
+ * The share of the slack a distributed-slack Newton takes inside its Jacobian (NROuterDist_*):
+ * the buses reserved for it (each gets an entry in the slack_absorbed column, at its P row), and
+ * the units sharing it in the next solves with their raw weights, 0 for a unit a loop took out of
+ * it. No unit with a weight: the reference bus takes the whole slack, a single slack in the
+ * Newton's form. One for the solve, shared by every loop that reserved it.
+ */
+class LS2G_API SlackShareControl final
+{
+    public:
+        struct Unit {
+            slack_redistribution::UnitKind kind;
+            int el_id;         ///< in its own container
+            int bus_solver;    ///< its solver bus in this solve
+            real_type weight;  ///< raw (un-normalised), >= 0
+        };
+
+        /// the reserved solver buses, sorted
+        const std::vector<int> & buses() const { return buses_; }
+        bool reserved(int bus_solver) const;
+        /// the units sharing the slack from the next solve on (a unit on a bus that is not
+        /// reserved is left out: the Newton has no entry for it)
+        void set_units(const std::vector<Unit> & units);
+        const std::vector<Unit> & units() const { return units_; }
+        /// the sum of the units' weights, 0 when none has any
+        real_type total_weight() const;
+
+    private:
+        friend class OuterControls;
+        std::vector<int> buses_;
+        std::vector<Unit> units_;
+};
 
 /**
  * A bus whose units hold its voltage (PV) and may stop doing so (PQ). Its Vm unknown and its
@@ -296,6 +330,11 @@ class LS2G_API OuterControls
         /// False when the inner algorithm has none.
         bool reserve_shunt_group(int bus, real_type target_vm, const std::vector<int> & controller_buses,
                                  const std::vector<std::vector<int> > & shunts, bool solved);
+        /// solver buses whose units may share the slack inside the Newton (added to what other
+        /// calls reserved); nullptr when the inner algorithm does not distribute it
+        SlackShareControl * reserve_slack_share(const std::vector<int> & buses);
+        /// whether the inner algorithm shares the slack inside its Newton (reserve_slack_share)
+        bool supports_slack_share() const { return _supports_slack_share(); }
 
         // ----- lookup (after the reservation) -----------------------------------------------
         /// the control of `bus`, nullptr when no loop reserved it
@@ -313,6 +352,9 @@ class LS2G_API OuterControls
         const RatioTapControl * ratio_tap(int trafo) const;
         ShuntSectionControl * shunt_controller(int bus);
         const ShuntSectionControl * shunt_controller(int bus) const;
+        /// nullptr when no loop reserved it
+        SlackShareControl * slack_share() { return slack_share_reserved_ ? &slack_share_ : nullptr; }
+        const SlackShareControl * slack_share() const { return slack_share_reserved_ ? &slack_share_ : nullptr; }
         /// the buses a reserved ratio group regulates (a control of a higher priority than a
         /// shunt's, see ShuntVoltageControlLoop)
         std::set<int> ratio_group_buses() const;
@@ -392,6 +434,7 @@ class LS2G_API OuterControls
         friend class RatioTapControl;
         friend class ShuntSectionControl;
         virtual bool _supports_shunt_groups() const { return false; }
+        virtual bool _supports_slack_share() const { return false; }
         virtual bool _shunt_handled(int /*bus*/) const { return false; }
         virtual real_type _shunt_b(int /*bus*/) const { return std::numeric_limits<real_type>::quiet_NaN(); }
         virtual bool _supports_phase_shifters() const { return false; }
@@ -430,6 +473,8 @@ class LS2G_API OuterControls
         std::vector<int> caller_pinned_;      // sorted, unique
         std::vector<std::pair<int, real_type> > pending_vm_;
         std::set<int> suspended_;
+        SlackShareControl slack_share_;
+        bool slack_share_reserved_ = false;
 };
 
 }  // namespace ls2g

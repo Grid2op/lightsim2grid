@@ -40,7 +40,20 @@ that breaker, with no other closed switch nor internal connection on that node (
 behind (another closed switch, a fictitious breaker for instance, in between), powsybl opens the
 breaker only and the branch stays in service, energized from its other end and feeding a bus that
 holds nothing else: it is not tripped, and `ContingencyPropagator.dead_ends` lists it.
+
+Two more of `NodeBreakerTraverser`'s rules decide which breakers open:
+
+* on a node with a terminal (the tripped equipment's, or a busbar section's) whose closed
+  switches are all breakers, powsybl opens none of them and disconnects the terminal alone:
+  what is behind them stays joined through that node. Likewise when that node holds a single
+  other switch, leading to a node whose other closed switches are all breakers: that switch is
+  not crossed, and those breakers stay closed;
+* a breaker leading to a node with no terminal whose other closed switches are all breakers is
+  walked through, and the breakers of that node open instead.
 """
+
+import json
+import os
 
 import numpy as np
 import pandas as pd
@@ -86,6 +99,7 @@ class _PypowsyblTopology:
         self.tie_dangling = {}     # tie line id -> [dangling line ids]
         self.dangling_to_tie = {}  # dangling line id -> tie line id
         self.known = set()         # every id the contingency may name
+        self.busbar_sections = set()
         self.branches = set()      # lines, transformers, and dangling lines of a tie line
 
         # ---- the terminals: (element id, voltage level number, node, is a busbar section)
@@ -96,6 +110,8 @@ class _PypowsyblTopology:
                 getter = "get_boundary_lines"  # the old name is deprecated
             df = getattr(net, getter)(attributes=cols)
             self.known.update(df.index)
+            if getter == "get_busbar_sections":
+                self.busbar_sections.update(df.index)
             if len(sides) > 1:
                 self.branches.update(df.index)
             for side in sides:
@@ -175,9 +191,37 @@ class _PypowsyblTopology:
             self._extra.setdefault(base + a, []).append(base + b)
             self._extra.setdefault(base + b, []).append(base + a)
 
-    def walk(self, start, tripped, seen, behind_breakers):
+    def _has_terminal(self, node):
+        return node in self._equip or node in self._bbs
+
+    def _nb_passing(self, node):
+        """The closed switches on `node` that are not breakers (a fictitious breaker is one)."""
+        lo_hi = self._span.get(node)
+        return 0 if lo_hi is None else lo_hi[1] - lo_hi[0]
+
+    def _stops_at(self, node, nb_passing, dismissed):
+        """powsybl's `traverserStopsAtOtherEdges`: but for the edge looked at (`nb_passing` 1 when it
+        is a closed switch that is not a breaker, else 0), every closed switch on `node` is a
+        breaker, and its internal connections (`dismissed` left out) lead only to nodes with no
+        terminal where the same holds."""
+        if self._nb_passing(node) != nb_passing:
+            return False
+        visited, stack = {dismissed, node}, [node]
+        while stack:
+            for other in self._extra.get(stack.pop(), ()):
+                if other in visited:
+                    continue
+                visited.add(other)
+                if self._has_terminal(other) or self._nb_passing(other):
+                    return False
+                stack.append(other)
+        return True
+
+    def walk(self, start, tripped, seen, behind_breakers, kept):
         """Walk out of one terminal (see the module docstring); the equipment met goes to `tripped`,
-        the node on the far side of each breaker met to `behind_breakers`.
+        the node on the far side of each breaker opened to `behind_breakers`, and the nodes left
+        joined through a node with a terminal, where the walk stops without opening anything, to
+        `kept` (one list per such node).
         `seen` holds the nodes already met by the walks of the same contingency: everything
         reachable from them is already found, so they are not walked again (`start` is, since an
         equipment node is met but not walked out of)."""
@@ -187,13 +231,27 @@ class _PypowsyblTopology:
         stack = [start]
         while stack:
             node = stack.pop()
-            behind_breakers.extend(breakers.get(node, ()))
-            lo_hi = span.get(node)
-            others = nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else []
-            if node in extra:
-                others = others + extra[node]
-            for other in others:
+            at_terminal = self._has_terminal(node)  # `start`, or a busbar section
+            joined = []
+            for other in breakers.get(node, ()):
                 if other in seen:
+                    continue
+                if at_terminal and self._stops_at(node, 0, other):
+                    joined.append(other)  # the terminal alone is disconnected: the breaker stays closed
+                elif not self._has_terminal(other) and self._stops_at(other, 0, node):
+                    seen.add(other)  # a junction of breakers only: walked through, its own breakers open
+                    stack.append(other)
+                else:
+                    behind_breakers.append(other)
+            lo_hi = span.get(node)
+            others = [(other, 1) for other in (nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else ())]
+            others += [(other, 0) for other in extra.get(node, ())]
+            for other, nb_passing in others:
+                if other in seen:
+                    continue
+                if (at_terminal and not self._has_terminal(other) and self._stops_at(node, nb_passing, other)
+                        and self._stops_at(other, nb_passing, node)):
+                    joined.append(other)  # a junction of breakers right after the terminal: not walked
                     continue
                 seen.add(other)
                 el = equip.get(other)
@@ -201,16 +259,20 @@ class _PypowsyblTopology:
                     tripped.append(el)  # equipment is not a way through
                 else:
                     stack.append(other)  # a busbar section, or a bare node
+            if joined:
+                kept.append(joined)
 
-    def cut_off(self, start, seen, visited):
+    def cut_off(self, start, seen, visited, joined, kept=False):
         """The equipment left hanging behind an opened breaker (see the module docstring): the
         equipment `start` is joined to by the closed switches, breakers included, once the walked
         nodes (`seen`) are out, when no busbar section is joined and it is a single piece of
         equipment or only injections; else nothing. `visited` holds the nodes already looked at behind another breaker
-        of the same contingency. Each piece comes with the side of its terminal there (0 for a
-        one-sided element), the only end it is disconnected at.
-        Also says whether that is a branch left at a dead end (not right behind the breaker, see the
-        module docstring), which stays in service."""
+        of the same contingency, `joined` the nodes still joined to each other through a walked node
+        (see `walk`), and `kept` says that `start` is one of them (no breaker opened in front of it).
+        Each piece comes with the side of its terminal there (0 for a one-sided element), the only
+        end it is disconnected at.
+        Also says whether that is a branch left at a dead end (not right behind an opened breaker,
+        see the module docstring), which stays in service."""
         if start in seen or start in visited:
             return [], False
         self.read_internal_connections(start // self.stride)
@@ -227,7 +289,7 @@ class _PypowsyblTopology:
                 found.append((el, self.side_of.get(node, 0)))
             lo_hi = span.get(node)
             others = nbr[lo_hi[0]:lo_hi[1]] if lo_hi is not None else []
-            others = others + breakers.get(node, []) + extra.get(node, [])
+            others = others + breakers.get(node, []) + extra.get(node, []) + joined.get(node, [])
             for other in others:
                 if other in seen or other in visited:
                     continue
@@ -241,8 +303,32 @@ class _PypowsyblTopology:
         # closed switch on its node (NodeBreakerTraverser.isEquivalentToStopAfterSwitch)
         lo_hi = span.get(start)
         nb_closed = (lo_hi[1] - lo_hi[0] if lo_hi is not None else 0) + len(breakers.get(start, ()))
-        right_behind = equip.get(start) is not None and nb_closed == 1 and start not in extra
+        right_behind = not kept and equip.get(start) is not None and nb_closed == 1 and start not in extra
         return found, len(found) == 1 and found[0][0] in self.branches and not right_behind
+
+
+def _read_contingencies(contingencies):
+    """What `add_contingencies` is given, as a list of contingencies: read from the json file
+    when it is a path, out of the ``"contingencies"`` of a whole powsybl list when it is one."""
+    if isinstance(contingencies, (str, os.PathLike)):
+        with open(contingencies, encoding="utf-8") as f:
+            contingencies = json.load(f)
+    if isinstance(contingencies, dict):
+        if "contingencies" not in contingencies:
+            raise ValueError("add_contingencies: a dictionary must hold powsybl's \"contingencies\" list, "
+                             f"found the keys {sorted(contingencies)}.")
+        contingencies = contingencies["contingencies"]
+    return contingencies
+
+
+def _names_and_id(contingency):
+    """One contingency as `(element names, its id)`, the id None when it has none."""
+    if isinstance(contingency, str):
+        raise TypeError("add_contingencies: each contingency must be a list of names, "
+                        f"got the string {contingency!r}")
+    if isinstance(contingency, dict):
+        return [element["id"] for element in contingency["elements"]], contingency.get("id")
+    return list(contingency), None
 
 
 def _terminals_of(topo, name):
@@ -265,9 +351,11 @@ class ContingencyPropagator:
 
     Each contingency is a list of element names (lines, transformers, generators, loads,
     shunts, batteries, static var compensators, dangling and tie lines, converter stations,
-    HVDC lines, busbar sections). Propagating it gives the same names, in the same order,
-    followed by the other equipment that goes down with them because it stands between the
-    same breakers (see this module's docstring). A name appears once.
+    HVDC lines, busbar sections), or a powsybl contingency, see :func:`add_contingencies`.
+    Propagating it gives the same names, in the same order, followed by the other equipment
+    that goes down with them because it stands between the same breakers (see this module's
+    docstring). A name appears once. A busbar section stays listed but is no equipment of the
+    solved grid: what it does is the n-k of what goes down with it.
 
     Examples
     --------
@@ -310,6 +398,7 @@ class ContingencyPropagator:
         """
         self._topo = _PypowsyblTopology(net, internal_connections)
         self._contingencies = []
+        self._ids = []         # aligned with _contingencies: the id each came with, or None
         self._propagated = []  # one entry per contingency, None until propagated
         self._sides = []       # aligned with _propagated: {branch: side opened}, see opened_sides
         self._dead_ends = []   # aligned with _propagated: {branch: side of the dead end}, see dead_ends
@@ -319,24 +408,37 @@ class ContingencyPropagator:
         """The contingencies added so far, as given (without repeated names)."""
         return [list(el) for el in self._contingencies]
 
+    @property
+    def contingency_ids(self):
+        """The id of each contingency added so far (as in a powsybl contingency list), None for
+        one given as a plain list of names."""
+        return list(self._ids)
+
     def add_contingencies(self, contingencies):
-        """Add contingencies, each a list of element names.
+        """Add contingencies.
+
+        `contingencies` is a list where each contingency is a list of element names or a powsybl
+        contingency, ``{"id": ..., "elements": [{"id": ..., "type": ...}, ...]}``. It can also be
+        a whole powsybl list (a dictionary with a ``"contingencies"`` entry), or the path of a
+        json file holding one of these. Only the ids of the elements are read: they are unique
+        in a network.
 
         Raises ``TypeError`` for a contingency given as a single string, and ``ValueError`` for
         a name that is not an element of the network; nothing is added then.
         """
         checked = []
-        for contingency in contingencies:
-            if isinstance(contingency, str):
-                raise TypeError("add_contingencies: each contingency must be a list of names, "
-                                f"got the string {contingency!r}")
-            names = list(dict.fromkeys(contingency))
+        ids = []
+        for contingency in _read_contingencies(contingencies):
+            names, cont_id = _names_and_id(contingency)
+            names = list(dict.fromkeys(names))
             for name in names:
                 if name not in self._topo.known:
                     raise ValueError(f"add_contingencies: '{name}' is not a line, transformer, injection, "
                                      f"converter station, HVDC line or busbar section of this network.")
             checked.append(names)
+            ids.append(cont_id)
         self._contingencies.extend(checked)
+        self._ids.extend(ids)
         self._propagated.extend([None] * len(checked))
         self._sides.extend([None] * len(checked))
         self._dead_ends.extend([None] * len(checked))
@@ -344,6 +446,7 @@ class ContingencyPropagator:
     def clear(self):
         """Remove every contingency (the topology read at construction is kept)."""
         self._contingencies = []
+        self._ids = []
         self._propagated = []
         self._sides = []
         self._dead_ends = []
@@ -419,7 +522,8 @@ class ContingencyPropagator:
         """
         # a branch at a dead end is simulated opened at that side: it tells the sets apart too
         sides = [{**opened, **dead} for opened, dead in zip(self.opened_sides(), self.dead_ends())]
-        return group_equivalent_contingencies(self.propagate_contingencies(), sides)
+        return group_equivalent_contingencies(self.propagate_contingencies(), sides,
+                                              ignored=self._topo.busbar_sections)
 
     def _propagate_one(self, contingency):
         topo = self._topo
@@ -429,7 +533,7 @@ class ContingencyPropagator:
             tripped.extend(_terminals_of(topo, name)[0])
         # every element tripped is walked out of from all its terminals, the ones the walks trip
         # included (appended to `tripped` while it is read), until nothing new is met
-        seen, done, behind_breakers = set(), set(), []
+        seen, done, behind_breakers, kept = set(), set(), [], []
         pos = 0
         while pos < len(tripped):
             el = tripped[pos]
@@ -444,15 +548,20 @@ class ContingencyPropagator:
                     tripped.append(whole)
                     tripped.extend(_terminals_of(topo, whole)[0])
             for node in topo.terminals.get(el, ()):
-                topo.walk(node, tripped, seen, behind_breakers)
+                topo.walk(node, tripped, seen, behind_breakers, kept)
         # what the opened breakers leave hanging, once the walked part is complete (disconnected at
-        # that end only: not walked out of, but it still takes its HVDC or tie line with it)
+        # that end only: not walked out of, but it still takes its HVDC or tie line with it), and
+        # what a walk stopped in front of without opening a breaker (still joined through that node)
         whole_ids = set(tripped)
         cut_sides = {}  # element only cut off -> the sides it is cut at
         dead = {}       # branch left at a dead end -> the sides of its dead ends
         visited = set()
-        for node in behind_breakers:
-            found, dead_end = topo.cut_off(node, seen, visited)
+        joined = {}
+        for group in kept:
+            for node in group:
+                joined.setdefault(node, []).extend(group)
+        for node, was_kept in [(node, False) for node in behind_breakers] + [(node, True) for node in joined]:
+            found, dead_end = topo.cut_off(node, seen, visited, joined, was_kept)
             for el, side in found:
                 (dead if dead_end else cut_sides).setdefault(el, set()).add(side)
         # a branch at a dead end at one end only, and not reached in any other way, stays in
@@ -492,7 +601,8 @@ class ContingencyPropagator:
 
 
 def propagate_contingencies(net, contingencies, internal_connections=None):
-    """Propagate contingencies in one call: a shortcut for
+    """Propagate contingencies in one call (`contingencies`: anything
+    :func:`ContingencyPropagator.add_contingencies` takes, a json file for example): a shortcut for
 
     .. code-block:: python
 
@@ -512,14 +622,16 @@ def propagate_contingencies(net, contingencies, internal_connections=None):
     return propagator.propagate_contingencies()
 
 
-def group_equivalent_contingencies(contingencies, opened_sides=None):
+def group_equivalent_contingencies(contingencies, opened_sides=None, ignored=()):
     """Find the contingencies that trip the same set of equipment, so each is simulated once.
 
     Meant for the output of :func:`ContingencyPropagator.propagate_contingencies`: tripping a line, or the load hanging
     on its feeder, ends in the same grid. Two contingencies are equivalent when they hold the same
     names, whatever the order, and (`opened_sides`, one dict per contingency as
     :func:`ContingencyPropagator.opened_sides` gives, optional) open the same branches at the
-    same single end.
+    same single end. The names in `ignored` do not count (the busbar sections, which
+    :func:`ContingencyPropagator.group_contingencies` leaves out: nothing but what goes down with
+    a busbar section is simulated).
 
     Returns
     -------
@@ -532,8 +644,9 @@ def group_equivalent_contingencies(contingencies, opened_sides=None):
     seen = {}
     unique = []
     inverse = []
+    ignored = frozenset(ignored)
     for pos, contingency in enumerate(contingencies):
-        key = frozenset(contingency)
+        key = frozenset(contingency) - ignored
         if opened_sides is not None and opened_sides[pos]:
             key = (key, frozenset(opened_sides[pos].items()))
         pos = seen.get(key)

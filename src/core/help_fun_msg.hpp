@@ -92,6 +92,9 @@ struct LS2G_API DocSolver
     static const std::string get_refactor_every_n;
     static const std::string set_refactor_every_n;
     static const std::string constrained_ordering;
+    static const std::string fill_reducing_ordering;
+    static const std::string rgrowth_threshold;
+    static const std::string min_rgrowth;
     static const std::string get_config;
     static const std::string set_config;
     static const std::string get_theta_to_J_col;
@@ -113,6 +116,7 @@ struct LS2G_API DocSolver
     static const std::string NRRefactorRetry_KLU;
     static const std::string NR_KLUStaticPivot;
     static const std::string NROuter;
+    static const std::string NROuterDist;
     static const std::string OuterLoopStats;
     static const std::string OuterLoopDriverParams;
     static const std::string OuterDecision;
@@ -510,6 +514,17 @@ struct LS2G_API DocLSGrid
     // solver-internal state, for external solvers re-deriving the NR system
     // (distributed slack / VoltageControl / bordered-block bookkeeping)
     static const std::string get_slack_col_solver;
+    static const std::string dim_J;
+    static const std::string get_theta_col_of_bus;
+    static const std::string get_vm_col_of_bus;
+    static const std::string get_p_row_of_bus;
+    static const std::string get_q_row_of_bus;
+    static const std::string solve_JT;
+    static const std::string gen_v_indirect_grad;
+    static const std::string gen_p_indirect_grad;
+    static const std::string get_gen_v_target_bus;
+    static const std::string get_gen_v_share;
+    static const std::string get_outer_trafo_admittances;
     static const std::string get_slack_absorbed_solver;
     static const std::string get_controller_q_solver;
     static const std::string get_controller_kind_solver;
@@ -553,6 +568,7 @@ struct LS2G_API DocLSGrid
     static const std::string change_ratio_trafo;
     static const std::string update_powerlines_parameters;
     static const std::string update_trafos_parameters;
+    static const std::string update_trafos_parameters_full;
 
     // retrieve the results
     static const std::string get_J_python;
@@ -638,7 +654,11 @@ struct LS2G_API DocLSGrid
     static const std::string get_init_vm_pu;
     static const std::string set_keep_vinit_at_group_controlled_buses;
     static const std::string set_outer_loop_driver_params;
+    static const std::string set_resume_outer_state;
+    static const std::string get_resume_outer_state;
     static const std::string get_keep_vinit_at_group_controlled_buses;
+    static const std::string set_uniform_voltage_start;
+    static const std::string get_uniform_voltage_start;
     static const std::string set_hold_frozen_regulators;
     static const std::string get_hold_frozen_regulators;
     static const std::string set_sn_mva;

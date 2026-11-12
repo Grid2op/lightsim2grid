@@ -17,6 +17,7 @@
 #include "powerflow_algorithm/outer_loop/TransformerVoltageControlLoop.hpp"
 #include "powerflow_algorithm/outer_loop/ShuntVoltageControlLoop.hpp"
 #include "powerflow_algorithm/outer_loop/ReactiveLimitsLoop.hpp"
+#include "powerflow_algorithm/outer_loop/DefaultOuterLoops.hpp"
 #include "AlgorithmSelector.hpp"
 #include "help_fun_msg.hpp"
 #include "sparse_helpers.hpp"
@@ -111,6 +112,14 @@ void bind_nr_algo_policies(py::class_<Solver>& cls) {
             [](const Solver & s){ return nr_of(s).get_constrained_ordering(); },
             [](Solver & s, bool v){ nr_of(s).set_constrained_ordering(v); },
             DocSolver::constrained_ordering.c_str())
+        .def_property("fill_reducing_ordering",
+            [](const Solver & s){ return nr_of(s).get_fill_reducing_ordering(); },
+            [](Solver & s, FillReducingOrdering v){ nr_of(s).set_fill_reducing_ordering(v); },
+            DocSolver::fill_reducing_ordering.c_str())
+        .def_property("rgrowth_threshold",
+            [](const Solver & s){ return nr_of(s).get_rgrowth_threshold(); },
+            [](Solver & s, real_type v){ nr_of(s).set_rgrowth_threshold(v); },
+            DocSolver::rgrowth_threshold.c_str())
         // AlgoConfig serialization (the solver's own: an NROuter_* appends the driver's)
         .def("get_config", &Solver::get_config, DocSolver::get_config.c_str())
         .def("set_config", &Solver::set_config, py::arg("config"), DocSolver::set_config.c_str())
@@ -200,6 +209,14 @@ void bind_solvers(py::module_& m) {
                    a.max_realistic_voltage == b.max_realistic_voltage &&
                    a.min_nominal_voltage_realistic_check == b.min_nominal_voltage_realistic_check;
         })
+        // picklable (and deepcopy-able) through its constructor; resume_outer_state is the
+        // algorithm's, not part of these parameters (see LSGrid.set_outer_loop_driver_params)
+        .def("__reduce__", [](const OuterLoopDriverParams & self){
+            return py::make_tuple(py::type::of<OuterLoopDriverParams>(),
+                                  py::make_tuple(self.max_outer_iterations, self.voltage_remote_control_robust_mode,
+                                                 self.min_realistic_voltage, self.max_realistic_voltage,
+                                                 self.min_nominal_voltage_realistic_check));
+        })
         .def("__repr__", [](const OuterLoopDriverParams & self){
             std::ostringstream out;
             out << "OuterLoopDriverParams(max_outer_iterations=" << self.max_outer_iterations
@@ -214,6 +231,7 @@ void bind_solvers(py::module_& m) {
         .value("STABLE", OuterLoopStatus::STABLE)
         .value("UNSTABLE", OuterLoopStatus::UNSTABLE)
         .value("FAILED", OuterLoopStatus::FAILED)
+        .value("CHECK_AGAIN", OuterLoopStatus::CHECK_AGAIN)
         .export_values();
 
     py::class_<OuterDecision>(m, "OuterDecision", DocSolver::OuterDecision.c_str())
@@ -299,15 +317,37 @@ void bind_solvers(py::module_& m) {
         });
 
     // abstract: the loops themselves are bound with their parameters next to it
+    // A loop is rebuilt from its name and its flattened parameters, as LSGrid::set_state does:
+    // that is also what pickles it (and copy.deepcopy), for every loop type at once.
+    m.def("make_outer_loop",
+          [](const std::string & name, const std::vector<int> & int_params, const std::vector<double> & real_params){
+              AlgoConfig cfg;
+              cfg.int_params = int_params;
+              cfg.real_params = real_params;
+              return make_outer_loop(name, cfg);
+          },
+          py::arg("name"), py::arg("int_params") = std::vector<int>(), py::arg("real_params") = std::vector<double>(),
+          "The outer loop called `name` (BaseOuterLoop.name()) with the parameters `get_params()` gives: "
+          "what a saved loop list is restored from. Raises on an unknown name or parameters the loop refuses.");
+
     py::class_<BaseOuterLoop, std::shared_ptr<BaseOuterLoop> >(m, "BaseOuterLoop", DocSolver::BaseOuterLoop.c_str())
         .def("name", &BaseOuterLoop::name)
+        .def("get_params", &BaseOuterLoop::get_params,
+             "The loop's parameters, flattened as an AlgoConfig (int_params, real_params): with name(), "
+             "what make_outer_loop rebuilds the loop from")
+        .def("__reduce__", [](const BaseOuterLoop & self){
+            const AlgoConfig cfg = self.get_params();
+            py::object factory = py::module_::import("lightsim2grid.lightsim2grid_cpp").attr("make_outer_loop");
+            return py::make_tuple(factory, py::make_tuple(self.name(), cfg.int_params, cfg.real_params));
+        })
         .def("__repr__", [](const BaseOuterLoop & self){ return self.name() + "()"; });
 
     py::class_<DistributedSlackLoop, BaseOuterLoop, std::shared_ptr<DistributedSlackLoop> >(
             m, "DistributedSlack", DocSolver::DistributedSlackLoop.c_str())
         .def(py::init([](real_type slack_bus_p_max_mismatch_mw, bool fail_on_residue, real_type p_residue_eps_mw,
-                         real_type moved_fraction){
+                         real_type moved_fraction, bool run_without_participant){
                  DistributedSlackLoop::Params params;
+                 params.run_without_participant = run_without_participant;
                  params.slack_bus_p_max_mismatch_mw = slack_bus_p_max_mismatch_mw;
                  params.fail_on_residue = fail_on_residue;
                  params.p_residue_eps_mw = p_residue_eps_mw;
@@ -317,7 +357,12 @@ void bind_solvers(py::module_& m) {
              py::arg("slack_bus_p_max_mismatch_mw") = DistributedSlackLoop::Params().slack_bus_p_max_mismatch_mw,
              py::arg("fail_on_residue") = DistributedSlackLoop::Params().fail_on_residue,
              py::arg("p_residue_eps_mw") = DistributedSlackLoop::Params().p_residue_eps_mw,
-             py::arg("moved_fraction") = DistributedSlackLoop::Params().moved_fraction)
+             py::arg("moved_fraction") = DistributedSlackLoop::Params().moved_fraction,
+             py::arg("run_without_participant") = DistributedSlackLoop::Params().run_without_participant)
+        .def_property_readonly("run_without_participant",
+                               [](const DistributedSlackLoop & self){ return self.params().run_without_participant; },
+                               "Run even without a unit off the slack bus taking part (OpenLoadFlow with distributedSlack on): "
+                               "with fail_on_residue, a mismatch above the threshold then fails the solve")
         .def_property_readonly("slack_bus_p_max_mismatch_mw",
                                [](const DistributedSlackLoop & self){ return self.params().slack_bus_p_max_mismatch_mw; },
                                "OpenLoadFlow's slackBusPMaxMismatch, MW: below it the slack bus keeps what it absorbed")
@@ -507,6 +552,7 @@ void bind_solvers(py::module_& m) {
         .def_readonly("timer_solve_transpose",          &LinearSolverStats::timer_solve_transpose_,
                       "Time spent in the transposed solves, apart from the plain ones (see "
                       "nb_solve_transpose).")
+        .def_readonly("min_rgrowth",                    &LinearSolverStats::min_rgrowth_, DocSolver::min_rgrowth.c_str())
         .def("__repr__", [](const LinearSolverStats& s) {
             return "LinearSolverStats(nb_factorize=" + std::to_string(s.nb_factorize) +
                    ", nb_refactorize=" + std::to_string(s.nb_refactorize) +
@@ -532,6 +578,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NROuter_SparseLU>(m, "NROuter_SparseLU", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
+        auto cls = py::class_<NROuterDist_SparseLU>(m, "NROuterDist_SparseLU", DocSolver::NROuterDist.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
@@ -610,6 +664,14 @@ void bind_solvers(py::module_& m) {
         bind_outer_algo(cls);
     }
     {
+        auto cls = py::class_<NROuterDist_KLU>(m, "NROuterDist_KLU", DocSolver::NROuterDist.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
         auto cls = py::class_<NR_KLUStaticPivot>(m, "NR_KLUStaticPivot", DocSolver::NR_KLUStaticPivot.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
@@ -625,6 +687,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NROuter_KLUStaticPivot>(m, "NROuter_KLUStaticPivot", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
+        auto cls = py::class_<NROuterDist_KLUStaticPivot>(m, "NROuterDist_KLUStaticPivot", DocSolver::NROuterDist.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);
@@ -681,6 +751,14 @@ void bind_solvers(py::module_& m) {
         bind_linear_solver_stats(cls);
         bind_outer_algo(cls);
     }
+    {
+        auto cls = py::class_<NROuterDist_NICSLU>(m, "NROuterDist_NICSLU", DocSolver::NROuterDist.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
 #endif  // NICSLU_SOLVER_AVAILABLE (or _READ_THE_DOCS)
 
 #if defined(CKTSO_SOLVER_AVAILABLE) || defined(_READ_THE_DOCS)
@@ -725,6 +803,14 @@ void bind_solvers(py::module_& m) {
     }
     {
         auto cls = py::class_<NROuter_CKTSO>(m, "NROuter_CKTSO", DocSolver::NROuter.c_str())
+            .def(py::init<>());
+        bind_algo_methods(cls);
+        bind_nr_algo_policies(cls);
+        bind_linear_solver_stats(cls);
+        bind_outer_algo(cls);
+    }
+    {
+        auto cls = py::class_<NROuterDist_CKTSO>(m, "NROuterDist_CKTSO", DocSolver::NROuterDist.c_str())
             .def(py::init<>());
         bind_algo_methods(cls);
         bind_nr_algo_policies(cls);

@@ -12,6 +12,8 @@
 #include <cstdint>    // for std::uint64_t
 
 #include "LSGrid.hpp"
+#include "batch_algorithm/BatchAdjoint.hpp"
+#include "batch_algorithm/PowerFlowAdjoint.hpp"
 
 #include "AlgorithmSelector.hpp"  // to avoid circular references
 #include "BinaryArchive.hpp"
@@ -37,8 +39,10 @@ LSGrid::LSGrid(const LSGrid & other)
 {
     init_vm_pu_ = other.init_vm_pu_;
     keep_vinit_group_controlled_ = other.keep_vinit_group_controlled_;
+    uniform_voltage_start_ = other.uniform_voltage_start_;
     hold_frozen_regulators_ = other.hold_frozen_regulators_;
     sn_mva_ = other.sn_mva_;
+    _has_just_been_init = other._has_just_been_init;
     compute_results_ = other.compute_results_;
     ac_cache_.allow_reuse = other.ac_cache_.allow_reuse;
     dc_cache_.allow_reuse = other.dc_cache_.allow_reuse;
@@ -141,6 +145,27 @@ bool LSGrid::_holds_svc_monitors(bool runs_outer_loops) const
     return false;
 }
 
+void LSGrid::set_resume_outer_state(bool resume)
+{
+    // OuterLoopAlgo's AlgoConfig: the inner algorithm's integers, then this flag
+    AlgoConfig cfg = _algo.supports_outer_loops() ? get_ac_algo_config() : AlgoConfig();
+    if (cfg.int_params.empty()) {
+        std::ostringstream exc_;
+        exc_ << "LSGrid::set_resume_outer_state: the AC algorithm ('" << _algo.get_name()
+             << "') runs no outer loop. Select an NROuter_* algorithm first (change_algorithm).";
+        throw std::runtime_error(exc_.str());
+    }
+    cfg.int_params.back() = resume ? 1 : 0;
+    set_ac_algo_config(cfg);
+}
+
+bool LSGrid::get_resume_outer_state() const
+{
+    if (!_algo.supports_outer_loops()) return false;
+    const AlgoConfig cfg = get_ac_algo_config();
+    return !cfg.int_params.empty() && cfg.int_params.back() != 0;
+}
+
 std::vector<std::shared_ptr<BaseOuterLoop> > LSGrid::get_outer_loops() const
 {
     if (outer_loops_default_) return make_default_outer_loops(*this);
@@ -204,7 +229,8 @@ LSGrid::StateRes LSGrid::get_state() const
                                       hold_frozen_regulators_ ? 1 : 0,
                                       dc_slack_on_can_participate_ ? 1 : 0,
                                       reactive_dispatch_olf_ ? 1 : 0,
-                                      _forced_ref_slack_bus_id};
+                                      _forced_ref_slack_bus_id,
+                                      uniform_voltage_start_ ? 1 : 0};
     const auto to_std = [](const RealVect & vect) {
         std::vector<double> res_(static_cast<std::size_t>(vect.size()));
         for (Eigen::Index i = 0; i < vect.size(); ++i) res_[static_cast<std::size_t>(i)] = static_cast<double>(vect(i));
@@ -440,15 +466,18 @@ void LSGrid::set_state(LSGrid::StateRes & my_state, bool restore_algorithm)
     // the reference bus against the grid restored above)
     {
         const std::vector<int> & settings = std::get<GRID_SETTINGS_ID>(my_state);
-        if (settings.size() != 5) {
+        // 5 entries: written before set_uniform_voltage_start existed (1.3.0), which
+        // is then off -- the behaviour such a grid was saved with
+        if (settings.size() != 5 && settings.size() != 6) {
             throw std::runtime_error("LSGrid::set_state: the serialized grid settings are inconsistent "
-                                     "(expected 4 flags and the reference slack bus).");
+                                     "(expected 4 flags, the reference slack bus and an optional fifth flag).");
         }
         set_keep_vinit_at_group_controlled_buses(settings[0] != 0);
         set_hold_frozen_regulators(settings[1] != 0);
         set_dc_distribute_slack_on_can_participate(settings[2] != 0);
         set_reactive_dispatch_olf(settings[3] != 0);
         set_reference_slack_bus(settings[4]);
+        set_uniform_voltage_start(settings.size() > 5 && settings[5] != 0);
 
         const auto to_eigen = [](const std::vector<double> & vect) {
             RealVect res_(static_cast<Eigen::Index>(vect.size()));
@@ -724,6 +753,8 @@ void LSGrid::check_grid() const
     // from a file, which is set_state's reason for calling this -- should hear it here
     // rather than at the next powerflow.
     _check_vm_targets_agree();
+
+    _has_just_been_init = false;  // reached only when every check passed
 }
 
 void LSGrid::save_binary(const std::string & path, bool atomic) const {
@@ -877,10 +908,12 @@ void LSGrid::init_bus(unsigned int n_sub,
     substations_.init_bus(n_sub_, max_nb_bus_per_sub_,  bus_vn_kv);
     _orig_to_ls = IntVect();
     _ls_to_orig = IntVect();
+    _has_just_been_init = true;
 }
 
 void LSGrid::reset(bool reset_solver, bool reset_ac, bool reset_dc)
 {
+    _invalidate_adjoint();
     // A family's solver-side data is ONE object, so "reset the AC side" is one
     // call. What clear() deliberately leaves alone is the two policy flags:
     // `allow_reuse` is the caller's standing choice and a reset is not a request
@@ -925,6 +958,8 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
                           real_type tol)
 {
     auto timer = CustTimer();
+    _invalidate_adjoint();  // whatever happens below, the algorithm's last solve is not the one it was
+    check_grid_if_just_init();
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     if(Vinit.size() != nb_bus){
         std::ostringstream exc_;
@@ -1017,6 +1052,164 @@ CplxVect LSGrid::ac_pf(const Eigen::Ref<const CplxVect> & Vinit,
     // return the vector of complex voltage at each bus
     return res;
 };
+
+// ---- reverse-mode differentiation of the last AC powerflow ----------------------------
+
+const LSGrid::AdjointPrep & LSGrid::_prepare_adjoint(const char * fun_name)
+{
+    if(!_algo.supports_jacobian()){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::" << fun_name << ": the gradient is read off the Jacobian of an AC "
+                "Newton-Raphson, and the AC algorithm of this grid (" << _algo.get_name() << ") builds "
+                "none. Use `change_algorithm` (NR_*, NROuter_*, NROuterDist_*).";
+        throw std::runtime_error(exc_.str());
+    }
+    const bool solved = _has_ac_cache() && _algo.get_error() == ErrorType::NoError &&
+                        _algo.get_V().size() == static_cast<Eigen::Index>(ac_cache_.id_solver_to_me.size());
+    if(!solved){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::" << fun_name << ": there is no converged AC powerflow to differentiate. "
+                "Run `ac_pf` first (and check that it converged).";
+        throw std::runtime_error(exc_.str());
+    }
+    // the algorithm holds the system of the last solve, and the grid's AC change tracking
+    // is clear exactly while nothing moved since: a stale Jacobian is a wrong gradient
+    if(!ac_cache_.allow_reuse || !algo_controler_.ac_algo_controler().nothing_changed()){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::" << fun_name << ": the grid "
+             << (ac_cache_.allow_reuse ? "changed since the last AC powerflow" : "does not track its changes (AC cache reuse is off)")
+             << ", so the Jacobian the algorithm holds may not be the one of this grid. Run `ac_pf` "
+                "again right before asking for the gradient.";
+        throw std::runtime_error(exc_.str());
+    }
+    // the checks above are made at every call; what follows depends on the solve alone (the
+    // grid unchanged, the algorithm untouched since: see _invalidate_adjoint)
+    if(!adjoint_prep_.valid){
+        _algo.refresh_J_at_solution();
+        adjoint_prep_.layout = power_flow_adjoint::gen_v_layout(*this, ac_cache_, ac_cache_.voltage_control);
+        _algo.get_adjoint_solve_info(adjoint_prep_.layout.vm_buses, adjoint_prep_.info);
+        adjoint_prep_.valid = true;
+    }
+    return adjoint_prep_;
+}
+
+int LSGrid::dim_J()
+{
+    _prepare_adjoint("dim_J");
+    return static_cast<int>(_algo.get_J().rows());
+}
+
+IntVect LSGrid::get_theta_col_of_bus()
+{
+    _prepare_adjoint("get_theta_col_of_bus");
+    return power_flow_adjoint::bus_map_to_grid(ac_cache_, _algo.get_theta_to_J_col_python());
+}
+
+IntVect LSGrid::get_vm_col_of_bus()
+{
+    _prepare_adjoint("get_vm_col_of_bus");
+    return power_flow_adjoint::bus_map_to_grid(ac_cache_, _algo.get_vm_to_J_col_python());
+}
+
+IntVect LSGrid::get_p_row_of_bus()
+{
+    _prepare_adjoint("get_p_row_of_bus");
+    return power_flow_adjoint::bus_map_to_grid(ac_cache_, _algo.get_p_to_J_row_python());
+}
+
+IntVect LSGrid::get_q_row_of_bus()
+{
+    _prepare_adjoint("get_q_row_of_bus");
+    return power_flow_adjoint::bus_map_to_grid(ac_cache_, _algo.get_q_to_J_row_python());
+}
+
+LSGrid::AdjointMat LSGrid::solve_JT(const Eigen::Ref<const AdjointMat> & xbar)
+{
+    const AdjointPrep & prep = _prepare_adjoint("solve_JT");
+    const Eigen::Ref<const Eigen::SparseMatrix<real_type> > J = _algo.get_J();
+    const Eigen::Index dim = J.rows();
+    if(xbar.cols() != dim || xbar.rows() == 0){
+        std::ostringstream exc_;
+        exc_ << "LSGrid::solve_JT: xbar must be (k, dim_J) = (k, " << dim << "), k >= 1, got ("
+             << xbar.rows() << ", " << xbar.cols() << ").";
+        throw std::runtime_error(exc_.str());
+    }
+    // one system, k right-hand sides: BatchAdjoint's single row with k directions laid
+    // end to end, which is exactly a (k, dim) row-major block read flat
+    BatchAdjoint adjoint;
+    adjoint.allocate(1, J);
+    adjoint.store_row(0, J);
+    std::vector<std::vector<int> > identity(1);
+    power_flow_adjoint::identity_rows(prep.info, nullptr, _algo.get_p_to_J_row_python(), _algo.get_q_to_J_row_python(), identity[0]);
+    const AdjointMat flat = Eigen::Map<const AdjointMat>(AdjointMat(xbar).data(), 1, xbar.rows() * dim);
+    std::vector<char> ok;
+    const AdjointMat lambda = adjoint.solve_JT(flat, identity, 1, ok);
+    if(ok.empty() || !ok[0]){
+        throw std::runtime_error("LSGrid::solve_JT: the transposed system could not be solved "
+                                 "(the Jacobian of the last solve is singular).");
+    }
+    return Eigen::Map<const AdjointMat>(lambda.data(), xbar.rows(), dim);
+}
+
+RealVect LSGrid::gen_v_indirect_grad(const Eigen::Ref<const RealVect> & lambda)
+{
+    const AdjointPrep & prep = _prepare_adjoint("gen_v_indirect_grad");
+    if(lambda.size() != _algo.get_J().rows()){
+        throw std::runtime_error("LSGrid::gen_v_indirect_grad: lambda must have dim_J entries: pass what solve_JT returned.");
+    }
+    const power_flow_adjoint::GenVLayout & layout = prep.layout;
+    RealVect res = RealVect::Zero(layout.share.size());
+    const RealVect lam = lambda;
+    power_flow_adjoint::gen_v_indirect(layout, prep.info, _algo.get_vm_to_J_col_python(), _algo.get_group_v_row(),
+                                       lam.data(), res.data());
+    return res;
+}
+
+RealVect LSGrid::gen_p_indirect_grad(const Eigen::Ref<const RealVect> & lambda)
+{
+    const AdjointPrep & prep = _prepare_adjoint("gen_p_indirect_grad");
+    if(lambda.size() != _algo.get_J().rows()){
+        throw std::runtime_error("LSGrid::gen_p_indirect_grad: lambda must have dim_J entries: pass what solve_JT returned.");
+    }
+    const Eigen::Index nb_gen = static_cast<Eigen::Index>(generators_.nb());
+    RealVect res = RealVect::Zero(nb_gen);
+    const RealVect lam = lambda;
+    power_flow_adjoint::gen_p_indirect(prep.info, lam.data(), res.data(), nb_gen);
+    return res;
+}
+
+IntVect LSGrid::get_gen_v_target_bus()
+{
+    const AdjointPrep & prep = _prepare_adjoint("get_gen_v_target_bus");
+    return power_flow_adjoint::target_bus_to_grid(ac_cache_, prep.layout.target_bus);
+}
+
+RealVect LSGrid::get_gen_v_share()
+{
+    const AdjointPrep & prep = _prepare_adjoint("get_gen_v_share");
+    const power_flow_adjoint::GenVLayout & layout = prep.layout;
+    const IntVect vm_col = _algo.get_vm_to_J_col_python();
+    RealVect res = RealVect::Zero(layout.share.size());
+    for(Eigen::Index g = 0; g < res.size(); ++g) res[g] = power_flow_adjoint::share_in_solve(layout, prep.info, vm_col, g);
+    return res;
+}
+
+std::tuple<IntVect, Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
+LSGrid::get_outer_trafo_admittances() const
+{
+    std::vector<int> phase_tap, ratio_tap;
+    _algo.get_outer_phase_tap(phase_tap);
+    _algo.get_outer_ratio_tap(ratio_tap);
+    const std::vector<std::pair<int, std::array<cplx_type, 4> > > blocks =
+        trafos_.moved_tap_blocks(trafos_.moved_taps(false, ratio_tap), trafos_.moved_taps(true, phase_tap));
+    IntVect ids(static_cast<Eigen::Index>(blocks.size()));
+    Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> res(static_cast<Eigen::Index>(blocks.size()), 4);
+    for(std::size_t k = 0; k < blocks.size(); ++k){
+        ids[static_cast<Eigen::Index>(k)] = blocks[k].first;
+        for(int c = 0; c < 4; ++c) res(static_cast<Eigen::Index>(k), c) = blocks[k].second[static_cast<std::size_t>(c)];
+    }
+    return std::make_tuple(ids, res);
+}
 
 void LSGrid::fill_hvdc_droop_solver_data(HvdcDroopSolverData & data, bool ac) const
 {
@@ -1303,6 +1496,7 @@ void LSGrid::check_solution_q_values(Eigen::Ref<CplxVect> res, bool check_q_limi
 
 CplxVect LSGrid::check_solution(const Eigen::Ref<const CplxVect> & V_proposed, bool check_q_limits)
 {
+    check_grid_if_just_init();
     // pre process the data to define a proper jacobian matrix, the proper voltage vector etc.
     const int nb_bus = static_cast<int>(V_proposed.size());
     bool is_ac = true;
@@ -1582,6 +1776,14 @@ CplxVect LSGrid::_build_into_cache(
             throw std::runtime_error(exc_.str());
         }
         V(bus_solver_id) = Vinit(bus_me_id.cast_int());
+    }
+    // the caller's magnitudes, kept before the targets are written over them below:
+    // what a Newton-Raphson starts from with set_uniform_voltage_start (AC only -- a
+    // DC solve echoes the seeded magnitudes back as its result)
+    if(init_pv_vm_targets && uniform_voltage_start_ && is_ac_family){
+        cache.uniform_start_vm = V.array().abs();
+    } else {
+        cache.uniform_start_vm.resize(0);
     }
     if(init_pv_vm_targets){
         // The three set_vm calls below are last-writer-wins, so this is where two
@@ -1913,6 +2115,9 @@ CplxVect LSGrid::_build_foreign_cache(
     mine.bus_pv = out.bus_pv;
     mine.bus_pq = out.bus_pq;
     mine.voltage_control = out.voltage_control;
+    // the batches seed every row themselves: a start left over from an own solve of
+    // this grid must not be read during theirs
+    mine.uniform_start_vm.resize(0);
     return V;
 }
 
@@ -2685,13 +2890,15 @@ void LSGrid::set_gen_capability_curves(const Eigen::Ref<const Eigen::VectorXi> &
     gen_curves_ = std::move(curves);
 }
 
-bool LSGrid::gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_type & max_q) const
+namespace {
+
+// A generator's curve at `p_mw`: its limits (MVar) and their slopes (MVar per MW), from the
+// segment p lies on or the end one it extrapolates. False without a curve.
+bool curve_at(const std::vector<std::array<real_type, 3> > & curve, real_type p_mw,
+              real_type & min_q, real_type & max_q, real_type & dmin_q, real_type & dmax_q)
 {
     // ReactiveCapabilityCurveUtil (powsybl-core), with extrapolation as OpenLoadFlow asks
-    if(gen_id < 0 || static_cast<std::size_t>(gen_id) >= gen_curves_.size()) return false;
-    const auto & curve = gen_curves_[static_cast<std::size_t>(gen_id)];
     if(curve.size() < 2 || !std::isfinite(p_mw)) return false;
-    // the segment p lies on, or the end one it extrapolates
     std::size_t i = 0;
     while(i + 2 < curve.size() && p_mw > curve[i + 1][0]) ++i;
     const auto & a = curve[i];
@@ -2700,8 +2907,29 @@ bool LSGrid::gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_t
     const real_type t = (p_mw - a[0]) / (b[0] - a[0]);
     min_q = a[1] + (b[1] - a[1]) * t;
     max_q = a[2] + (b[2] - a[2]) * t;
-    if(min_q > max_q) min_q = max_q = (min_q + max_q) / 2.;
+    dmin_q = (b[1] - a[1]) / (b[0] - a[0]);
+    dmax_q = (b[2] - a[2]) / (b[0] - a[0]);
+    if(min_q > max_q){
+        min_q = max_q = (min_q + max_q) / 2.;
+        dmin_q = dmax_q = (dmin_q + dmax_q) / 2.;
+    }
     return true;
+}
+
+}  // namespace
+
+bool LSGrid::gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_type & max_q) const
+{
+    if(gen_id < 0 || static_cast<std::size_t>(gen_id) >= gen_curves_.size()) return false;
+    real_type dmin_q, dmax_q;
+    return curve_at(gen_curves_[static_cast<std::size_t>(gen_id)], p_mw, min_q, max_q, dmin_q, dmax_q);
+}
+
+bool LSGrid::gen_limit_slopes_at(int gen_id, real_type p_mw, real_type & dmin_q, real_type & dmax_q) const
+{
+    if(gen_id < 0 || static_cast<std::size_t>(gen_id) >= gen_curves_.size()) return false;
+    real_type min_q, max_q;
+    return curve_at(gen_curves_[static_cast<std::size_t>(gen_id)], p_mw, min_q, max_q, dmin_q, dmax_q);
 }
 
 namespace {
@@ -2729,6 +2957,17 @@ void LSGrid::gen_limits_at_outer_target(int gen_id, real_type outer_target_p,
     if(!std::isfinite(outer_target_p)) return;
     real_type lo, hi;
     if(gen_limits_at(gen_id, outer_target_p, lo, hi)){ min_q = lo; max_q = hi; }
+}
+
+void LSGrid::gen_limit_slopes_at_outer_target(int gen_id, real_type outer_target_p,
+                                              real_type & dmin_q, real_type & dmax_q) const
+{
+    // the limits gen_limits_at_outer_target reads: the fixed ones do not move
+    dmin_q = 0.;
+    dmax_q = 0.;
+    if(!std::isfinite(outer_target_p)) return;
+    real_type lo, hi;
+    if(gen_limit_slopes_at(gen_id, outer_target_p, lo, hi)){ dmin_q = lo; dmax_q = hi; }
 }
 
 real_type LSGrid::gen_target_q_at_outer_target(int gen_id, const std::vector<real_type> & outer_target_p) const
@@ -3003,6 +3242,7 @@ CplxVect LSGrid::dc_pf(const Eigen::Ref<const CplxVect> & Vinit,
     // ie fake the action of generators to adjust Sbus such that sum(Sbus) = 0
     // and the slack contribution factors are met.
     auto timer = CustTimer();
+    check_grid_if_just_init();
 
     const int nb_bus = static_cast<int>(substations_.nb_bus());
     if(Vinit.size() != nb_bus){

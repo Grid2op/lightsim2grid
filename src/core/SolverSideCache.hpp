@@ -195,6 +195,10 @@ struct SolverSideCache final : SolverBusLayout
     Matrix mat;
     /// Sbus (AC, complex) / Pbus (DC, real), per unit, nb_bus_solver()
     InjVect inj;
+    /// the starting magnitudes as the caller passed them, before the voltage
+    /// targets were written in (LSGrid::set_uniform_voltage_start); empty when
+    /// that option is off, and always for the DC family
+    RealVect uniform_start_vm;
 
     /// Back to "this family has never solved". Everything that describes a built
     /// system goes, the two policy flags stay: `allow_reuse` is the caller's
@@ -204,6 +208,7 @@ struct SolverSideCache final : SolverBusLayout
         clear_layout();
         mat = Matrix();
         inj = InjVect();
+        uniform_start_vm = RealVect();
     }
 
     /**

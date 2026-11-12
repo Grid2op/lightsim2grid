@@ -51,6 +51,7 @@
 
 // import newton raphson solvers using different linear algebra solvers
 #include "AlgorithmSelector.hpp"
+#include "batch_algorithm/PowerFlowAdjoint.hpp"
 
 namespace ls2g {
 
@@ -124,7 +125,8 @@ class LS2G_API LSGrid final
                 // the grid-level settings copy() keeps (appended), without which a grid read
                 // back solves differently: keep_vinit_at_group_controlled_buses,
                 // hold_frozen_regulators, dc_distribute_slack_on_can_participate,
-                // reactive_dispatch_olf (0 / 1), then the reference slack bus (-1: none)
+                // reactive_dispatch_olf (0 / 1), the reference slack bus (-1: none),
+                // then uniform_voltage_start (0 / 1; absent before 1.3.1, read as 0)
                 std::vector<int>,
                 // OpenLoadFlow's reactive data (empty: none): set_gen_reactive_range_max,
                 // set_station_reactive_range_max (side 1, side 2), set_gen_raw_target_q
@@ -189,6 +191,7 @@ class LS2G_API LSGrid final
           compute_results_(true),
           init_vm_pu_(1.04),
           keep_vinit_group_controlled_(false),
+          uniform_voltage_start_(false),
           hold_frozen_regulators_(false),
           sn_mva_(1.0),
           max_nb_bus_per_sub_(2){
@@ -356,6 +359,7 @@ class LS2G_API LSGrid final
                 _dc_algo.change_algorithm(type);
                 algo_controler_.dc_algo_controler().tell_all_changed();
             } else {
+                _invalidate_adjoint();
                 _algo.change_algorithm(type);
                 algo_controler_.ac_algo_controler().tell_all_changed();
             }
@@ -367,6 +371,7 @@ class LS2G_API LSGrid final
             // Peek at IS_AC to decide which slot to update.
             std::unique_ptr<BaseAlgo> tmp = AlgorithmRegistry::instance().make(name);
             if (tmp->IS_AC) {
+                _invalidate_adjoint();
                 _algo.change_algorithm(name);
                 // Same courtesy as the enum overload above, and it used to be missing
                 // here: a fast-decoupled solve reads Bp / Bpp, which only
@@ -438,6 +443,18 @@ class LS2G_API LSGrid final
         [[nodiscard]] const OuterLoopDriverParams & get_outer_loop_driver_params() const noexcept {
             return outer_driver_params_;
         }
+
+        /**
+         * Whether a solve of the AC algorithm, an NROuter_* one, starts its outer loops from
+         * where the last converged solve left them rather than from the grid (see
+         * OuterLoopDriverParams::resume_outer_state). A shortcut for the last integer of its
+         * AC AlgoConfig: the setting is the algorithm's, so it is copied and pickled with the
+         * grid's algorithm configuration, and a change of AC algorithm starts from that
+         * algorithm's own (off). Throws if the AC algorithm runs no outer loop; the getter
+         * then returns false.
+         */
+        void set_resume_outer_state(bool resume);
+        [[nodiscard]] bool get_resume_outer_state() const;
 
         /**
          * The limits the LAST converged powerflow (ac_pf when `ac`, dc_pf otherwise)
@@ -537,6 +554,52 @@ class LS2G_API LSGrid final
         void set_keep_vinit_at_group_controlled_buses(bool keep) noexcept {keep_vinit_group_controlled_ = keep;}
         [[nodiscard]] bool get_keep_vinit_at_group_controlled_buses() const noexcept {return keep_vinit_group_controlled_;}
 
+        /**
+         * Start the Newton-Raphson from the caller's voltage at the buses whose
+         * magnitude is held (the PV buses and the slack), as OpenLoadFlow's uniform
+         * start does, instead of from their voltage targets.
+         *
+         * false (the default): the targets are written into the starting voltage,
+         * and the first Newton step is taken from there.
+         *
+         * true: the targets are still written into the voltage handed to the
+         * algorithm -- so an algorithm that does not know this option (the FDPF,
+         * Gauss-Seidel, DC, an external plugin) solves exactly as before -- but the
+         * magnitudes the caller passed are kept alongside
+         * (`get_ac_uniform_start_vm`). A Newton-Raphson (any `NR*` algorithm, outer
+         * loops included) then evaluates its first mismatch and Jacobian at the
+         * caller's magnitudes and moves the held magnitudes to their targets within
+         * that first step, through their column of the Jacobian: the step
+         * OpenLoadFlow takes, whose equation `V = target` is linear and so met
+         * exactly after one iteration. Later iterations are unchanged.
+         *
+         * Why: a held bus tied to another bus by a very low impedance branch starts
+         * with a large flow on that branch when only the held end is moved to its
+         * target, and the first step can throw the rest of the grid far enough that
+         * the Newton never comes back. Started from the caller's magnitudes, the
+         * first step moves both ends together.
+         *
+         * A bus whose magnitude is itself a Newton unknown (one a voltage-control
+         * group regulates, or every regulated bus of an outer-loop algorithm, which
+         * gives each a voltage row) simply starts from the caller's magnitude too,
+         * and its voltage row brings it to the target.
+         *
+         * It changes the starting point only: targets and results are the same.
+         * It makes no difference to a warm start (a converged voltage already holds
+         * the targets), nor where the seeded voltage already converges. The buses
+         * `set_keep_vinit_at_group_controlled_buses` holds keep the caller's
+         * magnitude either way. That first step is a full one (no step scaling),
+         * and the custom rows of the Newton (distributed slack, voltage-control
+         * groups, HVDC) do not get the coupling term in it.
+         *
+         * Copied with the grid, so a batch algorithm built from it inherits it (its
+         * "n" solve and the rows seeded from the caller's voltage, see
+         * BaseBatchSolverSynch::_publish_uniform_start); part of `get_state` / the
+         * binary format.
+         */
+        void set_uniform_voltage_start(bool uniform) noexcept {uniform_voltage_start_ = uniform;}
+        [[nodiscard]] bool get_uniform_voltage_start() const noexcept {return uniform_voltage_start_;}
+
 
         /**
          * Keep, in the voltage-control group it would join, every generator an outer
@@ -620,6 +683,9 @@ class LS2G_API LSGrid final
                                        const Eigen::Ref<const RealVect> & max_q_mvar);
         /// a generator's reactive limits at `p_mw` (MVar) from its curve; false without one
         bool gen_limits_at(int gen_id, real_type p_mw, real_type & min_q, real_type & max_q) const;
+        /// their derivatives with respect to `p_mw` there (MVar per MW), on the same segment;
+        /// false without a curve
+        bool gen_limit_slopes_at(int gen_id, real_type p_mw, real_type & dmin_q, real_type & dmax_q) const;
         /**
          * OpenLoadFlow's forceTargetQInReactiveLimits on a moved target: each generator's target
          * Q (MVar) before it was clamped into its limits at its target P, NaN where none was
@@ -646,6 +712,10 @@ class LS2G_API LSGrid final
         /// the same, for that one generator's target P (MW, NaN: none moved it)
         void gen_limits_at_outer_target(int gen_id, real_type outer_target_p,
                                         real_type & min_q, real_type & max_q) const;
+        /// how those limits move with that target P (MVar per MW): 0 where they are the fixed
+        /// ones (no curve, or no target P an outer loop or a batch row gave it)
+        void gen_limit_slopes_at_outer_target(int gen_id, real_type outer_target_p,
+                                              real_type & dmin_q, real_type & dmax_q) const;
 
         void set_hold_frozen_regulators(bool hold) {
             if(hold == hold_frozen_regulators_) return;
@@ -683,7 +753,25 @@ class LS2G_API LSGrid final
          * reads them again. Same "recount whenever there is nothing to protect" rule
          * set_state / load_binary use.
          */
-        void _elements_replaced_wholesale(){ substations_.reset_bus_element_counts(); }
+        void _elements_replaced_wholesale(){
+            substations_.reset_bus_element_counts();
+            _has_just_been_init = true;
+        }
+
+        /**
+         * Run check_grid() if an init_* (or init_bus) has been called since the last
+         * successful one, so a grid built by hand is validated before anything is
+         * computed on it: an out-of-range bus id, for one, is otherwise only
+         * dereferenced by the powerflow (crash, empty result, or the element silently
+         * ignored). Called by ac_pf, dc_pf, check_solution and the batch algorithms
+         * (once, on their copy). Not at the end of each init_*: the grid is incomplete
+         * between two of them, and check_grid() needs all of it. A grid that went
+         * through a loader or set_state is already checked, so this costs nothing
+         * there.
+         */
+        void check_grid_if_just_init(){
+            if(_has_just_been_init) check_grid();
+        }
 
         void init_powerlines(const Eigen::Ref<const RealVect> & branch_r,
                              const Eigen::Ref<const RealVect> & branch_x,
@@ -763,6 +851,13 @@ class LS2G_API LSGrid final
                                       const Eigen::Ref<const CplxVect> & trafo_b){
             const CplxVect half_b = 0.5 * trafo_b;
             trafos_.update_physical_parameters(trafo_r, trafo_x, half_b, half_b, algo_controler_);
+        }
+        /// the same, with a shunt admittance per side (side 1: the high voltage one)
+        void update_trafos_parameters_full(const Eigen::Ref<const RealVect> & trafo_r,
+                                           const Eigen::Ref<const RealVect> & trafo_x,
+                                           const Eigen::Ref<const CplxVect> & trafo_h_1,
+                                           const Eigen::Ref<const CplxVect> & trafo_h_2){
+            trafos_.update_physical_parameters(trafo_r, trafo_x, trafo_h_1, trafo_h_2, algo_controler_);
         }
 
         void init_generators(const Eigen::Ref<const RealVect> & generators_p,
@@ -1098,7 +1193,8 @@ class LS2G_API LSGrid final
         // out-of-bounds read/write during a powerflow), and exposed to Python so the
         // grid loaders (pandapower / pypowsybl / matpower / powermodels) can call it
         // right after building a grid. Runs in O(number of elements), off the solver
-        // hot path.
+        // hot path. Also run, once, at the first powerflow after an init_* (see
+        // check_grid_if_just_init).
         void check_grid() const;
 
     private:
@@ -1127,7 +1223,7 @@ class LS2G_API LSGrid final
         // algo config (scaling/refactor policy params) — also part of StateRes,
         // see LSGrid::get_state()/set_state()
         [[nodiscard]] AlgoConfig get_ac_algo_config() const { return _algo.get_config(); }
-        void set_ac_algo_config(const AlgoConfig& cfg) { _algo.set_config(cfg); }
+        void set_ac_algo_config(const AlgoConfig& cfg) { _invalidate_adjoint(); _algo.set_config(cfg); }
         [[nodiscard]] AlgoConfig get_dc_algo_config() const { return _dc_algo.get_config(); }
         void set_dc_algo_config(const AlgoConfig& cfg) { _dc_algo.set_config(cfg); }
         template<class T>
@@ -1262,6 +1358,25 @@ class LS2G_API LSGrid final
          */
         [[nodiscard]] const VoltageControlPlan & get_ac_voltage_control_plan() const {
             return ac_cache_.voltage_control;
+        }
+        /**
+         * The starting magnitudes of the AC family's last build, in its own bus
+         * labelling, as the caller passed them -- before the voltage targets were
+         * written in. Empty unless `set_uniform_voltage_start` is on (and for
+         * `check_solution`, which seeds nothing). Read by the Newton-Raphson through
+         * its `lsgrid_ptr`, in the same window as `get_ac_voltage_control_plan`.
+         */
+        [[nodiscard]] const RealVect & get_ac_uniform_start_vm() const {
+            return ac_cache_.uniform_start_vm;
+        }
+        /**
+         * Publish the starting magnitudes the Newton-Raphson reads (see
+         * `get_ac_uniform_start_vm`) for a caller solving a system of its own in the
+         * labelling `build_solver_input` published -- the batches, which seed each row
+         * themselves. Empty: nothing to start from (a row starting from a solved state).
+         */
+        void set_ac_uniform_start_vm(const RealVect & vm) {
+            ac_cache_.uniform_start_vm = vm;
         }
         [[nodiscard]] const AlgoControl & get_dc_algo_controler() const {return algo_controler_.dc_algo_controler();}
 
@@ -2628,6 +2743,51 @@ class LS2G_API LSGrid final
             return IntVect::Zero(ctrl.n_controllers());
         }
 
+        // ---- reverse-mode differentiation of the last AC powerflow -------------------
+        // The gradient of a loss L(V) with respect to this grid's injections and voltage
+        // set-points, through the solve ac_pf just made: one transposed solve of its last
+        // Jacobian (J^T lambda = xbar, refreshed at the converged V), then lambda read
+        // at each input's row -- what BaseBatchSweep does per row, for one solve. With
+        // outer loops, the Jacobian is that of their last Newton solve, every decision
+        // they took held fixed (see AdjointSolveInfo and docs/differentiable.rst).
+        //
+        // Nothing is kept by the forward: the algorithm still holds its last system, and
+        // these read it. So they need the grid exactly as that solve left it -- an AC
+        // Newton-Raphson that converged, and no change since (they throw otherwise).
+        using AdjointMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+        /// the dimension of the system: the length of one cotangent, and of one lambda
+        [[nodiscard]] int dim_J();
+        /// where each GRID bus sits in the Jacobian, -1 where it owns no such unknown /
+        /// equation: the columns are where a cotangent of that bus goes in xbar, the rows
+        /// where its injection gradient is read out of lambda
+        [[nodiscard]] IntVect get_theta_col_of_bus();
+        [[nodiscard]] IntVect get_vm_col_of_bus();
+        [[nodiscard]] IntVect get_p_row_of_bus();
+        [[nodiscard]] IntVect get_q_row_of_bus();
+        /// solve J^T lambda = xbar; `xbar` is (k, dim_J), k cotangents (1 for the gradient
+        /// of a scalar loss). The multipliers of the identity rows (a bus pinned PV) are 0.
+        AdjointMat solve_JT(const Eigen::Ref<const AdjointMat> & xbar);
+        /// the indirect half of the gen_v gradient, one entry per generator, already
+        /// weighted by get_gen_v_share (see BaseBatchSweep::gen_v_indirect_grad)
+        RealVect gen_v_indirect_grad(const Eigen::Ref<const RealVect> & lambda);
+        /// what the gen_p gradient owes beyond lambda at the P row (a unit an outer loop
+        /// froze at a limit of its capability curve, one the distributed slack holds at a
+        /// bound), one entry per generator (see BaseBatchSweep::gen_p_indirect_grad)
+        RealVect gen_p_indirect_grad(const Eigen::Ref<const RealVect> & lambda);
+        /// the GRID bus whose magnitude each generator's set-point fixes, -1 where it fixes
+        /// none (see BaseBatchSweep::get_gen_v_target_bus)
+        [[nodiscard]] IntVect get_gen_v_target_bus();
+        /// the share of that derivative each generator carries in this solve, 0 where its
+        /// set-point reaches nothing (see BaseBatchSweep::get_gen_v_share_rows): what the
+        /// DIRECT half of its gradient is weighted by
+        [[nodiscard]] RealVect get_gen_v_share();
+        /// the transformers the last AC powerflow's outer loops left at another tap than the
+        /// grid's, and the pi block (y11, y12, y21, y22, pu) they have there: what its flows are
+        /// computed with (empty without outer loops, or when no loop moved a tap)
+        [[nodiscard]] std::tuple<IntVect, Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> >
+        get_outer_trafo_admittances() const;
+
         [[nodiscard]] real_type get_computation_time() const{ return _algo.get_computation_time();}
         [[nodiscard]] real_type get_dc_computation_time() const{ return _dc_algo.get_computation_time();}
 
@@ -3076,6 +3236,22 @@ class LS2G_API LSGrid final
         }
     
     protected:
+        // What the reverse-mode entry points work from, out of the last AC solve: the
+        // Jacobian refreshed at the solution, the gen_v layout and the solve's own
+        // description. Worked out once per solve (a backward reads it several times).
+        struct AdjointPrep {
+            bool valid = false;
+            power_flow_adjoint::GenVLayout layout;
+            AdjointSolveInfo info;
+        };
+        // The checks every reverse-mode entry point makes (an AC Newton-Raphson, converged,
+        // the grid unchanged since), then the AdjointPrep of the last solve.
+        const AdjointPrep & _prepare_adjoint(const char * fun_name);
+        // the AC algorithm may hold another solve, or another state of it: work the
+        // AdjointPrep out again on the next read (every ac_pf, change of algorithm, of its
+        // config, reset)
+        void _invalidate_adjoint() { adjoint_prep_.valid = false; }
+
         /**
          * THE BUILD. Everything a solver family needs, assembled out of this grid
          * into `cache`: bus labelling, matrix, injections, slack, pv-pq split.
@@ -3484,8 +3660,12 @@ class LS2G_API LSGrid final
         bool compute_results_;
         real_type init_vm_pu_;  // default vm initialization, mainly for dc powerflow
         bool keep_vinit_group_controlled_;  // see set_keep_vinit_at_group_controlled_buses
+        bool uniform_voltage_start_;  // see set_uniform_voltage_start
         bool hold_frozen_regulators_;  // see set_hold_frozen_regulators
         real_type sn_mva_;
+        // An init_* / init_bus was called since the last successful check_grid() (see
+        // check_grid_if_just_init). Mutable: check_grid() is const and clears it.
+        mutable bool _has_just_been_init = false;
 
         // powersystem representation
         // 1. bus
@@ -3557,6 +3737,7 @@ class LS2G_API LSGrid final
 
         // to solve the newton raphson
         AlgorithmSelector _algo;
+        AdjointPrep adjoint_prep_;  // see _prepare_adjoint; a copy starts without one
         AlgorithmSelector _dc_algo;
         // see set_dc_distribute_slack_on_can_participate; whether the DC cache's weights are
         // the "can participate" ones (the option is on and some unit is flagged)

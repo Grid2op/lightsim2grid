@@ -240,6 +240,40 @@ void ReactiveLimitsLoop::_initialize(OuterContext & ctx)
             _limits(ctx, bus, q_min, q_max);
             _freeze(ctx, bus, bus.realistic ? bus.target_q : (state < 0 ? q_min : q_max), state);
         }
+        _restart_frozen_vm(ctx);
+    }
+}
+
+void ReactiveLimitsLoop::_restart_frozen_vm(OuterContext & ctx) const
+{
+    // The solve starts from a voltage whose regulated buses LSGrid (or the batch) snapped
+    // to their set-points -- right for a bus that regulates, not for one this solve holds at
+    // a limit: there the previous solve left another magnitude, and starting from the
+    // set-point costs Newton iterations to move back to it, even with nothing changed. So
+    // a bus frozen again starts from the magnitude the previous solve left it at: its own
+    // for a local bus, the regulated one for a group no controller of which regulates any
+    // more. A bus still regulating keeps the set-point (its magnitude is pinned).
+    if (ctx.Vm == nullptr || ctx.controls == nullptr) return;
+    const RealVect & vm = *ctx.Vm;
+    const Eigen::Index nb_bus = static_cast<Eigen::Index>(ctx.view().id_solver_to_me().size());
+    if (vm.size() != nb_bus) return;  // not the buses of this solve
+    const VoltageControlSolverData & ctrl = ctx.view().layout().voltage_control.controllers();
+    for (const ControllerBus & bus : buses_) {
+        if (bus.state == 0) continue;
+        int b = -1;
+        if (bus.local) {
+            b = bus.bus_solver;
+        } else if (bus.group >= 0 && bus.group < ctrl.n_groups()) {
+            bool all_held = true;
+            const int first = ctrl.grp_start(bus.group);
+            for (int c = first; all_held && c < first + ctrl.grp_count(bus.group); ++c) {
+                all_held = ctx.controls->is_held(c);
+            }
+            if (all_held) b = bus.reg_bus_solver;
+        }
+        if (b < 0 || b >= nb_bus) continue;
+        const real_type v = vm(b);
+        if (std::isfinite(v) && v > 0.) ctx.controls->reset_vm(b, v);
     }
 }
 
@@ -263,12 +297,9 @@ void ReactiveLimitsLoop::_limits(const OuterContext & ctx, const ControllerBus &
     q_max = bus.max_q;
     const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
     // a generator: its curve at the target P an outer loop gave it, its fixed limits otherwise
-    static const std::vector<real_type> none;
-    const std::vector<real_type> & loops = ctx.injections != nullptr ? ctx.injections->gen_target_p : none;
-    const OuterGridView view = ctx.view();
     for (int gen_id : entry.gen_ids) {
         real_type lo, hi;
-        ctx.grid->gen_limits_at_outer_target(gen_id, view.gen_target_p_override(loops, gen_id), lo, hi);
+        ctx.grid->gen_limits_at_outer_target(gen_id, _gen_target_p(ctx, gen_id), lo, hi);
         q_min += lo;
         q_max += hi;
     }
@@ -282,6 +313,26 @@ void ReactiveLimitsLoop::_limits(const OuterContext & ctx, const ControllerBus &
     }
 }
 
+real_type ReactiveLimitsLoop::_gen_target_p(const OuterContext & ctx, int gen_id)
+{
+    static const std::vector<real_type> none;
+    return ctx.view().gen_target_p_override(ctx.injections != nullptr ? ctx.injections->gen_target_p : none, gen_id);
+}
+
+real_type ReactiveLimitsLoop::_gen_limit_slope(const OuterContext & ctx, int gen_id, bool max)
+{
+    real_type dlo, dhi;
+    ctx.grid->gen_limit_slopes_at_outer_target(gen_id, _gen_target_p(ctx, gen_id), dlo, dhi);
+    return max ? dhi : dlo;
+}
+
+void ReactiveLimitsLoop::_adjoint_terms(OuterAdjointTerms & out) const
+{
+    for (const ControllerBus & bus : buses_) {
+        if (bus.state != 0) out.q_slopes.insert(out.q_slopes.end(), bus.slopes.begin(), bus.slopes.end());
+    }
+}
+
 real_type ReactiveLimitsLoop::_controller_limit(const OuterContext & ctx, int ctrl_pos, bool max) const
 {
     const LSGrid & grid = *ctx.grid;
@@ -289,10 +340,8 @@ real_type ReactiveLimitsLoop::_controller_limit(const OuterContext & ctx, int ct
     const int el = ctrl.elem_id(ctrl_pos);
     switch (ctrl.kind(ctrl_pos)) {
         case VoltageControlSolverData::GEN: {
-            static const std::vector<real_type> none;
             real_type lo, hi;
-            grid.gen_limits_at_outer_target(el, ctx.view().gen_target_p_override(
-                ctx.injections != nullptr ? ctx.injections->gen_target_p : none, el), lo, hi);
+            grid.gen_limits_at_outer_target(el, _gen_target_p(ctx, el), lo, hi);
             return max ? hi : lo;
         }
         case VoltageControlSolverData::SVC: {
@@ -458,14 +507,22 @@ void ReactiveLimitsLoop::_freeze(OuterContext & ctx, ControllerBus & bus, real_t
     // own Q is not in it while they regulate)
     OuterInjections & st = *ctx.injections;
     const real_type sn = ctx.grid->get_sn_mva();
+    const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
+    // a generator frozen at a limit of its curve follows it: what the adjoint adds to its
+    // gen_p gradient (the robust mode's target Q does not move with P)
+    bus.slopes.clear();
     if (!bus.local) {
         // each of its controllers held at its own limit: the bus' at that limit
-        const auto & entry = plan_.buses[static_cast<std::size_t>(bus.entry)];
         const VoltageControlSolverData & ctrl = ctx.view().layout().voltage_control.controllers();
         for (int c : entry.ctrl_pos) {
             real_type q = _controller_limit(ctx, c, state > 0);
-            if (bus.realistic && ctrl.kind(c) == VoltageControlSolverData::GEN) {
-                q = ctx.grid->get_generators().get_target_q()(ctrl.elem_id(c));  // the robust mode's
+            if (ctrl.kind(c) == VoltageControlSolverData::GEN) {
+                if (bus.realistic) {
+                    q = ctx.grid->get_generators().get_target_q()(ctrl.elem_id(c));  // the robust mode's
+                } else {
+                    const real_type slope = _gen_limit_slope(ctx, ctrl.elem_id(c), state > 0);
+                    if (slope != 0.) bus.slopes.push_back(OuterQSlope{ctrl.elem_id(c), bus.bus_solver, c, slope / sn});
+                }
             }
             VoltageControllerHold * hold = ctx.controls->controller_hold(c);
             if (hold != nullptr) hold->hold(q / sn);
@@ -473,6 +530,12 @@ void ReactiveLimitsLoop::_freeze(OuterContext & ctx, ControllerBus & bus, real_t
         bus.state = state;
         bus.frozen_q = q_mvar;
         return;
+    }
+    if (!bus.realistic) {
+        for (int gen_id : entry.gen_ids) {
+            const real_type slope = _gen_limit_slope(ctx, gen_id, state > 0);
+            if (slope != 0.) bus.slopes.push_back(OuterQSlope{gen_id, bus.bus_solver, -1, slope / sn});
+        }
     }
     CplxVect & Sbus = *st.Sbus;
     const real_type q_init = std::imag((*st.Sbus_target)(bus.bus_solver));
@@ -494,6 +557,7 @@ void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
         bus.state = 0;
         bus.realistic = false;
         bus.frozen_q = 0.;
+        bus.slopes.clear();
         return;
     }
     CplxVect & Sbus = *st.Sbus;
@@ -504,6 +568,7 @@ void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
     bus.state = 0;
     bus.realistic = false;
     bus.frozen_q = 0.;
+    bus.slopes.clear();
 }
 
 OuterLoopStatus ReactiveLimitsLoop::_check(OuterContext & ctx)

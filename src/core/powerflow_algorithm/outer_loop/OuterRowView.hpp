@@ -125,6 +125,8 @@ struct OuterRowView
     Units loads;
     Branches lines;
     Branches trafos;
+    /// 1: this row disconnects that hvdc line (empty: none does)
+    std::vector<char> hvdc_off;
 
     void clear_overrides() {
         gens.clear();
@@ -132,6 +134,7 @@ struct OuterRowView
         loads.clear();
         lines.clear();
         trafos.clear();
+        hvdc_off.clear();
     }
     /// lay the active targets a solve's outer loops moved (OuterInjections' convention: NaN
     /// where a loop kept the unit's) over this row's: the state that solve ended in, which a
@@ -159,6 +162,10 @@ class LS2G_API OuterGridView
         /// the labelling of the solve (the row's, the grid's AC one otherwise)
         const SolverBusLayout & layout() const;
         const SolverBusIdVect & id_me_to_solver() const;
+        /// the solver bus of grid bus `bus_me` in this labelling, -1 when it is not solved
+        int bus_solver(int bus_me) const;
+        /// the grid's base power, MVA (pu <-> MW)
+        real_type sn_mva() const;
         const GlobalBusIdVect & id_solver_to_me() const;
         /// the row's stranded solver buses, sorted; null: none
         const std::vector<int> * masked() const { return row_ != nullptr ? row_->masked : nullptr; }
@@ -180,6 +187,8 @@ class LS2G_API OuterGridView
 
         // ----- storage units (load convention for P, as the container) ------------------
         bool storage_on(int storage_id) const;
+        /// whether this row keeps that hvdc line (its status in the grid is the line's own)
+        bool hvdc_on(int hvdc_id) const;
         int storage_bus_solver(int storage_id) const;
         bool storage_is_local_voltage_controller(int storage_id) const;
         real_type storage_target_p(int storage_id) const;

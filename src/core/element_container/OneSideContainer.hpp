@@ -688,8 +688,12 @@ class OneSideContainer : public GenericContainer
                              const std::string & el_name) const
         {
             const int nb_el = nb();
-            const bool has_subid = subid_.size() > 0;          // optional
-            const bool has_topo  = pos_topo_vect_.size() > 0;  // optional
+            // Both optional, and a container re-initialized with another element count
+            // keeps the ones it had (init() does not touch them; update_topo rejects
+            // the mismatch): range-check only the entries that exist, never read past
+            // their end.
+            const int nb_subid = static_cast<int>(subid_.size());
+            const int nb_topo = static_cast<int>(pos_topo_vect_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id)
             {
                 const int bus = bus_id_(el_id).cast_int();
@@ -721,7 +725,7 @@ class OneSideContainer : public GenericContainer
                     // grid. What it used to catch -- a saved bus-status vector
                     // contradicting the elements -- cannot be expressed any more.
                 }
-                if(has_subid)
+                if(el_id < nb_subid)
                 {
                     const int sub = subid_(el_id);
                     if((sub < 0) || (sub >= nb_sub))
@@ -732,7 +736,7 @@ class OneSideContainer : public GenericContainer
                         throw std::out_of_range(exc_.str());
                     }
                 }
-                if(has_topo)
+                if(el_id < nb_topo)
                 {
                     const int pos = pos_topo_vect_(el_id);
                     if(pos < 0)

@@ -41,6 +41,10 @@ void Base::update_state(
     free_vm_slack_buses_.clear();
     if (lsgrid_ptr != nullptr)
         free_vm_slack_buses_ = lsgrid_ptr->get_ac_voltage_control_plan().free_vm_slack_buses();
+
+    // the uniform start, same window and same reason (see NRSystem::begin_vm_lift)
+    if (lsgrid_ptr != nullptr) uniform_start_vm_ = lsgrid_ptr->get_ac_uniform_start_vm();
+    else uniform_start_vm_.resize(0);
 }
 
 } // namespace ls2g

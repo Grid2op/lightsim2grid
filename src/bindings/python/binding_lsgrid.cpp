@@ -132,6 +132,10 @@ void bind_gridmodel(py::module_& m) {
              DocLSGrid::set_outer_loop_driver_params.c_str())
         .def("get_outer_loop_driver_params", &LSGrid::get_outer_loop_driver_params,
              "The parameters of the outer-loop driver, see set_outer_loop_driver_params")
+        .def("set_resume_outer_state", &LSGrid::set_resume_outer_state, py::arg("resume"),
+             DocLSGrid::set_resume_outer_state.c_str())
+        .def("get_resume_outer_state", &LSGrid::get_resume_outer_state,
+             DocLSGrid::get_resume_outer_state.c_str())
         // deprecated method
         .def("change_solver", py::overload_cast<const AlgorithmType&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
         .def("change_solver", py::overload_cast<const std::string&>(&LSGrid::change_algorithm), "DEPRECATED: use 'change_algorithm' instead")
@@ -160,6 +164,10 @@ void bind_gridmodel(py::module_& m) {
              py::arg("keep"), DocLSGrid::set_keep_vinit_at_group_controlled_buses.c_str())
         .def("get_keep_vinit_at_group_controlled_buses", &LSGrid::get_keep_vinit_at_group_controlled_buses,
              DocLSGrid::get_keep_vinit_at_group_controlled_buses.c_str())
+        .def("set_uniform_voltage_start", &LSGrid::set_uniform_voltage_start,
+             py::arg("uniform"), DocLSGrid::set_uniform_voltage_start.c_str())
+        .def("get_uniform_voltage_start", &LSGrid::get_uniform_voltage_start,
+             DocLSGrid::get_uniform_voltage_start.c_str())
         .def("get_group_controlled_buses",
              [](const LSGrid & self){
                  const std::set<int> buses = self.get_group_controlled_buses();
@@ -184,6 +192,7 @@ void bind_gridmodel(py::module_& m) {
         .def("init_trafo", &LSGrid::init_trafo, DocLSGrid::init_trafo.c_str())
         .def("update_powerlines_parameters", &LSGrid::update_powerlines_parameters, DocLSGrid::update_powerlines_parameters.c_str())
         .def("update_trafos_parameters", &LSGrid::update_trafos_parameters, DocLSGrid::update_trafos_parameters.c_str())
+        .def("update_trafos_parameters_full", &LSGrid::update_trafos_parameters_full, DocLSGrid::update_trafos_parameters_full.c_str())
         .def("init_generators", &LSGrid::init_generators, DocLSGrid::init_generators.c_str())
         .def("init_generators_full", &LSGrid::init_generators_full, DocLSGrid::init_generators_full.c_str())
         .def("init_loads", &LSGrid::init_loads, DocLSGrid::init_loads.c_str())
@@ -648,6 +657,19 @@ void bind_gridmodel(py::module_& m) {
         .def("get_vm_buses_solver", &LSGrid::get_vm_buses_solver, DocLSGrid::get_vm_buses_solver.c_str())
         .def("get_vm_cols_solver", &LSGrid::get_vm_cols_solver, DocLSGrid::get_vm_cols_solver.c_str())
         .def("get_hvdc_droop_data_solver", &LSGrid::get_hvdc_droop_data_solver, DocLSGrid::get_hvdc_droop_data_solver.c_str())
+
+        // reverse-mode differentiation of the last AC powerflow
+        .def("dim_J", &LSGrid::dim_J, DocLSGrid::dim_J.c_str())
+        .def("get_theta_col_of_bus", &LSGrid::get_theta_col_of_bus, DocLSGrid::get_theta_col_of_bus.c_str())
+        .def("get_vm_col_of_bus", &LSGrid::get_vm_col_of_bus, DocLSGrid::get_vm_col_of_bus.c_str())
+        .def("get_p_row_of_bus", &LSGrid::get_p_row_of_bus, DocLSGrid::get_p_row_of_bus.c_str())
+        .def("get_q_row_of_bus", &LSGrid::get_q_row_of_bus, DocLSGrid::get_q_row_of_bus.c_str())
+        .def("solve_JT", &LSGrid::solve_JT, py::arg("xbar"), DocLSGrid::solve_JT.c_str())
+        .def("gen_v_indirect_grad", &LSGrid::gen_v_indirect_grad, py::arg("lambda_"), DocLSGrid::gen_v_indirect_grad.c_str())
+        .def("gen_p_indirect_grad", &LSGrid::gen_p_indirect_grad, py::arg("lambda_"), DocLSGrid::gen_p_indirect_grad.c_str())
+        .def("get_gen_v_target_bus", &LSGrid::get_gen_v_target_bus, DocLSGrid::get_gen_v_target_bus.c_str())
+        .def("get_gen_v_share", &LSGrid::get_gen_v_share, DocLSGrid::get_gen_v_share.c_str())
+        .def("get_outer_trafo_admittances", &LSGrid::get_outer_trafo_admittances, DocLSGrid::get_outer_trafo_admittances.c_str())
 
         // the grid-numbered matrices are built by the call: handed over, not copied
         .def("get_Ybus", [](const LSGrid & self){ return sparse_to_scipy(self.get_Ybus()); }, DocLSGrid::get_Ybus.c_str())

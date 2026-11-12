@@ -73,6 +73,11 @@ public:
     RealVect get_controller_q()         const override { return inner_.get_controller_q(); }
     IntVect  get_controller_kind()      const override { return inner_.get_controller_kind(); }
     IntVect  get_controller_elem_id()   const override { return inner_.get_controller_elem_id(); }
+    // what an adjoint of the last inner round needs besides its J (see AdjointSolveInfo)
+    void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const override {
+        inner_.get_adjoint_solve_info(vm_buses, out);
+    }
+    OrderingConstraints get_ordering_constraints() const override { return inner_.get_ordering_constraints(); }
 
     // No in-Jacobian slack column (that's the whole point) -- but there IS a
     // meaningful total: the accumulated active power redistributed by the outer
@@ -99,6 +104,13 @@ public:
     TimerJac get_timers_jacobian() const override { return inner_.get_timers_jacobian(); }
 
     bool supports_bus_masking() const override { return inner_.supports_bus_masking(); }
+    bool supports_tripped_hvdc_lines() const override { return inner_.supports_tripped_hvdc_lines(); }
+    void set_tripped_hvdc_lines(const std::vector<int>& hvdc_ids) override { inner_.set_tripped_hvdc_lines(hvdc_ids); }
+    bool supports_tripped_voltage_controllers() const override { return inner_.supports_tripped_voltage_controllers(); }
+    void set_may_trip_voltage_controllers(bool val) override { inner_.set_may_trip_voltage_controllers(val); }
+    void set_tripped_voltage_controllers(const std::vector<int>& controllers) override {
+        inner_.set_tripped_voltage_controllers(controllers);
+    }
     void set_masked_buses(const std::vector<int>& solver_bus_ids) override {
         inner_.set_masked_buses(solver_bus_ids);
     }

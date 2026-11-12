@@ -111,6 +111,8 @@ class TestOlfOuterLoops(unittest.TestCase):
         by_name = dict(zip(names, loops))
         self.assertEqual(by_name["DistributedSlack"].slack_bus_p_max_mismatch_mw, 0.25)
         self.assertFalse(by_name["DistributedSlack"].fail_on_residue)
+        # OpenLoadFlow's loop exists whatever the participants (#269)
+        self.assertTrue(by_name["DistributedSlack"].run_without_participant)
         reactive = by_name["ReactiveLimits"]
         self.assertEqual(reactive.max_pq_pv_switch, 5)
         # robust mode and realistic band: the driver's (above), one parameter in OpenLoadFlow

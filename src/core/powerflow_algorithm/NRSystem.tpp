@@ -99,6 +99,11 @@ inline void NRSystem<Base, Rest...>::update_state(
     // now inform the components
     base_.update_state(lsgrid_ptr, Ybus, Sbus, slack_weights);
     _update_state_extensions(lsgrid_ptr, Ybus, Sbus, slack_weights, std::make_index_sequence<sizeof...(Rest)>{});
+    // a published start only describes the voltage it was taken from: another size is
+    // another labelling (a caller solving a system of its own), not this solve's
+    vm_lift_pending_ = base_.uniform_start_vm().size() == n && n > 0;
+    vm_lift_buses_.clear();
+    vm_lift_target_.clear();
     // the one extension that reads the complex voltages when J is filled
     BranchControl* ps = _find_extension<BranchControl>();
     if (ps != nullptr) ps->bind_voltages(&V_);
@@ -124,6 +129,9 @@ inline void NRSystem<Base, Rest...>::build_J_sparsity()
 {
     const int nnz_Y = static_cast<int>(Ybus_ref_.nonZeros());
     const int dim_J = ledger_.size();
+    // the masked / pinned rows are positions in this pattern: found again in the new one
+    masked_dirty_ = true;
+    J_row_start_.clear();
 
     // generic dS pass: ONE loop over the Ybus nonzeros generates every
     // dS-derived entry, for all components at once. k is the running nnz index.
@@ -563,6 +571,95 @@ inline void NRSystem<Base, Rest...>::cpf_predict_into(CplxVect& V_pred,
         Vm_trial_cache_(vm_buses[k]) += coeff * z(vm_cols[k]);
 
     _reconstruct_V_into(V_pred, Va_trial_cache_, Vm_trial_cache_);
+}
+
+template <typename... Rest>
+inline bool NRSystem<Base, Rest...>::begin_vm_lift()
+{
+    if (!vm_lift_pending_) return false;
+    vm_lift_pending_ = false;  // once per solve: an outer loop's next Newton resumes
+    vm_lift_buses_.clear();
+    vm_lift_target_.clear();
+    const RealVect & start = base_.uniform_start_vm();
+    const Eigen::Index n = Vm_.size();
+    if (start.size() != n) return false;
+
+    // A bus whose magnitude is an unknown is reached by the Newton from wherever it
+    // starts -- seeded at a target, it has a voltage row bringing it there -- so it
+    // simply starts from the caller's magnitude. Every other one (no Vm unknown, or one
+    // a masked / PV-pinned identity row keeps still) is lifted: started there too, and
+    // put at its target by the step.
+    std::vector<char> free_vm(static_cast<std::size_t>(n), 0);
+    for (int b : ledger_.vm_buses()) free_vm[static_cast<std::size_t>(b)] = 1;
+    for (int b : masked_buses_) free_vm[static_cast<std::size_t>(b)] = 0;
+    for (int b : pv_pinned_buses_) free_vm[static_cast<std::size_t>(b)] = 0;
+    bool moved = false;
+    for (Eigen::Index b = 0; b < n; ++b) {
+        const real_type vm0 = start(b);
+        if (!(vm0 > 0.) || !std::isfinite(vm0) || vm0 == Vm_(b)) continue;
+        if (!free_vm[static_cast<std::size_t>(b)]) {
+            vm_lift_buses_.push_back(static_cast<int>(b));
+            vm_lift_target_.push_back(Vm_(b));
+        }
+        Vm_(b) = vm0;
+        V_(b) = std::polar(vm0, Va_(b));
+        moved = true;
+    }
+    if (moved) ybus_v_at_V_ = false;
+    return moved;
+}
+
+template <typename... Rest>
+inline void NRSystem<Base, Rest...>::add_vm_lift_rhs(Eigen::Ref<RealVect> res) const
+{
+    assert(res.size() == static_cast<Eigen::Index>(total_state_variables()));
+    if (vm_lift_buses_.empty()) return;
+    // dS = dS/dVm . dVm, over the columns of the moved buses only. dS_dVm_vals_ holds
+    // the derivative at each nonzero of Ybus, in its compressed column-major order
+    // (see fill_internal_variables), so column b starts at outerIndexPtr()[b].
+    const Eigen::Index n = Vm_.size();
+    vm_lift_dS_ = CplxVect::Zero(n);
+    const auto * outer = Ybus_ref_.outerIndexPtr();
+    const auto * inner = Ybus_ref_.innerIndexPtr();
+    for (std::size_t k = 0; k < vm_lift_buses_.size(); ++k) {
+        const int b = vm_lift_buses_[k];
+        const real_type dvm = vm_lift_target_[k] - Vm_(b);
+        for (auto p = outer[b]; p < outer[b + 1]; ++p) {
+            vm_lift_dS_(inner[p]) += dS_dVm_vals_(p) * dvm;
+        }
+    }
+    // res is Sbus - Scomp (see cpf_rhs_into), so the coupling enters with a minus
+    // sign; accumulated over the ledger's pairs like the residual itself
+    const std::vector<int>& p_buses = ledger_.p_buses();
+    const std::vector<int>& p_rows  = ledger_.p_rows();
+    for (size_t k = 0; k < p_buses.size(); ++k) res(p_rows[k]) -= std::real(vm_lift_dS_(p_buses[k]));
+    const std::vector<int>& q_buses = ledger_.q_buses();
+    const std::vector<int>& q_rows  = ledger_.q_rows();
+    for (size_t k = 0; k < q_buses.size(); ++k) res(q_rows[k]) -= std::imag(vm_lift_dS_(q_buses[k]));
+    for (int b : masked_buses_) {
+        const int pr = ledger_.p_row(b);
+        if (pr >= 0) res(pr) = static_cast<real_type>(0.);
+        const int qr = ledger_.q_row(b);
+        if (qr >= 0) res(qr) = static_cast<real_type>(0.);
+    }
+    for (int b : pv_pinned_buses_) {
+        const int qr = ledger_.q_row(b);
+        if (qr >= 0) res(qr) = static_cast<real_type>(0.);
+    }
+}
+
+template <typename... Rest>
+inline void NRSystem<Base, Rest...>::end_vm_lift()
+{
+    if (vm_lift_buses_.empty()) return;
+    for (std::size_t k = 0; k < vm_lift_buses_.size(); ++k) {
+        const int b = vm_lift_buses_[k];
+        Vm_(b) = vm_lift_target_[k];
+        V_(b) = std::polar(Vm_(b), Va_(b));
+    }
+    vm_lift_buses_.clear();
+    vm_lift_target_.clear();
+    ybus_v_at_V_ = false;
 }
 
 template <typename... Rest>

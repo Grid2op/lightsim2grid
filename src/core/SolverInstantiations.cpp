@@ -41,6 +41,7 @@ template class LS2G_API BaseDCAlgo<LinearSolverPolicy<SparseLULinearSolver>>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::XB>;
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<SparseLULinearSolver>, FDPFMethod::BX>;
 template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLULinearSolver>>>;
+template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<SparseLULinearSolver>, OuterDistNRSystem>>;
 
 // ---- KLU (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
 // linear_solvers/KLUSolver.hpp) ----
@@ -52,9 +53,11 @@ template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMe
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<KLULinearSolver>, FDPFMethod::BX>;
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<KLULinearSolver>, MultiSlackNRSystem>;
 template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>>>;
+template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLULinearSolver>, OuterDistNRSystem>>;
 template class LS2G_API NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, MultiSlackNRSystem>;
 template class LS2G_API NRAlgo<LinearSolverPolicy<KLUStaticPivotLinearSolver>, SingleSlackNRSystem>;
 template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>>>;
+template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<KLUStaticPivotLinearSolver>, OuterDistNRSystem>>;
 #endif
 
 // ---- NICSLU (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
@@ -67,6 +70,7 @@ template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<NICSLULinearSolver>, FDP
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<NICSLULinearSolver>, FDPFMethod::BX>;
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<NICSLULinearSolver>, MultiSlackNRSystem>;
 template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<NICSLULinearSolver>>>;
+template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<NICSLULinearSolver>, OuterDistNRSystem>>;
 #endif
 
 // ---- CKTSO (optional, or a doc-only stand-in under _READ_THE_DOCS -- see
@@ -79,6 +83,7 @@ template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<CKTSOLinearSolver>, FDPF
 template class LS2G_API BaseFDPFAlgo<LinearSolverPolicy<CKTSOLinearSolver>, FDPFMethod::BX>;
 template class LS2G_API NRAlgo<RefactorRetryLinearSolver<CKTSOLinearSolver>, MultiSlackNRSystem>;
 template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<CKTSOLinearSolver>>>;
+template class LS2G_API OuterLoopAlgo<NROuterInner<LinearSolverPolicy<CKTSOLinearSolver>, OuterDistNRSystem>>;
 #endif
 
 } // namespace ls2g
