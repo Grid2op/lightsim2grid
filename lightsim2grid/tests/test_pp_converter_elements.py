@@ -102,6 +102,20 @@ class TestElementsVsRunpp(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "No slack"):
             ls_model(net)
 
+    def test_voltage_dependent_load_warns(self):
+        """a load with a constant impedance or current share (const_z_* / const_i_* percent) is
+        converted as a constant power one; that is said, not done silently"""
+        net = make_net()
+        net.load["const_z_p_percent"] = 50.
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            init_from_pandapower(copy.deepcopy(net), pp_orig_file="pandapower_v3")
+        self.assertTrue(any("const_z" in str(el.message) for el in w), [str(el.message) for el in w])
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            init_from_pandapower(make_net(), pp_orig_file="pandapower_v3")
+        self.assertFalse(any("const_z" in str(el.message) for el in w))
+
     def test_unsupported_elements_refused(self):
         """elements the converter does not model were dropped without a word when they were in
         an svc, tcsc, ssc, vsc or asymmetric_sgen table; they are refused, as the motors, wards,

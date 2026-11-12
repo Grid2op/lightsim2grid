@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of LightSim2grid, LightSim2grid implements a c++ backend targeting the Grid2Op platform.
 
+import warnings
 import numpy as np
 
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
@@ -27,6 +28,14 @@ def _aux_add_load(model, pp_net, pp_to_ls):
         raise RuntimeError("Cannot handle 'parallel' load columns. Please duplicate the rows if that is the case. "
                            "Some pp_net.load[\"parallel\"] != 1 it is not handled by lightsim yet.")
 
+    # pandapower's voltage dependent part (ZIP), not modeled: the load is a constant power one
+    zip_cols = [col for col in ("const_z_percent", "const_i_percent", "const_z_p_percent", "const_i_p_percent",
+                                "const_z_q_percent", "const_i_q_percent") if col in pp_net.load]
+    if zip_cols:
+        shares = pp_net.load[zip_cols].to_numpy(dtype=float)
+        if np.any(np.nan_to_num(shares) != 0.):
+            warnings.warn(f"Some loads have a voltage dependent part ({', '.join(zip_cols)} != 0): it is not "
+                          "modeled, these loads draw a constant power.")
     ratio = 1.0
     if "scaling" in pp_net.load:
         ratio = pp_net.load["scaling"].to_numpy().copy()

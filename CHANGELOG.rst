@@ -382,6 +382,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   is refused with a clear error.
 - [FIXED] pandapower converter: svc, tcsc, ssc, vsc, asymmetric static generators and DC-grid elements were
   dropped without a word; they are refused, as motors and wards already were.
+- [IMPROVED] pandapower converter: warns when a load has a voltage dependent part (``const_z_*`` /
+  ``const_i_*``), which is not modeled (the load draws a constant power).
 
 
 [1.3.0] 2026-11-03
