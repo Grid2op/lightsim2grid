@@ -161,6 +161,39 @@ class TestTapChangers(unittest.TestCase):
         _vm(grid)
         self.assertEqual(grid.get_trafos()[0].res_ratio_tap_position, 0)
 
+    @staticmethod
+    def _as_pandapower_2(ctrl, trafotype):
+        """give a tap controller the attribute names of pandapower 2.14's TrafoController"""
+        if hasattr(ctrl, "element_index"):
+            ctrl.tid = ctrl.__dict__.pop("element_index")
+            ctrl.__dict__.pop("element", None)
+        ctrl.trafotype = trafotype
+
+    def test_controller_with_pandapower_2_attribute_names(self):
+        """PR #298 (review of the 1.3.1 release): pandapower < 3 names the transformer of a tap
+        controller ``tid`` and its kind ``trafotype`` ("2W" / "3W"), pandapower 3
+        ``element_index`` and ``element`` ("trafo" / "trafo3w"). The converter read the latter
+        only: with pandapower 2, a grid holding a tap controller could not be converted.
+
+        Checks that a controller carrying pandapower 2's names regulates as the same one
+        carrying pandapower 3's, and that one of a three-winding transformer is skipped."""
+        net = _trafo_net(0, 0, "hv")
+        ctrl = ContinuousTapControl(net, 0, vm_set_pu=1.04, side="lv", tol=1e-6)
+        grid = _with_loops(_convert(net), TransformerVoltageControl())
+        _vm(grid, tol=1e-8)
+        expected = grid.get_trafos()[0].res_ratio_tap_position
+        self.assertNotEqual(expected, 0)
+
+        self._as_pandapower_2(ctrl, "2W")
+        grid = _with_loops(_convert(net), TransformerVoltageControl())
+        _vm(grid, tol=1e-8)
+        self.assertEqual(grid.get_trafos()[0].res_ratio_tap_position, expected)
+
+        self._as_pandapower_2(ctrl, "3W")
+        grid = _with_loops(_convert(net), TransformerVoltageControl())
+        _vm(grid, tol=1e-8)
+        self.assertEqual(grid.get_trafos()[0].res_ratio_tap_position, 0)
+
 
 class TestShunts(unittest.TestCase):
     def test_step_and_vn_kv_match_pandapower(self):

@@ -386,6 +386,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``const_i_*``), which is not modeled (the load draws a constant power).
 - [ADDED] docs: "Loading a pandapower grid" (``from_pandapower.rst``), what the pandapower converter models,
   refuses, and where it differs from ``pp.runpp``.
+- [FIXED] pandapower converter: a grid with a tap controller could not be converted with pandapower 2,
+  which names the controller's transformer ``tid`` / ``trafotype``.
 
 
 [1.3.0] 2026-11-03

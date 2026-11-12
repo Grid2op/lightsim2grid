@@ -486,6 +486,15 @@ def _tap_controllers(pp_net):
     return res
 
 
+def _controller_trafo(obj):
+    """The transformer(s) a tap controller drives and whether they are two-winding ones:
+    ``element_index`` / ``element`` ("trafo", "trafo3w") with pandapower 3, ``tid`` /
+    ``trafotype`` ("2W", "3W") before."""
+    if hasattr(obj, "element_index"):
+        return obj.element_index, getattr(obj, "element", "trafo") == "trafo"
+    return obj.tid, getattr(obj, "trafotype", "2W") == "2W"
+
+
 def _aux_trafo_tap_regulation(model, pp_net, pp_to_ls, with_steps):
     """What the ratio tap changers regulate (``LSGrid.set_trafo_ratio_tap_regulation``), read
     from pandapower's ``DiscreteTapControl`` and ``ContinuousTapControl`` controllers: the
@@ -508,9 +517,10 @@ def _aux_trafo_tap_regulation(model, pp_net, pp_to_ls, with_steps):
         ext_grid_bus = set(eg.loc[eg["in_service"].astype(bool), "bus"].tolist())
     skipped = []
     for obj, continuous in controllers:
-        if getattr(obj, "element", "trafo") != "trafo":
+        el_index, two_winding = _controller_trafo(obj)
+        if not two_winding:
             continue
-        el_index = np.atleast_1d(obj.element_index)
+        el_index = np.atleast_1d(el_index)
         n = el_index.shape[0]
         side = np.broadcast_to(np.atleast_1d(obj.side), n)
         if continuous:
