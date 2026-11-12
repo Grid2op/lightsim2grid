@@ -55,6 +55,7 @@ This is a work in progress at the moment
    :caption: Technical Documentation
 
    network
+   from_pandapower
    install_from_source
    lightsimbackend
    solvers

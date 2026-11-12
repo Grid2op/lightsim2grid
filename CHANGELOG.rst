@@ -384,6 +384,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   dropped without a word; they are refused, as motors and wards already were.
 - [IMPROVED] pandapower converter: warns when a load has a voltage dependent part (``const_z_*`` /
   ``const_i_*``), which is not modeled (the load draws a constant power).
+- [ADDED] docs: "Loading a pandapower grid" (``from_pandapower.rst``), what the pandapower converter models,
+  refuses, and where it differs from ``pp.runpp``.
 
 
 [1.3.0] 2026-11-03
