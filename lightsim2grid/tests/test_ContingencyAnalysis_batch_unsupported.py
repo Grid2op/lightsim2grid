@@ -52,6 +52,18 @@ def _grid():
     return grid
 
 
+def _solved_buses(grid):
+    """the buses of `grid` its powerflow solves, as grid bus ids. Read off a solved copy: a grid
+    that was never solved has no solver labelling, and the list would be empty (comparing
+    voltages at no bus at all)"""
+    solved = copy.deepcopy(grid)
+    V = solved.ac_pf(np.ones(grid.total_bus(), dtype=complex), MAX_IT, TOL)
+    assert V.shape[0] > 0, "the fixture does not converge"
+    buses = np.asarray(solved.id_ac_solver_to_me(), dtype=int)
+    assert buses.shape[0] > 0
+    return buses
+
+
 def _grid_with_half_open_hvdc():
     """the same fixture, with an HVDC line whose end 1 is open in the base case, on a bus nothing else
     touches: the state the main-component clean-up leaves a line in"""
@@ -76,7 +88,7 @@ class TestBatchUnsupportedContingencies(unittest.TestCase):
         self.grid = _grid()
         self.n_line = len(self.grid.get_lines())
         self.v0 = np.ones(self.grid.total_bus(), dtype=complex)
-        self.buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+        self.buses = _solved_buses(self.grid)
 
     def _reference(self, branches=(), gens=()):
         ref = copy.deepcopy(self.grid)
@@ -192,7 +204,7 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
         self.grid = _grid()
         self.n_line = len(self.grid.get_lines())
         self.v0 = np.ones(self.grid.total_bus(), dtype=complex)
-        self.buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+        self.buses = _solved_buses(self.grid)
 
     def _reference(self, grid, cont, init_from_n=False):
         """the one-off solve of that contingency, as the fallback is documented to run it"""

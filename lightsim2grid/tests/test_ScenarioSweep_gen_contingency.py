@@ -427,7 +427,12 @@ class TestGenContingencyWithRemoteControlAcrossTrafo(unittest.TestCase):
         self.Vinit = np.ones(self.grid.total_bus(), dtype=complex)
         self.n_gen = len(self.grid.get_generators())
         self.n_trafo = len(self.grid.get_trafos())
-        self.buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+        # the buses of the solved system, read off a solved copy: the grid above was never
+        # solved, its list would be empty and the voltages below compared at no bus at all
+        solved = self._grid()
+        self.assertGreater(solved.ac_pf(1.0 * self.Vinit, self.MAX_IT, self.TOL).shape[0], 0)
+        self.buses = np.asarray(solved.id_ac_solver_to_me(), dtype=int)
+        self.assertGreater(self.buses.shape[0], 0)
 
     def _reference(self, trafo_off, gens_off):
         return self._grid(trafo_off, gens_off).ac_pf(1.0 * self.Vinit, self.MAX_IT, self.TOL)
