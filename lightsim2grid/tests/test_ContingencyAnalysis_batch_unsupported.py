@@ -303,6 +303,37 @@ class TestBatchUnsupportedFallback(unittest.TestCase):
         self.assertTrue(all(g.connected or g.id == GEN_ON_LEAF for g in self.grid.get_generators()))
         np.testing.assert_allclose(self.grid.ac_pf(1.0 * self.v0, MAX_IT, TOL), V_before, atol=1e-12)
 
+    def test_undoing_a_tripped_generator_keeps_it_out_of_the_slack(self):
+        """PR #298 (review of the 1.3.1 release): the fallback put a row's generators back on its
+        grid copy with ``LSGrid.reactivate_gen``, which also puts a generator flagged "can
+        participate in the slack" back into the slack. The rows after one tripping such a
+        generator were then solved with other slack participants than the batch's.
+
+        Checks every fallback row against its one-off solve, the one solved right after the
+        row tripping the flagged generator included."""
+        grid = _grid()
+        flagged = 0  # produces power, is not a slack participant
+        gens = list(grid.get_generators())
+        self.assertFalse(gens[flagged].is_slack)
+        flags = [gen.id == flagged for gen in gens]
+        grid.set_gen_can_participate_slack(flags, np.where(flags, 1., 0.))
+        ca = ContingencyAnalysisCPP(grid)
+        ca.batch_unsupported_fallback = True
+        ca.add_contingency(gen_ids=[flagged], svc_ids=[SVC])
+        ca.add_contingency(branch_ids=[5], svc_ids=[SVC])
+        ca.compute(1.0 * self.v0, MAX_IT, TOL)
+        conts = ca.my_contingencies()
+        # the row tripping the generator comes first: its undo is what the next one is solved after
+        self.assertEqual([list(cont[3]) for cont in conts], [[flagged], []])
+        for row, cont in enumerate(conts):
+            with self.subTest(row=row, contingency=cont):
+                self.assertTrue(ca.get_batch_unsupported_reasons()[row])
+                _, V_ref = self._reference(grid, cont)
+                self.assertGreater(V_ref.shape[0], 0)
+                self.assertTrue(ca.converged_mask()[row])
+                # every bus: neither row takes one out of the grid
+                np.testing.assert_allclose(ca.get_voltages()[row], V_ref, rtol=1e-7, atol=1e-7)
+
     def test_with_outer_loops(self):
         for init_from_n in (False, True):
             with self.subTest(init_from_n=init_from_n):

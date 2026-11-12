@@ -4181,11 +4181,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     if(!it->side2){ if(is_line) grid.deactivate_powerline_side2(el); else grid.deactivate_trafo_side2(el); }
                     else if(is_line) grid.reactivate_powerline_side2(el); else grid.reactivate_trafo_side2(el);
                 }
-                for(int g : gens) grid.reactivate_gen(g);
+                // (_keep_slack: reactivate_gen would also put a unit that can participate in
+                // the slack into it, and the rows after this one would not be solved on the
+                // base grid)
+                for(int g : gens) grid.reactivate_gen_keep_slack(g);
                 for(int l : loads) grid.reactivate_load(l);
                 for(int s : shunts) grid.reactivate_shunt(s);
                 for(int s : sgens) grid.reactivate_sgen(s);
-                for(int s : storages) grid.reactivate_storage(s);
+                for(int s : storages) grid.reactivate_storage_keep_slack(s);
                 for(int s : svcs) grid.reactivate_svc(s);
                 for(const Hvdc & h : hvdcs){
                     // reconnects both ends: an end open before the row goes back to open, or

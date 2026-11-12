@@ -391,6 +391,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] ``GridPowerFlow``: a forward put the generators flagged "can participate in the slack" into the
   slack of its grid, and solved another system than ``ac_pf``.
 - [ADDED] ``LSGrid.change_p_gen_keep_slack``: ``change_p_gen`` without putting the generator back into the slack.
+- [FIXED] ``batch_unsupported_fallback``: undoing a row put the generators and storage units it tripped into
+  the slack when they can participate in it, for the rows solved after it.
 
 
 [1.3.0] 2026-11-03

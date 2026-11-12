@@ -1948,6 +1948,11 @@ class LS2G_API LSGrid final
             generators_.reactivate(gen_id, algo_controler_, substations_);
             generators_.rejoin_slackbus_if_able(gen_id, algo_controler_);
         }
+        // reactivate_gen without its second half: the generator is back as deactivate_gen
+        // found it, in the slack or out of it. For a caller undoing a deactivation of its own.
+        void reactivate_gen_keep_slack(int gen_id) {
+            generators_.reactivate(gen_id, algo_controler_, substations_);
+        }
 
         /**
          * Change the bus on the generator generator_id.
@@ -2050,6 +2055,10 @@ class LS2G_API LSGrid final
         void reactivate_storage(int storage_id) {
             storages_.reactivate(storage_id, algo_controler_, substations_);
             storages_.rejoin_slackbus_if_able(storage_id, algo_controler_);
+        }
+        // see reactivate_gen_keep_slack
+        void reactivate_storage_keep_slack(int storage_id) {
+            storages_.reactivate(storage_id, algo_controler_, substations_);
         }
         /**
          * Change the bus on the storage storage_id.
