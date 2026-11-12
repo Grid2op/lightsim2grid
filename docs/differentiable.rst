@@ -1,7 +1,7 @@
+.. _differentiable:
+
 Differentiable powerflow (pytorch)
 ===================================
-
-.. _differentiable:
 
 A batch of powerflows, differentiable with respect to its injections, as a
 pytorch operation: a loss computed on the results of thousands of AC powerflows

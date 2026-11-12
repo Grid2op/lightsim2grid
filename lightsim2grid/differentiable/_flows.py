@@ -88,7 +88,7 @@ def compute_branch_flows(V, y_11, y_12, y_21, y_22, bus_or, bus_ex,
 
     V : complex ``(n_scenarios, n_bus)``, per unit, in GRID bus numbering
     y_* : complex ``(n_branch,)``, the branch's Kron-reduced admittances, or
-          ``(n_scenarios, n_branch)`` where they differ by row (see branch_admittances)
+    ``(n_scenarios, n_branch)`` where they differ by row (see branch_admittances)
     bus_or / bus_ex : int ``(n_branch,)``, the grid bus at each end
     bus_vn_kv : real ``(n_bus,)``, nominal voltage of each bus
     connected : bool ``(n_scenarios, n_branch)`` or None (everything connected)

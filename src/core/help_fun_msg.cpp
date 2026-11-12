@@ -4390,7 +4390,7 @@ const std::string DocLSGrid::get_q_row_of_bus = R"mydelimiter(
 )mydelimiter";
 
 const std::string DocLSGrid::solve_JT = R"mydelimiter(
-    Solve the adjoint system ``J^T . lambda = xbar`` of the last AC powerflow and return
+    Solve the adjoint system ``J^T lambda = xbar`` of the last AC powerflow and return
     lambda, ``(k, dim_J)`` like ``xbar`` (k = 1 for the gradient of a scalar loss).
 
     ``J`` is the Jacobian of the last Newton solve, evaluated at the converged voltages. With
