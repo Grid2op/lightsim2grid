@@ -273,8 +273,26 @@ class LS2G_API AlgorithmSelector final
         void refresh_J_at_solution() {
             get_prt_solver("refresh_J_at_solution", false)->refresh_J_at_solution();
         }
+        void get_adjoint_solve_info(const std::vector<int> & vm_buses, AdjointSolveInfo & out) const {
+            get_prt_solver("get_adjoint_solve_info", false)->get_adjoint_solve_info(vm_buses, out);
+        }
         void set_masked_buses(const std::vector<int>& solver_bus_ids) {
             get_prt_solver("set_masked_buses", false)->set_masked_buses(solver_bus_ids);
+        }
+        bool supports_tripped_hvdc_lines() const {
+            return get_prt_solver("supports_tripped_hvdc_lines", false)->supports_tripped_hvdc_lines();
+        }
+        void set_tripped_hvdc_lines(const std::vector<int> & hvdc_ids) {
+            get_prt_solver("set_tripped_hvdc_lines", false)->set_tripped_hvdc_lines(hvdc_ids);
+        }
+        bool supports_tripped_voltage_controllers() const {
+            return get_prt_solver("supports_tripped_voltage_controllers", false)->supports_tripped_voltage_controllers();
+        }
+        void set_may_trip_voltage_controllers(bool val) {
+            get_prt_solver("set_may_trip_voltage_controllers", false)->set_may_trip_voltage_controllers(val);
+        }
+        void set_tripped_voltage_controllers(const std::vector<int> & controllers) {
+            get_prt_solver("set_tripped_voltage_controllers", false)->set_tripped_voltage_controllers(controllers);
         }
         void set_may_mask_voltage_control(bool val) {
             get_prt_solver("set_may_mask_voltage_control", false)->set_may_mask_voltage_control(val);
@@ -431,6 +449,9 @@ class LS2G_API AlgorithmSelector final
         IntVect get_group_v_row() const {
             return get_prt_solver("get_group_v_row", false)->get_group_v_row();
         }
+        OrderingConstraints get_ordering_constraints() const {
+            return get_prt_solver("get_ordering_constraints", false)->get_ordering_constraints();
+        }
         int get_slack_col() const {
             return get_prt_solver("get_slack_col", false)->get_slack_col();
         }
@@ -464,6 +485,11 @@ class LS2G_API AlgorithmSelector final
 
         LinearSolverStats get_linear_solver_stats() const {
             return get_prt_solver("get_linear_solver_stats", true)->get_linear_solver_stats();
+        }
+        // the same, whichever algorithm solved last, or none yet (its counters still 0):
+        // what to read before a solve, to tell what that solve ran
+        LinearSolverStats get_linear_solver_stats_before_solve() const {
+            return get_prt_solver("get_linear_solver_stats_before_solve", false)->get_linear_solver_stats();
         }
 
         ErrorType get_error() const {

@@ -69,10 +69,11 @@ class ContingencyResult:
 
     .. note::
         If ``converged`` is False, ``limit_violations`` contains exactly one ``LimitViolation``
-        with ``element_type == ViolationElementType.GRID`` and ``violation_type`` either
+        with ``element_type == ViolationElementType.GRID`` and ``violation_type``
         ``LimitViolationType.NOT_SIMULATED`` (a pre-check skipped this contingency, eg it splits
-        the grid, without ever invoking the solver) or ``LimitViolationType.DIVERGENCE`` (the
-        solver ran but did not converge).
+        the grid, without ever invoking the solver), ``LimitViolationType.BATCH_UNSUPPORTED`` (the batch
+        does not support what it trips, see ``batch_unsupported_reason``) or
+        ``LimitViolationType.DIVERGENCE`` (the solver ran but did not converge).
     """
     element_ids: List[int]  #: branch ids (lines then trafos) disconnected by this contingency
     element_names: List[str]  #: names (`env.name_line`) of the elements disconnected by this contingency
@@ -85,6 +86,17 @@ class ContingencyResult:
     shunt_ids: List[int] = field(default_factory=list)
     load_ids: List[int] = field(default_factory=list)
     gen_ids: List[int] = field(default_factory=list)
+    #: the static generators it trips
+    sgen_ids: List[int] = field(default_factory=list)
+    #: the storage units it trips
+    storage_ids: List[int] = field(default_factory=list)
+    #: the static var compensators it trips
+    svc_ids: List[int] = field(default_factory=list)
+    #: the hvdc lines it trips
+    hvdc_ids: List[int] = field(default_factory=list)
+    #: why the batch could not solve this contingency (empty if it could), see
+    #: `ContingencyAnalysis.get_batch_unsupported_reasons`
+    batch_unsupported_reason: str = ""
 
 
 @dataclass
@@ -239,6 +251,24 @@ class ContingencyAnalysis(object):
         self.computer.keep_vinit_at_group_controlled_buses = bool(val)
 
     @property
+    def uniform_voltage_start(self):
+        """Whether the Newton-Raphson starts the buses whose magnitude is held (PV buses, the
+        slack) from the voltage passed to compute() rather than from their targets, as
+        OpenLoadFlow's uniform start does, in the "n" solve and in every row starting from that
+        voltage (not in a row starting from a solved state). The solution is the same. Defaults
+        to the grid's own setting (see
+        :func:`lightsim2grid.lightsim2grid_cpp.LSGrid.set_uniform_voltage_start`), ``False``
+        unless set there.
+        """
+        return self.computer.uniform_voltage_start
+
+    @uniform_voltage_start.setter
+    def uniform_voltage_start(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `uniform_voltage_start` attribute must be a boolean.")
+        self.computer.uniform_voltage_start = bool(val)
+
+    @property
     def handle_disconnected_grid(self):
         """Whether a contingency that splits the grid into several connected components is
         simulated on its largest component instead of being skipped. Default: ``False``,
@@ -262,6 +292,27 @@ class ContingencyAnalysis(object):
         self.computer.handle_disconnected_grid = val
 
     @property
+    def batch_unsupported_fallback(self):
+        """Whether the contingencies the batch does not support (see :func:`get_batch_unsupported_reasons`)
+        are solved after it, one at a time, with ``ac_pf`` on a private copy of the grid (the
+        contingency's elements deactivated, the same algorithm, outer loops and parameters). They
+        then get results as the other contingencies do, and keep their ``batch_unsupported_reason``.
+        Sequential and as slow as one powerflow per such contingency. Default: ``False``. See
+        ``ContingencyAnalysisCPP.batch_unsupported_fallback``.
+        """
+        return self.computer.batch_unsupported_fallback
+
+    @batch_unsupported_fallback.setter
+    def batch_unsupported_fallback(self, val: bool):
+        if bool(val) != val:
+            raise ValueError("The `batch_unsupported_fallback` attribute must be a boolean.")
+        val = bool(val)
+        if val != self.computer.batch_unsupported_fallback:
+            # the results kept by get_flows / run were computed with the other value
+            self.clear(with_contlist=False)
+        self.computer.batch_unsupported_fallback = val
+
+    @property
     def redistribute_slack(self):
         """Whether the active power a contingency loses (the elements of the island it cuts
         off, simulated with :attr:`handle_disconnected_grid`) is first shared on the remaining
@@ -276,7 +327,8 @@ class ContingencyAnalysis(object):
         refuses it with a single-slack one (``NRSing_*``, Gauss-Seidel). With outer loops
         (``NROuter_*``), the ``DistributedSlack`` loop shares the loss itself before the
         contingency's first solve, from the targets in force (those of the "n" solve with
-        :attr:`init_from_n_powerflow`), as OpenLoadFlow's security analysis does.
+        :attr:`init_from_n_powerflow`), and what is left afterwards from those same targets (the
+        result is the whole imbalance shared at once), as OpenLoadFlow's security analysis does.
         """
         return self.computer.redistribute_slack
 
@@ -559,6 +611,13 @@ class ContingencyAnalysis(object):
         self.computer.physical_violation_tol_vm_pu = val  # validates, and drops base case + results
         self.clear(with_contlist=False)
 
+    def get_batch_unsupported_reasons(self):
+        """Per contingency, in the C++-side order (`my_defaults()`): why the batch could not
+        solve it, or an empty string for one it supports. Such a contingency is reported with a
+        ``LimitViolationType.BATCH_UNSUPPORTED`` violation instead of making the whole computation fail.
+        Prefer :func:`run`, whose results carry it as ``batch_unsupported_reason``."""
+        return self.computer.get_batch_unsupported_reasons()
+
     def get_physical_violations(self):
         """Per contingency, in the C++-side order (`my_defaults()`): the list of
         :class:`LimitViolation` of the physical limits that contingency's solution leaves.
@@ -786,15 +845,18 @@ class ContingencyAnalysis(object):
         self.__computed = False   # see add_single_contingency
 
     @staticmethod
-    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=()):
+    def _cont_key(branches, shunts=(), loads=(), gens=(), branches_side1=(), branches_side2=(), sgens=(), storages=(), svcs=(), hvdcs=()):
         """internal: the key a contingency is known by on this side. A branch-only one is
         the flat tuple of its branch ids; one tripping shunts, loads or generators is the
-        nested tuple of its four lists. Each list sorted, every id once: the c++ side keeps
+        nested tuple of its four lists, followed by the other kinds when it trips any. Each list sorted, every id once: the c++ side keeps
         sets, and `my_contingencies` must give back the key that was registered. (This class
-        never opens a branch at one end only: the last two lists `my_contingencies` gives
-        are empty.)"""
+        never opens a branch at one end only: those two lists `my_contingencies` gives are
+        empty.)"""
         def _ids(stuff):
             return tuple(sorted({int(el) for el in stuff}))
+        others = (sgens, storages, svcs, hvdcs)
+        if any(len(el) for el in others):
+            return (_ids(branches), _ids(shunts), _ids(loads), _ids(gens)) + tuple(_ids(el) for el in others)
         if not shunts and not loads and not gens:
             return _ids(branches)
         return (_ids(branches), _ids(shunts), _ids(loads), _ids(gens))
@@ -817,11 +879,20 @@ class ContingencyAnalysis(object):
             res.append(int(el))
         return res
 
-    def add_contingency(self, lines=(), shunts=(), loads=(), gens=(), name=None):
+    def _other_ids(self, stuff, getter, kind, names=None):
+        """internal: `_ids_of` for a kind grid2op does not name, by id or by the grid's name"""
+        if isinstance(stuff, (list, tuple)) and len(stuff) == 0:
+            return []  # the common case: nothing of that kind, no list of names to build
+        if names is None:
+            names = [el.name for el in getattr(self._ls_backend._grid, getter)()]
+        return self._ids_of(stuff, names, kind)
+
+    def add_contingency(self, lines=(), shunts=(), loads=(), gens=(), name=None, sgens=(), storages=(), svcs=(), hvdcs=()):
         """
         Adds a single contingency tripping, together, powerlines (and transformers, both by
         `env.name_line` or id), shunts (`env.name_shunt` or id), loads (`env.name_load` or id)
-        and generators (`env.name_gen` or id). Any of the four may be empty, not all of them.
+        and generators (`env.name_gen` or id), and, by name in the grid or by id, static
+        generators (`sgens`) and storage units (`storages`, `env.name_storage` or id), static var compensators (`svcs`) and hvdc lines (`hvdcs`). Any of them may be empty, not all of them.
 
         A shunt leaves the admittance matrix, a load and a generator the injection (a
         generator that is the last one regulating its bus turns that bus PQ); the
@@ -846,23 +917,29 @@ class ContingencyAnalysis(object):
         shunt_ids = self._ids_of(shunts, getattr(type(self._ls_backend), "name_shunt", []), "shunt")
         load_ids = self._ids_of(loads, type(self._ls_backend).name_load, "load")
         gen_ids = self._ids_of(gens, type(self._ls_backend).name_gen, "generator")
-        if not branch_ids and not shunt_ids and not load_ids and not gen_ids:
+        other_ids = {"sgen_ids": self._other_ids(sgens, "get_static_generators", "static generator"),
+                     "storage_ids": self._other_ids(storages, "get_storages", "storage unit",
+                                                    getattr(type(self._ls_backend), "name_storage", [])),
+                     "svc_ids": self._other_ids(svcs, "get_svcs", "static var compensator"),
+                     "hvdc_ids": self._other_ids(hvdcs, "get_dclines", "hvdc line")}
+        has_others = any(len(el) for el in other_ids.values())
+        if not branch_ids and not shunt_ids and not load_ids and not gen_ids and not has_others:
             # add_single_contingency() would register it (add_nk([])), the c++
             # add_contingency refuses it
             raise RuntimeError("Impossible to add the contingency: it trips nothing "
-                               "(lines, shunts, loads and gens are all empty).")
-        if not shunt_ids and not load_ids and not gen_ids:
+                               "(every list of elements is empty).")
+        if not shunt_ids and not load_ids and not gen_ids and not has_others:
             # a branch-only contingency: the same one as add_single_contingency's
             self.add_single_contingency(*branch_ids, name=name)
             return
-        key = self._cont_key(branch_ids, shunt_ids, load_ids, gen_ids)
+        key = self._cont_key(branch_ids, shunt_ids, load_ids, gen_ids, (), (), *other_ids.values())
         if key in self._contingency_order:
             return
         try:
-            self.computer.add_contingency(branch_ids, shunt_ids, load_ids, gen_ids)
+            self.computer.add_contingency(branch_ids, shunt_ids, load_ids, gen_ids, **other_ids)
         except Exception as exc_:
             raise RuntimeError(f"Impossible to add the contingency (lines={lines}, shunts={shunts}, "
-                               f"loads={loads}, gens={gens}): {exc_}") from exc_
+                               f"loads={loads}, gens={gens}, {other_ids}): {exc_}") from exc_
         self._contingency_order[key] = len(self._contingency_order)
         self._all_contingencies.append(key)
         self._contingency_names[key] = name
@@ -877,6 +954,22 @@ class ContingencyAnalysis(object):
         """A single contingency tripping these loads only (one id / name, or several). See
         `add_contingency`."""
         self.add_contingency(loads=loads, name=name)
+
+    def add_contingency_sgen(self, sgens, name=None):
+        """Adds a single contingency tripping static generators, see `add_contingency`."""
+        self.add_contingency(sgens=sgens, name=name)
+
+    def add_contingency_storage(self, storages, name=None):
+        """Adds a single contingency tripping storage units, see `add_contingency`."""
+        self.add_contingency(storages=storages, name=name)
+
+    def add_contingency_svc(self, svcs, name=None):
+        """Adds a single contingency tripping static var compensators, see `add_contingency`."""
+        self.add_contingency(svcs=svcs, name=name)
+
+    def add_contingency_hvdc(self, hvdcs, name=None):
+        """Adds a single contingency tripping hvdc lines, see `add_contingency`."""
+        self.add_contingency(hvdcs=hvdcs, name=name)
 
     def add_contingency_gen(self, gens, name=None):
         """A single contingency tripping these generators only (one id / name, or several). See
@@ -987,9 +1080,10 @@ class ContingencyAnalysis(object):
         .. note::
             A `converged == False` post-contingency entry has exactly one `LimitViolation` in
             `limit_violations`, with `element_type == ViolationElementType.GRID` and
-            `violation_type` either `LimitViolationType.NOT_SIMULATED` (a pre-check skipped it,
-            eg it splits the grid) or `LimitViolationType.DIVERGENCE` (the solver ran but did not
-            converge) -- unlike a `converged == True` entry with an empty list, which genuinely
+            `violation_type` `LimitViolationType.NOT_SIMULATED` (a pre-check skipped it, eg it
+            splits the grid), `LimitViolationType.BATCH_UNSUPPORTED` (the batch does not support what it
+            trips, `batch_unsupported_reason` says why) or `LimitViolationType.DIVERGENCE` (the solver ran
+            but did not converge) -- unlike a `converged == True` entry with an empty list, which genuinely
             means no violation was found.
         """
         if self.__is_closed:
@@ -1014,6 +1108,7 @@ class ContingencyAnalysis(object):
         # (see PreContingencyResult.physical_violations)
         with_phys = self.computer.compute_physical_violations
         phys = self.computer.get_physical_violations() if with_phys else None
+        unsupported = self.computer.get_batch_unsupported_reasons()
 
         pre_contingency_result = PreContingencyResult(
             converged=self.computer.converged_n(),
@@ -1031,6 +1126,11 @@ class ContingencyAnalysis(object):
                 shunt_ids=list(all_conts[id_cpp][1]),
                 load_ids=list(all_conts[id_cpp][2]),
                 gen_ids=list(all_conts[id_cpp][3]),
+                sgen_ids=list(all_conts[id_cpp][6]),
+                storage_ids=list(all_conts[id_cpp][7]),
+                svc_ids=list(all_conts[id_cpp][8]),
+                hvdc_ids=list(all_conts[id_cpp][9]),
+                batch_unsupported_reason=str(unsupported[id_cpp]) if id_cpp < len(unsupported) else "",
             )
             for id_me, id_cpp in enumerate(orders_)
         ]

@@ -23,7 +23,7 @@ from ._aux_add_line import _aux_add_line
 from ._aux_add_gen import _aux_add_gen, _aux_add_gen_p_limits
 from ._aux_add_shunt import _aux_add_shunt
 from ._aux_check_legit import _aux_check_legit
-from ._aux_add_slack import _aux_add_slack
+from ._aux_add_slack import _aux_add_slack, _aux_add_can_participate_slack
 from ._aux_add_storage import _aux_add_storage
 from ._aux_add_dc_line import _aux_add_dc_line
 from ._my_const import ALLOWED_PP_ORIG_FILE
@@ -36,28 +36,16 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
          n_busbar_per_sub: Optional[int]=None,  # max number of buses allowed per substation / voltage level
          pp_orig_file : ALLOWED_PP_ORIG_FILE = "pandapower_v2",
          init_subid: bool = True,
+         slack_weight_can_participate: bool = False,
          ) -> LSGrid:
     """
     Convert a pandapower network as input into a LSGrid.
 
-    This can fail to convert the grid and still not throw any error, use with care (for example, you can run a powerflow
-    after this conversion, run a powerflow with pandapower, and compare the results to make sure they match !)
-
-    Cases for which conversion is not possible include, but are not limited to:
-
-    - the pandapower grid has 3 winding transformers
-    - the pandapower grid has xwards
-    - the pandapower grid has dcline
-    - the pandapower grid has switch, motor, assymetric loads, etc.
-    - the pandapower grid any parrallel "elements" (at least one of the column "parrallel" is not 1)
-    - the bus indexes in pandapower do not start at 0 or are not contiguous (you can check `pp_net.bus.index`)
-    - some `g_us_per_km` for some lines are not zero ? TODO not sure if that is still the case !
-    - some `p_mw` for some shunts are not zero ? TODO not sure if that is still the case !
-
-    if you really need any of the above, please submit a github issue and we will work on their support.
-
-    This conversion has been extensively studied for the case118() of pandapower.networks and should work
-    really well for this grid. Actually, this grid is used for testing the LSGrid class.
+    The result solves, as far as it is converted, to the grid ``pp.runpp`` solves. What is
+    converted and how, what is refused (three winding transformers, motors, wards, ...) and
+    where the two still differ (switches, voltage dependent loads, several ext_grids,
+    ``pp.runpp`` options) is in the documentation page "Loading a pandapower grid"
+    (``docs/from_pandapower.rst``).
 
     Parameters
     ----------
@@ -88,6 +76,24 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
         Nothing else should need it.
 
         .. versionadded:: 1.0.1
+
+    slack_weight_can_participate:
+        Whether every generator with a positive ``slack_weight`` is flagged "can
+        participate in the slack" with that weight (``LSGrid.set_gen_can_participate_slack``),
+        whether it is ``slack=True`` or not, and with both ``pp_orig_file``. These are the
+        units the ``DistributedSlack`` outer loop of the ``NROuter_*`` algorithms shares the
+        imbalance on. Default ``False``: only the slack participants can participate, and on a
+        single-slack grid the loop has nothing to do (the slack bus takes all of the imbalance).
+
+        This is not only data for the outer loops: a unit flagged this way and not in the
+        slack joins the (Newton) distributed slack as soon as its set-point is changed to a
+        value within its active limits (``change_p_gen``, ``reactivate_gen``), so the other
+        algorithms see it too from then on.
+
+        The storage units and the static generators never participate: pandapower has no
+        slack weight for them.
+
+        .. versionadded:: 1.3.1
 
     Returns
     -------
@@ -192,6 +198,9 @@ def init(pp_net: "pandapower.auxiliary.pandapowerNet",
     # `_aux_add_slack` may have appended some. Nothing in the powerflow reads them, see
     # `_aux_add_gen_p_limits`.
     _aux_add_gen_p_limits(model, pp_net)
+
+    if slack_weight_can_participate:
+        _aux_add_can_participate_slack(model, pp_net)
 
     if init_subid:
         # tell the LSGrid which substation / voltage level each element belongs to.

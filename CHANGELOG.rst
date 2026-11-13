@@ -230,6 +230,171 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
+[1.3.1] 2026-11-13
+--------------------
+- [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,
+  ``set_may_trip_voltage_controllers``, ``set_tripped_voltage_controllers``, ``supports_tripped_hvdc_lines``
+  and ``set_tripped_hvdc_lines``. Rebuild plugins.
+- [BREAKING] (C++) ``OuterLoopStatus::CHECK_AGAIN``: what a loop working in steps returns for its next check.
+  ``UNSTABLE`` now always means a change, settled by a re-solve that takes no Newton step.
+- [BREAKING] (C++ / plugins) ``LinearSolverStats`` has a new field: plugins must be rebuilt.
+- [BREAKING] (C++ / plugins) ``BaseAlgo::get_adjoint_solve_info``, and ``BaseOuterLoop::adjoint_terms``:
+  plugins must be rebuilt.
+- [BREAKING] batch classes: ``get_gen_v_target_bus`` / ``get_gen_v_share`` now include generators on buses a
+  row may switch PQ, and ``gen_v_indirect_grad`` is weighted per row: weight the direct half by
+  ``get_gen_v_share_rows``.
+- [BREAKING] ``ContingencyAnalysis`` / ``ScenarioSweep``: a row tripping what the batch does not support (a
+  remote-regulating generator, a shunt ``ShuntVoltageControl`` owns) is reported ``BATCH_UNSUPPORTED``, with
+  ``get_batch_unsupported_reasons()``, instead of making ``compute()`` raise for the whole batch (#280).
+- [FIXED] batches: tripping a generator or storage unit no longer turns PQ a bus a converter station still regulates.
+- [FIXED] ``batch_unsupported_fallback``: undoing a row no longer reconnects the open end of a half-open HVDC line,
+  which made the following rows diverge.
+- [FIXED] batches with outer loops: a voltage-control group losing a controller to an island, its other
+  controllers held at a reactive limit, no longer fails: the islanded controller is gone, the regulated bus free.
+- [FIXED] ``DistributedSlack`` with ``redistribute_slack``: after sharing a contingency's lost power,
+  the loop shares the rest from the row's own targets, as OpenLoadFlow: a unit the share put at a bound stays there.
+- [FIXED] outer loops: a loop's change re-solved in zero Newton iterations is done, not redone on the same
+  state (``DistributedSlack`` oscillated on a thinly spread move). Recorded as ``SETTLED``. Issue #264.
+- [FIXED] (C++) a Jacobian rebuilt while buses are masked or pinned kept their identity rows at the
+  positions of the previous pattern.
+- [FIXED] gradients with ``NROuterDist_*`` and ``redistribute_slack``: a unit the share of a row's lost power
+  put at a bound kept its ``gen_p`` gradient; it is held there, as one the Newton's share parks.
+- [FIXED] ``LinearSolverStats`` of the ``*_NICSLU`` algorithms: the factorizations NICSLU runs in place of a
+  refactorization (declined or failed) count, as fallbacks. They were counted as refactorizations.
+- [FIXED] ``LSGrid``'s result and target getters (``get_gen_res``, ``get_load_target_p``, ...) returned views
+  that did not keep the grid alive: read after the grid was collected, they read freed memory.
+- [FIXED] the ``gen_v`` gradient of a generator whose bus a batch row keeps pinned PV was 0.
+- [FIXED] ``ContingencyPropagator``: breakers right at a terminal whose other switches are breakers stay
+  closed, and a node holding only breakers is walked through, as in OpenLoadFlow.
+- [FIXED] ``init_from_pandapower``: a shunt draws ``q_mvar * step * (vn_bus / vn_kv) ** 2``, as in
+  pandapower: ``step`` and ``vn_kv`` were ignored (#273).
+- [FIXED] ``NROuter_*`` with ``resume_outer_state``: a bus ``ReactiveLimits`` freezes again starts from
+  its solved magnitude, not its set-point, so re-solving a converged state no longer takes Newton
+  iterations (#258).
+- [FIXED] A grid built by hand with ``LSGrid.init_*`` is checked (``check_grid``) at its first
+  powerflow, ``check_solution`` or batch algorithm: a bus id out of range raises instead of
+  crashing or being silently ignored (#259).
+- [FIXED] ``ShuntVoltageControl``: switching a regulating shunt off or on between two solves now rebuilds its
+  control. The shunts of its bus silently stopped regulating.
+- [FIXED] ``ShuntVoltageControl``: moving a regulating shunt to another energized bus between two solves
+  now rebuilds its control, which stayed on the former bus.
+- [FIXED] pandapower converter: the ``leakage_resistance_ratio_hv`` warning fired for the supported 0.5
+  and never for another value (#274).
+- [FIXED] pandapower converter: a missing ``tap_side`` became the low voltage side without a warning;
+  the tap is now ignored, with a warning, as pandapower does (#274).
+- [FIXED] pandapower converter: the "Ideal" tap changer check of the 3-winding transformers could
+  not be reached (#274).
+- [FIXED] pandapower 3 converter: the magnetising susceptance of a transformer subtracted ``pfe`` instead of
+  ``pfe**2`` from ``(i0 . sn)**2`` (#274).
+- [FIXED] pandapower 3 converter: with the tap on the low voltage side, the magnetising admittance was
+  multiplied by the square of the tap ratio instead of divided by it (#274).
+- [FIXED] pandapower converter: the angle of a tap with a ``tap_step_degree`` (asymmetrical or symmetrical)
+  is added to the phase shift and its ratio is the modulus of the complex step, as pandapower (#274).
+- [FIXED] pandapower converter: a transformer rated for other voltages than its buses (``vn_hv_kv`` /
+  ``vn_lv_kv``) lost its off-nominal ratio and impedance base (#274).
+- [FIXED] pandapower converter: the tap of a transformer without a ``"Ratio"`` / ``"Symmetrical"``
+  ``tap_changer_type`` was applied, where pandapower ignores it (#274).
+- [FIXED] pandapower converter: the ``scaling`` of the generators was not read (pandapower multiplies ``p_mw``
+  by it).
+- [FIXED] pandapower converter: the ``scaling`` of the storage units was not read (pandapower multiplies
+  ``p_mw`` and ``q_mvar`` by it).
+- [FIXED] pandapower converter: an ext_grid out of service was still made a slack; a grid with no slack left
+  is refused with a clear error.
+- [FIXED] pandapower converter: svc, tcsc, ssc, vsc, asymmetric static generators and DC-grid elements were
+  dropped without a word; they are refused, as motors and wards already were.
+- [FIXED] pandapower converter: a grid with a tap controller could not be converted with pandapower 2,
+  which names the controller's transformer ``tid`` / ``trafotype``.
+- [FIXED] ``GridPowerFlow``: a forward put the generators flagged "can participate in the slack" into the
+  slack of its grid, and solved another system than ``ac_pf``.
+- [FIXED] ``batch_unsupported_fallback``: undoing a row put the generators and storage units it tripped into
+  the slack when they can participate in it, for the rows solved after it.
+- [ADDED] ``ContingencyAnalysis.add_contingency`` and ``ContingencyAnalysisCPP.add_contingency``: trip static
+  generators, storage units, static var compensators and HVDC lines (``sgens``, ``storages``, ``svcs``, ``hvdcs``,
+  ``_ids`` in C++). ``my_contingencies`` returns their lists. Issue #281.
+- [ADDED] ``ScenarioSweep``: per-row trips of static generators, storage units, static var compensators and HVDC
+  lines (``set_contingency_sgens``, ``_storages``, ``_svcs``, ``_hvdcs``). Issue #281.
+- [ADDED] ``ContingencyPropagator.add_contingencies`` (and ``propagate_contingencies``) read powsybl's
+  contingency lists, a json file included; ``contingency_ids`` gives their ids. Grouping ignores busbar names.
+- [ADDED] (C++) ``BaseAlgo::get_ordering_constraints()``: the Newton system's ordering constraints,
+  read-only, so an external solver can order J as ``constrained_ordering`` does (gpusim2grid's GPU batch).
+- [ADDED] ``fill_reducing_ordering`` (KLU-based NR algorithms, part of their config): start the ordering
+  from minimum fill instead of AMD, for cheaper refactorizations in a batch. Off by default.
+- [ADDED] ``load_algorithm_plugin`` takes a plugin's name, found by ``find_algorithm_plugin`` in
+  ``LS2G_PLUGIN_PATH`` or in ``examples/*/build`` of an editable install.
+- [ADDED] ``examples/build_plugins.py``: builds all the example plugins at once, on any OS.
+- [ADDED] batch classes: ``get_row_linear_solver_stats``, ``get_row_J_dim`` / ``get_row_J_nnz``, and
+  ``OuterRowResult.decisions_taken``: each row's linear solver work, Jacobian size and loop decisions.
+- [ADDED] ``rgrowth_threshold`` of the refactor fallback (NR algorithms, part of their config) and
+  ``LinearSolverStats.min_rgrowth``, the smallest pivot growth a solve accepted (KLU, KLU static pivot).
+- [ADDED] example plugin ``examples/rebuild_outer_algorithm`` (``NROuterRebuild_*``): the outer loops on a
+  Jacobian rebuilt and analyzed again whenever the active equations change, as OpenLoadFlow does.
+- [ADDED] (C++) ``NRAlgo::request_factorize``, ``NRSystem::set_controller_q`` and ``NRSystem::masked_buses``,
+  for a driver that rebuilds the Newton in the middle of a solve.
+- [ADDED] gradients with the outer loops (``NROuter_*``, ``NROuterDist_*``): ``keep_jacobian`` in the batch
+  classes, ``solve_JT`` and the bus maps on ``LSGrid``. The last Newton's Jacobian, the loops' decisions held.
+- [ADDED] ``lightsim2grid.differentiable.GridPowerFlow``: one grid's powerflow as a pytorch operation.
+- [ADDED] ``gen_p_indirect_grad``, ``get_gen_v_share_rows`` and ``get_outer_trafo_admittances`` (batch
+  classes and ``LSGrid``); ``compute_flows`` of the pytorch operations uses the taps the loops settled on.
+- [ADDED] ``NROuterDist_*`` algorithms: the outer loops around a Newton that shares the slack itself.
+  ``DistributedSlack`` only caps the units pushed past ``min_p`` / ``max_p`` / 0 MW, out of the share.
+- [ADDED] ``LightSimBackend`` keeps an outer-loop configuration over ``reset()`` / ``copy()``: ``set_outer_loops``,
+  ``set_outer_loop_driver_params``, ``set_resume_outer_state``, ``set_olf_outer_loops``, and the matching
+  constructor kwargs (#272).
+- [ADDED] Outer loops and ``OuterLoopDriverParams`` pickle and deep-copy; ``make_outer_loop`` and
+  ``BaseOuterLoop.get_params`` rebuild a loop.
+- [ADDED] ``init_from_pandapower`` accepts ``tap_neutral != 0``, gives transformers their ratio tap
+  changer (``tap_min`` .. ``tap_max``) and shunts their sections (``max_step``), and reads the
+  regulation of pandapower's tap and shunt controllers, for the ``NROuter_*`` outer loops (#273).
+- [ADDED] ``init_from_pandapower(slack_weight_can_participate=True)`` (and the backend's
+  ``loader_kwargs``): generators with a ``slack_weight`` can participate in the ``DistributedSlack`` loop (#273).
+- [ADDED] ``LightSimBackend`` warns when an ``NROuter_*`` algorithm's ``DistributedSlack`` loop has no
+  unit off the slack bus to act on (#273).
+- [ADDED] ``LSGrid.set_resume_outer_state`` / ``get_resume_outer_state``: a shortcut for the
+  ``resume_outer_state`` flag of the ``NROuter_*`` AC algorithm (#258).
+- [ADDED] ``DistributedSlack(run_without_participant=True)``: the loop runs, and with ``fail_on_residue``
+  fails, without a unit off the slack bus, as OpenLoadFlow does. ``olf_outer_loops``, hence every grid
+  ``init_from_pypowsybl`` builds, sets it (#269).
+- [ADDED] ``ContingencyAnalysis.batch_unsupported_fallback``: the contingencies reported ``BATCH_UNSUPPORTED``
+  are solved after the batch, one at a time, by ``ac_pf`` on a copy of the grid (#280).
+- [ADDED] pandapower converter: ideal phase shifters (``tap_changer_type="Ideal"``, ``tap_phase_shifter``),
+  no longer refused (#274).
+- [ADDED] pandapower converter: transformers with ``parallel != 1``, no longer refused (#274).
+- [ADDED] pandapower converter: grids with ``trafo_model="pi"`` (pandapower 3 data), no longer refused (#274).
+- [ADDED] pandapower converter: tabular tap changers (``tap_dependency_table``): ratio, angle, ``vk`` and
+  ``vkr`` at the current step from ``trafo_characteristic_table``, which was ignored (#274).
+- [ADDED] pandapower converter: the second tap changer (``tap2_*`` columns), applied after the first as
+  pandapower does; it was ignored (#274).
+- [ADDED] pandapower 3 converter: ``leakage_resistance_ratio_hv`` / ``leakage_reactance_ratio_hv`` other than
+  0.5 (a shunt admittance per side), which were replaced by 0.5 (#274).
+- [ADDED] ``LSGrid.update_trafos_parameters_full``: replace the transformers' r, x and the shunt admittance
+  of each side.
+- [ADDED] pandapower converter: a phase tap changer (``set_trafo_phase_tap_changer``) for the taps that move the
+  phase (asymmetrical, symmetrical, ideal, tabular with an angle), and a ratio one for tabular taps (#274).
+- [ADDED] pandapower converter: tabular shunts (``step_dependency_table``): the power of the step from
+  ``shunt_characteristic_table``, which was ignored, and its rows as sections, to move them or regulate.
+- [ADDED] ``LSGrid.set_uniform_voltage_start``, off by default: the Newton-Raphson starts held buses from the
+  voltage passed, as OpenLoadFlow's uniform start does. Fixes a divergence next to a very low impedance branch (#284).
+  The batches inherit it, and ``LightSimBackend`` takes it (``uniform_voltage_start``), kept by ``env.reset()``.
+- [ADDED] docs: "Loading a pandapower grid" (``from_pandapower.rst``), what the pandapower converter models,
+  refuses, and where it differs from ``pp.runpp``.
+- [ADDED] ``LSGrid.change_p_gen_keep_slack``: ``change_p_gen`` without putting the generator back into the slack.
+- [IMPROVED] batches: a row can trip an HVDC line with a station regulating a voltage. ``OuterRowView`` gains
+  a field: rebuild plugins.
+- [IMPROVED] batches: a row can trip a voltage-mode static var compensator, which leaves its control group.
+- [IMPROVED] batches (AC): a row can trip an HVDC line in AC emulation.
+- [IMPROVED] batches: a row can trip a generator of a voltage-control group (remote regulation included).
+  Reported ``BATCH_UNSUPPORTED`` only when every controller of a group regulating a slack bus goes.
+- [IMPROVED] (C++) masked and PV-pinned buses: their Jacobian positions are found again only when a set
+  changes, and only on its rows: batches with outer loops spend noticeably less time outside the solver.
+- [IMPROVED] (C++) outer loops: ``TransformerVoltageControl`` and ``DistributedSlack`` work out their groups /
+  participants once per solve instead of at every call. ``OuterSolveCache`` gains a field: rebuild plugins.
+- [IMPROVED] ``constrained_ordering``: a voltage-control group of several controllers keeps its Q
+  columns in the controllers' order: holding one at a reactive limit forces a fresh factorization
+  far less often.
+- [IMPROVED] pandapower converter: warns when a load has a voltage dependent part (``const_z_*`` /
+  ``const_i_*``), which is not modeled (the load draws a constant power).
+
+
 [1.3.0] 2026-11-03
 --------------------
 - [BREAKING] The ``*_solver`` getters of ``LSGrid`` and an algorithm's ``get_V`` / ``get_Va`` /

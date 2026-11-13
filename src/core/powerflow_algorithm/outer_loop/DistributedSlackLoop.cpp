@@ -12,6 +12,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 #include "LSGrid.hpp"
 
@@ -74,18 +75,73 @@ DistributedSlackLoop::DistributedSlackLoop(const Params & params) : params_(para
     }
 }
 
+bool DistributedSlackLoop::_in_newton(const OuterContext & ctx)
+{
+    return ctx.controls != nullptr && ctx.controls->slack_share() != nullptr;
+}
+
+void DistributedSlackLoop::_declare(const OuterContext & ctx) const
+{
+    if (ctx.controls == nullptr || !ctx.controls->supports_slack_share()) return;
+    // the bus every unit flagged "can participate" may share the slack from: its own in the
+    // grid, connected or not in the solve that declares, and the one this solve places it on.
+    // A batch declares once for all its rows.
+    const OuterGridView view = ctx.view();
+    const GeneratorContainer & gens = view.grid().get_generators();
+    const StorageContainer & storages = view.grid().get_storages();
+    std::vector<int> buses;
+    const auto add = [&buses](int bus){ if (bus >= 0) buses.push_back(bus); };
+    for (int el_id = 0; el_id < gens.nb(); ++el_id) {
+        if (!(gens.get_can_participate_slack_weight(el_id) > 0.)) continue;
+        add(view.bus_solver(gens.get_bus_id()(el_id).cast_int()));
+        add(view.gen_bus_solver(el_id));
+    }
+    for (int el_id = 0; el_id < storages.nb(); ++el_id) {
+        if (!(storages.get_can_participate_slack_weight(el_id) > 0.)) continue;
+        add(view.bus_solver(storages.get_bus_id()(el_id).cast_int()));
+        add(view.storage_bus_solver(el_id));
+    }
+    ctx.controls->reserve_slack_share(buses);
+}
+
+void DistributedSlackLoop::_solve_units(const OuterContext & ctx) const
+{
+    const OuterSolveCache * cache = ctx.solve_cache;
+    const bool same_solve = cache != nullptr && cache->generation != 0 &&
+                            cache == solve_units_cache_ && cache->generation == solve_units_generation_;
+    if (same_solve) return;
+    solve_units_.clear();
+    solve_unit_bus_.clear();
+    collect_units(ctx.view(), solve_units_, solve_unit_bus_);
+    solve_units_cache_ = (cache != nullptr && cache->generation != 0) ? cache : nullptr;
+    solve_units_generation_ = solve_units_cache_ != nullptr ? cache->generation : 0;
+}
+
 bool DistributedSlackLoop::_is_needed(const OuterContext & ctx) const
 {
     // a unit off the slack bus to take the mismatch: the slack bus' own units would only take
-    // what it already absorbs (see the class comment)
-    return _has_participant(ctx.view(), ctx.slack_bus);
+    // what it already absorbs (see the class comment). Unless asked to run anyway.
+    _solve_units(ctx);
+    return params_.run_without_participant || _off_slack_bus(solve_unit_bus_, ctx.slack_bus);
 }
 
 void DistributedSlackLoop::_initialize(OuterContext & ctx)
 {
-    units_.clear();
-    unit_solver_bus_.clear();
-    collect_units(ctx.view(), units_, unit_solver_bus_);
+    // the units the solve this one resumes from left out of the Newton's share (this object is
+    // that solve's loop, or a clone of it): they stay out, rather than being pushed past their
+    // bound again by the first solve. Matched by unit: a batch row may solve other units.
+    std::vector<ParkedUnit> was_parked;
+    if (ctx.resume) was_parked = parked_units();
+    _solve_units(ctx);
+    units_ = solve_units_;
+    unit_solver_bus_ = solve_unit_bus_;
+    // run without a unit off the slack bus: no participant, its own units would only take what
+    // it already absorbs (and a slack unit keeps its flag: the grid cannot say it takes no part)
+    if (!_off_slack_bus(unit_solver_bus_, ctx.slack_bus)) {
+        units_.clear();
+        unit_solver_bus_.clear();
+    }
+    sn_mva_ = ctx.grid->get_sn_mva();
     // a unit starts from its target in force: the one a solve resumed from left it at (a batch
     // row from its "n" solve, as OpenLoadFlow's contingencies start from the targetP of the
     // pre-contingency solve), the row's or the grid's otherwise
@@ -99,7 +155,89 @@ void DistributedSlackLoop::_initialize(OuterContext & ctx)
     }
     current_mw_.resize(units_.size());
     for(std::size_t k = 0; k < units_.size(); ++k) current_mw_[k] = units_[k].injection_mw;
+    initial_mw_ = current_mw_;
+    lost_p_saturated_.clear();
     _share_lost_p(ctx);
+    // every unit takes its share in the Newton to start with, but those a resumed solve kept out,
+    // and those the row's lost power put at a bound: where the losses grow with the contingency,
+    // the first solve would push them past it
+    parked_.assign(units_.size(), 0);
+    parked_high_.assign(units_.size(), 0);
+    if (_in_newton(ctx)) {
+        _keep_parked(ctx, was_parked);
+        for (std::size_t k = 0; k < units_.size() && k < lost_p_saturated_.size(); ++k) {
+            if (!lost_p_saturated_[k]) continue;
+            parked_[k] = 1;
+            parked_high_[k] = lost_p_high_ ? 1 : 0;
+        }
+        _set_newton_weights(ctx);
+    }
+    _mark_solved();  // the first solve runs with these
+}
+
+real_type DistributedSlackLoop::_bound(std::size_t k, bool high) const
+{
+    const slack_redistribution::Participant & unit = units_[k];
+    if (high) {
+        real_type hi = unit.max_p_mw;
+        if (unit.injection_mw < 0.) hi = std::isnan(hi) ? 0. : std::min(hi, static_cast<real_type>(0.));
+        return hi;
+    }
+    real_type lo = unit.min_p_mw;
+    if (!(unit.injection_mw < 0.)) lo = std::isnan(lo) ? 0. : std::max(lo, static_cast<real_type>(0.));
+    return lo;
+}
+
+void DistributedSlackLoop::_keep_parked(OuterContext & ctx, const std::vector<ParkedUnit> & was_parked)
+{
+    // At the bound it was parked at: a time series' step restarts its units from its own targets.
+    // Safe either way: each check shares from the initial targets, so a unit kept out that should
+    // take a share gets its weight back, at the cost of a re-solve.
+    if (was_parked.empty() || ctx.injections == nullptr) return;
+    OuterInjections & state = *ctx.injections;
+    const OuterGridView view = ctx.view();
+    for (std::size_t k = 0; k < units_.size(); ++k) {
+        for (const ParkedUnit & parked : was_parked) {
+            if (parked.kind != units_[k].kind || parked.el_id != units_[k].el_id) continue;
+            const real_type bound = _bound(k, parked.high);
+            if (std::isnan(bound)) break;
+            if (units_[k].kind == slack_redistribution::UnitKind::GENERATOR) {
+                state.move_gen_target_p(view, units_[k].el_id, unit_solver_bus_[k], bound);
+            } else {
+                state.move_storage_target_p(view, units_[k].el_id, unit_solver_bus_[k], -bound);
+            }
+            current_mw_[k] = bound;
+            parked_[k] = 1;
+            parked_high_[k] = parked.high ? 1 : 0;
+            break;
+        }
+    }
+}
+
+void DistributedSlackLoop::_targets_in_force(const OuterContext & ctx, std::vector<real_type> & out) const
+{
+    const OuterGridView view = ctx.view();
+    out.resize(units_.size());
+    for (std::size_t k = 0; k < units_.size(); ++k) {
+        out[k] = units_[k].kind == slack_redistribution::UnitKind::GENERATOR
+            ? ctx.injections->gen_target_p_in_force(view, units_[k].el_id)
+            : -ctx.injections->storage_target_p_in_force(view, units_[k].el_id);
+    }
+}
+
+void DistributedSlackLoop::_set_newton_weights(OuterContext & ctx) const
+{
+    std::vector<SlackShareControl::Unit> units;
+    units.reserve(units_.size());
+    for (std::size_t k = 0; k < units_.size(); ++k) {
+        SlackShareControl::Unit unit;
+        unit.kind = units_[k].kind;
+        unit.el_id = units_[k].el_id;
+        unit.bus_solver = unit_solver_bus_[k];
+        unit.weight = parked_[k] ? 0. : units_[k].weight;
+        units.push_back(unit);
+    }
+    ctx.controls->slack_share()->set_units(units);
 }
 
 real_type DistributedSlackLoop::lost_p_to_share_mw(const OuterGridView & view,
@@ -142,7 +280,11 @@ void DistributedSlackLoop::_share_lost_p(OuterContext & ctx)
     std::vector<char> saturated;
     // what cannot be shared (every unit at a bound) stays on the slack bus: the checks then
     // find it in the mismatch, as OpenLoadFlow's DistributedSlack loop does
-    slack_redistribution::distribute(units_, lost, params_.p_residue_eps_mw, new_mw, saturated);
+    const slack_redistribution::Report report =
+        slack_redistribution::distribute(units_, lost, params_.p_residue_eps_mw, new_mw, saturated);
+    // every unit at a bound: distribute clears the flags, all are
+    lost_p_saturated_ = report.all_saturated ? std::vector<char>(units_.size(), 1) : saturated;
+    lost_p_high_ = lost > 0.;
     OuterInjections & state = *ctx.injections;
     for(std::size_t k = 0; k < units_.size(); ++k){
         if(units_[k].kind == slack_redistribution::UnitKind::GENERATOR){
@@ -150,7 +292,8 @@ void DistributedSlackLoop::_share_lost_p(OuterContext & ctx)
         } else {
             state.move_storage_target_p(view, units_[k].el_id, unit_solver_bus_[k], -new_mw[k]);
         }
-        units_[k].injection_mw = new_mw[k];
+        // the base (units_[k].injection_mw) stays the targets the row started from: the checks
+        // share the cumulative mismatch from there, as OpenLoadFlow resets to initialTargetP
         current_mw_[k] = new_mw[k];
     }
     ctx.record("SHARE_LOST_P", true, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
@@ -180,9 +323,15 @@ void DistributedSlackLoop::_detect(const OuterContext & ctx, std::vector<LimitVi
     real_type mismatch = 0.;
     if(!_triggered(ctx, mismatch)) return;
     // the same rule as is_needed; the outer-loop mode never gets here otherwise
-    if(ctx.is_detection() && !_has_participant(ctx.view(), ctx.slack_bus)) return;
+    if(ctx.is_detection() && !params_.run_without_participant && !_has_participant(ctx.view(), ctx.slack_bus)) return;
     out.push_back(LimitViolation{ViolationElementType::GRID, -1, 0, LimitViolationType::SLACK_MISMATCH,
                                  mismatch, params_.slack_bus_p_max_mismatch_mw, std::string()});
+}
+
+bool DistributedSlackLoop::_off_slack_bus(const std::vector<int> & solver_bus, int slack_solver_bus)
+{
+    return std::any_of(solver_bus.begin(), solver_bus.end(),
+                       [slack_solver_bus](int bus){ return bus != slack_solver_bus; });
 }
 
 bool DistributedSlackLoop::_has_participant(const OuterGridView & view, int skip_solver_bus)
@@ -190,12 +339,14 @@ bool DistributedSlackLoop::_has_participant(const OuterGridView & view, int skip
     std::vector<slack_redistribution::Participant> units;
     std::vector<int> solver_bus;
     collect_units(view, units, solver_bus);
-    return std::any_of(solver_bus.begin(), solver_bus.end(),
-                       [skip_solver_bus](int bus){ return bus != skip_solver_bus; });
+    return _off_slack_bus(solver_bus, skip_solver_bus);
 }
 
 OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
 {
+    // with no unit at all, the Newton shares nothing: the reference bus' mismatch is checked
+    // against the threshold as around a single-slack Newton
+    if (_in_newton(ctx) && !units_.empty()) return _check_in_newton(ctx);
     real_type mismatch = 0.;
     const bool triggered = _triggered(ctx, mismatch);
     ctx.record("DISTRIBUTE", triggered, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
@@ -235,14 +386,101 @@ OuterLoopStatus DistributedSlackLoop::_check(OuterContext & ctx)
     return unstable ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
 }
 
+OuterLoopStatus DistributedSlackLoop::_check_in_newton(OuterContext & ctx)
+{
+    // where the solve left the units: the driver moved their targets by their share
+    _targets_in_force(ctx, current_mw_);
+    // the solve just checked ran with the units parked as the last check left them: the driver
+    // checks this loop again only after a solve
+    _mark_solved();
+    // the same cumulative sharing from the initial targets as around a single-slack Newton; what
+    // the reference bus kept is not nothing only when every unit is parked
+    real_type mismatch = _mismatch_mw(ctx);
+    if (std::isnan(mismatch)) mismatch = 0.;
+    real_type remaining = mismatch;
+    for (std::size_t k = 0; k < units_.size(); ++k) remaining += current_mw_[k] - units_[k].injection_mw;
+
+    std::vector<real_type> new_mw;
+    std::vector<char> saturated;
+    const slack_redistribution::Report report = slack_redistribution::distribute(
+        units_, remaining, params_.p_residue_eps_mw, new_mw, saturated);
+    // every unit at a bound: none of them shares any more, the reference bus takes the rest
+    if (report.all_saturated) saturated.assign(units_.size(), 1);
+    const real_type residue = units_.empty() ? remaining : report.not_distributed_mw;
+    if (params_.fail_on_residue && std::abs(residue) > params_.p_residue_eps_mw) {
+        ctx.record("FAIL_RESIDUE", true, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
+                   residue, params_.p_residue_eps_mw);
+        return OuterLoopStatus::FAILED;
+    }
+
+    OuterInjections & state = *ctx.injections;
+    const OuterGridView view = ctx.view();
+    real_type moved = 0.;
+    for (std::size_t k = 0; k < units_.size(); ++k) {
+        const bool is_gen = units_[k].kind == slack_redistribution::UnitKind::GENERATOR;
+        if (saturated[k] != parked_[k]) {
+            // a unit at a bound leaves the Newton's share; one back inside its bounds rejoins it
+            const real_type bound = new_mw[k];
+            ctx.record(saturated[k] ? "PARK" : "UNPARK", true,
+                       is_gen ? ViolationElementType::GENERATOR : ViolationElementType::STORAGE, units_[k].el_id,
+                       remaining > 0. ? LimitViolationType::HIGH_P : LimitViolationType::LOW_P, current_mw_[k], bound);
+        }
+        moved += std::abs(is_gen
+            ? state.move_gen_target_p(view, units_[k].el_id, unit_solver_bus_[k], new_mw[k])
+            : state.move_storage_target_p(view, units_[k].el_id, unit_solver_bus_[k], -new_mw[k]));
+        current_mw_[k] = new_mw[k];
+    }
+    parked_.assign(saturated.begin(), saturated.end());
+    parked_high_.assign(units_.size(), remaining > 0. ? 1 : 0);
+    _set_newton_weights(ctx);
+    // OpenLoadFlow's PreviousStateInfo.moved, with its margin against rounding: the units moved
+    // only when some unit was pushed past a bound, or came back
+    const real_type threshold = params_.moved_fraction * params_.p_residue_eps_mw;
+    bool unstable = moved > threshold;
+    ctx.record("UNITS_MOVED", unstable, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
+               moved, threshold);
+    // ... or when the Newton's share, moved into the targets after the solve, took a unit's
+    // target Q with it: OpenLoadFlow re-solves after every move of the targets, and the solve
+    // has not seen that one
+    const real_type unsolved_q = state.unsolved_q_mvar;
+    state.unsolved_q_mvar = 0.;
+    if (unsolved_q > threshold) {
+        ctx.record("TARGET_Q_FOLLOWED", true, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
+                   unsolved_q, threshold);
+        unstable = true;
+    }
+    // re-solved with the new weights; a STABLE check's change is not (unless another loop's
+    // re-solve comes after, and this loop is then checked again)
+    if (unstable) _mark_solved();
+    return unstable ? OuterLoopStatus::UNSTABLE : OuterLoopStatus::STABLE;
+}
+
 AlgoConfig DistributedSlackLoop::_get_params() const
 {
     AlgoConfig cfg;
-    cfg.int_params = {params_.fail_on_residue ? 1 : 0};
+    cfg.int_params = {params_.fail_on_residue ? 1 : 0, params_.run_without_participant ? 1 : 0};
     cfg.real_params = {static_cast<double>(params_.slack_bus_p_max_mismatch_mw),
                        static_cast<double>(params_.p_residue_eps_mw),
                        static_cast<double>(params_.moved_fraction)};
     return cfg;
+}
+
+void DistributedSlackLoop::_adjoint_terms(OuterAdjointTerms & out) const
+{
+    // a unit parked at a bound sits there whatever its set-point (the Newton gives it no
+    // share, and the sharing from the initial targets puts it back at the bound) -- unless
+    // that "bound" is its own set-point: a unit already beyond a limit is never pulled back
+    // to it (slack_redistribution::distribute), it stays where its target puts it. Its own:
+    // from before the row's lost-power share (initial_mw_, the same as injection_mw, which that
+    // share does not move) -- a unit that share put at its bound is held there as well
+    if (sn_mva_ > 0.) out.inv_sn = 1. / sn_mva_;
+    // As the last Newton solve had them: a unit parked by a check that did not re-solve still
+    // shared the slack in that solve.
+    for (std::size_t k = 0; k < units_.size() && k < solved_parked_.size() && k < unit_solver_bus_.size(); ++k) {
+        if (!solved_parked_[k] || units_[k].kind != slack_redistribution::UnitKind::GENERATOR) continue;
+        if (k < solved_mw_.size() && k < initial_mw_.size() && solved_mw_[k] == initial_mw_[k]) continue;
+        out.fixed_p.emplace_back(units_[k].el_id, unit_solver_bus_[k]);
+    }
 }
 
 }  // namespace ls2g

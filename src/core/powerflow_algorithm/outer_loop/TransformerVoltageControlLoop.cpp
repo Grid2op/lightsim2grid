@@ -75,12 +75,15 @@ std::vector<TransformerVoltageControlLoop::Group> TransformerVoltageControlLoop:
     if (rtc.nb() != trafos.nb() || to_solver.size() == 0) return res;
     const Eigen::Ref<const RealVect> vn_kv = grid.get_bus_vn_kv();
     // the buses a generator, an SVC or a VSC station regulates (OpenLoadFlow's GENERATOR and
-    // VOLTAGE_SOURCE_CONVERTER controls, of a higher priority than a transformer's)
-    std::set<int> generator_controlled;
-    for (const SolverBusId & b : layout.bus_pv) generator_controlled.insert(b.cast_int());
-    for (const SolverBusId & b : layout.slack_bus_id_solver) generator_controlled.insert(b.cast_int());
+    // VOLTAGE_SOURCE_CONVERTER controls, of a higher priority than a transformer's), by solver bus
+    std::vector<char> generator_controlled(layout.id_solver_to_me.size(), 0);
+    auto mark = [&generator_controlled](int b) {
+        if (b >= 0 && static_cast<std::size_t>(b) < generator_controlled.size()) generator_controlled[static_cast<std::size_t>(b)] = 1;
+    };
+    for (const SolverBusId & b : layout.bus_pv) mark(b.cast_int());
+    for (const SolverBusId & b : layout.slack_bus_id_solver) mark(b.cast_int());
     const VoltageControlSolverData & ctrl = layout.voltage_control.controllers();
-    for (int g = 0; g < ctrl.n_groups(); ++g) generator_controlled.insert(ctrl.reg_bus(g));
+    for (int g = 0; g < ctrl.n_groups(); ++g) mark(ctrl.reg_bus(g));
 
     std::map<int, std::size_t> group_of_bus;
     for (int t = 0; t < trafos.nb(); ++t) {
@@ -100,7 +103,7 @@ std::vector<TransformerVoltageControlLoop::Group> TransformerVoltageControlLoop:
             g.bus_grid = reg;
             g.target = rtc.target(t);  // the first one's holds
             g.half_deadband = std::numeric_limits<real_type>::infinity();
-            g.hidden = generator_controlled.count(bus) > 0;
+            g.hidden = static_cast<std::size_t>(bus) < generator_controlled.size() && generator_controlled[static_cast<std::size_t>(bus)] != 0;
             it = group_of_bus.emplace(bus, res.size()).first;
             res.push_back(g);
         }
@@ -159,9 +162,23 @@ void TransformerVoltageControlLoop::_declare(const OuterContext & ctx) const
     }
 }
 
+const std::vector<TransformerVoltageControlLoop::Group> & TransformerVoltageControlLoop::_solve_groups(const OuterContext & ctx) const
+{
+    const OuterSolveCache * cache = ctx.solve_cache;
+    const bool same_solve = cache != nullptr && cache->generation != 0 &&
+                            cache == solve_groups_cache_ && cache->generation == solve_groups_generation_;
+    if (!same_solve) {
+        solve_groups_ = groups(ctx.view());
+        // without a solve to tie them to (detection), they are not kept for later
+        solve_groups_cache_ = (cache != nullptr && cache->generation != 0) ? cache : nullptr;
+        solve_groups_generation_ = solve_groups_cache_ != nullptr ? cache->generation : 0;
+    }
+    return solve_groups_;
+}
+
 bool TransformerVoltageControlLoop::_is_needed(const OuterContext & ctx) const
 {
-    for (const Group & g : groups(ctx.view())) {
+    for (const Group & g : _solve_groups(ctx)) {
         if (!g.hidden) return true;
     }
     return false;
@@ -169,7 +186,7 @@ bool TransformerVoltageControlLoop::_is_needed(const OuterContext & ctx) const
 
 void TransformerVoltageControlLoop::_initialize(OuterContext & ctx)
 {
-    groups_ = groups(ctx.view());
+    groups_ = _solve_groups(ctx);
     {
         const bus_q_check::BusQPlan & plan = bus_q_check::solve_bus_q_plan(ctx, plan_);
         if (&plan != &plan_) plan_ = plan;
@@ -486,7 +503,7 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
         _freeze_generators(ctx, _limit(ctx.view()), closed);
         _fix_controls(ctx, closed);
         step_ = Step::CONTROL;
-        return OuterLoopStatus::UNSTABLE;
+        return OuterLoopStatus::CHECK_AGAIN;  // the next check is the next step
     }
 
     // CONTROL: the ratios out of their range rounded to their extreme tap
@@ -532,8 +549,8 @@ OuterLoopStatus TransformerVoltageControlLoop::_check(OuterContext & ctx)
         _release_generators(ctx);
         step_ = Step::COMPLETE;
     }
-    // in any case, the loop must run again
-    return OuterLoopStatus::UNSTABLE;
+    // in any case, the loop must run again: its next check is its next step
+    return OuterLoopStatus::CHECK_AGAIN;
 }
 
 void TransformerVoltageControlLoop::_detect(const OuterContext & ctx, std::vector<LimitViolation> & out) const
@@ -541,7 +558,7 @@ void TransformerVoltageControlLoop::_detect(const OuterContext & ctx, std::vecto
     if (ctx.V == nullptr || !ctx.vm_checks) return;
     const Eigen::Ref<const RealVect> vn_kv = ctx.grid->get_bus_vn_kv();
     const SolverBusIdVect & to_solver = solver_map(ctx);
-    for (const Group & g : groups(ctx.view())) {
+    for (const Group & g : _solve_groups(ctx)) {
         if (g.hidden) continue;
         const int b = to_solver[g.bus_grid].cast_int();
         if (b < 0 || b >= ctx.V->size()) continue;

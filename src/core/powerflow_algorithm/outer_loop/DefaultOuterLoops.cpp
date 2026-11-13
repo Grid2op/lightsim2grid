@@ -54,9 +54,12 @@ std::shared_ptr<BaseOuterLoop> make_outer_loop(const std::string & name, const A
 {
     // the inverse of each loop's _get_params
     if (name == "DistributedSlack") {
-        check_param_count(name, params, 1, 3);
+        // one integer parameter before run_without_participant: still read
+        if (params.int_params.size() != 1) check_param_count(name, params, 2, 3);
+        else check_param_count(name, params, 1, 3);
         DistributedSlackLoop::Params p;
         p.fail_on_residue = params.int_params[0] != 0;
+        if (params.int_params.size() > 1) p.run_without_participant = params.int_params[1] != 0;
         p.slack_bus_p_max_mismatch_mw = static_cast<real_type>(params.real_params[0]);
         p.p_residue_eps_mw = static_cast<real_type>(params.real_params[1]);
         p.moved_fraction = static_cast<real_type>(params.real_params[2]);

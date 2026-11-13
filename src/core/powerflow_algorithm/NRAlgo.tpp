@@ -118,7 +118,7 @@ bool NRAlgo<LinearSolver, NRSystem>::setup(
 // The Newton iterations, from whatever state the system holds: the one setup put it in,
 // or -- for an outer loop resuming the solve -- the one the previous call left, possibly
 // edited by value. Always factorizes on its first iteration: analyze + factorize if
-// `need_init`, refactorize otherwise.
+// `need_init`, factorize if asked (request_factorize), refactorize otherwise.
 template<class LinearSolver, class NRSystem>
 bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool need_init)
 {
@@ -146,6 +146,16 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
     while ((!converged) & (nr_iter_ < max_iter)) {
         nr_iter_++;
 
+        // LSGrid::set_uniform_voltage_start: the first step is taken from the caller's
+        // magnitudes at the held buses (see NRSystem::begin_vm_lift). Only once the
+        // seeded voltage failed the test above, so a start that already converges is
+        // left alone, and the residual is re-evaluated at that point.
+        const bool lifting = (nr_iter_ == 1) && _system.begin_vm_lift();
+        if (lifting) {
+            _system.mismatch_into(F);
+            _system.calibrate_slack_absorbed(F);
+        }
+
         need_factorize = (need_factorize || should_refactor_policy(nr_iter_));
         if (need_factorize) {
             // Phase 3: fill J numerically with current V.
@@ -157,18 +167,24 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
                 // solver that orders with constraints gets the system's first (or none,
                 // see set_constrained_ordering).
                 detail::set_ordering_constraints_impl(_linear_solver, _system, constrained_ordering_, 0);
+                detail::set_fill_reducing_ordering_impl(_linear_solver, fill_reducing_ordering_, 0);
                 err_ = _linear_solver.analyze(_system.J());
                 if (err_ == ErrorType::NoError) {
                     err_ = _linear_solver.factorize(_system.J());
                 }
                 need_init = false;
                 need_factorize_ = false;
+            } else if (need_numeric_factorize_) {
+                err_ = _linear_solver.factorize(_system.J());
             } else {
                 err_ = _linear_solver.refactorize(_system.J());
             }
+            need_numeric_factorize_ = false;
             if (err_ != ErrorType::NoError) { res = false; break; }
             need_factorize = false;
         }
+
+        if (lifting) _system.add_vm_lift_rhs(F);  // J was filled at the lifted point
 
         // Solve J * dx = F  (F = mismatch, negated convention; F overwritten with dx)
         err_ = _linear_solver.solve(F);
@@ -176,9 +192,11 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
             res = false; break;
         }
 
-        // Apply scaling policy (runtime dispatch)
+        // Apply scaling policy (runtime dispatch). Not on the lifted step: the held
+        // magnitudes reach their targets in full, so the rest of the step must too --
+        // and a line search would measure it at magnitudes the step assumed moved.
         auto timer_sc = CustTimer();
-        real_type coeff = scaling_policy_->scale(_system, F);
+        real_type coeff = lifting ? static_cast<real_type>(1.) : scaling_policy_->scale(_system, F);
         // scale F in place rather than passing the `coeff * F` expression:
         // binding it to apply_step's Eigen::Ref<const RealVect> parameter made
         // Eigen materialise the expression into a heap temporary on every
@@ -195,6 +213,7 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
         // now counts where the policy itself does.
         auto timer_va_vm = CustTimer();
         _system.apply_step(F);
+        if (lifting) _system.end_vm_lift();
         timer_Va_Vm_ += timer_va_vm.duration();
 
         // New mismatch (written into F's existing buffer: its dimension cannot
@@ -206,6 +225,10 @@ bool NRAlgo<LinearSolver, NRSystem>::newton(int max_iter, real_type tol, bool ne
         converged = _check_for_convergence(F, tol);  // timer_check_
         need_factorize = false;
     }
+
+    // a factorization or a solve that failed on the lifted step: the held buses are
+    // put back at their targets, which is where every other path leaves them
+    _system.end_vm_lift();
 
     if (!converged) {
         if (err_ == ErrorType::NoError) err_ = ErrorType::TooManyIterations;
@@ -266,6 +289,7 @@ void NRAlgo<LinearSolver, NRSystem>::reset()
     BaseAlgo::reset();
     _system.clear_jacobian();
     need_factorize_ = true;
+    need_numeric_factorize_ = false;
     n_ = -1;
     ErrorType reset_status = _linear_solver.reset();
     if (reset_status != ErrorType::NoError) err_ = reset_status;

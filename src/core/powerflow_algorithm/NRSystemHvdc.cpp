@@ -12,6 +12,8 @@
 // included BY LSGrid.hpp), the full type is needed to pull the droop data
 #include "LSGrid.hpp"
 
+#include <algorithm>
+
 namespace ls2g {
 
 void Hvdc::update_state(
@@ -25,6 +27,11 @@ void Hvdc::update_state(
     data_.clear();
     if(lsgrid_ptr != nullptr) lsgrid_ptr->fill_hvdc_droop_solver_data(data_, true);
     my_size_ = data_.size();
+    off_.assign(static_cast<std::size_t>(my_size_), 0);
+    for(int k = 0; k < my_size_; ++k){
+        if(std::find(tripped_lines_.begin(), tripped_lines_.end(), data_.hvdc_id[static_cast<std::size_t>(k)]) != tripped_lines_.end())
+            off_[static_cast<std::size_t>(k)] = 1;
+    }
 }
 
 } // namespace ls2g

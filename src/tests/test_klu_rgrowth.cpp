@@ -12,6 +12,8 @@
 // refactorization is redone as a factorization (new pivots), as powsybl-math-native does;
 // with it off, nothing changes. C++14 only.
 
+#include <cmath>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -90,6 +92,60 @@ TEST_CASE("fallback on: a tiny reused pivot is factorized again", "[linear_solve
     REQUIRE(solver.factorize(FIRST) == ErrorType::NoError);
     CHECK(solver.refactorize(TINY_PIVOT) == ErrorType::NoError);
     CHECK(solver.get_linear_solver_stats().nb_refactorize_failed == 1);
+}
+
+TEST_CASE("min_rgrowth: the smallest growth of the accepted refactorizations", "[linear_solver][klu]")
+{
+    LinearSolverPolicy<KLULinearSolver> solver;
+    REQUIRE(solver.analyze(FIRST) == ErrorType::NoError);
+    REQUIRE(solver.factorize(FIRST) == ErrorType::NoError);
+    // the fallback off: nothing measured
+    REQUIRE(solver.refactorize(make(3., 1., 1., 3.)) == ErrorType::NoError);
+    CHECK(std::isnan(solver.get_linear_solver_stats().min_rgrowth_));
+
+    solver.set_refactor_fallback(true);
+    REQUIRE(solver.refactorize(make(3., 1., 1., 3.)) == ErrorType::NoError);
+    const double first = solver.get_linear_solver_stats().min_rgrowth_;
+    CHECK(first > 0.);
+
+    // a refactorization rejected on its growth is not one whose pivots were used
+    REQUIRE(solver.refactorize(TINY_PIVOT) == ErrorType::NoError);
+    REQUIRE(solver.get_linear_solver_stats().nb_fallback_factorize == 1);
+    CHECK(solver.get_linear_solver_stats().min_rgrowth_ == first);
+
+    // and it covers what the timers cover
+    solver.reset_stats_timers();
+    CHECK(std::isnan(solver.get_linear_solver_stats().min_rgrowth_));
+}
+
+TEST_CASE("the fallback's growth threshold can be set", "[linear_solver][klu]")
+{
+    LinearSolverPolicy<KLULinearSolver> solver;
+    CHECK(solver.fallback_rgrowth_threshold() == LinearSolverPolicy<KLULinearSolver>::RGROWTH_THRESHOLD);
+    solver.set_refactor_fallback(true);
+    REQUIRE(solver.analyze(FIRST) == ErrorType::NoError);
+    REQUIRE(solver.factorize(FIRST) == ErrorType::NoError);
+
+    // above any growth: every refactorization falls back
+    solver.set_fallback_rgrowth_threshold(1e300);
+    REQUIRE(solver.refactorize(make(3., 1., 1., 3.)) == ErrorType::NoError);
+    CHECK(solver.get_linear_solver_stats().nb_fallback_factorize == 1);
+
+    // 0: only what klu_refactor reports, so a tiny pivot goes through
+    solver.set_fallback_rgrowth_threshold(0.);
+    REQUIRE(solver.factorize(FIRST) == ErrorType::NoError);
+    REQUIRE(solver.refactorize(TINY_PIVOT) == ErrorType::NoError);
+    CHECK(solver.get_linear_solver_stats().nb_fallback_factorize == 1);
+
+    // set while the fallback is off, applied when it is turned on
+    solver.set_refactor_fallback(false);
+    solver.set_fallback_rgrowth_threshold(1e300);
+    REQUIRE(solver.factorize(FIRST) == ErrorType::NoError);
+    REQUIRE(solver.refactorize(make(3., 1., 1., 3.)) == ErrorType::NoError);
+    CHECK(solver.get_linear_solver_stats().nb_fallback_factorize == 1);
+    solver.set_refactor_fallback(true);
+    REQUIRE(solver.refactorize(make(3., 1., 1., 3.)) == ErrorType::NoError);
+    CHECK(solver.get_linear_solver_stats().nb_fallback_factorize == 2);
 }
 
 TEST_CASE("the KLU solver alone checks nothing by default", "[linear_solver][klu]")

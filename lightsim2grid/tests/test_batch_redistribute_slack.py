@@ -247,7 +247,9 @@ class TestScenarioSweepRedistributeSlack(_Base):
         self.grid.change_p_gen(self.non_slack, 20.)
         self.targets = np.array([g.target_p_mw for g in self.grid.get_generators()])
         self.slack_gen = [g.id for g in self.grid.get_generators() if g.bus_id == 1][0]
-        self.all_buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+        # every bus of the grid is in the solved system. (Not `id_ac_solver_to_me()`: the
+        # grid was never solved here, and that list is empty -- nothing would be compared)
+        self.all_buses = np.arange(self.grid.total_bus())
 
     def _reference(self, gen_off, row_p=None):
         ref = self.grid.copy()
@@ -299,7 +301,11 @@ class TestScenarioSweepRedistributeSlack(_Base):
         V_ref, report = self._reference(self.non_slack)
         self.assertAlmostEqual(report.mismatch_mw, 20.)
         self.assertEqual(report.nb_saturated, 1)
-        np.testing.assert_allclose(sweep.get_voltages()[0][self.all_buses], V_ref[self.all_buses],
+        # the same solution up to the angle reference: the row keeps the reference bus of the
+        # base case, the one-off solve takes its own once the saturated unit left the slack
+        V = sweep.get_voltages()[0]
+        np.testing.assert_allclose(np.abs(V[self.all_buses]), np.abs(V_ref[self.all_buses]), rtol=0., atol=1e-6)
+        np.testing.assert_allclose(_angles_rel(V)[self.all_buses], _angles_rel(V_ref)[self.all_buses],
                                    rtol=0., atol=1e-6)
 
     def test_row_setpoints_are_the_rows_own(self):
@@ -344,7 +350,9 @@ class TestScenarioSweepInjectionChange(_Base):
         self.load_targets = np.array([l.target_p_mw for l in self.grid.get_loads()])
         self.n_load = self.load_targets.shape[0]
         self.n_trafo = len(self.grid.get_trafos())
-        self.all_buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+        # every bus of the grid is in the solved system. (Not `id_ac_solver_to_me()`: the
+        # grid was never solved here, and that list is empty -- nothing would be compared)
+        self.all_buses = np.arange(self.grid.total_bus())
         # a unit, neither the reference slack (generator 0) nor the leaf one, that the
         # shares below push past a bound
         self.clamped = [g for g in range(1, self.n_gen) if g not in (self.leaf_gen, self.non_slack)][0]

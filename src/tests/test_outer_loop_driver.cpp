@@ -77,16 +77,17 @@ LSGrid make_grid(bool pv_gen = false)
 }
 
 // a loop that answers its check() calls from a script (its last entry repeats), logs
-// "<name>.<call>" for every call, and on UNSTABLE nudges every injection so that the next
-// Newton solve has something to do
+// "<name>.<call>" for every call, and on UNSTABLE or CHECK_AGAIN nudges every injection so that
+// the next Newton solve has something to do; `nudge` is how much, relative (0: nothing changes;
+// a tiny one: a change that leaves every bus within tolerance, so the next solve takes no step)
 class ScriptedLoop final : public BaseOuterLoop
 {
     public:
         ScriptedLoop(std::string name, std::vector<OuterLoopStatus> script,
                      std::shared_ptr<std::vector<std::string> > log,
-                     bool needed = true, bool fixes_unrealistic = false):
+                     bool needed = true, bool fixes_unrealistic = false, real_type nudge = 0.01):
             name_(std::move(name)), script_(std::move(script)), log_(std::move(log)),
-            needed_(needed), fixes_unrealistic_(fixes_unrealistic) {}
+            needed_(needed), fixes_unrealistic_(fixes_unrealistic), nudge_(nudge) {}
 
     protected:
         std::string _name() const override { return name_; }
@@ -101,7 +102,9 @@ class ScriptedLoop final : public BaseOuterLoop
             const std::size_t pos = std::min(calls_, script_.size() - 1);
             ++calls_;
             const OuterLoopStatus res = script_[pos];
-            if (res == OuterLoopStatus::UNSTABLE) *ctx.injections->Sbus *= 1.01;
+            if (res == OuterLoopStatus::UNSTABLE || res == OuterLoopStatus::CHECK_AGAIN) {
+                *ctx.injections->Sbus *= 1. + nudge_;
+            }
             return res;
         }
         void _cleanup(OuterContext &) override { log_->push_back(name_ + ".cleanup"); }
@@ -116,6 +119,7 @@ class ScriptedLoop final : public BaseOuterLoop
         std::shared_ptr<std::vector<std::string> > log_;
         bool needed_;
         bool fixes_unrealistic_;
+        real_type nudge_;
         std::size_t calls_ = 0;
 };
 
@@ -166,6 +170,7 @@ class ProbeLoop final : public BaseOuterLoop
 const OuterLoopStatus S = OuterLoopStatus::STABLE;
 const OuterLoopStatus U = OuterLoopStatus::UNSTABLE;
 const OuterLoopStatus F = OuterLoopStatus::FAILED;
+const OuterLoopStatus C = OuterLoopStatus::CHECK_AGAIN;
 
 CplxVect solve(LSGrid & grid)
 {
@@ -192,6 +197,40 @@ TEST_CASE("an outer-loop solve without any loop is the single-slack Newton's", "
     CHECK(stats.status == OuterLoopStatus::STABLE);
     CHECK(stats.nb_outer_iterations == 0);
     CHECK(stats.nr_iterations.size() == 1);
+}
+
+TEST_CASE("NROuterDist with no grid leaves the slack on the reference bus, as a single slack does", "[outer_loop]")
+{
+    // the solver inputs of the radial grid, handed to algorithms that have no grid behind them
+    // (the C++ library used on its own): no loop can run, the Newton shares the slack on the
+    // reference bus alone
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NRSing_SparseLU");
+    REQUIRE(solve(grid).size() == 3);
+    const Eigen::SparseMatrix<ls2g::cplx_type> Ybus = grid.get_Ybus_solver();
+    const CplxVect Sbus = grid.get_Sbus_solver();
+    const ls2g::IntVect pv = grid.get_pv_solver_numpy();
+    const ls2g::IntVect pq = grid.get_pq_solver_numpy();
+    const ls2g::IntVect slack_ids = grid.get_slack_ids_solver_numpy();
+    const RealVect slack_weights = grid.get_slack_weights_solver();
+    REQUIRE(slack_ids.size() == 1);
+    const int ref_bus = slack_ids(0);
+    // a flat start, the slack bus at its generator's magnitude (which LSGrid seeds, not the algorithm)
+    CplxVect V0 = CplxVect::Constant(Ybus.rows(), ls2g::cplx_type(1., 0.));
+    V0(ref_bus) = std::abs(grid.get_V_solver()(ref_bus));
+
+    ls2g::NRSing_SparseLU ref;
+    REQUIRE(ref.compute_pf(Ybus, V0, Sbus, slack_ids, slack_weights, pv, pq, 30, 1e-10));
+    const ls2g::cplx_type mis_ref = ref.get_bus_mismatch()(ref_bus);
+    REQUIRE(std::abs(mis_ref.real()) > 0.1);  // the slack takes the load and the losses
+
+    ls2g::NROuterDist_SparseLU algo;
+    REQUIRE(algo.compute_pf(Ybus, V0, Sbus, slack_ids, slack_weights, pv, pq, 30, 1e-10));
+    CHECK((algo.get_V() - ref.get_V()).cwiseAbs().maxCoeff() < 1e-9);
+    // what the slack took is in the reference bus' mismatch, or still reported as absorbed:
+    // in one place or the other, not lost
+    CHECK(algo.get_bus_mismatch()(ref_bus).real() == Approx(mis_ref.real()).margin(1e-8));
+    CHECK(algo.get_slack_absorbed() == Approx(ref.get_slack_absorbed()).margin(1e-8));
 }
 
 TEST_CASE("the loops run in passes, as OpenLoadFlow's engine runs them", "[outer_loop]")
@@ -255,6 +294,127 @@ TEST_CASE("the outer iterations are capped", "[outer_loop]")
     CHECK(solve(grid).size() == 0);
     CHECK(grid.get_algo().get_outer_loop_stats().nb_outer_iterations == 7);
     CHECK(grid.get_algo().get_error() == ErrorType::TooManyIterations);
+}
+
+TEST_CASE("a change re-solved in zero Newton iterations is done", "[outer_loop]")
+{
+    // A reports a change on every check, but its change leaves every bus within tolerance (a
+    // move spread so thinly that no bus exceeds it): the re-solve takes no step and V does not
+    // move. Checked again on that same state, A would find what made it act and act again,
+    // until the iteration cap. Its change is done: it is not checked again until V moves.
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{U}, log, true, false, 1e-12));
+    REQUIRE(solve(grid).size() == 3);
+
+    const std::vector<std::string> expected{"A.initialize", "A.check0", "A.cleanup"};
+    CHECK(*log == expected);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    CHECK(stats.nb_outer_iterations == 1);
+    REQUIRE(stats.nr_iterations.size() == 2);
+    CHECK(stats.nr_iterations[0] > 0);
+    CHECK(stats.nr_iterations[1] == 0);
+    // the driver says why A was not checked again
+    REQUIRE_FALSE(stats.decisions.empty());
+    CHECK(stats.decisions.back().loop == "A");
+    CHECK(stats.decisions.back().action == "SETTLED");
+    CHECK(stats.decisions.back().outer_iteration == 1);
+}
+
+TEST_CASE("a loop that asks to be checked again is, even when nothing changed", "[outer_loop]")
+{
+    // PhaseControl's first check asks for a second one and changes nothing: the re-solve has
+    // nothing to do either, and the second check is the loop's next step, not a repeat
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{C, S}, log, true, false, 0.));
+    REQUIRE(solve(grid).size() == 3);
+
+    const std::vector<std::string> expected{"A.initialize", "A.check0", "A.check1", "A.cleanup"};
+    CHECK(*log == expected);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    REQUIRE(stats.nr_iterations.size() == 2);
+    CHECK(stats.nr_iterations[1] == 0);
+    for (const auto & d : stats.decisions) CHECK(d.action != "SETTLED");
+}
+
+TEST_CASE("a loop that asks to be checked again is, even after a change within tolerance", "[outer_loop]")
+{
+    // a loop working in steps whose step changed something too small for the Newton to take a
+    // step: its next check is its next step, run on the same state
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{C, S}, log, true, false, 1e-12));
+    REQUIRE(solve(grid).size() == 3);
+
+    const std::vector<std::string> expected{"A.initialize", "A.check0", "A.check1", "A.cleanup"};
+    CHECK(*log == expected);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    REQUIRE(stats.nr_iterations.size() == 2);
+    CHECK(stats.nr_iterations[1] == 0);
+    for (const auto & d : stats.decisions) CHECK(d.action != "SETTLED");
+}
+
+TEST_CASE("a loop that says unstable is done after a re-solve with no step, whatever it changed", "[outer_loop]")
+{
+    // UNSTABLE says the loop changed something: a re-solve that takes no step settles it, without
+    // asking whether the change reached the residuals (here it changed nothing at all)
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{U, S}, log, true, false, 0.));
+    REQUIRE(solve(grid).size() == 3);
+
+    const std::vector<std::string> expected{"A.initialize", "A.check0", "A.cleanup"};
+    CHECK(*log == expected);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    REQUIRE(stats.nr_iterations.size() == 2);
+    CHECK(stats.nr_iterations[1] == 0);
+    REQUIRE_FALSE(stats.decisions.empty());
+    CHECK(stats.decisions.back().action == "SETTLED");
+}
+
+TEST_CASE("a loop whose change was done is checked again once V moves", "[outer_loop]")
+{
+    // A's change re-solves in zero iterations, B's moves V: on that new state A is checked
+    // again (and acts again, re-solved in zero iterations once more)
+    auto log = std::make_shared<std::vector<std::string> >();
+    LSGrid grid = make_grid();
+    grid.change_algorithm("NROuter_SparseLU");
+    grid.clear_outer_loops();
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("A", std::vector<OuterLoopStatus>{U}, log, true, false, 1e-12));
+    grid.add_outer_loop(std::make_shared<ScriptedLoop>("B", std::vector<OuterLoopStatus>{U, S}, log));
+    REQUIRE(solve(grid).size() == 3);
+
+    // pass 1: A acts (0 iterations: done), B acts (V moves), B stable;
+    // pass 2: A on the new state acts (0 iterations: done), then B (stable);
+    // pass 3 (pass 2 re-solved) stops before A, the last loop that changed something
+    const std::vector<std::string> expected{
+        "A.initialize", "B.initialize",
+        "A.check0", "B.check0", "B.check1",
+        "A.check1",
+        "B.check1",
+        "B.cleanup", "A.cleanup"};
+    CHECK(*log == expected);
+    const OuterLoopStats stats = grid.get_algo().get_outer_loop_stats();
+    CHECK(stats.status == OuterLoopStatus::STABLE);
+    CHECK(stats.nb_outer_iterations == 3);
+    CHECK(stats.nb_passes == 3);
+    REQUIRE(stats.nr_iterations.size() == 4);
+    CHECK(stats.nr_iterations[1] == 0);
+    CHECK(stats.nr_iterations[2] > 0);
+    CHECK(stats.nr_iterations[3] == 0);
 }
 
 TEST_CASE("a failed loop stops the solve", "[outer_loop]")

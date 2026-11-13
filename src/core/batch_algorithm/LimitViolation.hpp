@@ -155,7 +155,14 @@ enum class LS2G_API LimitViolationType : int {
     // more than the detection tolerance without one): OpenLoadFlow's ShuntVoltageControl loop
     // would switch sections (see outer_loop/ShuntVoltageControlLoop.hpp). `value` the voltage
     // and `limit` the target, kV. ViolationCategory::CONTROL.
-    SHUNT_VOLTAGE_CONTROL = 20
+    SHUNT_VOLTAGE_CONTROL = 20,
+    // The batch does not support what this contingency trips (a generator regulating a remote
+    // bus, a shunt the ShuntVoltageControl loop owns, ...), and nothing solved the row in its
+    // place (ContingencyAnalysis' batch_unsupported_fallback, off or unable to). Unlike
+    // NOT_SIMULATED, the contingency itself is fine: a one-off solve of it (LSGrid::ac_pf on
+    // the grid with the elements out) can be run. The reason is per row (see
+    // BaseBatchSweep::get_batch_unsupported_reasons). element_type GRID, ViolationCategory::SOLVER.
+    BATCH_UNSUPPORTED = 21
 };
 
 /**
@@ -183,7 +190,7 @@ enum class LS2G_API ViolationCategory : int {
     /// Not a limit at all: what the solver did. A divergence in particular says nothing
     /// about the grid -- the state may be perfectly feasible and the algorithm simply
     /// failed to find it, or there may be no solution; this does not distinguish the two.
-    /// NOT_SIMULATED, DIVERGENCE.
+    /// NOT_SIMULATED, DIVERGENCE, BATCH_UNSUPPORTED.
     SOLVER = 2,
     /// Not a limit either: a control or an automaton whose action the solution did not apply,
     /// so a set-point is not followed. The equipment could do it -- an idle standby SVC its
@@ -223,7 +230,7 @@ inline ViolationCategory violation_category(LimitViolationType violation_type) n
         case LimitViolationType::TRANSFORMER_VOLTAGE_DEADBAND:
         case LimitViolationType::SHUNT_VOLTAGE_CONTROL:
             return ViolationCategory::CONTROL;
-        default:  // NOT_SIMULATED, DIVERGENCE
+        default:  // NOT_SIMULATED, DIVERGENCE, BATCH_UNSUPPORTED
             return ViolationCategory::SOLVER;
     }
 }
@@ -258,7 +265,7 @@ struct LS2G_API LimitViolation {
     // LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL (the voltage of the remote
     // controller's own bus), MW for HVDC_AC_EMULATION_RELEASE (the flow the frozen line's
     // droop asks for in the direction `side` names) ; unused
-    // (NaN) for NOT_SIMULATED / DIVERGENCE
+    // (NaN) for NOT_SIMULATED / DIVERGENCE / BATCH_UNSUPPORTED
     real_type value;
     // limit that was violated. For LOW_Q / HIGH_Q the SUMMED capability of the machines
     // holding that bus, not one machine's: min_q_mvar / max_q_mvar for a generator or an
@@ -269,7 +276,8 @@ struct LS2G_API LimitViolation {
     // / HIGH_VOLTAGE_SVC_STANDBY the automaton's low / high threshold, in kV of the
     // regulated bus; for LOW_VOLTAGE_REMOTE_CONTROL / HIGH_VOLTAGE_REMOTE_CONTROL the realistic
     // voltage bound, in kV of the controller's own bus; for HVDC_AC_EMULATION_RELEASE the pmax
-    // of the direction the line is frozen in. Unused (NaN) for NOT_SIMULATED / DIVERGENCE
+    // of the direction the line is frozen in. Unused (NaN) for NOT_SIMULATED / DIVERGENCE /
+    // BATCH_UNSUPPORTED
     real_type limit;
     // element name: LINE / TRAFO / HVDC / GENERATOR / STORAGE / SVC (from
     // LSGrid::set_line_names / set_trafo_names / set_dcline_names / set_gen_names /

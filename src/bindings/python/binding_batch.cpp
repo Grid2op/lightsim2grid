@@ -202,7 +202,7 @@ void bind_batch_shared(py::class_<T> & cls)
                       "It is dropped, and rebuilt on the next compute(), whenever something it is "
                       "made of changes: clear(), change_algorithm(), algo_config, any contingency "
                       "registration, handle_disconnected_grid, nb_thread, init_from_n_powerflow, "
-                      "keep_vinit_at_group_controlled_buses, "
+                      "keep_vinit_at_group_controlled_buses, uniform_voltage_start, "
                       "or a different number of simulations. Every such modifier says so itself -- "
                       "internally each names one of three nested cache levels (the grid, this "
                       "batch's inputs, the results) and dropping one drops the levels below it. "
@@ -235,6 +235,18 @@ void bind_batch_shared(py::class_<T> & cls)
                       "Defaults to the value of the grid this object was built from (see "
                       ":func:`LSGrid.set_keep_vinit_at_group_controlled_buses`, ``False`` unless "
                       "set there). Changing it drops the kept base case.")
+        .def_property("uniform_voltage_start",
+                      [](const T & self){ return self.get_uniform_voltage_start(); },
+                      [](T & self, bool val){ self.set_uniform_voltage_start(val); },
+                      "Whether the Newton-Raphson of the 'n' solve, and of every row starting from "
+                      "the voltage passed to compute(), starts the buses whose magnitude is held (PV "
+                      "buses, the slack) from that voltage instead of from their targets, as "
+                      "OpenLoadFlow's uniform start does (see :func:`LSGrid.set_uniform_voltage_start`). "
+                      "A row starting from a solved state -- the 'n' solve's with "
+                      "``init_from_n_powerflow``, the previous row's in a time series -- is not "
+                      "affected.\n\n"
+                      "Defaults to the value of the grid this object was built from (``False`` unless "
+                      "set there). Changing it drops the kept base case.")
 
         // reverse-mode differentiation (see BatchAdjoint.hpp)
         .def_property("keep_jacobian",
@@ -247,15 +259,22 @@ void bind_batch_shared(py::class_<T> & cls)
                       "transposed solve per row turns a loss's sensitivity to the voltages into "
                       "its gradient with respect to every injection of every row (the adjoint "
                       "method / the implicit function theorem).\n\n"
-                      "It costs `nb_rows * nnz(J)` floats -- see adjoint_memory_bytes(), and mind "
-                      "that on a large grid with many rows this is gigabytes -- plus one extra "
-                      "Jacobian evaluation per row (the Newton-Raphson loop stops on the Jacobian "
-                      "of its previous iterate, which is not quite the one at the solution). Only "
-                      "the AC Newton-Raphson algorithms build a Jacobian at all; compute() raises "
-                      "with any other.")
+                      "It costs `nb_rows * nnz(J)` floats for the Jacobians -- adjoint_memory_bytes() "
+                      "reports them, and on a large grid with many rows this is gigabytes -- plus, "
+                      "per row, what the gradient reads besides J (see adjoint_memory_bytes()), and "
+                      "one extra Jacobian evaluation per row (the Newton-Raphson loop stops on the "
+                      "Jacobian of its previous iterate, which is not quite the one at the solution). Only "
+                      "the AC Newton-Raphson algorithms build a Jacobian at all (NR_*, and "
+                      "NROuter_* / NROuterDist_* with outer loops: the Jacobian of their last "
+                      "Newton solve, every decision of the loops held); compute() raises with "
+                      "any other.")
         .def("adjoint_memory_bytes", &T::adjoint_memory_bytes,
-             "Bytes the kept Jacobians occupy after a compute() (0 when none were kept). "
-             "Grows as nb_rows * nnz(J): worth reading before scaling a batch up.")
+             "Bytes the values of the kept Jacobians occupy after a compute() (0 when none "
+             "were kept): nb_rows * nnz(J) floats, worth reading before scaling a batch up.\n\n"
+             "Not counted: what each row keeps besides its Jacobian for the gradient -- the "
+             "dF/d|V| column of every generator's target bus, the rows pinned, the gen_p "
+             "corrections. It grows with the number of voltage-regulated buses and is "
+             "usually a fraction of the Jacobians.")
         .def("dim_J", &T::dim_J,
              "Dimension of the augmented Newton-Raphson system -- the length of one "
              "cotangent handed to solve_JT, and of one row of its result. 0 until a "
@@ -267,7 +286,8 @@ void bind_batch_shared(py::class_<T> & cls)
              "cotangent goes in solve_JT's input.")
         .def("get_vm_col_of_bus", &T::get_vm_col_of_bus,
              "Same as get_theta_col_of_bus for the voltage-MAGNITUDE unknown: -1 at a bus whose "
-             "magnitude is held fixed (a PV bus, unless a generator contingency may release it).")
+             "magnitude is held fixed (a PV bus, unless a generator contingency or an outer loop "
+             "may release it).")
         .def("get_p_row_of_bus", &T::get_p_row_of_bus,
              "For each grid bus, the row of the Jacobian holding its ACTIVE power mismatch "
              "equation, or -1 where it has none. Where that bus's active injection gradient is "
@@ -283,7 +303,11 @@ void bind_batch_shared(py::class_<T> & cls)
              "converter station (whose set-point no batch moves); or when that bus keeps "
              "a magnitude unknown because a voltage-control group holds it (a remote "
              "regulator): its ``gen_v`` is then the group's set-point, and its gradient "
-             "is read at the group's voltage row instead -- see get_gen_v_vc_row.")
+             "is read at the group's voltage row instead -- see get_gen_v_vc_row.\n\n"
+             "A bus the batch gives a magnitude unknown it may release (a generator "
+             "contingency, the reactive limits outer loop) is a target too: its set-point "
+             "reaches a row while it is pinned PV there, and nothing where it is PQ -- see "
+             "get_gen_v_share_rows.")
         .def("get_gen_v_vc_row", &T::get_gen_v_vc_row,
              "Per generator, the Jacobian row of the voltage constraint "
              "``|V_reg| + sum s.Q_c - v_set = 0`` of the voltage-control group whose "
@@ -311,14 +335,22 @@ void bind_batch_shared(py::class_<T> & cls)
              "parameters and step on all of them, and they move together, so the iterate "
              "stays where the function is defined. And no generator is privileged by the "
              "order it happens to sit in.")
+        .def("get_gen_v_share_rows", &T::get_gen_v_share_rows,
+             "get_gen_v_share row by row, ``(n_scenarios, n_gen)``: 0 on a row where the "
+             "generator's set-point reaches nothing -- its bus is PQ there, its "
+             "voltage-control group lost its set-point (every controller held at a limit, or "
+             "stranded), the row did not converge. What the DIRECT half of the ``gen_v`` "
+             "gradient is weighted by (gen_v_indirect_grad already is). Requires "
+             "`keep_jacobian`.")
         .def("gen_v_indirect_grad", &T::gen_v_indirect_grad, py::arg("lambda_"),
              "The indirect half of the ``gen_v`` gradient, ``(n_scenarios, n_gen)``: "
              "``-lambda^T dF/dv``, zero on a row that did not converge. For a generator "
              "fixing a bus magnitude (get_gen_v_target_bus) it is the dS/d|V| contraction; "
              "for one setting a voltage-control group's set-point (get_gen_v_vc_row) it "
              "is lambda at the group's voltage row, and the WHOLE gradient (zero on a row "
-             "where handle_disconnected_grid stranded the group); zero elsewhere. Each "
-             "already carries its get_gen_v_share.\n\n"
+             "where that row lost its set-point); zero elsewhere. Each already carries its "
+             "get_gen_v_share_rows. The dS/d|V| column is the row's own: its contingency, "
+             "and the taps and sections its outer loops settled on.\n\n"
              "``lambda_`` is what solve_JT() returned for this batch, so the adjoint "
              "system is solved once and both halves of the gradient read it. The other "
              "half is direct -- the loss depends on `V_k = v_k . exp(j.theta_k)` "
@@ -327,6 +359,14 @@ void bind_batch_shared(py::class_<T> & cls)
              "hands it to the adjoint, a bus whose magnitude is a set-point hands it to "
              "that set-point's gradient.\n\n"
              "AC Newton-Raphson only; raises on a DC algorithm.")
+        .def("gen_p_indirect_grad", &T::gen_p_indirect_grad, py::arg("lambda_"),
+             "What the ``gen_p`` gradient owes beyond ``lambda[get_p_row_of_bus()[bus]] / "
+             "sn_mva``, ``(n_scenarios, n_gen)``, zero but where an outer loop makes a unit's "
+             "target P reach the solve otherwise: a unit frozen at a limit of its capability "
+             "curve injects a reactive power that follows its P (the slope of that limit); a "
+             "unit the distributed slack of NROuterDist_* holds at a bound is not moved by "
+             "its set-point at all (this takes its P row back off). ``lambda_`` is what "
+             "solve_JT() returned.")
         .def("solve_JT", &T::solve_JT, py::arg("xbar"),
              "Solve the adjoint system ``J_i^T lambda_i = xbar_i`` of every row, and return "
              "lambda. Requires `keep_jacobian` to have been True during compute().\n\n"
@@ -337,6 +377,12 @@ void bind_batch_shared(py::class_<T> & cls)
              "lambda is the gradient with respect to the per-unit bus injection: its real part "
              "sits at get_p_row_of_bus()[bus], its imaginary part at get_q_row_of_bus()[bus]. "
              "Rows that did not converge come back as zeros -- see adjoint_row_ok().")
+        .def("get_outer_trafo_admittances", &T::get_outer_trafo_admittances,
+             "The transformers each row's outer loops left at another tap than the grid's, "
+             "with the pi block they have there: ``(rows, trafo_ids, blocks)``, three aligned "
+             "columns, ``blocks`` complex ``(n, 4)`` holding ``(y11, y12, y21, y22)`` in pu. "
+             "What that row's flows are computed with; empty without outer loops, or when no "
+             "loop moved a tap.")
         .def("adjoint_row_ok", [](const T & self){
                  const std::vector<char> & c = self.adjoint_row_ok();
                  return std::vector<bool>(c.begin(), c.end());
@@ -404,6 +450,18 @@ void bind_batch_shared(py::class_<T> & cls)
         .def("get_row_nb_iter", &T::get_row_nb_iter,
              "Per row of the last compute(): the number of iterations the algorithm reported "
              "(0 for a row never handed to the solver).")
+        .def("get_row_linear_solver_stats", &T::get_row_linear_solver_stats,
+             "Per row of the last compute(), what the linear solver ran for it (a "
+             "LinearSolverStats): the counters are the row's own (what they grew by during "
+             "its solve, while get_linear_solver_stats() sums the whole compute()), and so are "
+             "the timers and min_rgrowth. All 0 for a row never handed to the solver. The "
+             "timers of get_linear_solver_stats() cover the last solve only: sum these instead.")
+        .def("get_row_J_dim", &T::get_row_J_dim,
+             "Per row of the last compute(): the dimension of the Jacobian of its last Newton "
+             "iteration (0 for a row never handed to the solver, or an algorithm without a "
+             "Jacobian). The same on every row while the sparsity pattern is fixed.")
+        .def("get_row_J_nnz", &T::get_row_J_nnz,
+             "Per row of the last compute(): the number of nonzeros of that Jacobian.")
         .def("get_outer_results", &T::get_outer_results,
              "Per row of the last compute(), what the outer loops did (an OuterRowResult): "
              "only with an algorithm that runs them (NROuter_*), empty otherwise. Such an "
@@ -625,6 +683,12 @@ void bind_batch(py::module_& m) {
                       "(transformer id, position) of the ratio taps TransformerVoltageControl moved.")
         .def_readonly("shunt_sections", &OuterRowResult::shunt_sections,
                       "(shunt id, section count) ShuntVoltageControl settled on.")
+        .def_readonly("decisions_taken", &OuterRowResult::decisions_taken,
+                      "(\"loop/ACTION\", count) of the row's trace entries marked taken, sorted by "
+                      "name. Not only switches (eg \"ReactiveLimits/PV_TO_PQ\"): also checks that asked "
+                      "for a re-solve without switching anything (\"DistributedSlack/UNITS_MOVED\"), "
+                      "failures (\"FAIL_RESIDUE\") and the driver's \"SETTLED\", filed under the loop "
+                      "it is about. To count switches, select their actions.")
         .def("__repr__", [](const OuterRowResult & self){
             std::ostringstream out;
             out << "OuterRowResult(converged=" << (self.converged ? "True" : "False")
@@ -713,6 +777,12 @@ void bind_batch(py::module_& m) {
                "compute_physical_violations, never enforced.")
         .value("DIVERGENCE", LimitViolationType::DIVERGENCE,
                "The solver was invoked for this contingency but did not converge (element_type is "
+               "ViolationElementType.GRID).")
+        .value("BATCH_UNSUPPORTED", LimitViolationType::BATCH_UNSUPPORTED,
+               "The batch does not support what this contingency trips (eg a static var "
+               "compensator with a standby automaton): it was left out of the batch instead of failing the whole "
+               "compute(). Unlike NOT_SIMULATED, a one-off solve of it is possible. "
+               "get_batch_unsupported_reasons() says why, per row (element_type is "
                "ViolationElementType.GRID).")
         .value("LOW_VOLTAGE_AT_MIN_Q", LimitViolationType::LOW_VOLTAGE_AT_MIN_Q,
                "A PQ generator flagged as pinned at its MINIMUM reactive power (see "
@@ -1059,17 +1129,42 @@ void bind_batch(py::module_& m) {
              "candidate generators is negligible; masking every generator on the grid "
              "grows the Jacobian's dimension by roughly the number of PV buses, and "
              "every factorization and solve pays for it.\n\n"
-             "Only generators regulating their OWN bus are supported. compute() raises "
-             "if the mask names a generator that regulates a remote bus, or one whose "
-             "bus a control group holds (a remote generator, an SVC or an HVDC "
-             "converter station): remote voltage control is not supported yet.")
+             "A generator that is a controller of a voltage-control group leaves its group for "
+             "the step, the others keep regulating. A step taking out every controller of a group "
+             "regulating a slack bus is left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see "
+             "get_batch_unsupported_reasons): the batch cannot free that bus' magnitude.")
         .def("set_contingency_shunts", &ScenarioSweep::set_contingency_shunts<>, py::arg("mask"),
              "Per-step shunt contingency mask, shape (n_simul, n_shunt), dtype bool. "
              "True means 'disconnect this shunt for this simulation'. A shunt is an "
              "admittance: the step loses its diagonal Ybus coefficient (in DC, its active "
-             "part leaves the injection), as the branch masks edit Ybus. compute() raises "
-             "with an algorithm running outer loops if the mask names a shunt that "
-             "regulates a voltage (the ShuntVoltageControl loop owns its sections).")
+             "part leaves the injection), as the branch masks edit Ybus. With an algorithm "
+             "running the ShuntVoltageControl outer loop, a step naming a shunt that "
+             "regulates a voltage is left out of the batch (LimitViolationType.BATCH_UNSUPPORTED, see "
+             "get_batch_unsupported_reasons): that loop owns its sections.")
+        .def("set_contingency_sgens", &ScenarioSweep::set_contingency_sgens<>, py::arg("mask"),
+             "Per-step static generator contingency mask, shape (n_simul, n_sgen), dtype bool. "
+             "True means 'disconnect this static generator for this simulation': the step's "
+             "active power (modify_sgen_p, or the grid's) and the reactive setpoint leave its "
+             "injection, and the distributed slack makes up the balance.")
+        .def("set_contingency_storages", &ScenarioSweep::set_contingency_storages<>, py::arg("mask"),
+             "Per-step storage unit contingency mask, shape (n_simul, n_storage), dtype bool. "
+             "True means 'disconnect this storage unit for this simulation': it leaves the step's "
+             "injection and its share of the distributed slack; the last controller of a bus turns "
+             "that bus PQ. A step tripping one on a bus a control group holds is left out of the "
+             "batch (LimitViolationType.BATCH_UNSUPPORTED). A step naming a unit in both this mask "
+             "and its topological action is refused.")
+        .def("set_contingency_svcs", &ScenarioSweep::set_contingency_svcs<>, py::arg("mask"),
+             "Per-step static var compensator contingency mask, shape (n_simul, n_svc), dtype bool. "
+             "True means 'disconnect this SVC for this simulation': its fixed reactive injection "
+             "and its b0 leave the step, and one regulating a voltage its control group. A step "
+             "tripping one that carries a standby automaton or was frozen at a reactive limit is left out of the batch "
+             "(LimitViolationType.BATCH_UNSUPPORTED).")
+        .def("set_contingency_hvdcs", &ScenarioSweep::set_contingency_hvdcs<>, py::arg("mask"),
+             "Per-step hvdc line contingency mask, shape (n_simul, n_hvdc), dtype bool. True means "
+             "'disconnect this line for this simulation': both its converter stations leave the "
+             "step's injection, the bus a regulating one was the last to hold turning PQ. A step "
+             "tripping one in AC emulation in DC is left out of the batch "
+             "(LimitViolationType.BATCH_UNSUPPORTED).")
         .def("set_contingency_loads", &ScenarioSweep::set_contingency_loads<>, py::arg("mask"),
              "Per-step load contingency mask, shape (n_simul, n_load), dtype bool. "
              "True means 'disconnect this load for this simulation': the step's own load "
@@ -1120,7 +1215,8 @@ void bind_batch(py::module_& m) {
                       "Off by default; compute() refuses it with a single-slack algorithm "
                       "(NRSing_*, Gauss-Seidel). With outer loops (NROuter_*), the DistributedSlack "
                       "loop shares the loss itself before the row's first solve, from the targets in "
-                      "force. Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
+                      "force, and what is left afterwards from those same targets: the result is the "
+                      "whole imbalance shared at once. Needs LSGrid.set_gen_p_limits / set_storage_p_limits to "
                       "clamp anything: without limits the converged state is unchanged. Same as "
                       "LSGrid.redistribute_active_power, row by row.")
         .def_property("handle_disconnected_grid",
@@ -1133,13 +1229,19 @@ void bind_batch(py::module_& m) {
                       "component(s) are masked (their voltage is reported as 0). Supported by the "
                       "Newton-Raphson family (AC) and the DC solver; a non Newton-Raphson AC "
                       "algorithm is rejected.")
+        .def("get_batch_unsupported_reasons", &ScenarioSweep::get_batch_unsupported_reasons<>,
+             "Per row: why the batch could not solve it, or an empty string for a row it supports. "
+             "Such a row is reported with a LimitViolationType.BATCH_UNSUPPORTED violation (with "
+             "compute_limit_violations) and converged_mask() 0, instead of making compute() "
+             "raise. Settled by compute().")
         .def("get_violations", &ScenarioSweep::get_violations<>,
              "Per row (same order as every modify_* / set_contingency_* input): list of "
              "LimitViolation. A row that did not converge has exactly one LimitViolation here, "
              "with element_type ViolationElementType.GRID and violation_type either "
              "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid "
-             "with handle_disconnected_grid off) or LimitViolationType.DIVERGENCE (the solver "
-             "ran but did not converge, including a diverging pre-batch \"n\" powerflow, which "
+             "with handle_disconnected_grid off), LimitViolationType.BATCH_UNSUPPORTED (the batch does not "
+             "support what it trips, see get_batch_unsupported_reasons) or LimitViolationType.DIVERGENCE "
+             "(the solver ran but did not converge, including a diverging pre-batch \"n\" powerflow, which "
              "stamps every row this way). Requires compute_limit_violations=True.",
              py::return_value_policy::reference_internal)
         .def("get_violations_n", &ScenarioSweep::get_violations_n<>,
@@ -1274,11 +1376,30 @@ void bind_batch(py::module_& m) {
                       "a single-slack algorithm (NRSing_*, Gauss-Seidel). With outer loops "
                       "(NROuter_*), the DistributedSlack loop shares the loss itself before the "
                       "contingency's first solve, from the targets in force (the \"n\" solve's with "
-                      "init_from_n_powerflow), as OpenLoadFlow's security analysis does. Needs "
+                      "init_from_n_powerflow), and what is left afterwards from those same targets "
+                      "(the result is the whole imbalance shared at once), as OpenLoadFlow's security "
+                      "analysis does. Needs "
                       "LSGrid.set_gen_p_limits / set_storage_p_limits to clamp anything: without "
                       "limits the converged state is unchanged. Same as "
                       "LSGrid.consider_only_main_component(redistribute_slack=True), contingency "
                       "by contingency.")
+        .def_property("batch_unsupported_fallback",
+                      [](const ContingencyAnalysis & self){ return self.get_batch_unsupported_fallback(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_batch_unsupported_fallback(val); },
+                      "Whether the contingencies the batch does not support (see get_batch_unsupported_reasons) "
+                      "are solved after it, one at a time, with LSGrid.ac_pf: on a private copy of the "
+                      "grid, the contingency's elements deactivated, with the batch's algorithm, its "
+                      "configuration and outer loops, max_iter and tol, starting where the batch's "
+                      "rows start (with init_from_n_powerflow, from the \"n\" solve -- its outer "
+                      "loops' state included, the copy solving \"n\" again before each one). Their "
+                      "voltages, convergence, limit and physical violations and generator results go "
+                      "where the batch's rows put theirs, their reason is kept; their Jacobian is not "
+                      "(keep_jacobian). One splitting the grid with handle_disconnected_grid is solved "
+                      "on its main component, as the batch does it (LSGrid.consider_only_main_component "
+                      "on a copy of its own). With redistribute_slack and no outer loops the fallback "
+                      "does not run: those contingencies stay BATCH_UNSUPPORTED and their reason says why. "
+                      "Sequential, and as slow as one ac_pf per contingency (two with outer loops and "
+                      "init_from_n_powerflow). Off by default.")
         .def_property("handle_disconnected_grid",
                       [](const ContingencyAnalysis & self){ return self.get_handle_disconnected_grid(); },
                       [](ContingencyAnalysis & self, bool val){ self.set_handle_disconnected_grid(val); },
@@ -1338,6 +1459,8 @@ void bind_batch(py::module_& m) {
              py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
              py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
              py::arg("branch_ids_side1") = std::vector<int>(), py::arg("branch_ids_side2") = std::vector<int>(),
+             py::arg("sgen_ids") = std::vector<int>(), py::arg("storage_ids") = std::vector<int>(),
+             py::arg("svc_ids") = std::vector<int>(), py::arg("hvdc_ids") = std::vector<int>(),
              DocContingencyAnalysis::add_contingency.c_str())
         // the shortcuts take one id (an n-1 of that element) or a list (one contingency
         // tripping them all)
@@ -1366,6 +1489,8 @@ void bind_batch(py::module_& m) {
              py::arg("branch_ids") = std::vector<int>(), py::arg("shunt_ids") = std::vector<int>(),
              py::arg("load_ids") = std::vector<int>(), py::arg("gen_ids") = std::vector<int>(),
              py::arg("branch_ids_side1") = std::vector<int>(), py::arg("branch_ids_side2") = std::vector<int>(),
+             py::arg("sgen_ids") = std::vector<int>(), py::arg("storage_ids") = std::vector<int>(),
+             py::arg("svc_ids") = std::vector<int>(), py::arg("hvdc_ids") = std::vector<int>(),
              DocContingencyAnalysis::remove_contingency.c_str())
 
         // inspect
@@ -1403,12 +1528,19 @@ void bind_batch(py::module_& m) {
              },
              "Per contingency (row order matches my_defaults()): whether it converged / was "
              "actually simulated (False for skipped or diverged contingencies).")
+        .def("get_batch_unsupported_reasons", &ContingencyAnalysis::get_batch_unsupported_reasons<>,
+             "Per row: why the batch could not solve it, or an empty string for a row it supports. "
+             "Such a row is reported with a LimitViolationType.BATCH_UNSUPPORTED violation (with "
+             "compute_limit_violations) and converged_mask() 0, instead of making compute() "
+             "raise. Settled by compute().")
         .def("get_violations", &ContingencyAnalysis::get_violations<>,
              "Per contingency (row order matches my_defaults()): list of LimitViolation. A "
              "non-converged contingency (converged() is False) has exactly one LimitViolation "
-             "here, with element_type ViolationElementType.GRID and violation_type either "
-             "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid) or "
-             "LimitViolationType.DIVERGENCE (the solver ran but did not converge).",
+             "here, with element_type ViolationElementType.GRID and violation_type "
+             "LimitViolationType.NOT_SIMULATED (a pre-check skipped it, eg it splits the grid), "
+             "LimitViolationType.BATCH_UNSUPPORTED (the batch does not support what it trips, see "
+             "get_batch_unsupported_reasons) or LimitViolationType.DIVERGENCE (the solver ran but did not "
+             "converge).",
              py::return_value_policy::reference_internal)
         .def("converged_n", &ContingencyAnalysis::converged_n<>,
              "Whether the pre-contingency ('n') powerflow converged.")

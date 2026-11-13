@@ -519,6 +519,97 @@ static bool refactorize_is_a_factorize(AlgorithmType algo)
     return algo == AlgorithmType::NR_SparseLU || algo == AlgorithmType::NRSing_SparseLU;
 }
 
+TEST_CASE("tripping a remote-regulating generator solves in the batch as a one-off ac_pf does", "[batch][vctrl]")
+{
+    LSGrid ref_grid = make_remote_gen_grid();
+    ref_grid.deactivate_gen(1);
+    const CplxVect ref = single_shot(ref_grid);
+
+    for (bool handle_disconnected : {false, true}) {
+        for (int nb_thread : {1, 2}) {
+            INFO("handle_disconnected_grid = " << handle_disconnected << ", nb_thread = " << nb_thread);
+            LSGrid grid = make_remote_gen_grid();
+            ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+            ca.set_handle_disconnected_grid(handle_disconnected);
+            ca.set_nb_thread(nb_thread);
+            ca.add_contingency_gen({1});
+            ca.add_contingency_load({0});
+            ca.compute(flat_start(grid), 30, 1e-10);
+            const auto conts = ca.my_contingencies();
+            REQUIRE(conts.size() == 2);
+            for (size_t row = 0; row < conts.size(); ++row) {
+                const bool gen_trip = std::get<3>(conts[row]) == std::vector<int>{1};
+                INFO("row " << row);
+                CHECK(ca.converged()[row] == 1);
+                CHECK(ca.get_batch_unsupported_reasons()[row].empty());
+                if (gen_trip) {
+                    for (int b = 0; b < NB_BUS; ++b) CHECK(std::abs(ca.get_voltages()(row, b) - ref(b)) < 1e-9);
+                }
+            }
+            CHECK(ca.nb_solved() == 2);
+        }
+    }
+}
+
+TEST_CASE("batch_unsupported_fallback solves the unsupported row as a one-off ac_pf does", "[batch][vctrl]")
+{
+    // a standby SVC: what the batch does not take out of a row
+    auto with_svc = []() {
+        LSGrid grid = make_skeleton();
+        RealVect gen_p(1), gen_v(1), gen_min_q(1), gen_max_q(1);
+        Eigen::VectorXi gen_bus(1);
+        gen_p << 0.;
+        gen_v << 1.02;
+        gen_min_q << -1000.;
+        gen_max_q << 1000.;
+        gen_bus << 0;
+        grid.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus);
+        grid.add_gen_slackbus(0, 1.);
+        RealVect target_vm(1), q(1), slope(1), b_min(1), b_max(1), low(1), high(1), none(1);
+        target_vm << 1.;
+        q << 5.;
+        slope << 0.;
+        b_min << -0.5;
+        b_max << 0.5;
+        low << 0.5;
+        high << 1.5;
+        none << std::numeric_limits<real_type>::quiet_NaN();
+        Eigen::VectorXi bus(1);
+        bus << NB_BUS - 2;
+        grid.init_svcs(std::vector<int>{2}, target_vm, q, slope, b_min, b_max, bus, bus);
+        grid.set_svc_standby(std::vector<bool>{true}, low, high, none, none);
+        grid.tell_solver_need_reset();
+        return grid;
+    };
+    LSGrid ref_grid = with_svc();
+    ref_grid.deactivate_svc(0);
+    const CplxVect ref = single_shot(ref_grid);
+
+    for (int nb_thread : {1, 2}) {
+        INFO("nb_thread = " << nb_thread);
+        LSGrid grid = with_svc();
+        ContingencyAnalysis ca(grid, /*compute_limit_violations=*/true);
+        ca.set_nb_thread(nb_thread);
+        ca.set_batch_unsupported_fallback(true);
+        ca.add_contingency({}, {}, {}, {}, {}, {}, {}, {}, {0});
+        ca.add_contingency_load({0});
+        ca.compute(flat_start(grid), 30, 1e-10);
+        const auto conts = ca.my_contingencies();
+        for (size_t row = 0; row < conts.size(); ++row) {
+            INFO("row " << row);
+            CHECK(ca.converged()[row] == 1);
+            CHECK(ca.get_violations()[row].empty());
+            const bool svc_trip = std::get<8>(conts[row]) == std::vector<int>{0};
+            // the reason stays: this row went through the fallback
+            CHECK(ca.get_batch_unsupported_reasons()[row].empty() == !svc_trip);
+            if (svc_trip) {
+                for (int b = 0; b < NB_BUS; ++b) CHECK(std::abs(ca.get_voltages()(row, b) - ref(b)) < 1e-9);
+            }
+        }
+        CHECK(ca.nb_solved() == 2);
+    }
+}
+
 TEST_CASE("a contingency stranding a lone controller's own bus falls back to plain PQ", "[batch][vctrl][mask]")
 {
     // Mirror image of the previous test: the trafo strands bus 2 (B, the sole

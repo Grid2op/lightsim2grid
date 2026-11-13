@@ -63,6 +63,7 @@ void SbusPolicy::Vary::prepare(const LSGrid & grid_model,
 
     gen_target_p_ = grid_model.get_gen_target_p();
     sgen_target_p_ = grid_model.get_sgen_target_p();
+    sgen_target_q_ = s_generators.get_target_q();
     load_target_p_ = grid_model.get_load_target_p();
     load_target_q_ = loads.get_target_q();
     const int nb_gen = static_cast<int>(generators.nb());
@@ -92,7 +93,7 @@ void SbusPolicy::Vary::prepare(const LSGrid & grid_model,
     nb_buses_solver_ = nb_buses_solver;
     nb_steps_ = nb_steps;
     sbuses.reset();   // a previous compute()'s matrix, if anyone asked for one
-    (void)ac_solver_used;  // kept for signature symmetry with the caller's other prep calls
+    ac_solver_used_ = ac_solver_used;
 }
 
 void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
@@ -185,6 +186,16 @@ void SbusPolicy::Vary::fill_row(Eigen::Index i, CplxVect & row) const
             const real_type q = own_load_q ? load_q(i, load_id) : load_target_q_(load_id);
             row(load_bus_[l]) += cplx_type(p, 0.);
             row(load_bus_[l]) += BaseConstants::my_i * cplx_type(q, 0.);
+        }
+    }
+    // the static generators the mask disconnects: the row's p, and the q constant_pu_ adds
+    if(sgen_off.rows() > 0 && i < sgen_off.rows()){
+        for(size_t g = 0; g < sgen_bus_.size(); ++g){
+            const Eigen::Index sgen_id = static_cast<Eigen::Index>(g);
+            if(sgen_bus_[g] < 0 || !sgen_off(i, sgen_id)) continue;
+            const real_type p = own_sgen_p ? sgen_p(i, sgen_id) : sgen_target_p_(sgen_id);
+            row(sgen_bus_[g]) -= cplx_type(p, 0.);
+            if(ac_solver_used_) row(sgen_bus_[g]) -= BaseConstants::my_i * cplx_type(sgen_target_q_(sgen_id), 0.);
         }
     }
     // ... and the loads it places on a bus (moved, or reconnected): drawn there, as

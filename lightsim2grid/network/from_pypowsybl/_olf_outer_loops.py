@@ -154,7 +154,9 @@ def _creators(read: _Reader, explicit: bool):
         default = DistributedSlack()
         return DistributedSlack(
             slack_bus_p_max_mismatch_mw=read.float("slackBusPMaxMismatch", default.slack_bus_p_max_mismatch_mw),
-            fail_on_residue=behavior != "LEAVE_ON_SLACK_BUS")
+            fail_on_residue=behavior != "LEAVE_ON_SLACK_BUS",
+            # OpenLoadFlow's loop exists with distributedSlack on, whatever the participants
+            run_without_participant=True)
 
     def hvdc_limits():
         return HvdcAcEmulationLimits() if bool(read.top("hvdc_ac_emulation", True)) else None

@@ -15,6 +15,10 @@ the breaker between nodes 5 and 6; the busbar section is node 0) to make it do s
 """
 
 import unittest
+import json
+import os
+import pathlib
+import tempfile
 
 try:
     import pypowsybl.network as pn
@@ -68,6 +72,25 @@ def _net_with_a_transformer_bay(line_has_breaker):
     return net
 
 
+def _net_with_lines_at_s2(switches, lines, loads=()):
+    """Lines from S2VL1 to S3VL1, at the S2VL1 nodes given and in a bay of their own at S3VL1;
+    `switches` (node1, node2, kind) and `loads` (id, node) at S2VL1. Node 5 of S2VL1 is on the
+    busbar side of LINE_S2S3's breaker."""
+    net = pn.create_four_substations_node_breaker_network()
+    net.create_switches(id=[f"SW_{a}_{b}" for a, b, _ in switches], voltage_level_id=["S2VL1"] * len(switches),
+                        node1=[a for a, _, _ in switches], node2=[b for _, b, _ in switches],
+                        kind=[kind for _, _, kind in switches], open=[False] * len(switches))
+    for pos, (line, node) in enumerate(lines):
+        bay = 70 + 2 * pos
+        net.create_switches(id=[f"S3_{line}_D", f"S3_{line}_B"], voltage_level_id=["S3VL1"] * 2, node1=[0, bay],
+                            node2=[bay, bay + 1], kind=["DISCONNECTOR", "BREAKER"], open=[False] * 2)
+        net.create_lines(id=line, voltage_level1_id="S2VL1", node1=node, voltage_level2_id="S3VL1", node2=bay + 1,
+                         r=0.1, x=1., g1=0., b1=0., g2=0., b2=0.)
+    for load, node in loads:
+        net.create_loads(id=load, voltage_level_id="S2VL1", node=node, p0=1., q0=0.)
+    return net
+
+
 @unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
 class TestPropagateContingencies(unittest.TestCase):
     def test_nothing_to_propagate_with_a_breaker_on_every_feeder(self):
@@ -110,16 +133,51 @@ class TestPropagateContingencies(unittest.TestCase):
         self.assertEqual(res, [["LINE_S2S3", "LOAD_FEEDER"]])
 
     def test_a_breaker_stops_the_walk(self):
-        # the walk stops at the load's breaker, which opens: the load is then left alone behind
-        # it, so it is disconnected, but not walked out of
+        # the walk stops at the load's breaker. The line's node then holds only breakers: powsybl
+        # opens none of them and only disconnects the line's terminal, so the load stays fed from
+        # the busbar through that node
         res = propagate_contingencies(_net_with_stuff_on_the_feeder(kind="BREAKER"), [["LINE_S2S3"]])
-        self.assertEqual(res, [["LINE_S2S3", "LOAD_FEEDER"]])
-        # what tells "stopped" from "walked through": the load still fed from the busbar
-        # section (node 0) behind the breaker stays. Walked through, the walk would trip it
+        self.assertEqual(res, [["LINE_S2S3"]])
+        # the same with the load also fed from the busbar section (node 0) behind its breaker
         net = _net_with_stuff_on_the_feeder(kind="BREAKER")
         net.create_switches(id="SW_BBS_FEEDER", voltage_level_id="S2VL1", node1=0, node2=20,
                             kind="DISCONNECTOR", open=False)
         self.assertEqual(propagate_contingencies(net, [["LINE_S2S3"]]), [["LINE_S2S3"]])
+
+    def test_breakers_right_at_the_terminal_stay_closed(self):
+        # (OpenLoadFlow's security analysis reports the same disconnected elements and opens no
+        # switch on these networks)
+        # X's node holds only breakers, to the busbar side and to M: M stays fed through X's node
+        net = _net_with_lines_at_s2([(5, 40, "BREAKER"), (40, 41, "BREAKER")], [("X", 40), ("M", 41)])
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies([["X"], ["M"]])
+        self.assertEqual(propagator.propagate_contingencies(), [["X"], ["M"]])
+        self.assertEqual(propagator.opened_sides(), [{}, {}])
+        self.assertEqual(propagator.dead_ends(), [{}, {}])
+        # the same behind a disconnector: X's node holds it alone, the node after it only breakers
+        net = _net_with_lines_at_s2([(40, 42, "DISCONNECTOR"), (5, 42, "BREAKER"), (42, 41, "BREAKER")],
+                                    [("X", 40), ("M", 41)])
+        self.assertEqual(propagate_contingencies(net, [["X"], ["M"]]), [["X"], ["M"]])
+        # X and M joined by a breaker and nothing else: each is left at a dead end by the other
+        for link in ([(40, 41, "BREAKER")], [(40, 42, "DISCONNECTOR"), (42, 41, "BREAKER")]):
+            with self.subTest(link=link):
+                net = _net_with_lines_at_s2(link, [("X", 40), ("M", 41)])
+                propagator = ContingencyPropagator(net)
+                propagator.add_contingencies([["X"], ["M"]])
+                self.assertEqual(propagator.propagate_contingencies(), [["X"], ["M"]])
+                self.assertEqual(propagator.opened_sides(), [{}, {}])
+                self.assertEqual(propagator.dead_ends(), [{"M": 1}, {"X": 1}])
+
+    def test_a_junction_of_breakers_is_walked_through(self):
+        # X's node also holds a disconnector (to load W), so its breaker is not left closed; the
+        # node behind it holds only breakers: powsybl walks through and opens the next ones, which
+        # leaves M alone right behind its breaker (OpenLoadFlow's security analysis reports it so)
+        net = _net_with_lines_at_s2([(40, 43, "DISCONNECTOR"), (40, 42, "BREAKER"), (5, 42, "BREAKER"),
+                                     (42, 41, "BREAKER")], [("X", 40), ("M", 41)], [("W", 43)])
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies([["X"]])
+        self.assertEqual(propagator.propagate_contingencies(), [["X", "W", "M"]])
+        self.assertEqual(propagator.opened_sides(), [{"M": 1}])
 
     def test_an_open_switch_stops_the_walk(self):
         res = propagate_contingencies(_net_with_stuff_on_the_feeder(is_open=True), [["LINE_S2S3"]])
@@ -399,6 +457,67 @@ class TestDocumentedN1Example(unittest.TestCase):
                 continue
             np.testing.assert_allclose(V[k], ref_V(branch_ids=[branch_id[cont[0]]]), atol=1e-10, rtol=0.,
                                        err_msg=str(cont))
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestContingencyFile(unittest.TestCase):
+    """The contingencies as powsybl writes them, propagated then grouped."""
+    POWSYBL_LIST = [{"id": "by_line", "elements": [{"id": "LINE_S2S3", "type": "LINE"}]},
+                    {"id": "by_bbs", "elements": [{"id": "S1VL2_BBS1", "type": "BUSBAR_SECTION"}]}]
+
+    def _check(self, given):
+        propagator = ContingencyPropagator(pn.create_four_substations_node_breaker_network())
+        propagator.add_contingencies(given)
+        self.assertEqual(propagator.contingencies, [["LINE_S2S3"], ["S1VL2_BBS1"]])
+        self.assertEqual(propagator.contingency_ids, ["by_line", "by_bbs"])
+        self.assertEqual(propagator.propagate_contingencies(),
+                         [["LINE_S2S3"], ["S1VL2_BBS1", "SHUNT", "GH3", "GH2", "GH1", "TWT"]])
+
+    def test_a_list_of_powsybl_contingencies(self):
+        self._check(self.POWSYBL_LIST)
+
+    def test_a_powsybl_contingency_list(self):
+        self._check({"type": "default", "version": "1.0", "name": "list", "contingencies": self.POWSYBL_LIST})
+
+    def test_a_json_file(self):
+        with tempfile.TemporaryDirectory() as dir_:
+            path = os.path.join(dir_, "contingencies.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.POWSYBL_LIST, f)
+            self._check(path)
+            self._check(pathlib.Path(path))
+            net = pn.create_four_substations_node_breaker_network()
+            self.assertEqual(propagate_contingencies(net, path)[0], ["LINE_S2S3"])
+
+    def test_names_are_still_checked(self):
+        propagator = ContingencyPropagator(pn.create_four_substations_node_breaker_network())
+        with self.assertRaises(ValueError):
+            propagator.add_contingencies([{"id": "typo", "elements": [{"id": "NOT_THERE", "type": "LINE"}]}])
+        with self.assertRaises(ValueError):
+            propagator.add_contingencies({"name": "no contingencies in there"})
+        self.assertEqual(propagator.contingencies, [])
+        self.assertEqual(propagator.contingency_ids, [])
+
+    def test_plain_lists_have_no_id(self):
+        propagator = ContingencyPropagator(pn.create_four_substations_node_breaker_network())
+        propagator.add_contingencies([["LINE_S2S3"]])
+        self.assertEqual(propagator.contingency_ids, [None])
+        propagator.clear()
+        self.assertEqual(propagator.contingency_ids, [])
+
+    def test_a_busbar_section_does_not_tell_two_contingencies_apart(self):
+        # two sections going down with the same equipment end in the same grid; the one at the
+        # end of the file is represented by the first
+        self.assertEqual(group_equivalent_contingencies([["BBS1", "L1", "L2"], ["BBS2", "L2", "L1"], ["BBS2", "L3"]],
+                                                        ignored={"BBS1", "BBS2"}),
+                         ([["BBS1", "L1", "L2"], ["BBS2", "L3"]], [0, 0, 1]))
+        # without saying so, the names count
+        self.assertEqual(group_equivalent_contingencies([["BBS1", "L1"], ["BBS2", "L1"]])[1], [0, 1])
+        net = _net_with_a_transformer_bay(True)
+        propagator = ContingencyPropagator(net)
+        propagator.add_contingencies([["S5VL1_BBS"], ["L5", "T5"]])
+        # the same two branches, but the section leaves each opened at that end only
+        self.assertEqual(propagator.group_contingencies()[1], [0, 1])
 
 
 if __name__ == "__main__":

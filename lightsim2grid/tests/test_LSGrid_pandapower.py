@@ -524,5 +524,55 @@ class TestInitSubid(unittest.TestCase):
             self.assertEqual(el.sub2_id, -1)
 
 
+class TestTapSideNa(unittest.TestCase):
+    """
+    pandapower >= 4 types `trafo["tap_side"]` and `trafo["tap_changer_type"]` as
+    pandas "string" (StringDtype) and leaves pd.NA in them, e.g. in case14 and
+    case118. Any `np.any(column.to_numpy() == "hv")` then raises
+    "boolean value of NA is ambiguous": this is the regression test for that.
+    """
+
+    def setUp(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.net = pn.case14()
+
+    def _skip_unless_na_tap_side(self, net):
+        if net.trafo["tap_side"].dtype != "string":
+            self.skipTest(f"pandapower uses dtype {net.trafo['tap_side'].dtype} "
+                          "for trafo['tap_side']: this test is for pandapower >= 4")
+        if not net.trafo["tap_side"].isna().any():
+            self.skipTest("this pandapower version leaves no NA in trafo['tap_side'] "
+                          "of case14")
+
+    def test_case14_has_na_tap_side(self):
+        self._skip_unless_na_tap_side(self.net)
+        self.assertTrue(self.net.trafo["tap_side"].isna().any())
+
+    def test_tap_side_na_pandapower4(self):
+        # case14 (and case118) have NA in trafo["tap_side"] / trafo["tap_changer_type"],
+        # a TypeError is raised by the converter before the fix
+        self._skip_unless_na_tap_side(self.net)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            model = init_from_pandapower(self.net)
+        self.assertGreater(model.total_bus(), 0)
+        # NA tap_side is converted to "hv", as documented
+        is_na = self.net.trafo["tap_side"].isna().to_numpy(dtype=bool)
+        is_tap_side_1 = np.array([tr.is_tap_side_1 for tr in model.get_trafos()],
+                                 dtype=bool)
+        self.assertTrue(np.all(is_tap_side_1[is_na]))
+
+    def test_case118_converts_too(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            net = pn.case118()
+        self._skip_unless_na_tap_side(net)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            model = init_from_pandapower(net)
+        self.assertGreater(model.total_bus(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

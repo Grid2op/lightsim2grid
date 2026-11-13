@@ -455,9 +455,10 @@ inline real_type sum_setpoints_if(const Container & container,
  * already open (the far end of a cross-border link, outside the solved grid since the
  * start: its side keeps its bus id) was never in the balance and does not count.
  */
-template<class HvdcContainer, class BusLost>
+template<class HvdcContainer, class BusLost, class LineSkipped>
 inline real_type sum_hvdc_station_setpoints_if(const HvdcContainer & hvdc_lines,
-                                               BusLost bus_lost)
+                                               BusLost bus_lost,
+                                               LineSkipped line_skipped)
 {
     const int nb_el = hvdc_lines.nb();
     const std::vector<bool> & status = hvdc_lines.get_status_global();
@@ -469,13 +470,19 @@ inline real_type sum_hvdc_station_setpoints_if(const HvdcContainer & hvdc_lines,
     const std::vector<bool> & status_2 = side_2.get_status();
     real_type res = 0.;
     for(int el_id = 0; el_id < nb_el; ++el_id){
-        if(!status[el_id]) continue;
+        if(!status[el_id] || line_skipped(el_id)) continue;
         const int b1 = bus_1(el_id).cast_int();
         const int b2 = bus_2(el_id).cast_int();
         if(status_1[el_id] && b1 != BaseConstants::_deactivated_bus_id && bus_lost(b1)) res += side_1.get_target_p(el_id);
         if(status_2[el_id] && b2 != BaseConstants::_deactivated_bus_id && bus_lost(b2)) res += side_2.get_target_p(el_id);
     }
     return res;
+}
+// every line counted
+template<class HvdcContainer, class BusLost>
+inline real_type sum_hvdc_station_setpoints_if(const HvdcContainer & hvdc_lines, BusLost bus_lost)
+{
+    return sum_hvdc_station_setpoints_if(hvdc_lines, bus_lost, [](int){ return false; });
 }
 
 }  // namespace slack_redistribution

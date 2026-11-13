@@ -23,9 +23,11 @@
 // and to optimize the matrix operations
 #include "Utils.hpp"
 #include "CustTimer.hpp"
+#include "linear_solvers/OrderingConstraints.hpp"
 #include "BaseConstants.hpp"
 #include "AlgoConfig.hpp"
 #include "linear_solvers/LinearSolverStats.hpp"
+#include "AdjointSolveInfo.hpp"
 #include "outer_loop/BaseOuterLoop.hpp"
 #include "outer_loop/OuterLoopDriver.hpp"
 #include "outer_loop/OuterControlLayout.hpp"
@@ -255,6 +257,10 @@ class LS2G_API BaseAlgo : public BaseConstants
         virtual IntVect  get_controller_q_col()   const { return IntVect(); }
         // J row of each voltage-control group's voltage constraint (empty without them)
         virtual IntVect  get_group_v_row()        const { return IntVect(); }
+        // The Newton system's ordering constraints (see OrderingConstraints), whether or not
+        // its linear solver orders with them: J indices to eliminate after others, so that a
+        // row switched by value keeps a valid pivot. Read-only; empty without a Newton system.
+        virtual OrderingConstraints get_ordering_constraints() const { return OrderingConstraints(); }
 
         // MultiSlack: J column of the slack_absorbed unknown (-1 when the
         // distributed-slack-in-Jacobian extension is not active).
@@ -501,6 +507,17 @@ class LS2G_API BaseAlgo : public BaseConstants
         // serve an adjoint at all (get_J already throws).
         virtual void refresh_J_at_solution() {}
 
+        // What the adjoint of the last solve needs besides its Jacobian (AdjointSolveInfo):
+        // which of its rows are identities, which voltage-control groups lost their
+        // set-point, the dF/d|V| column of each bus of `vm_buses` (solver ids) and the
+        // units whose reactive output follows their own target P. Read it where get_J() is
+        // read: after refresh_J_at_solution, the solve's own state still installed. The
+        // default leaves it empty, which is right for an algorithm without a Jacobian (it
+        // cannot serve an adjoint at all).
+        virtual void get_adjoint_solve_info(const std::vector<int> & /*vm_buses*/, AdjointSolveInfo & out) const {
+            out.clear();
+        }
+
         // Tells the algorithm whether a stranded-controller Jacobian slot (see
         // VoltageControl::declare_feature_entries in NRSystem.hpp) is worth reserving
         // for THIS run: only ContingencyAnalysis/ScenarioSweep's handle_disconnected_grid
@@ -511,6 +528,22 @@ class LS2G_API BaseAlgo : public BaseConstants
         // (e.g. via the solver control's tell_pv_changed()) -- see BaseBatchSweep::
         // _maybe_prepare_masks(). Default is a no-op so other algorithms are unaffected.
         virtual void set_may_mask_voltage_control(bool /*val*/) {}
+
+        // A batch row tripping controllers of voltage-control groups (positions in the plan's
+        // controller list, in the order of VoltageControlSolverData; empty: none), for the next
+        // solves. `set_may_trip_voltage_controllers` has the timing of
+        // set_may_mask_voltage_control above: before the sparsity it affects. An algorithm
+        // leaving `supports_tripped_voltage_controllers` false sees such a row refused
+        // (BATCH_UNSUPPORTED), the other two are then never called.
+        virtual bool supports_tripped_voltage_controllers() const { return false; }
+        virtual void set_may_trip_voltage_controllers(bool /*val*/) {}
+        virtual void set_tripped_voltage_controllers(const std::vector<int> & /*controllers*/) {}
+
+        // A batch row tripping angle-droop hvdc lines (ids in the grid; empty: none), for the
+        // next solves: no flow, on Jacobian entries already declared. Leaving
+        // `supports_tripped_hvdc_lines` false sees such a row refused (BATCH_UNSUPPORTED).
+        virtual bool supports_tripped_hvdc_lines() const { return false; }
+        virtual void set_tripped_hvdc_lines(const std::vector<int> & /*hvdc_ids*/) {}
 
         // Per-solve set-points of the voltage-control groups (indexed like the grid's
         // plan, NaN = the grid's own): what a batch hands over for a row whose

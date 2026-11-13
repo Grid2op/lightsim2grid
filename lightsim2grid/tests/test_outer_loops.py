@@ -27,9 +27,9 @@ from lightsim2grid.algorithm import ErrorType, OuterLoopStatus, DistributedSlack
 
 try:
     from lightsim2grid.algorithm import NROuter_KLU  # noqa: F401
-    OUTER, SING = "NROuter_KLU", "NRSing_KLU"
+    OUTER, SING, DIST = "NROuter_KLU", "NRSing_KLU", "NROuterDist_KLU"
 except ImportError:
-    OUTER, SING = "NROuter_SparseLU", "NRSing_SparseLU"
+    OUTER, SING, DIST = "NROuter_SparseLU", "NRSing_SparseLU", "NROuterDist_SparseLU"
 
 
 def _grid(algo):
@@ -77,10 +77,10 @@ class TestNROuter(unittest.TestCase):
     def test_config_holds_only_the_resume_flag(self):
         grid = _grid(OUTER)
         cfg = grid.get_ac_algo_config()
-        # the Newton's 5 + 6 parameters, then resume_outer_state: the driver's OpenLoadFlow
-        # parameters are the grid's
+        # the Newton's 5 + 7 parameters (the 7th real one its rgrowth_threshold), then
+        # resume_outer_state: the driver's OpenLoadFlow parameters are the grid's
         self.assertEqual(len(cfg.int_params), 6)
-        self.assertEqual(len(cfg.real_params), 6)
+        self.assertEqual(len(cfg.real_params), 7)
         self.assertEqual(cfg.int_params[5], 0)
         ip = list(cfg.int_params)
         ip[5] = 1
@@ -229,6 +229,37 @@ class TestNROuter(unittest.TestCase):
         np.testing.assert_array_equal(solve(from_file), V)
         np.testing.assert_array_equal(from_file.get_gen_res()[1], grid.get_gen_res()[1])
 
+    def test_resume_outer_state_from_the_grid(self):
+        # issue #258: set without going through int_params of the AC AlgoConfig
+        grid = _grid(SING)
+        self.assertFalse(grid.get_resume_outer_state())
+        with self.assertRaises(RuntimeError):
+            grid.set_resume_outer_state(True)
+        grid.change_algorithm(OUTER)
+        self.assertFalse(grid.get_resume_outer_state())
+        cfg_before = grid.get_ac_algo_config()
+        grid.set_resume_outer_state(True)
+        self.assertTrue(grid.get_resume_outer_state())
+        # the algorithm's own flag, the Newton's parameters untouched
+        cfg = grid.get_ac_algo_config()
+        self.assertEqual(list(cfg.int_params[:-1]), list(cfg_before.int_params[:-1]))
+        self.assertEqual(list(cfg.real_params), list(cfg_before.real_params))
+        self.assertEqual(cfg.int_params[-1], 1)
+        # kept with the algorithm's configuration
+        self.assertTrue(grid.copy().get_resume_outer_state())
+        self.assertTrue(pickle.loads(pickle.dumps(grid)).get_resume_outer_state())
+        grid.set_resume_outer_state(False)
+        self.assertFalse(grid.get_resume_outer_state())
+        self.assertEqual(grid.get_ac_algo_config().int_params[-1], 0)
+        # the algorithm's configuration is what the grid reads
+        cfg = grid.get_ac_algo_config()
+        cfg.int_params = list(cfg.int_params[:-1]) + [1]
+        grid.set_ac_algo_config(cfg)
+        self.assertTrue(grid.get_resume_outer_state())
+        # a change of algorithm starts from the new one's (off)
+        grid.change_algorithm(SING)
+        self.assertFalse(grid.get_resume_outer_state())
+
     def test_standalone_algorithm(self):
         from lightsim2grid import algorithm
         algo = getattr(algorithm, OUTER)()
@@ -300,6 +331,39 @@ class TestDistributedSlack(unittest.TestCase):
         p_ref = np.array([gen.res_p_mw for gen in ref.get_generators()])
         self.assertLess(np.abs(p - p_ref).max(), 2e-3)
 
+    def test_run_without_participant(self):
+        """No unit takes part but the slack one (#269): with run_without_participant the loop runs
+        anyway and, as OpenLoadFlow with distributedSlack on, fails at its first check when the
+        slack bus' mismatch is above the threshold; without it the single slack is kept."""
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
+        net = self._net()
+        net.update_loads(id="B3-L", p0=150.)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, gen_slack_id=0)
+        n_gen = len(grid.get_generators())
+        grid.set_gen_can_participate_slack([False] * n_gen, np.ones(n_gen))
+        for algo in (OUTER, DIST):
+            for run, fail, expected in ((False, True, OuterLoopStatus.STABLE),
+                                        (True, False, OuterLoopStatus.STABLE),
+                                        (True, True, OuterLoopStatus.FAILED)):
+                with self.subTest(algo=algo, run=run, fail=fail):
+                    loop = DistributedSlack(slack_bus_p_max_mismatch_mw=1., fail_on_residue=fail,
+                                            run_without_participant=run)
+                    self.assertEqual(loop.run_without_participant, run)
+                    self.assertEqual(pickle.loads(pickle.dumps(loop)).run_without_participant, run)
+                    grid.change_algorithm(algo)
+                    grid.clear_outer_loops()
+                    grid.add_outer_loop(loop)
+                    V = _solve(grid)
+                    stats = grid.get_algo().get_outer_loop_stats()
+                    self.assertEqual(stats.status, expected)
+                    self.assertEqual(V.shape[0] > 0, expected == OuterLoopStatus.STABLE)
+                    if expected == OuterLoopStatus.FAILED:
+                        self.assertEqual(grid.get_algo().get_error(), ErrorType.OuterLoopFailed)
+                        self.assertEqual(stats.failed_loop, "DistributedSlack")
+                        self.assertEqual(stats.nb_outer_iterations, 0)
+
     def test_changed_target_shared_as_a_loaded_one(self):
         """A unit's target changed on the grid (change_p_gen, what the grid2op backend does every
         step) is shared like the same target loaded from the network: the unit, flagged "can
@@ -353,24 +417,29 @@ class TestDistributedSlack(unittest.TestCase):
         self.assertEqual(lf.run_ac(net, params)[0].status.name, "CONVERGED")
         olf = net.get_generators().loc["B3-G"]
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore")
-            grid = init_from_pypowsybl(net_(), gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
-                                       olf_rules=OlfLoadingParameters(reactive_limits=True), olf_parameters=params)
-        self.assertEqual([l.name() for l in grid.get_outer_loops()], ["DistributedSlack"])
-        self.assertEqual(grid.get_outer_loops()[0].slack_bus_p_max_mismatch_mw, 1e-4)
-        grid.change_algorithm(OUTER)
-        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10)
-        self.assertGreater(V.shape[0], 0)
-        gen = {g.name: g for g in grid.get_generators()}["B3-G"]
-        self.assertAlmostEqual(gen.res_p_mw, -olf["p"], places=3)
-        self.assertAlmostEqual(gen.res_q_mvar, -olf["q"], places=3)
-        # at its min Q at the new P, not the initial one
-        self.assertAlmostEqual(gen.res_q_mvar, grid.gen_limits_at(gen.id, gen.res_p_mw)[0], places=6)
-        self.assertNotAlmostEqual(gen.res_q_mvar, gen.target_q_mvar, places=1)
         vm_olf = (net.get_buses()["v_mag"] / net.get_voltage_levels()["nominal_v"].reindex(
             net.get_buses()["voltage_level_id"]).to_numpy()).to_numpy()
-        self.assertLess(np.abs(np.abs(V) - vm_olf).max(), 1e-6)
+        # the Newton sharing the slack itself (DIST) differs from OpenLoadFlow by at most the
+        # residue OpenLoadFlow leaves on the slack bus (1e-4 MW here)
+        for algo in (OUTER, DIST):
+            with self.subTest(algo=algo):
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore")
+                    grid = init_from_pypowsybl(net_(), gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                               olf_rules=OlfLoadingParameters(reactive_limits=True),
+                                               olf_parameters=params)
+                self.assertEqual([l.name() for l in grid.get_outer_loops()], ["DistributedSlack"])
+                self.assertEqual(grid.get_outer_loops()[0].slack_bus_p_max_mismatch_mw, 1e-4)
+                grid.change_algorithm(algo)
+                V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10)
+                self.assertGreater(V.shape[0], 0)
+                gen = {g.name: g for g in grid.get_generators()}["B3-G"]
+                self.assertAlmostEqual(gen.res_p_mw, -olf["p"], places=3)
+                self.assertAlmostEqual(gen.res_q_mvar, -olf["q"], places=3)
+                # at its min Q at the new P, not the initial one
+                self.assertAlmostEqual(gen.res_q_mvar, grid.gen_limits_at(gen.id, gen.res_p_mw)[0], places=6)
+                self.assertNotAlmostEqual(gen.res_q_mvar, gen.target_q_mvar, places=1)
+                self.assertLess(np.abs(np.abs(V) - vm_olf).max(), 1e-6)
 
     def test_detection(self):
         from lightsim2grid.lightsim2grid_cpp import LimitViolationType
@@ -382,18 +451,27 @@ class TestDistributedSlack(unittest.TestCase):
         self.assertEqual(len(found), 1)
         slack_gen = grid.get_generators()[0]
         self.assertAlmostEqual(found[0].value, slack_gen.res_p_mw - slack_gen.target_p_mw, places=6)
-        # a single slack set up on purpose, with no unit flagged to share it, is not reported
+        # no unit flagged to share it: reported with OpenLoadFlow's loops (distributedSlack on,
+        # its loop runs whatever the participants, #269)...
         grid.set_gen_can_participate_slack([False] * len(list(grid.get_generators())),
                                            np.zeros(len(list(grid.get_generators()))))
         grid.set_storage_can_participate_slack([], np.zeros(0))
+        self.assertTrue(next(loop for loop in grid.get_outer_loops()
+                             if loop.name() == "DistributedSlack").run_without_participant)
         self.assertGreater(_solve(grid).shape[0], 0)
+        self.assertEqual(len([v for v in grid.get_physical_violations()
+                              if v.violation_type == LimitViolationType.SLACK_MISMATCH]), 1)
+        # ... but a single slack set up on purpose (the loop's default) is not
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack())
         self.assertFalse([v for v in grid.get_physical_violations()
                           if v.violation_type == LimitViolationType.SLACK_MISMATCH])
 
     def test_detection_slack_unit_alone_past_its_limit(self):
         """The slack unit, the only one left to share the slack, absorbs enough to leave its
         active range: sharing the mismatch on itself would change nothing, so it is no
-        SLACK_MISMATCH -- the unit past its limit is a LOW_P of its own."""
+        SLACK_MISMATCH -- the unit past its limit is a LOW_P of its own. Unless the loop runs
+        without a participant, as OpenLoadFlow's (#269): the whole mismatch is then reported."""
         from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
         from lightsim2grid.lightsim2grid_cpp import LimitViolationType, ViolationElementType
         net = self._net()
@@ -408,6 +486,10 @@ class TestDistributedSlack(unittest.TestCase):
         grid.set_gen_can_participate_slack([False] * nb_gen, np.zeros(nb_gen))
         grid.set_storage_can_participate_slack([], np.zeros(0))
         self.assertGreater(_solve(grid).shape[0], 0)
+        self.assertEqual(len([v for v in grid.get_physical_violations()
+                              if v.violation_type == LimitViolationType.SLACK_MISMATCH]), 1)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack())
         violations = grid.get_physical_violations()
         self.assertFalse([v for v in violations if v.violation_type == LimitViolationType.SLACK_MISMATCH])
         low_p = [v for v in violations if v.violation_type == LimitViolationType.LOW_P]
@@ -415,6 +497,79 @@ class TestDistributedSlack(unittest.TestCase):
         self.assertEqual(low_p[0].element_type, ViolationElementType.GENERATOR)
         self.assertEqual(low_p[0].element_id, 0)
         self.assertLess(low_p[0].value, target_p - 10.)
+
+
+class TestDistributedSlackInNewton(unittest.TestCase):
+    """NROuterDist_*: the Newton shares the slack on the units flagged "can participate", the
+    DistributedSlack loop only caps the units that sharing pushes past a limit."""
+
+    _net = staticmethod(TestDistributedSlack._net)
+    _grid = TestDistributedSlack._grid
+
+    def test_same_as_the_newton_distributed_slack(self):
+        from lightsim2grid.algorithm import DistributedSlack
+        gen_ids = list(self._net().get_generators().index)
+        ref = self._grid(gen_slack_id={gen_id: 1. for gen_id in gen_ids})
+        ref.change_algorithm(SING.replace("NRSing", "NR"))
+        V_ref = _solve(ref)
+        grid = self._grid(gen_slack_id="B1-G")
+        grid.change_algorithm(DIST)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(DistributedSlack())
+        V = _solve(grid)
+        self.assertEqual(V.shape, V_ref.shape)
+        stats = grid.get_algo().get_outer_loop_stats()
+        self.assertEqual(stats.status, OuterLoopStatus.STABLE)
+        # no unit at a limit: the first solve is the answer
+        self.assertEqual(stats.nb_outer_iterations, 0)
+        self.assertEqual(grid.get_algo().get_linear_solver_stats().nb_analyze, 1)
+        self.assertLess(np.abs(V - V_ref).max(), 1e-9)
+        p = np.array([gen.res_p_mw for gen in grid.get_generators()])
+        p_ref = np.array([gen.res_p_mw for gen in ref.get_generators()])
+        self.assertLess(np.abs(p - p_ref).max(), 1e-6)
+
+    def test_capped_as_olf_caps_it(self):
+        """the units give up the surplus; one of them would go below its min_p: OpenLoadFlow's
+        DistributedSlack stops it there and shares the rest on the others"""
+        import pypowsybl.loadflow as lf
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl
+        from _olf_reference import reference_parameters
+
+        def net_():
+            net = self._net()
+            net.update_generators(id="B3-G", min_p=8.)
+            return net
+
+        net = net_()
+        params = reference_parameters(
+            provider={"slackBusSelectionMode": "NAME", "slackBusesIds": net.get_generators().loc["B1-G", "bus_id"],
+                      "outerLoopNames": "DistributedSlack", "newtonRaphsonConvEpsPerEq": "1e-10",
+                      "slackBusPMaxMismatch": "1e-4"},
+            distributed_slack=True, use_reactive_limits=False, read_slack_bus=False,
+            balance_type=lf.BalanceType.PROPORTIONAL_TO_GENERATION_P_MAX)
+        self.assertEqual(lf.run_ac(net, params)[0].status.name, "CONVERGED")
+        olf = net.get_generators()
+        self.assertAlmostEqual(-olf.loc["B3-G", "p"], 8., places=3)
+        vm_olf = (net.get_buses()["v_mag"] / net.get_voltage_levels()["nominal_v"].reindex(
+            net.get_buses()["voltage_level_id"]).to_numpy()).to_numpy()
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net_(), gen_slack_id="B1-G", sort_index=False, buses_for_sub=False,
+                                       olf_rules=True, olf_parameters=params)
+        self.assertEqual([l.name() for l in grid.get_outer_loops()], ["DistributedSlack"])
+        grid.change_algorithm(DIST)
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, 1e-10)
+        self.assertGreater(V.shape[0], 0)
+        stats = grid.get_algo().get_outer_loop_stats()
+        self.assertEqual(stats.status, OuterLoopStatus.STABLE)
+        self.assertGreater(stats.nb_outer_iterations, 0)
+        self.assertEqual(grid.get_algo().get_linear_solver_stats().nb_analyze, 1)
+        p = {g.name: g.res_p_mw for g in grid.get_generators()}
+        self.assertAlmostEqual(p["B3-G"], 8., places=6)
+        for gen_id in olf.index:
+            self.assertAlmostEqual(p[gen_id], -olf.loc[gen_id, "p"], places=3)
+        self.assertLess(np.abs(np.abs(V) - vm_olf).max(), 1e-6)
 
 
 class TestHvdcAcEmulationLimits(unittest.TestCase):
@@ -655,6 +810,34 @@ class TestReactiveLimits(unittest.TestCase):
                 self.assertAlmostEqual(g.res_q_mvar, -olf_q[g.name], places=4)
                 compared += 1
         self.assertGreater(compared, 50)
+
+    def test_resumed_solve_from_its_own_solution(self):
+        # issue #258: with resume_outer_state, solving again from the voltages the previous
+        # solve returned, nothing changed, takes no Newton iteration. The buses frozen at a
+        # limit start from their solved magnitude, not from the set-point the grid seeds them at
+        from lightsim2grid.network.from_pypowsybl import init as init_from_pypowsybl, OlfLoadingParameters
+        net = self._net()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, sort_index=False, buses_for_sub=False,
+                                       olf_rules=OlfLoadingParameters(reactive_limits=True))
+        grid.change_algorithm(OUTER)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits())
+        grid.set_resume_outer_state(True)
+        tol = 1e-8
+        V = grid.ac_pf(np.full(grid.total_bus(), 1.0 + 0j), 30, tol)
+        self.assertGreater(V.shape[0], 0)
+        # some buses end frozen, which is what the re-solve has to resume
+        self.assertGreater(grid.get_algo().get_outer_loop_stats().nb_outer_iterations, 0)
+        for _ in range(2):
+            V2 = grid.ac_pf(V, 30, tol)
+            self.assertGreater(V2.shape[0], 0)
+            stats = grid.get_algo().get_outer_loop_stats()
+            self.assertEqual(stats.nb_outer_iterations, 0)
+            self.assertEqual(list(stats.nr_iterations), [0])
+            self.assertLess(np.abs(V2 - V).max(), 1e-12)
+            V = V2
 
     def test_detection_is_olf_first_round(self):
         # a plain solve reports exactly the buses OpenLoadFlow switches PV -> PQ first

@@ -278,21 +278,34 @@ class TestScenarioSweepGenContingency(unittest.TestCase):
         self.assertGreater(sum(st.nb_refactorize for st in per_algo), nb_rows,
                            "the rows should be running on refactorizations")
 
-    def test_remote_controller_is_refused(self):
-        """Remote voltage control is out of scope, and must say so rather than mislead."""
+    def test_remote_controller_is_solved(self):
+        """The row taking out a generator regulating a remote bus is solved in the batch, as a
+        one-off solve of the grid without it."""
+        from lightsim2grid.lightsim2grid_cpp import LimitViolationType
         grid = copy.deepcopy(self.grid)
         gen_id = next(g for g in range(self.n_gen)
                       if not grid.get_generators()[g].is_slack)
         own_bus = grid.get_generators()[gen_id].bus_id
         other_bus = next(b for b in self.bus_of_gen if b != own_bus)
         grid.set_gen_regulated_bus(gen_id, int(other_bus))
-        gen_mask = np.zeros((1, self.n_gen), dtype=bool)
-        gen_mask[0, gen_id] = True
+        gen_mask = np.zeros((2, self.n_gen), dtype=bool)
+        gen_mask[0, gen_id] = True   # row 1 takes nothing out
         sweep = ScenarioSweepCPP(grid)
+        sweep.compute_limit_violations = True
         sweep.set_contingency_gens(gen_mask)
-        with self.assertRaises(RuntimeError) as ctx:
-            sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
-        self.assertIn("remote", str(ctx.exception).lower())
+        sweep.compute(1.0 * self.Vinit, self.max_it, self.tol)
+        self.assertEqual(list(sweep.get_batch_unsupported_reasons()), ["", ""])
+        self.assertTrue(sweep.converged_mask()[0])
+        self.assertTrue(sweep.converged_mask()[1])
+        one_off = copy.deepcopy(grid)
+        one_off.deactivate_gen(gen_id)
+        one_off.tell_solver_need_reset()
+        buses = self._solved_buses()
+        np.testing.assert_allclose(sweep.get_voltages()[0][buses],
+                                   one_off.ac_pf(1.0 * self.Vinit, self.max_it, self.tol)[buses], rtol=1e-8, atol=1e-8)
+        ref = copy.deepcopy(grid).ac_pf(1.0 * self.Vinit, self.max_it, self.tol)
+        buses = self._solved_buses()
+        np.testing.assert_allclose(sweep.get_voltages()[1][buses], ref[buses], rtol=1e-8, atol=1e-8)
 
     def test_multithreaded_matches_single_threaded(self):
         """Each worker owns its algorithm, so the switchable set must reach all of them.
@@ -414,7 +427,12 @@ class TestGenContingencyWithRemoteControlAcrossTrafo(unittest.TestCase):
         self.Vinit = np.ones(self.grid.total_bus(), dtype=complex)
         self.n_gen = len(self.grid.get_generators())
         self.n_trafo = len(self.grid.get_trafos())
-        self.buses = np.asarray(self.grid.id_ac_solver_to_me(), dtype=int)
+        # the buses of the solved system, read off a solved copy: the grid above was never
+        # solved, its list would be empty and the voltages below compared at no bus at all
+        solved = self._grid()
+        self.assertGreater(solved.ac_pf(1.0 * self.Vinit, self.MAX_IT, self.TOL).shape[0], 0)
+        self.buses = np.asarray(solved.id_ac_solver_to_me(), dtype=int)
+        self.assertGreater(self.buses.shape[0], 0)
 
     def _reference(self, trafo_off, gens_off):
         return self._grid(trafo_off, gens_off).ac_pf(1.0 * self.Vinit, self.MAX_IT, self.TOL)
@@ -480,12 +498,12 @@ class TestGenContingencyWithRemoteControlAcrossTrafo(unittest.TestCase):
             np.testing.assert_allclose(sweep.get_voltages()[0][self.buses], ref[self.buses],
                                        rtol=1e-8, atol=1e-8)
 
-    def test_masking_the_remote_controller_itself_is_still_refused(self):
-        """The scope guard must not be weakened by the transformer cases above."""
+    def test_masking_the_remote_controller_itself(self):
+        """As tripping any other generator, whatever the transformer cases above do."""
         gen_mask = np.zeros((1, self.n_gen), dtype=bool)
         gen_mask[0, self.GEN_REMOTE] = True
         sweep = ScenarioSweepCPP(self._grid())
         sweep.set_contingency_gens(gen_mask)
-        with self.assertRaises(RuntimeError) as ctx:
-            sweep.compute(1.0 * self.Vinit, self.MAX_IT, self.TOL)
-        self.assertIn("remote", str(ctx.exception).lower())
+        sweep.compute(1.0 * self.Vinit, self.MAX_IT, self.TOL)
+        self.assertTrue(sweep.converged_mask()[0])
+        self.assertEqual(sweep.get_batch_unsupported_reasons()[0], "")

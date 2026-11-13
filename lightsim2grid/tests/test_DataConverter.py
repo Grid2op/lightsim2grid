@@ -215,8 +215,11 @@ class TestDataConverterLegacy(unittest.TestCase):
         tap_pos = 1.0 * pp_net.trafo["tap_pos"].values
         tap_pos[~np.isfinite(tap_pos)] = 0.
 
-        is_tap_hv_side = pp_net.trafo["tap_side"].values == "hv"
-        is_tap_hv_side[~np.isfinite(is_tap_hv_side)] = True
+        # see lightsim2grid/network/from_pandapower/_aux_add_trafo.py: "tap_side" is a
+        # pandas "string" column with pd.NA in pandapower >= 4
+        tap_side = pp_net.trafo["tap_side"]
+        is_tap_hv_side = tap_side.eq("hv").fillna(False).to_numpy(dtype=bool, copy=True)
+        is_tap_hv_side[tap_side.isna().to_numpy(dtype=bool)] = True
 
         tap_angles_ = 1.0 * pp_net.trafo["tap_step_degree"].values
         tap_angles_[~np.isfinite(tap_angles_)] = 0.

@@ -9,12 +9,16 @@
 #ifndef LINEAR_SOLVER_POLICY_H
 #define LINEAR_SOLVER_POLICY_H
 
+#include <limits>
 #include <utility>
 
 #include "Utils.hpp"
 #include "CustTimer.hpp"
 #include "LinearSolverStats.hpp"
 #include "linear_solvers/OrderingConstraints.hpp"
+#ifdef NICSLU_SOLVER_AVAILABLE
+#include "linear_solvers/NICSLUSolver.hpp"
+#endif
 
 namespace ls2g {
 
@@ -41,6 +45,15 @@ namespace detail {
     }
     template<class T>
     void set_rgrowth_threshold_impl(T &, real_type, long) {}
+
+    // the reciprocal pivot growth of the solver's last refactorization, NaN for a solver
+    // that does not measure it
+    template<class T>
+    auto last_rgrowth_impl(const T & solver, int) -> decltype(static_cast<double>(solver.last_rgrowth())) {
+        return static_cast<double>(solver.last_rgrowth());
+    }
+    template<class T>
+    double last_rgrowth_impl(const T &, long) { return std::numeric_limits<double>::quiet_NaN(); }
 
     // overload on the extra int/long argument: the first is chosen (as int is the exact match)
     // when the solver has set_pivot_growth_guard, the second is the no-op for the others
@@ -92,6 +105,10 @@ class LinearSolverPolicy
             auto timer = CustTimer();
             ErrorType res = inner_.refactorize(J);
             stats_.timer_refactor_ += timer.duration();
+            if (res == ErrorType::NoError && refactor_fallback_ && rgrowth_threshold_ > 0.) {
+                // the inner solver measured it to decide (see set_refactor_fallback)
+                detail::merge_min_rgrowth(stats_.min_rgrowth_, detail::last_rgrowth_impl(inner_, 0));
+            }
             if (res != ErrorType::NoError) {
                 ++stats_.nb_refactorize_failed;
                 if (refactor_fallback_) {
@@ -129,7 +146,7 @@ class LinearSolverPolicy
         // checked, so a plain algorithm's results are unchanged.
         void set_refactor_fallback(bool val) noexcept {
             refactor_fallback_ = val;
-            detail::set_rgrowth_threshold_impl(inner_, val ? RGROWTH_THRESHOLD : 0., 0);
+            detail::set_rgrowth_threshold_impl(inner_, val ? rgrowth_threshold_ : 0., 0);
             _apply_pivot_growth_guard();
         }
 
@@ -143,6 +160,15 @@ class LinearSolverPolicy
         }
         bool refactor_fallback() const noexcept { return refactor_fallback_; }
 
+        // The threshold the fallback applies (RGROWTH_THRESHOLD unless told otherwise); 0
+        // keeps only the failures the solver reports by itself (a zero pivot). Takes effect
+        // at once if the fallback is on, else when it is turned on.
+        void set_fallback_rgrowth_threshold(real_type val) noexcept {
+            rgrowth_threshold_ = val;
+            if (refactor_fallback_) detail::set_rgrowth_threshold_impl(inner_, rgrowth_threshold_, 0);
+        }
+        real_type fallback_rgrowth_threshold() const noexcept { return rgrowth_threshold_; }
+
         // the inner solver's (see detail::orders_with_constraints_by_default)
         static constexpr bool ORDERS_WITH_CONSTRAINTS_BY_DEFAULT =
             detail::orders_with_constraints_by_default<LinearSolver>::value;
@@ -154,6 +180,12 @@ class LinearSolverPolicy
         auto set_ordering_constraints(OrderingConstraints constraints)
             -> decltype(std::declval<LS &>().set_ordering_constraints(std::move(constraints)), void()) {
             inner_.set_ordering_constraints(std::move(constraints));
+        }
+        // the same, for the fill-reducing ordering the solver starts from
+        template<class LS = LinearSolver>
+        auto set_fill_reducing_ordering(FillReducingOrdering ordering)
+            -> decltype(std::declval<LS &>().set_fill_reducing_ordering(ordering), void()) {
+            inner_.set_fill_reducing_ordering(ordering);
         }
 
         ErrorType solve(Eigen::Ref<RealVect> b) {
@@ -185,7 +217,8 @@ class LinearSolverPolicy
         static constexpr real_type RGROWTH_THRESHOLD = 1e-10;
 
         // Called from the owning algorithm's reset_timer() (itself invoked at the start
-        // of every compute_pf/compute_pf_dc): zeroes only the timer_* fields, so
+        // of every compute_pf/compute_pf_dc): zeroes only the timer_* fields (and
+        // min_rgrowth_, which covers the same span), so
         // get_timers_jacobian() keeps reporting "last call only" like it always has.
         // Counters (nb_*) are untouched -- see detail::reset_stats_timers_impl.
         void reset_stats_timers() noexcept {
@@ -194,12 +227,14 @@ class LinearSolverPolicy
             stats_.timer_refactor_   = 0.;
             stats_.timer_solve_      = 0.;
             stats_.timer_solve_transpose_ = 0.;
+            stats_.min_rgrowth_ = std::numeric_limits<double>::quiet_NaN();
         }
 
     protected:
         LinearSolver inner_;
         LinearSolverStats stats_;
         bool refactor_fallback_ = false;
+        real_type rgrowth_threshold_ = RGROWTH_THRESHOLD;
         bool guard_wanted_      = false;
         void _apply_pivot_growth_guard() noexcept {
             detail::set_pivot_growth_guard_impl(inner_, guard_wanted_ && refactor_fallback_, 0);
@@ -212,6 +247,65 @@ class LinearSolverPolicy
         LinearSolverPolicy & operator=(LinearSolverPolicy&&) = delete;
         LinearSolverPolicy & operator=(const LinearSolverPolicy&) = delete;
 };
+
+#ifdef NICSLU_SOLVER_AVAILABLE
+/**
+NICSLU's factorize() and refactorize() both call its FactorizeMatrix, which chooses on its
+own between a factorization with partial pivoting and a refactorization, and factorizes
+when a refactorization fails. Counting the calls would show no fallback at all; these count
+what NICSLU reports having run instead. A refactorize() that ended in a factorization (one
+NICSLU declined, or one that failed) is a failed refactorization and a fallback
+factorization, as with the other solvers, whether or not set_refactor_fallback is on: NICSLU
+does it regardless. Its time goes to timer_factor_.
+**/
+namespace detail {
+    // what the last call of `solver` ran, into `stats`; returns whether it factorized
+    inline bool count_nicslu_call(LinearSolverStats & stats, const NICSLULinearSolver & solver,
+                                  double duration, bool asked_refactorize) {
+        const std::size_t nb_fact = solver.last_nb_factorize();
+        if (asked_refactorize) {
+            ++stats.nb_refactorize;
+            if (nb_fact > 0) {
+                ++stats.nb_refactorize_failed;
+                stats.nb_fallback_factorize += nb_fact;
+            }
+        } else {
+            stats.nb_refactorize += solver.last_nb_refactorize();
+        }
+        stats.nb_factorize += nb_fact;
+        if (nb_fact > 0) stats.timer_factor_ += duration;
+        else stats.timer_refactor_ += duration;
+        return nb_fact > 0;
+    }
+}  // namespace detail
+
+template<>
+inline ErrorType LinearSolverPolicy<NICSLULinearSolver>::factorize(const EigenRefConstRealSpMat & J) {
+    auto timer = CustTimer();
+    ErrorType res = inner_.factorize(J);
+    detail::count_nicslu_call(stats_, inner_, timer.duration(), false);
+    return res;
+}
+
+template<>
+inline ErrorType LinearSolverPolicy<NICSLULinearSolver>::refactorize(const EigenRefConstRealSpMat & J) {
+    auto timer = CustTimer();
+    ErrorType res = inner_.refactorize(J);
+    const bool factorized = detail::count_nicslu_call(stats_, inner_, timer.duration(), true);
+    if (res != ErrorType::NoError) {
+        // NICSLU's own factorization failed too (or it never got that far)
+        if (!factorized) ++stats_.nb_refactorize_failed;
+        if (refactor_fallback_) {
+            ++stats_.nb_fallback_factorize;
+            auto timer_f = CustTimer();
+            res = inner_.factorize(J);
+            detail::count_nicslu_call(stats_, inner_, timer_f.duration(), false);
+            if (res != ErrorType::NoError) ++stats_.nb_fallback_factorize_failed;
+        }
+    }
+    return res;
+}
+#endif  // NICSLU_SOLVER_AVAILABLE
 
 } // namespace ls2g
 

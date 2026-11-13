@@ -230,6 +230,92 @@ void YbusPolicy::Contingency::_append_gen_trips(const std::vector<int> & gen_ids
     }
 }
 
+void YbusPolicy::Contingency::_append_sgen_trips(const std::set<int> & sgen_ids,
+                                                 const LSGrid & grid_model,
+                                                 bool ac_solver_used,
+                                                 const SolverBusIdVect & id_me_to_solver,
+                                                 std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    const auto & sgens = grid_model.get_static_generators();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    const Eigen::Ref<const RealVect> target_p = sgens.get_target_p();
+    const Eigen::Ref<const RealVect> target_q = sgens.get_target_q();
+    for(int sgen_id : sgen_ids){
+        const int bus = live_solver_bus(sgens, sgen_id, id_me_to_solver);
+        if(bus < 0) continue;
+        // a static generator injects p + jq: taken back
+        const real_type q = ac_solver_used ? target_q(sgen_id) : 0.;
+        sbus_dp.push_back({bus, -per_unit(cplx_type(target_p(sgen_id), q), sn_mva)});
+    }
+}
+
+void YbusPolicy::Contingency::_append_storage_trips(const std::set<int> & storage_ids,
+                                                    const LSGrid & grid_model,
+                                                    bool ac_solver_used,
+                                                    const SolverBusIdVect & id_me_to_solver,
+                                                    std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    const auto & storages = grid_model.get_storages();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    const Eigen::Ref<const RealVect> target_p = storages.get_target_p();
+    const Eigen::Ref<const RealVect> target_q = storages.get_target_q();
+    for(int storage_id : storage_ids){
+        const int bus = live_solver_bus(storages, storage_id, id_me_to_solver);
+        if(bus < 0) continue;
+        // load convention, what StorageContainer::_fillSbus takes: given back. A unit that
+        // regulates its bus stamps no reactive power
+        real_type q = 0.;
+        if(ac_solver_used && !storages.get_voltage_regulator_on(storage_id)) q = target_q(storage_id);
+        sbus_dp.push_back({bus, per_unit(cplx_type(target_p(storage_id), q), sn_mva)});
+    }
+}
+
+void YbusPolicy::Contingency::_append_svc_trips(const std::set<int> & svc_ids,
+                                                const LSGrid & grid_model,
+                                                bool ac_solver_used,
+                                                const SolverBusIdVect & id_me_to_solver,
+                                                std::vector<Coeff> & coeffs,
+                                                std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    if(!ac_solver_used) return;  // no active power, and DC has no reactive part nor b0
+    const auto & svcs = grid_model.get_svcs();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    for(int svc_id : svc_ids){
+        const int bus = live_solver_bus(svcs, svc_id, id_me_to_solver);
+        if(bus < 0) continue;
+        // the very coefficient SvcContainer::_fillYbus stamps, whatever the mode
+        const real_type b0 = svcs.get_b0_pu(svc_id);
+        if(b0 != 0.) coeffs.push_back({bus, bus, cplx_type(0., b0)});
+        if(svcs.get_regulation_mode(svc_id) != SvcContainer::RegulationMode::REACTIVE_POWER) continue;
+        sbus_dp.push_back({bus, -per_unit(cplx_type(0., svcs.get_target_q()(svc_id)), sn_mva)});
+    }
+}
+
+void YbusPolicy::Contingency::_append_hvdc_trips(const std::set<int> & hvdc_ids,
+                                                 const LSGrid & grid_model,
+                                                 bool ac_solver_used,
+                                                 const SolverBusIdVect & id_me_to_solver,
+                                                 std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    const auto & hvdc_lines = grid_model.get_dclines();
+    const real_type sn_mva = grid_model.get_sn_mva();
+    // in AC a line in AC emulation has its active power in the Newton's Hvdc extension, not in Sbus
+    const auto take_out = [&](const ConverterStationContainer & stations, int hvdc_id){
+        const int bus = live_solver_bus(stations, hvdc_id, id_me_to_solver);
+        if(bus < 0) return;
+        // what ConverterStationContainer::fillSbus_station stamps, taken back
+        real_type q = 0.;
+        if(ac_solver_used && !stations.get_voltage_regulator_on(hvdc_id)) q = stations.get_target_q()(hvdc_id);
+        const real_type p = ac_solver_used && hvdc_lines.is_droop_active(hvdc_id) ? 0. : stations.get_target_p(hvdc_id);
+        sbus_dp.push_back({bus, -per_unit(cplx_type(p, q), sn_mva)});
+    };
+    for(int hvdc_id : hvdc_ids){
+        if(!hvdc_lines.get_status_global()[static_cast<size_t>(hvdc_id)]) continue;
+        take_out(hvdc_lines.get_stations_side_1(), hvdc_id);
+        take_out(hvdc_lines.get_stations_side_2(), hvdc_id);
+    }
+}
+
 void YbusPolicy::Contingency::init_li_coeffs(
     const LSGrid & grid_model,
     bool ac_solver_used,
@@ -256,6 +342,10 @@ void YbusPolicy::Contingency::init_li_coeffs(
                            grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         _append_gen_trips(std::vector<int>(this_cont.gens.begin(), this_cont.gens.end()),
                           grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
+        _append_sgen_trips(this_cont.sgens, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
+        _append_storage_trips(this_cont.storages, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
+        _append_svc_trips(this_cont.svcs, grid_model, ac_solver_used, id_me_to_solver, coeffs, sbus_dp);
+        _append_hvdc_trips(this_cont.hvdcs, grid_model, ac_solver_used, id_me_to_solver, sbus_dp);
         li_coeffs.push_back(std::move(coeffs));
         ++cont_id;
     }
@@ -343,6 +433,13 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
                                                            row_shift_dp);
         // its shunts (the loads and generators it trips are SbusPolicy::Vary's)
         _append_shunt_trips(shunt_ids_for_row(row), grid_model, ac_solver_used, id_me_to_solver, coeffs, row_shift_dp);
+        const auto ids_as_set = [this, row](InjectionTrip kind){
+            const std::vector<int> ids = ids_for_row(kind, static_cast<size_t>(row));
+            return std::set<int>(ids.begin(), ids.end());
+        };
+        _append_storage_trips(ids_as_set(InjectionTrip::STORAGE), grid_model, ac_solver_used, id_me_to_solver, row_shift_dp);
+        _append_svc_trips(ids_as_set(InjectionTrip::SVC), grid_model, ac_solver_used, id_me_to_solver, coeffs, row_shift_dp);
+        _append_hvdc_trips(ids_as_set(InjectionTrip::HVDC), grid_model, ac_solver_used, id_me_to_solver, row_shift_dp);
         if(static_cast<size_t>(row) < topo_branches_moved.size()){
             for(const BranchPlacement & placement : topo_branches_moved[static_cast<size_t>(row)]){
                 // the base contribution out (where there is one), the row's own in. A row

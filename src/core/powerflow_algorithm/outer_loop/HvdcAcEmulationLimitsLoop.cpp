@@ -10,9 +10,19 @@
 
 #include "LSGrid.hpp"
 
+#include <algorithm>
+
 namespace ls2g {
 
 namespace {
+
+// without the lines the row takes out: nothing to saturate, nothing to release
+void drop_tripped(const OuterContext & ctx, hvdc_p_check::HvdcPPlan & plan)
+{
+    plan.lines.erase(std::remove_if(plan.lines.begin(), plan.lines.end(),
+                                    [&ctx](const hvdc_p_check::HvdcPEntry & line){ return !ctx.view().hvdc_on(line.hvdc_id); }),
+                     plan.lines.end());
+}
 
 RealVect angles(const CplxVect & V)
 {
@@ -33,6 +43,7 @@ hvdc_p_check::HvdcPPlan HvdcAcEmulationLimitsLoop::_ac_emulation_lines(const Out
     // a line the caller froze at a limit (droop off) is not in AC emulation
     hvdc_p_check::HvdcPPlan res;
     for(const auto & line : plan.lines) if(line.frozen_dir == 0) res.lines.push_back(line);
+    drop_tripped(ctx, res);
     return res;
 }
 
@@ -79,6 +90,7 @@ void HvdcAcEmulationLimitsLoop::_detect(const OuterContext & ctx, std::vector<Li
         // the grid's own lines and regimes, in the labelling of the solve that was checked
         hvdc_p_check::HvdcPPlan plan;
         hvdc_p_check::build_hvdc_p_plan(*ctx.grid, solver_map(ctx), plan);
+        drop_tripped(ctx, plan);
         hvdc_p_check::check_hvdc_p_violations(plan, Va, ctx.tol_mw, ctx.view().masked(), out);
         return;
     }

@@ -75,12 +75,15 @@ contingency, and the distributed slack makes up what is lost (`redistribute_slac
 OpenLoadFlow-style before the solve). `run()` reports, for each contingency, the branches in
 `element_ids` and the rest in `shunt_ids` / `load_ids` / `gen_ids`. The C++ class
 :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysisCPP` takes ids
-(`add_contingency(branch_ids, shunt_ids, load_ids, gen_ids)`), and `my_contingencies()` lists
+(`add_contingency(branch_ids, shunt_ids, load_ids, gen_ids, sgen_ids=..., storage_ids=..., svc_ids=..., hvdc_ids=...)`), and `my_contingencies()` lists
 what each row trips.
 
-Two limits for now: a generator regulating a remote bus, or standing on a bus a control group
-holds, is refused, and so is a shunt that regulates a voltage when the algorithm runs a
-ShuntVoltageControl outer loop (its sections belong to that loop).
+A static generator, a storage unit, a static var compensator or an HVDC line can be tripped
+too (`sgens`, `storages`, `svcs`, `hvdcs` of `add_contingency`, each listed in the results). What the batch cannot do with a single analysis is reported ``BATCH_UNSUPPORTED`` for now: a
+row taking out every controller of the group regulating a slack bus, a storage unit on a bus a control group holds, a
+shunt that regulates a voltage when the algorithm runs a ShuntVoltageControl outer loop (its
+sections belong to that loop), a static var compensator with a standby automaton or frozen at
+a reactive limit, an HVDC line in AC emulation in DC.
 
 Handling contingencies that split the grid
 -------------------------------------------
@@ -284,9 +287,10 @@ Each ``LimitViolation`` reports:
   ``LINE`` / ``TRAFO``); unused (``-1``) for ``GRID``;
 - ``side``: ``1`` or ``2`` for ``LINE`` / ``TRAFO`` (unused, ``0``, for ``BUS`` / ``GRID``);
 - ``violation_type``: :class:`lightsim2grid.contingencyAnalysis.LimitViolationType`
-  (``LOW_VOLTAGE``, ``HIGH_VOLTAGE``, ``CURRENT``, ``NOT_SIMULATED`` or ``DIVERGENCE``, see below);
+  (``LOW_VOLTAGE``, ``HIGH_VOLTAGE``, ``CURRENT``, ``NOT_SIMULATED``, ``BATCH_UNSUPPORTED`` or
+  ``DIVERGENCE``, see below);
 - ``value`` / ``limit``: the value reached and the limit that was violated; unused (``NaN``) for
-  ``NOT_SIMULATED`` / ``DIVERGENCE``;
+  ``NOT_SIMULATED`` / ``BATCH_UNSUPPORTED`` / ``DIVERGENCE``;
 - ``name``: for ``LINE`` / ``TRAFO``, the element's own name (see ``LSGrid.set_line_names`` /
   ``set_trafo_names``); for ``BUS``, the name of the *substation* the violating bus belongs to
   (see ``LSGrid.set_substation_names`` -- there is no per-bus name, only per-substation ones);
@@ -295,7 +299,8 @@ Each ``LimitViolation`` reports:
 Each ``ContingencyResult`` reports ``element_ids`` (the branch ids disconnected by this
 contingency -- always present, even without a ``name``) and the corresponding ``element_names``,
 the optional user-supplied ``contingency_name`` (set via ``add_single_contingency(..., name=...)``),
-whether the contingency ``converged``, and its ``limit_violations``.
+whether the contingency ``converged``, its ``limit_violations`` and, for a contingency the batch
+could not solve, the ``batch_unsupported_reason`` (see below).
 
 .. warning::
 
@@ -325,8 +330,10 @@ whether the contingency ``converged``, and its ``limit_violations``.
 
     Also, if a contingency does not converge, its ``limit_violations`` contains exactly one
     ``LimitViolation`` with ``element_type == ViolationElementType.GRID`` and ``violation_type``
-    either ``LimitViolationType.NOT_SIMULATED`` (a pre-check -- eg it splits the grid in multiple
-    connected components -- skipped this contingency without ever invoking the solver) or
+    ``LimitViolationType.NOT_SIMULATED`` (a pre-check -- eg it splits the grid in multiple
+    connected components -- skipped this contingency without ever invoking the solver),
+    ``LimitViolationType.BATCH_UNSUPPORTED`` (the batch does not support what it trips, eg a static var
+    compensator with a standby automaton: ``batch_unsupported_reason`` / ``get_batch_unsupported_reasons()`` say why) or
     ``LimitViolationType.DIVERGENCE`` (the solver ran but did not converge, eg reached
     ``max_iter``). This is unlike a converged case with an empty ``limit_violations`` list, which
     genuinely means no violation was found.
@@ -335,6 +342,20 @@ whether the contingency ``converged``, and its ``limit_violations``.
     `run` / `run_ac` / `run_dc`) raises a ``RuntimeError`` instead, since every contingency is
     solved relative to that base case -- a diverging base case makes the whole analysis
     meaningless.
+
+A contingency the batch does not support yet (see the elements listed above) is reported
+``BATCH_UNSUPPORTED`` rather than making the whole analysis fail.
+``get_batch_unsupported_reasons()`` (and each result's ``batch_unsupported_reason``) says why. With
+``batch_unsupported_fallback = True``, these contingencies are then solved after the batch, one at a time,
+by ``ac_pf`` on a private copy of the grid: the contingency's elements deactivated, the batch's own
+algorithm, outer loops, ``max_iter`` and ``tol``, starting where the batch's contingencies start
+(with ``init_from_n_powerflow``, from the "n" solve, its outer loops' state included). They get
+the same results as the others -- voltages, flows, limit and physical violations -- except a
+Jacobian for the gradients, and keep their ``batch_unsupported_reason``, so the slower path stays visible.
+A contingency that splits the grid under ``handle_disconnected_grid`` is solved on its main
+component, as the batch does it (``LSGrid.consider_only_main_component`` on a copy of its own).
+Without outer loops, ``redistribute_slack`` is not reproduced by a one-off solve: those
+contingencies stay ``BATCH_UNSUPPORTED``.
 
 Violation checking is fully compatible with the ``handle_disconnected_grid`` and ``nb_thread``
 options described above: it is performed **inline, per contingency, inside the thread that

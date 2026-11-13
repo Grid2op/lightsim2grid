@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lightsim2grid.network import init_from_pandapower
 from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
-from lightsim2grid.algorithm import DistributedSlack, OuterLoopStatus
+from lightsim2grid.algorithm import DistributedSlack, OuterLoopStatus, ReactiveLimits
 
 try:
     from lightsim2grid.algorithm import NROuter_KLU  # noqa: F401
@@ -135,6 +135,62 @@ class TestOuterRowResultConverged(unittest.TestCase):
         self.assertEqual([r.converged for r in res], list(converged))
         # the loops' own status says nothing of the row's outcome
         self.assertEqual(res[islanded].status, OuterLoopStatus.STABLE)
+
+
+
+class TestOuterIslandedGroupController(unittest.TestCase):
+    """A shared remote voltage control losing one of its controllers to an island: the units of
+    buses 6 and 8 (5 and 7 here) both hold bus 9 (8 here), and the contingency islands bus 8.
+    The unit left needs more reactive power than it has, so ReactiveLimits holds it at its limit.
+    The islanded controller is gone, not the group's last active one: nobody regulates any more,
+    the regulated bus is free, as in a single solve of the grid without the island."""
+
+    REGULATED = 8
+    CONTROLLER_BUSES = (5, LEAF_BUS)
+    TARGET = 1.05
+
+    def _grid(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(pn.case14())
+        for el in grid.get_generators():
+            if el.bus_id in self.CONTROLLER_BUSES:
+                grid.set_gen_regulated_bus(el.id, self.REGULATED)
+                grid.change_v_gen(el.id, self.TARGET)
+        grid.set_keep_vinit_at_group_controlled_buses(True)
+        grid.clear_outer_loops()
+        grid.add_outer_loop(ReactiveLimits())
+        grid.change_algorithm(OUTER)
+        return grid
+
+    def test_row_is_the_single_solve_without_the_island(self):
+        grid = self._grid()
+        v0 = np.full(grid.total_bus(), 1. + 0j)
+        self.assertGreater(grid.ac_pf(v0, MAX_IT, TOL).size, 0)
+        trafo = _leaf_trafo(grid)
+        ref = grid.copy()
+        ref.deactivate_trafo(trafo)
+        ref.consider_only_main_component(False)
+        V_ref = ref.ac_pf(v0, MAX_IT, TOL)
+        self.assertGreater(V_ref.size, 0)
+        live = [el for el in ref.get_generators() if el.bus_id == self.CONTROLLER_BUSES[0]][0]
+        # the case the test is about: the unit left is held at its limit, bus 9 is free
+        self.assertAlmostEqual(ref.get_gen_res()[1][live.id], live.max_q_mvar, places=6)
+        self.assertLess(abs(V_ref[self.REGULATED]), self.TARGET - 1e-3)
+        nb_line = len(grid.get_lines())
+        for init_from_n in (False, True):
+            with self.subTest(init_from_n_powerflow=init_from_n):
+                ca = ContingencyAnalysisCPP(grid)
+                ca.handle_disconnected_grid = True
+                ca.init_from_n_powerflow = init_from_n
+                ca.add_nk([nb_line + trafo])
+                ca.change_algorithm(OUTER)
+                ca.compute(v0, MAX_IT, TOL)
+                self.assertTrue(ca.converged_mask()[0])
+                V = ca.get_voltages()[0]
+                np.testing.assert_array_equal(np.flatnonzero(np.abs(V) == 0.), [LEAF_BUS])
+                main = np.abs(V) > 0.
+                np.testing.assert_allclose(V[main], V_ref[main], rtol=0., atol=1e-10)
 
 
 if __name__ == "__main__":

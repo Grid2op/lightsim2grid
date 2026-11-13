@@ -19,6 +19,9 @@ Feel free to reuse these examples to match your needs.
   (`NRAlgoDistSlack`) with both a `SparseLU` and a `KLU` linear-solver backend.
 - (advanced) `lm_algorithm` a plugin registering a Levenberg-Marquardt-damped Newton-Raphson variant
   (`LMNRAlgo`), again with `SparseLU` and `KLU` backends.
+- `build_plugins.py` configures and builds all the plugin examples (or some of them) against the
+  installed lightsim2grid, on any OS: `python examples/build_plugins.py [names...] [-j 4] [--test]`,
+  see `--help` for the other options.
 - `cmake/MatchLightsim2gridBuildFlags.cmake` a CMake helper, included by the three plugin examples
   above, that matches a plugin's `-march=native` / `-O3` flags to the ones `lightsim2grid_core` was
   built with -- necessary to avoid Eigen alignment mismatches between the two shared libraries.

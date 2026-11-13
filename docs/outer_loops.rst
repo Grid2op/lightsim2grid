@@ -141,7 +141,7 @@ reaches a bound leaves the sharing for this solve. The loop reports ``FAILED`` w
 .. code-block:: python
 
     DistributedSlack(slack_bus_p_max_mismatch_mw=1., fail_on_residue=True,
-                     p_residue_eps_mw=1e-3, moved_fraction=0.9)
+                     p_residue_eps_mw=1e-3, moved_fraction=0.9, run_without_participant=False)
 
 - ``slack_bus_p_max_mismatch_mw``: OpenLoadFlow's ``slackBusPMaxMismatch``. Below it the slack bus
   keeps what it absorbed.
@@ -150,8 +150,12 @@ reaches a bound leaves the sharing for this solve. The loop reports ``FAILED`` w
 - ``p_residue_eps_mw``: what is left to share below it counts as nothing.
 - ``moved_fraction``: a unit counts as moved when it moved by more than this fraction of
   ``p_residue_eps_mw``.
+- ``run_without_participant``: run the loop even when no unit off the slack bus takes part, as
+  OpenLoadFlow does with ``distributedSlack`` on. The units of the slack bus then count as no
+  participant (a slack generator always keeps its flag), so with ``fail_on_residue`` a mismatch
+  above ``slack_bus_p_max_mismatch_mw`` fails the solve at the first check.
 
-The loop only exists on a grid where at least one unit is flagged "can participate in the slack".
+Unless ``run_without_participant`` is set, the loop only exists on a grid where at least one unit is flagged "can participate in the slack".
 On a grid with none, the single slack generator absorbs everything, as OpenLoadFlow does with its
 ``distributedSlack`` parameter off. The moved targets are published in the results (generator and
 storage ``P``), and in the batch results (``OuterRowResult.gen_target_p``).
@@ -305,7 +309,9 @@ The driver follows OpenLoadFlow's engine:
 2. first solve of the Newton-Raphson; the loops only run if it converged;
 3. *passes*: each loop, in order, repeats its check, re-solving after each ``UNSTABLE`` result, until it is
    stable, a solve diverges, or the global cap on outer iterations is reached. Passes are repeated while
-   a pass re-solved;
+   a pass re-solved. A re-solve that takes no Newton step leaves V where it was: the loop's change is
+   then done (``SETTLED``), unless the loop said ``CHECK_AGAIN`` (a loop working in steps, as
+   ``PhaseControl`` and ``TransformerVoltageControl``), which is checked again;
 4. a loop that returns ``FAILED`` stops everything;
 5. the unrealistic-voltage check runs after the last loop able to fix it;
 6. the loops are cleaned up in reverse order.
@@ -342,6 +348,58 @@ them: with it, a solve starts its loops from where the last converged solve left
 frozen PQ, controllers held, standby SVCs switched on, hvdc regimes, taps, sections), instead of from
 the grid. Use it for a sequence of ``ac_pf`` calls following each other (a time series). It is
 not OpenLoadFlow's. The batch classes do the same on their own for a ``TimeSeries``.
+
+.. code-block:: python
+
+    grid.change_algorithm("NROuter_KLU")
+    grid.set_resume_outer_state(True)
+    V = grid.ac_pf(V0, 30, 1e-8)
+    for step in steps:
+        ...                             # change the injections
+        V = grid.ac_pf(V, 30, 1e-8)     # its loops start from the previous solve's
+
+It is the algorithm's setting: ``copy()`` and a pickle keep it, ``change_algorithm`` starts the new
+algorithm from its own (off).
+
+.. _outer-loops-backend:
+
+With grid2op: ``LightSimBackend``
+---------------------------------
+
+``LightSimBackend.reset()`` rebuilds its grid from the one it loaded, and grid2op copies the
+backend (for ``obs.simulate``, the runner, the mixes of a ``MultiMixEnv``...). Changes made on
+``env.backend._grid`` directly are therefore lost at the next ``env.reset()``. The backend's own
+setters are kept: they are applied again after ``load_grid``, every ``reset()`` and every
+``copy()``, and survive pickling.
+
+.. code-block:: python
+
+    import grid2op
+    from lightsim2grid import LightSimBackend
+    from lightsim2grid.algorithm import ReactiveLimits, DistributedSlack, OuterLoopDriverParams
+
+    # in the constructor: in place before the first powerflow, and on every copy grid2op makes
+    backend = LightSimBackend(algo_type="NROuter_KLU",
+                              outer_loops=[DistributedSlack(), ReactiveLimits(max_pq_pv_switch=5)],
+                              outer_loop_driver_params=OuterLoopDriverParams(max_outer_iterations=30),
+                              resume_outer_state=True)
+    env = grid2op.make("l2rpn_case14_sandbox", backend=backend)
+
+    # or later, on the backend
+    env.backend.set_outer_loops([ReactiveLimits()])
+    env.backend.set_outer_loop_driver_params(OuterLoopDriverParams(max_outer_iterations=20))
+    env.backend.set_resume_outer_state(False)
+    env.backend.set_olf_outer_loops(lf_parameters)   # what OpenLoadFlow would run (needs pypowsybl)
+    env.backend.reset_outer_loops()                  # back to OpenLoadFlow's default list
+
+Nothing set: the grid keeps what its loader put. A setter called after ``env`` was made
+changes ``env.backend`` (and what grid2op rebuilds a backend from), not the copies made before
+it, such as the backend of ``obs.simulate``: give the configuration to the constructor for
+those. ``resume_outer_state`` resumes from the previous ``env.step``; the first solve after a
+``reset()`` or a ``copy()`` starts from the grid.
+
+A loop is rebuilt from its name and its parameters (``loop.name()``, ``loop.get_params()``,
+``make_outer_loop``), which is also how loops pickle and deep-copy.
 
 What the loops read on the grid
 -------------------------------
@@ -383,7 +441,8 @@ docstrings for the exact conventions):
    * - ``set_dc_distribute_slack_on_can_participate``
      - makes ``dc_pf`` share the imbalance like the ``DistributedSlack`` loop (for the starting angles)
 
-The converters of :mod:`lightsim2grid.network` fill what their source provides.
+The converters of :mod:`lightsim2grid.network` fill what their source provides (for pandapower, see
+:ref:`outer-loops-pandapower`).
 
 Reading what the loops did
 --------------------------
@@ -460,6 +519,82 @@ pypowsybl:
     set_olf_outer_loops(grid, params)           # clear_outer_loops + add_outer_loop for each + set_outer_loop_driver_params
 
 See :doc:`comparison_with_pypowsybl` for how the results compare with pypowsybl's.
+
+.. _outer-loops-pandapower:
+
+From pandapower
+---------------
+
+``init_from_pandapower`` (what :class:`~lightsim2grid.lightSimBackend.LightSimBackend` uses by default) fills
+part of the data, from the element tables and from the controllers of ``net.controller``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Loop
+     - What the converter gives it
+   * - ``TransformerVoltageControl``
+     - a ratio tap changer per transformer with integer ``tap_min`` .. ``tap_max`` whose tap moves only the ratio (a
+       ``"Ratio"`` or ``"Symmetrical"`` one with a non-zero ``tap_step_percent`` and no ``tap_step_degree``, or a tabular
+       one whose table has no angle): each step is the transformer the converter builds with ``tap_pos`` at that position
+       (ratio, r, x and magnetising admittance). The regulation comes from an in-service ``DiscreteTapControl`` (target: the middle of
+       ``[vm_lower_pu, vm_upper_pu]``, deadband: that band) or ``ContinuousTapControl`` (``vm_set_pu``, a deadband of
+       twice ``tol``), on the transformer's own ``side`` bus. As in pandapower, a transformer whose regulated bus has an
+       ext_grid does not regulate.
+   * - ``PhaseControl``
+     - a phase tap changer, built the same way (ratio and shift per step), for the taps that move the phase: an
+       asymmetrical or symmetrical one with a ``tap_step_degree``, an ideal phase shifter, a tabular one whose table has an
+       angle. pandapower has no controller for them: they do not regulate, but can be moved with
+       ``change_trafo_phase_tap``.
+   * - ``ShuntVoltageControl``
+     - one section per step, ``1`` .. ``max_step``, and the regulation of a ``DiscreteShuntController`` (``vm_set_pu``, a
+       deadband of twice ``tol``, its ``controlled_bus``). A tabular shunt (``step_dependency_table``) gets the rows of its
+       ``shunt_characteristic_table`` as sections, up to ``max_step`` or the last row. A table with power at step 0 or a
+       missing step cannot be sections: the shunt is converted at its current step and cannot move (with a warning).
+   * - ``DistributedSlack``
+     - the slack participants only, by default. With ``slack_weight_can_participate=True`` (also a ``loader_kwargs`` key of
+       the backend), every generator with a positive ``slack_weight`` can participate, with that weight, ``slack=True`` or
+       not and for both ``pp_orig_file``. Storage units and static generators never do (pandapower has no weight for them).
+   * - ``ReactiveLimits``
+     - ``min_q_mvar`` / ``max_q_mvar`` of the generators (no capability curve), and ``min_p_mw`` / ``max_p_mw`` as active limits.
+
+Not converted: the second tap changer (``tap2_*``, applied at its position but not moved), the controllers of
+three-winding transformers and of the transformers with a phase tap changer, and every other controller.
+
+pandapower's discrete tap controller stops at the first tap that brings the voltage within its band, while the loop
+solves the ratio continuously and rounds it to the closest tap: both end within the band, not always on the same tap.
+
+A tabular shunt (``step_dependency_table``) gives the voltages of ``pp.runpp`` at its current step, and at every step it
+is moved to. It differs from pandapower in the following:
+
+- **Some tables cannot be moved.** Sections draw no power when none is on and have no gap, so a shunt with power at
+  step 0, a step missing from its table below the last section, or a current step above ``max_step`` is converted at its
+  current step, with a warning, and has no sections. ``change_shunt_section_count`` raises for it, and a
+  ``DiscreteShuntController`` on it is ignored. pandapower can move it to any step of its table.
+- **max_step is a limit.** ``pp.runpp`` only reads the table, so a step set by hand can go past ``max_step``. Here,
+  ``change_shunt_section_count`` raises past ``max_step`` or past the last row.
+- **Step 0 without a row.** A table starting at step 1 still allows 0 sections, which draw no power; in pandapower
+  step 0 has no row and cannot be solved.
+- **Tables pandapower cannot read are refused.** No ``shunt_characteristic_table``, no ``id_characteristic_table``, no
+  row for the current step, or several rows for one step raise a ``RuntimeError``. ``pp.runpp`` fails on them too, except
+  on a grid with a single shunt whose step has no row: it then solves the grid without that shunt.
+- **The direction of the controller.** ``DiscreteShuntController`` moves in the direction given by the sign of the
+  ``q_mvar`` column of the shunt, even for a tabular one. If that sign disagrees with the table, it moves away from its
+  target. ``ShuntVoltageControl`` only reads the table.
+- **The step the controller ends on.** As for the taps, ``ShuntVoltageControl`` picks the closest section while the
+  controller stops at the first step within its band: both end within the band, not always on the same step.
+
+On a single-slack pandapower grid (one ``slack=True`` generator or one ext_grid) no unit off the slack bus can
+participate, so ``DistributedSlack`` has nothing to do and the slack bus takes all of the imbalance. The backend
+warns about it when it runs an ``NROuter_*`` algorithm.
+
+.. warning::
+
+    A generator flagged "can participate in the slack" without being a slack participant joins the (Newton) slack
+    as soon as its set-point is changed within its active limits (``change_p_gen``, which grid2op calls at each
+    step). With ``slack_weight_can_participate=True``, the other algorithms therefore end up distributing the slack
+    on these generators as well. This is why the option is off by default.
 
 Performance and the linear solver
 ---------------------------------

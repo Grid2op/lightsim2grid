@@ -71,6 +71,9 @@ from pandapower is, in this respect, indistinguishable from one built from any o
     ``loader_method`` argument (``"pandapower"``, ``"pypowsybl"`` or ``"matpower"``). See
     :ref:`lightsimbackend_matpower` for the MATPOWER case.
 
+What the pandapower converter models, what it refuses and where it differs from ``pp.runpp`` is in
+:ref:`from_pandapower`.
+
 For example, you can init it from a pandapower grid like (NOT RECOMMENDED, though sometimes needed):
 
 .. code-block:: python
@@ -544,6 +547,9 @@ disconnected too, at that end only, when it is a single piece of equipment (each
 tripped busbar section, for example) or only injections. A branch alone there but not right
 behind the breaker (another closed switch in between) stays in service, energized from its other
 end: it is not listed, :func:`~lightsim2grid.network.ContingencyPropagator.dead_ends` gives it.
+Breakers right at a terminal whose other switches are all breakers (or open) stay closed: the
+terminal alone is disconnected and what is behind them stays joined through its node. A breaker
+leading to a node with nothing but breakers is walked through, and those open instead.
 
 It has three steps, each a method:
 
@@ -575,6 +581,12 @@ For example, ``LINE_AB`` and ``LINE_BC`` meet at a junction with no breaker betw
     unique, inverse = propagator.group_contingencies()
     # unique  = [["LINE_AB", "LINE_BC"], ["LINE_DE", "LINE_DF"]]
     # inverse = [0, 0, 1, 1]
+
+The contingencies can also be given the way powsybl writes them: a list of
+``{"id": ..., "elements": [{"id": ..., "type": ...}, ...]}``, a whole powsybl contingency list, or the
+path of a json file holding either (``propagator.contingency_ids`` then gives their ids). A busbar
+section is an element like any other for the propagation: its contingency comes back as the n-k
+of what goes down with it, and two sections taking down the same equipment are grouped.
 
 Only ``unique`` needs simulating: the result of the ``i``-th contingency is the one of
 ``unique[inverse[i]]``. The order inside a contingency does not matter, and each group is
@@ -620,17 +632,20 @@ each distinct contingency once:
         return {el.name: i for i, el in enumerate(elements)}
     branch_id = {name: i for i, name in enumerate(list(grid.get_line_names()) + list(grid.get_trafo_names()))}
     kinds = (branch_id, ids(grid.get_shunts()), ids(grid.get_loads()), ids(grid.get_generators()))
+    other_kinds = (ids(grid.get_static_generators()), ids(grid.get_storages()), ids(grid.get_svcs()),
+                   ids(grid.get_dclines()))
 
     ca = ContingencyAnalysisCPP(grid)
     ca.handle_disconnected_grid = True
     keys = []
     for cont, opened in zip(unique, unique_sides):
-        # what is tripped (all its ends), then the branches opened at side 1, at side 2:
-        # the six lists of add_contingency, each sorted, as my_contingencies() gives them
+        # what is tripped (all its ends), then the branches opened at side 1, at side 2, then
+        # the other kinds: the lists of add_contingency, each sorted, as my_contingencies() gives them
         tripped = [name for name in cont if name not in opened]
         key = tuple(tuple(sorted(kind[name] for name in tripped if name in kind)) for kind in kinds)
         key += tuple(tuple(sorted(branch_id[name] for name, side in opened.items()
                                   if side == end and name in branch_id)) for end in (1, 2))
+        key += tuple(tuple(sorted(kind[name] for name in tripped if name in kind)) for kind in other_kinds)
         keys.append(key)
         ca.add_contingency(*key)
     ca.compute(v_init, max_iter, tol)
@@ -640,7 +655,7 @@ each distinct contingency once:
     V_unique = ca.get_voltages()[[row[key] for key in keys]]
     V = V_unique[inverse]   # one row per contingency added
 
-A shunt leaves the admittance matrix, a load and a generator the injection (a generator that
+A shunt leaves the admittance matrix, a load, a generator, a static generator and a storage unit the injection (a generator that
 was the last one regulating its bus turns that bus PQ), and what the contingency loses is made
 up by the distributed slack. An element the grid does not model under that name (a branch fused
 away as a zero impedance one, for example) is left connected by the loop above; one the
