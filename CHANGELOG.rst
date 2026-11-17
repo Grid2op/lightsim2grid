@@ -230,6 +230,17 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
+[1.3.2] 20xx-xx-xx
+--------------------
+- [ADDED] ``LSGrid`` setters for what only ``init_*`` used to take: voltage regulation on / off and
+  reactive limits (generators, storage units, converter stations), SVC mode, setpoints, slope and
+  susceptance range, converter station Q setpoint, loss and power factors, hvdc IIDM setpoint
+  (``set_hvdc_active_power_setpoint``), dc line r / nominal voltage and angle-droop parameters. A kept
+  grid can be updated in place instead of rebuilt (#299).
+- [ADDED] ``update_one_powerline_parameters`` / ``update_one_trafo_parameters_full``: one branch's
+  r, x and shunt admittances, without re-sending the whole vectors (#299).
+
+
 [1.3.1] 2026-11-13
 --------------------
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,
