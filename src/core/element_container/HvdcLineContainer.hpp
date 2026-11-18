@@ -304,15 +304,17 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         /**
          * Enable or disable the angle-droop (AC emulation) of a line. Enabling it asks what
          * `init` asks (two VSC stations, no legacy loss_percent / loss_mw) and, on a
-         * connected line, both stations connected. The droop adds Jacobian entries, so
-         * the solver is rebuilt (solver_need_reset). The regime goes back to linear
+         * connected line, both stations connected. The droop adds Jacobian entries, so the
+         * Newton solvers rebuild their pattern (pv_changed; not a solver reset, so the
+         * outer loops' resumed state is kept). The regime goes back to linear
          * (status_droop 0), and an `ac_emulation_frozen` flag is cleared on enabling.
          */
         void set_droop_enabled(int hvdc_id, bool enabled, DualAlgoControl & solver_control);
         /// the droop law `p = p0 + k * (theta1 - theta2)`: p0 in MW, k in MW per DEGREE (as `init`)
         void set_droop_parameters(int hvdc_id, real_type p0_mw, real_type k_mw_per_deg,
                                   DualAlgoControl & solver_control);
-        /// the active power limits of the droop (MW, >= 0), one per direction
+        /// the active power limits of the droop (MW, >= 0), one per direction. A line's
+        /// `ac_emulation_frozen` flag is cleared when the limit of its direction moves.
         void set_droop_pmax(int hvdc_id, real_type pmax_1to2_mw, real_type pmax_2to1_mw,
                             DualAlgoControl & solver_control);
 

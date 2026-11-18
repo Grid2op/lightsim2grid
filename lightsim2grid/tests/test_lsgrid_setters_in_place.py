@@ -76,33 +76,83 @@ def _args_patch(fun):
     return lambda self, orig, args: orig(self, *fun(args))
 
 
-def _solve(grid, V0=None):
+def _solve(grid, V0=None, dc=False):
     if V0 is None:
         V0 = np.full(grid.total_bus(), grid.get_init_vm_pu() + 0j)
-    V = grid.ac_pf(np.array(V0, copy=True), MAX_IT, TOL)
+    pf = grid.dc_pf if dc else grid.ac_pf
+    V = pf(np.array(V0, copy=True), MAX_IT, TOL)
     assert V.shape[0] > 0, "the powerflow did not converge"
     return V
 
 
+def _group_with(gen_id, bus_id):
+    """a setup: generator `gen_id` also regulates `bus_id`, at the target already held there.
+    The exotic case has single-controller groups only, where the reactive ranges (sharing
+    weights) are never read: two controllers on one bus make them matter."""
+    def setup(grid):
+        grid.change_v_gen(gen_id, abs(_solve(grid.copy())[bus_id]))
+        grid.set_gen_regulated_bus(gen_id, bus_id)
+    return setup
+
+
 class TestSettersInPlace(unittest.TestCase):
 
-    def _check(self, change, reference):
-        """`change(grid)` applied to a solved grid, compared to `reference` (a grid built
-        with the value at init, or None to skip that half) and to a copy of the changed
-        grid solved from the same point."""
+    def _kept_vs_cold(self, change, setup=None, algo=None, dc=False):
+        """`change(grid)` applied to a solved grid (after `setup(grid)`), then the grid and a
+        copy of it solved from the same point with `algo`: (kept, V_before, V_kept)"""
         kept = _build()
-        V_before = _solve(kept)
+        if setup is not None:
+            setup(kept)
+        if algo is not None:
+            kept.change_algorithm(algo)
+        V_before = _solve(kept, dc=dc)
         change(kept)
         cold = kept.copy()
-        V_kept = _solve(kept, V_before)
-        V_cold = _solve(cold, V_before)
+        V_kept = _solve(kept, V_before, dc=dc)
+        V_cold = _solve(cold, V_before, dc=dc)
+        what = f"{'dc' if dc else 'ac'}, {algo or 'default algorithm'}"
         np.testing.assert_allclose(V_kept, V_cold, rtol=0, atol=ATOL_SAME_START,
-                                   err_msg="the kept grid read a stale cache (a flag is missing)")
-        # a stale Jacobian (one missing an entry) still converges to the right point, in
-        # more iterations: the iteration counts tell it apart
-        self.assertEqual(kept.get_algo().get_nb_iter(), cold.get_algo().get_nb_iter(),
-                         "the kept grid solved with a stale Jacobian (a flag is missing)")
+                                   err_msg=f"the kept grid read a stale cache, a flag is missing ({what})")
+        if not dc:
+            # a stale Jacobian (one missing an entry) still converges to the right point, in
+            # more iterations: the iteration counts tell it apart (a dc solve is direct)
+            self.assertEqual(kept.get_algo().get_nb_iter(), cold.get_algo().get_nb_iter(),
+                             f"the kept grid solved with a stale Jacobian, a flag is missing ({what})")
+        return kept, V_before, V_kept
+
+    def _check(self, change, reference, setup=None, algo=None, also=()):
+        """`change(grid)` applied to a solved grid, compared to `reference` (a grid built
+        with the value at init, or None to skip that half) and to a copy of the changed
+        grid solved from the same point -- in AC with `algo`, in DC, and with each of the
+        (fast-decoupled) algorithms in `also`, the droop and the SVC off."""
+        self._kept_vs_cold(change, setup, dc=True)
+
+        def no_droop(grid):
+            # the fast-decoupled solvers take neither the angle-droop nor a voltage-mode SVC
+            if setup is not None:
+                setup(grid)
+            grid.set_hvdc_droop_enabled(DROOP_LINE, False)
+            grid.set_svc_regulation_mode(0, 0)
+        for other in also:
+            kept_other, V_start, V_other = self._kept_vs_cold(change, no_droop, algo=other)
+            if reference is not None:
+                # a copy carries the caches of its grid, the fast-decoupled coefficients
+                # included, and stale ones only cost iterations (the mismatch reads Ybus):
+                # the reference, which never had them, solved from the same point tells
+                # them apart
+                ref_other = reference.copy()
+                no_droop(ref_other)
+                ref_other.change_algorithm(other)
+                np.testing.assert_allclose(V_other, _solve(ref_other, V_start), rtol=0, atol=ATOL_SAME_GRID,
+                                           err_msg=f"the setter does not mean what the init argument means ({other})")
+                self.assertEqual(kept_other.get_algo().get_nb_iter(), ref_other.get_algo().get_nb_iter(),
+                                 f"the kept grid solved with stale coefficients ({other})")
+        kept, V_before, V_kept = self._kept_vs_cold(change, setup, algo=algo)
         if reference is not None:
+            if setup is not None:
+                setup(reference)
+            if algo is not None:
+                reference.change_algorithm(algo)
             V_ref = _solve(reference)
             np.testing.assert_allclose(V_kept, V_ref, rtol=0, atol=ATOL_SAME_GRID,
                                        err_msg="the setter does not mean what the init argument means")
@@ -122,7 +172,8 @@ class TestSettersInPlace(unittest.TestCase):
     def test_gen_q_limits(self):
         ref = _build(init_generators_full=_args_patch(
             lambda a: _set(_set(a, GEN_MIN_Q, 1, -20.), GEN_MAX_Q, 1, 30.)))
-        kept, _, _ = self._check(lambda g: g.set_gen_q_limits(1, -20., 30.), ref)
+        # generators 1 and 2 share bus 6: the range of generator 1 moves its share
+        kept, _, _ = self._check(lambda g: g.set_gen_q_limits(1, -20., 30.), ref, setup=_group_with(2, 6))
         gen = kept.get_generators()[1]
         self.assertEqual((gen.min_q_mvar, gen.max_q_mvar), (-20., 30.))
         with self.assertRaises(RuntimeError):
@@ -142,6 +193,9 @@ class TestSettersInPlace(unittest.TestCase):
             grid.change_v_storage(0, 1.02)
             grid.set_storage_q_limits(0, -30., 30.)
             grid.set_storage_voltage_regulator_on(0, True)
+        # the fixture builds it with init_storages: no finite reactive range yet
+        with self.assertRaises(RuntimeError):
+            _build().set_storage_voltage_regulator_on(0, True)
         kept, _, V_kept = self._check(change, ref)
         sto = kept.get_storages()[0]
         self.assertTrue(sto.voltage_regulator_on)
@@ -172,6 +226,13 @@ class TestSettersInPlace(unittest.TestCase):
         np.testing.assert_allclose(_solve(kept, V_kept), V_before, rtol=0, atol=ATOL_SAME_GRID)
         with self.assertRaises(RuntimeError):
             kept.set_svc_regulation_mode(0, 3)
+
+    def test_svc_b_limits_outer(self):
+        # an SVC is the only controller of its bus: its b range only matters to the
+        # ReactiveLimits outer loop, which this one (2.8 MVAr at first) reaches
+        ref = _build(init_svcs=_args_patch(lambda a: _set(_set(a, SVC_BMIN, 0, -0.01), SVC_BMAX, 0, 0.01)))
+        kept, _, _ = self._check(lambda g: g.set_svc_b_limits(0, -0.01, 0.01), ref, algo="NROuter_SparseLU")
+        self.assertAlmostEqual(kept.get_svcs()[0].res_q_mvar, 1.0, delta=0.1)
 
     def test_svc_slope_and_b_limits(self):
         ref = _build(init_svcs=_args_patch(
@@ -204,7 +265,9 @@ class TestSettersInPlace(unittest.TestCase):
     def test_station_q_limits(self):
         ref = _build(init_hvdc_lines=_args_patch(
             lambda a: _set(_set(a, HVDC_MINQ1, VSC_LINE, -40.), HVDC_MAXQ1, VSC_LINE, 45.)))
-        kept, _, _ = self._check(lambda g: g.set_hvdc_station_q_limits(VSC_LINE, 1, -40., 45.), ref)
+        # generator 3 regulates bus 3 with the station: the range of the station moves its share
+        kept, _, _ = self._check(lambda g: g.set_hvdc_station_q_limits(VSC_LINE, 1, -40., 45.), ref,
+                                 setup=_group_with(3, 3))
         station = kept.get_dclines()[VSC_LINE].station1
         self.assertEqual((station.min_q_mvar, station.max_q_mvar), (-40., 45.))
 
@@ -274,12 +337,29 @@ class TestSettersInPlace(unittest.TestCase):
         self.assertGreater(np.max(np.abs(V_kept - V_before)), 1e-6)   # the change is seen
 
     def test_droop_pmax(self):
-        def change(grid):
-            grid.set_hvdc_droop_pmax(DROOP_LINE, 0.5, 0.5)
-            grid.set_status_droop_hvdc(DROOP_LINE, 1)     # saturated 1 -> 2: injects its pmax
-        kept, V_before, V_kept = self._check(change, None)
+        # saturated 1 -> 2 beforehand: the line injects its pmax, so the new one is seen
+        # (in dc it is stamped in Pbus, the Sbus flag of the setter alone has it re-stamped)
+        def saturated(grid):
+            grid.set_status_droop_hvdc(DROOP_LINE, 1)
+        kept, V_before, V_kept = self._check(lambda g: g.set_hvdc_droop_pmax(DROOP_LINE, 0.5, 0.5), None,
+                                             setup=saturated)
         self.assertEqual(kept.get_dclines()[DROOP_LINE].pmax_1to2_mw, 0.5)
         self.assertGreater(np.max(np.abs(V_kept - V_before)), 1e-6)
+
+    def test_droop_pmax_clears_frozen(self):
+        grid = _build()
+        frozen = [False] * len(grid.get_dclines())
+        frozen[DROOP_LINE] = True
+        grid.set_hvdc_ac_emulation_frozen(frozen)
+        line = grid.get_dclines()[DROOP_LINE]
+        p12, p21 = line.pmax_1to2_mw, line.pmax_2to1_mw
+        dir_1to2 = line.converters_mode == 0   # side 1 rectifier: frozen at pmax_1to2
+        # the limit of the other direction: the line still sits at its own
+        grid.set_hvdc_droop_pmax(DROOP_LINE, p12 + (0. if dir_1to2 else 1.), p21 + (1. if dir_1to2 else 0.))
+        self.assertTrue(grid.get_dclines()[DROOP_LINE].ac_emulation_frozen)
+        # its own: it no longer does
+        grid.set_hvdc_droop_pmax(DROOP_LINE, p12 + 1., p21 + 1.)
+        self.assertFalse(grid.get_dclines()[DROOP_LINE].ac_emulation_frozen)
 
     def test_droop_disable_and_enable(self):
         ref = _build(init_hvdc_lines=_args_patch(lambda a: _set(a, HVDC_DROOP, DROOP_LINE, False)))
@@ -314,10 +394,14 @@ class TestSettersInPlace(unittest.TestCase):
             grid.update_powerlines_parameters(rs, xs, h1s, h2s)
         ref = _build()
         whole(ref)
-        self._check(lambda g: g.update_one_powerline_parameters(line_id, r, x, h1, h2), ref)
+        self._check(lambda g: g.update_one_powerline_parameters(line_id, r, x, h1, h2), ref,
+                    also=("FDPF_XB_SparseLU", "FDPF_BX_SparseLU"))
 
     def test_one_trafo_matches_whole_vectors(self):
-        # trafo 0 is the phase shifter whose impedance follows its shift angle
+        # trafo 0 is the phase shifter whose impedance follows its shift angle, shifted here
+        # so that its dc Pbus term (shift / x) is not 0
+        def shifted(grid):
+            grid.change_shift_trafo_deg(0, 5.)
         for trafo_id in (0, 2):
             with self.subTest(trafo_id=trafo_id):
                 r, x, h1, h2 = 0.01, 0.3, 0.001j, 0.002j
@@ -330,7 +414,8 @@ class TestSettersInPlace(unittest.TestCase):
                     grid.update_trafos_parameters_full(rs, xs, h1s, h2s)
                 ref = _build()
                 whole(ref)
-                self._check(lambda g: g.update_one_trafo_parameters_full(trafo_id, r, x, h1, h2), ref)
+                self._check(lambda g: g.update_one_trafo_parameters_full(trafo_id, r, x, h1, h2), ref,
+                            setup=shifted, also=("FDPF_XB_SparseLU", "FDPF_BX_SparseLU"))
 
 
 if __name__ == "__main__":

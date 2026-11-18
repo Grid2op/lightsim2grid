@@ -532,7 +532,9 @@ void bind_gridmodel(py::module_& m) {
         .def("set_storage_voltage_regulator_on", &LSGrid::set_storage_voltage_regulator_on,
              py::arg("storage_id"), py::arg("on"),
              "Switch the voltage regulation (of its own bus) of a storage unit on or off "
-             "(``voltage_regulator_on`` of ``init_storages_full``).")
+             "(``voltage_regulator_on`` of ``init_storages_full``). Switching it on raises if the "
+             "unit has no finite reactive range or voltage target (a unit built with "
+             "``init_storages``): set them first with ``set_storage_q_limits`` and ``change_v_storage``.")
         .def("set_storage_q_limits", &LSGrid::set_storage_q_limits,
              py::arg("storage_id"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
              "The reactive limits of a storage unit, MVAr, generator convention. Raises if "
@@ -581,14 +583,17 @@ void bind_gridmodel(py::module_& m) {
         .def("set_hvdc_droop_enabled", &LSGrid::set_hvdc_droop_enabled, py::arg("hvdc_id"), py::arg("enabled"),
              "Enable or disable the angle-droop (AC emulation) of an hvdc line. Enabling it needs two "
              "VSC stations, no legacy ``loss_percent`` / ``loss_mw`` and, on a connected line, both "
-             "stations connected. The droop regime goes back to linear.")
+             "stations connected. The droop regime goes back to linear, and the next Newton solve "
+             "rebuilds its Jacobian pattern (the outer loops' resumed state is kept).")
         .def("set_hvdc_droop_parameters", &LSGrid::set_hvdc_droop_parameters,
              py::arg("hvdc_id"), py::arg("p0_mw"), py::arg("k_mw_per_deg"),
              "The droop law ``p = p0 + k * (theta1 - theta2)`` of an hvdc line: ``p0`` in MW, ``k`` "
              "in MW per degree (as ``init_hvdc_lines``).")
         .def("set_hvdc_droop_pmax", &LSGrid::set_hvdc_droop_pmax,
              py::arg("hvdc_id"), py::arg("pmax_1to2_mw"), py::arg("pmax_2to1_mw"),
-             "The active power limits, MW, of the angle-droop of an hvdc line, one per direction.")
+             "The active power limits, MW, of the angle-droop of an hvdc line, one per direction. "
+             "Clears the line's ``ac_emulation_frozen`` flag when the limit of the direction it is "
+             "frozen in moves.")
         .def("update_one_powerline_parameters", &LSGrid::update_one_powerline_parameters,
              py::arg("line_id"), py::arg("r"), py::arg("x"), py::arg("h1"), py::arg("h2"),
              "``update_powerlines_parameters`` for one powerline (pu).")

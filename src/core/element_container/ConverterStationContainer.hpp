@@ -153,6 +153,9 @@ class LS2G_API ConverterStationContainer final : public VoltageSourceContainer<C
          */
         void set_loss_factor(int station_id, real_type loss_factor);
         void set_power_factor(int station_id, real_type power_factor);
+        /// the checks of the two setters above, alone: throw if the value is out of its range
+        static void check_loss_factor(int station_id, real_type loss_factor);
+        static void check_power_factor(int station_id, real_type power_factor);
 
         /**
          * The generators' `can_be_pv`, for the VSC stations: the ones a caller knows an

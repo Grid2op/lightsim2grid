@@ -403,14 +403,10 @@ void HvdcLineContainer::set_loss_factors(int hvdc_id, real_type loss_factor_1, r
     _check_in_range(hvdc_id, r_ohm_, "set_loss_factors");
     if(side_1_.get_loss_factor(hvdc_id) == loss_factor_1 && side_2_.get_loss_factor(hvdc_id) == loss_factor_2) return;
     // both validated before either is written
-    const real_type old_1 = side_1_.get_loss_factor(hvdc_id);
+    ConverterStationContainer::check_loss_factor(hvdc_id, loss_factor_1);
+    ConverterStationContainer::check_loss_factor(hvdc_id, loss_factor_2);
     side_1_.set_loss_factor(hvdc_id, loss_factor_1);
-    try{
-        side_2_.set_loss_factor(hvdc_id, loss_factor_2);
-    }catch(...){
-        side_1_.set_loss_factor(hvdc_id, old_1);
-        throw;
-    }
+    side_2_.set_loss_factor(hvdc_id, loss_factor_2);
     update_station_targets(hvdc_id, solver_control);
     solver_control.tell_recompute_sbus();  // the droop data reads them
 }
@@ -420,14 +416,11 @@ void HvdcLineContainer::set_power_factors(int hvdc_id, real_type power_factor_1,
 {
     _check_in_range(hvdc_id, r_ohm_, "set_power_factors");
     if(side_1_.get_power_factor(hvdc_id) == power_factor_1 && side_2_.get_power_factor(hvdc_id) == power_factor_2) return;
-    const real_type old_1 = side_1_.get_power_factor(hvdc_id);
+    // both validated before either is written
+    ConverterStationContainer::check_power_factor(hvdc_id, power_factor_1);
+    ConverterStationContainer::check_power_factor(hvdc_id, power_factor_2);
     side_1_.set_power_factor(hvdc_id, power_factor_1);
-    try{
-        side_2_.set_power_factor(hvdc_id, power_factor_2);
-    }catch(...){
-        side_1_.set_power_factor(hvdc_id, old_1);
-        throw;
-    }
+    side_2_.set_power_factor(hvdc_id, power_factor_2);
     // an LCC's reactive consumption is re-derived from its (unchanged) active power
     update_station_targets(hvdc_id, solver_control);
 }
@@ -452,9 +445,12 @@ void HvdcLineContainer::set_droop_enabled(int hvdc_id, bool enabled, DualAlgoCon
     }
     droop_enabled_[hvdc_id] = enabled;
     status_droop_(hvdc_id) = 0;
-    // a droop line is not stamped in Sbus (AC) and adds dP/dtheta entries to the Jacobian
+    // a droop line is not stamped in Sbus (AC) and adds dP/dtheta entries to the Jacobian:
+    // pv_changed has the Newton solvers rebuild their pattern (init_topology +
+    // build_J_sparsity), the droop data itself is pulled at every solve. Not a solver
+    // reset, which would also drop the outer loops' resumed state (set_resume_outer_state).
     solver_control.tell_recompute_sbus();
-    solver_control.tell_solver_need_reset();
+    solver_control.tell_pv_changed();
 }
 
 void HvdcLineContainer::set_droop_parameters(int hvdc_id, real_type p0_mw, real_type k_mw_per_deg,
@@ -481,6 +477,15 @@ void HvdcLineContainer::set_droop_pmax(int hvdc_id, real_type pmax_1to2_mw, real
         throw_hvdc("set_droop_pmax", hvdc_id, "pmax_1to2_mw and pmax_2to1_mw should be finite and >= 0");
     }
     if(pmax_1to2_mw_(hvdc_id) == pmax_1to2_mw && pmax_2to1_mw_(hvdc_id) == pmax_2to1_mw) return;
+    // a line an outer loop froze at its limit (set_ac_emulation_frozen) sits at the limit of
+    // the direction its converters mode says: once that limit moves, the line is no longer
+    // there, as for change_p. A change of the other direction's limit keeps the flag.
+    if(ac_emulation_frozen_[hvdc_id]){
+        const bool dir_1to2 = (converters_mode_(hvdc_id) == static_cast<int>(ConvertersMode::SIDE_1_RECTIFIER));
+        const real_type old_limit = dir_1to2 ? pmax_1to2_mw_(hvdc_id) : pmax_2to1_mw_(hvdc_id);
+        const real_type new_limit = dir_1to2 ? pmax_1to2_mw : pmax_2to1_mw;
+        if(old_limit != new_limit) ac_emulation_frozen_[hvdc_id] = false;
+    }
     pmax_1to2_mw_(hvdc_id) = pmax_1to2_mw;
     pmax_2to1_mw_(hvdc_id) = pmax_2to1_mw;
     // a saturated line injects its pmax (stamped in DC, pulled at every solve in AC)

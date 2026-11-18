@@ -169,27 +169,37 @@ void ConverterStationContainer::change_q_setpoint(int station_id, real_type new_
     change_q_nothrow(station_id, new_q, solver_control);
 }
 
-void ConverterStationContainer::set_loss_factor(int station_id, real_type loss_factor)
+void ConverterStationContainer::check_loss_factor(int station_id, real_type loss_factor)
 {
-    _check_in_range(station_id, loss_factor_, "set_loss_factor");
     if(!std::isfinite(loss_factor) || loss_factor < 0. || loss_factor >= 1.){
         std::ostringstream exc_;
         exc_ << "ConverterStationContainer::set_loss_factor: the loss factor is a fraction in [0, 1), found "
              << loss_factor << " for station " << station_id << ".";
         throw std::runtime_error(exc_.str());
     }
-    loss_factor_(station_id) = loss_factor;
 }
 
-void ConverterStationContainer::set_power_factor(int station_id, real_type power_factor)
+void ConverterStationContainer::check_power_factor(int station_id, real_type power_factor)
 {
-    _check_in_range(station_id, power_factor_, "set_power_factor");
     if(!std::isfinite(power_factor) || power_factor <= 0. || power_factor > 1.){
         std::ostringstream exc_;
         exc_ << "ConverterStationContainer::set_power_factor: the power factor is in (0, 1], found "
              << power_factor << " for station " << station_id << ".";
         throw std::runtime_error(exc_.str());
     }
+}
+
+void ConverterStationContainer::set_loss_factor(int station_id, real_type loss_factor)
+{
+    _check_in_range(station_id, loss_factor_, "set_loss_factor");
+    check_loss_factor(station_id, loss_factor);
+    loss_factor_(station_id) = loss_factor;
+}
+
+void ConverterStationContainer::set_power_factor(int station_id, real_type power_factor)
+{
+    _check_in_range(station_id, power_factor_, "set_power_factor");
+    check_power_factor(station_id, power_factor);
     power_factor_(station_id) = power_factor;
 }
 
