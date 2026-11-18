@@ -370,6 +370,13 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
             base_h2_ = h_side_2_;
             solver_control.dc_algo_controler().tell_recompute_sbus();
         }
+        void _on_physical_parameters_updated_of(int el_id, DualAlgoControl & solver_control) override {
+            base_r_(el_id) = r_(el_id);
+            base_x_(el_id) = x_(el_id);
+            base_h1_(el_id) = h_side_1_(el_id);
+            base_h2_(el_id) = h_side_2_(el_id);
+            solver_control.dc_algo_controler().tell_recompute_sbus();
+        }
 
         // ratio_ and shift_ at the tap positions (the r, x and h follow in
         // _update_model_coeffs_one_el)

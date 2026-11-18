@@ -277,6 +277,15 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
         real_type get_min_q(int gen_id) const {return min_q_.coeff(gen_id);}
         real_type get_max_q(int gen_id) const {return max_q_.coeff(gen_id);}
 
+        /// voltage regulation on / off, see VoltageSourceContainer::_set_voltage_regulator_on
+        void set_voltage_regulator_on(int gen_id, bool on, DualAlgoControl & solver_control){
+            _set_voltage_regulator_on(gen_id, on, solver_control);
+        }
+        /// reactive limits (MVAr), see VoltageSourceContainer::_set_q_limits_impl
+        void set_q_limits(int gen_id, real_type min_q, real_type max_q, DualAlgoControl & solver_control){
+            _set_q_limits_impl(min_q_, max_q_, gen_id, min_q, max_q, solver_control, "GeneratorContainer::set_q_limits");
+        }
+
         /**
          * Active power limits (MW), OPTIONAL -- exactly like a branch's thermal rating
          * (BranchContainer::set_limit_a1_ka): nothing in the powerflow reads them, they are
