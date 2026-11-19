@@ -239,6 +239,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid can be updated in place instead of rebuilt (#299).
 - [ADDED] ``update_one_powerline_parameters`` / ``update_one_trafo_parameters_full``: one branch's
   r, x and shunt admittances, without re-sending the whole vectors (#299).
+- [FIXED] batches with outer loops: a row tripping a transformer of a voltage-control group left it in
+  the group's ratio mean, so the others took uneven ratios. It now leaves the mean, as in OpenLoadFlow.
 
 
 [1.3.1] 2026-11-13
