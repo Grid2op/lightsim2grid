@@ -635,6 +635,81 @@ class TestOuterTripsTheControlledTransformer(_Equivalence, unittest.TestCase):
         self.assertNotIn(self.TRAFO, [t for t, _ in res[1].ratio_tap])
 
 
+def _parallel_tap_grid():
+    """_tap_grid with T4-9-1 tripled: three parallel transformers (reactances x, 1.5 x, 2 x)
+    with the same ratio tap changer, regulating the same bus to the same target, a group whose
+    ratios TransformerVoltageControl shares (OpenLoadFlow's DISTR_RHO)"""
+    import pandas as pd
+    from test_transformer_voltage_control import _net, _grid as _tvc_grid
+    from lightsim2grid.algorithm import ReactiveLimits, TransformerVoltageControl
+    net = _net("T4-9-1", 12.6, 0.)
+    tr = net.get_2_windings_transformers(all_attributes=True).loc["T4-9-1"]
+    cols = ["voltage_level1_id", "voltage_level2_id", "rated_u1", "rated_u2", "r", "g", "b"]
+    net.create_2_windings_transformers(pd.DataFrame(
+        [{"id": nm, **{c: tr[c] for c in cols}, "x": k * tr["x"],
+          "bus1_id": tr["bus_breaker_bus1_id"], "bus2_id": tr["bus_breaker_bus2_id"]}
+         for nm, k in (("T4-9-2", 1.5), ("T4-9-3", 2.))]).set_index("id"))
+    # T4-9-1's tap changer (see test_transformer_voltage_control._net)
+    rtc = pd.DataFrame.from_records(
+        index="id", columns=["id", "target_deadband", "target_v", "oltc", "low_tap", "tap", "regulating", "regulated_side"],
+        data=[(nm, 0., 12.6, True, 0, 10, False, "TWO") for nm in ("T4-9-2", "T4-9-3")])
+    steps = pd.DataFrame.from_records(index="id", columns=["id", "b", "g", "r", "x", "rho"],
+                                      data=[(nm, 0., 0., 0., 0., 0.9 + 0.01 * k)
+                                            for nm in ("T4-9-2", "T4-9-3") for k in range(21)])
+    net.create_ratio_tap_changers(rtc, steps)
+    net.update_ratio_tap_changers(id=["T4-9-2", "T4-9-3"], regulating=[True, True])
+    grid = _tvc_grid(net, reactive_limits=True)
+    grid.clear_outer_loops()
+    grid.add_outer_loop(ReactiveLimits())
+    grid.add_outer_loop(TransformerVoltageControl(use_initial_tap_position=True, max_controlled_nominal_voltage=120.))
+    grid.change_algorithm(OUTER)
+    return grid
+
+
+class TestOuterTripsOneOfParallelControlledTransformers(_Equivalence, unittest.TestCase):
+    """a row that opens one transformer of a group regulating one bus: the others share the
+    regulation among themselves, the opened one out of their mean ratio (OpenLoadFlow drops a
+    disabled branch from DISTR_RHO), not held in it at its tap's ratio"""
+
+    TRAFOS = ("T4-9-1", "T4-9-2", "T4-9-3")
+
+    def setUp(self):
+        try:
+            import pypowsybl  # noqa: F401
+        except ImportError:
+            self.skipTest("pypowsybl is not installed")
+        self.base = _parallel_tap_grid()
+        self.nb_line = len(self.base.get_lines())
+        names = [tr.name for tr in self.base.get_trafos()]
+        # a contingency analysis sorts its rows by branch id
+        self.trafo_ids = sorted(names.index(nm) for nm in self.TRAFOS)
+
+    def _batch(self):
+        batch = ContingencyAnalysisCPP(self.base)
+        for trafo_id in self.trafo_ids:
+            batch.add_n1(self.nb_line + trafo_id)
+        return batch
+
+    def _rows(self):
+        rows = []
+        for trafo_id in self.trafo_ids:
+            grid = _parallel_tap_grid()
+            grid.deactivate_trafo(trafo_id)
+            rows.append(grid)
+        return rows
+
+    def test_one_group(self):
+        # or the rows check nothing of the group's shared ratios
+        grid = _parallel_tap_grid()
+        grid.ac_pf(_v0(grid), MAX_IT, TOL)
+        layout = grid.get_algo().get_outer_control_layout()
+        self.assertEqual([sorted(layout.branches[m].trafo for m in g.members) for g in layout.ratio_groups],
+                         [self.trafo_ids])
+
+    def test_each_row_is_the_single_solve_of_its_grid(self):
+        self._check_rows(self._batch, self._rows())
+
+
 class TestOuterThreadsWhoseFirstRowStrandsABus(unittest.TestCase):
     """A worker's outer loops reserve their controls (the buses ReactiveLimits may switch,
     ...) for the base case, as the member algorithm does with its "n" solve, not for
