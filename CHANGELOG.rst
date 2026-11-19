@@ -232,6 +232,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [FIXED] example plugin ``NROuterRebuild_*``: a rebuild keeps the continuous ratio, shift and susceptance
+  of the controls that stay on, as OpenLoadFlow does, instead of restarting them from their taps.
+- [ADDED] (C++) ``BranchControl::set_shift`` / ``set_ratio`` and ``ShuntControl::set_b``.
 - [FIXED] batches: tripping a generator or storage unit no longer turns PQ a bus a converter station still regulates.
 - [FIXED] ``batch_unsupported_fallback``: undoing a row no longer reconnects the open end of a half-open HVDC line,
   which made the following rows diverge.
