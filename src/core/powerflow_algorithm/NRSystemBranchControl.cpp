@@ -319,7 +319,7 @@ void BranchControl::fill_feature_values(FeatureWriter & writer, const Eigen::Ref
     }
     for (const RatioGroup & g : groups_) {
         const std::size_t n = g.members.size();
-        const real_type inv_n = 1. / static_cast<real_type>(n);
+        const real_type inv_n = 1. / static_cast<real_type>(_nb_in(g));
         bool first_on = true;
         for (std::size_t j = 0; j < n; ++j) {
             const Entry & e = entries_[static_cast<std::size_t>(g.members[j])];
@@ -329,7 +329,10 @@ void BranchControl::fill_feature_values(FeatureWriter & writer, const Eigen::Ref
                 first_on = false;
                 if (g.h_vm[j] >= 0) writer.add(g.h_vm[j], 1.);
             } else {
-                for (std::size_t m = 0; m < n; ++m) writer.add(g.h_cols[j][m], m == j ? inv_n - 1. : inv_n);
+                for (std::size_t m = 0; m < n; ++m) {
+                    if (entries_[static_cast<std::size_t>(g.members[m])].out) continue;  // see _nb_in
+                    writer.add(g.h_cols[j][m], m == j ? inv_n - 1. : inv_n);
+                }
             }
         }
     }
@@ -377,9 +380,9 @@ void BranchControl::fill_custom_rows(Eigen::Ref<RealVect> res, const Eigen::Ref<
         real_type mean = 0.;
         for (int i : g.members) {
             const Entry & e = entries_[static_cast<std::size_t>(i)];
-            mean += e.rho + dx(e.rcol);
+            if (!e.out) mean += e.rho + dx(e.rcol);  // see _nb_in
         }
-        mean /= static_cast<real_type>(n);
+        mean /= static_cast<real_type>(_nb_in(g));
         bool first_on = true;
         for (std::size_t j = 0; j < n; ++j) {
             const Entry & e = entries_[static_cast<std::size_t>(g.members[j])];

@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [FIXED] batches with outer loops: a row tripping a transformer of a voltage-control group left it in
+  the group's ratio mean, so the others took uneven ratios. It now leaves the mean, as in OpenLoadFlow.
 - [FIXED] batches: tripping a generator or storage unit no longer turns PQ a bus a converter station still regulates.
 - [FIXED] ``batch_unsupported_fallback``: undoing a row no longer reconnects the open end of a half-open HVDC line,
   which made the following rows diverge.

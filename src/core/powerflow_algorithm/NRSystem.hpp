@@ -829,7 +829,10 @@ class LS2G_API Hvdc
  *     F = rho_i - rho_target_i                 (its control off: BRANCH_TARGET_RHO1)
  *     F = Vm(bus) - v_target                   (the first one on: BUS_TARGET_V)
  *     F = sum_j rho_j / n - rho_i              (any other one on: DISTR_RHO)
- * so every slot reserves the n columns and the bus' Vm column. The transformers of a group
+ * so every slot reserves the n columns and the bus' Vm column. The sum and n run over the
+ * transformers in this solve: one the solve opens (a contingency, see set_in_solve) is held
+ * like a controller off but left out of the others' mean, as OpenLoadFlow drops a disabled
+ * branch's terms; a controller merely off stays in it. The transformers of a group
  * that is not solved (hidden by a generator's voltage control) own nothing: only their tap moves.
  * The P and Q rows of a transformer's two buses get dS/da_t, dS/drho_t for its columns. A
  * transformer may not be both a phase controller and in a solved ratio group (its ratio column
@@ -963,6 +966,15 @@ class LS2G_API BranchControl
         int _index(int trafo_id) const {
             if (trafo_id < 0 || static_cast<std::size_t>(trafo_id) >= index_of_trafo_.size()) return -1;
             return index_of_trafo_[static_cast<std::size_t>(trafo_id)];
+        }
+        // the members of a group in this solve, the n of its DISTR_RHO rows (see the class
+        // comment); at least 1 whenever such a row exists, as its own member is in
+        std::size_t _nb_in(const RatioGroup & g) const {
+            std::size_t res = 0;
+            for (int i : g.members) {
+                if (!entries_[static_cast<std::size_t>(i)].out) ++res;
+            }
+            return res > 0 ? res : 1;
         }
         // the block at shift a and ratio rho (the taps' r, x, g, b)
         static std::array<cplx_type, 4> _block_at(const Entry & e, real_type a, real_type rho) {
