@@ -383,6 +383,34 @@ class TestSlackGeneratorFrozen(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
+class TestPartialRoundToRange(unittest.TestCase):
+    """the two MV legs of _ieee14_two_stars regulating B9, MV1's taps a narrow range of ratios and
+    MV2's a wide one: the control step rounds MV1 to its range and keeps MV2 on, which changes the
+    active equations, so the Jacobian is rebuilt. MV2's continuous ratio must survive the rebuild,
+    as it does on the fixed pattern (and in OpenLoadFlow): restarted from its tap, the next solve
+    takes more Newton iterations"""
+
+    def _make(self, algo):
+        net = _ieee14_two_stars(13.)
+        idx = pd.MultiIndex.from_tuples([(f"MV{k}", s) for k in (1, 2) for s in range(25)], names=["id", "position"])
+        rho = [0.95 + 0.004 * s for s in range(25)] + [0.70 + 0.025 * s for s in range(25)]
+        net.update_ratio_tap_changer_steps(pd.DataFrame({"rho": rho}, index=idx))
+        return _loops(_pypowsybl(net, algo, reactive_limits=True), ReactiveLimits(),
+                      TransformerVoltageControl(use_initial_tap_position=False, max_controlled_nominal_voltage=120.))
+
+    def test_same_iterations(self):
+        fixed, rebuilt = self._make(FIXED), self._make(REBUILD)
+        V_fixed, V_rebuilt = _solve(fixed), _solve(rebuilt)
+        self.assertGreater(V_rebuilt.shape[0], 0, f"the rebuilt solve failed: {rebuilt.get_algo().get_error()}")
+        np.testing.assert_allclose(V_rebuilt, V_fixed, rtol=0., atol=ATOL_V)
+        out_f, out_r = _stats(fixed)[0], _stats(rebuilt)[0]
+        # the case is the one meant: one transformer of the two rounded to its range
+        rounded = [d.element_id for d in out_f.decisions if d.taken and d.action == "ROUND_TO_RANGE"]
+        self.assertEqual(len(rounded), 1)
+        self.assertEqual(list(out_r.nr_iterations), list(out_f.nr_iterations))
+
+
+@unittest.skipUnless(HAS_PYPOWSYBL, "pypowsybl is not installed")
 class TestRowAfterATrippedRatioControl(unittest.TestCase):
     """a batch row reaches what the fixed-pattern batch does whatever the rows before it: here a
     row islanding a load bus, then one tripping a regulating MV leg, then one where both MV legs

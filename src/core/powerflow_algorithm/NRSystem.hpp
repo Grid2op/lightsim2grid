@@ -902,6 +902,28 @@ class LS2G_API BranchControl
         void set_ratio_tap(int trafo_id, int position);
         real_type shift(int trafo_id) const;
         real_type ratio(int trafo_id) const;
+        /// put back the continuous shift / ratio of a transformer whose column is solved (a
+        /// no-op for the others), as a Newton step leaves it: its block follows, its tap and
+        /// its row's target do not move. For an algorithm that sets the Newton up again in the
+        /// middle of a solve (which starts the shifts and ratios again from their taps) and
+        /// must resume from where the last solve left them, as OpenLoadFlow does. Inline, so
+        /// a plugin can use it on a core built without it.
+        void set_shift(int trafo_id, real_type a) {
+            const int k = _index(trafo_id);
+            if (k < 0 || !std::isfinite(a)) return;
+            Entry & e = entries_[static_cast<std::size_t>(k)];
+            if (e.out || !e.column) return;
+            e.a = a;
+            _patch(e);
+        }
+        void set_ratio(int trafo_id, real_type rho) {
+            const int k = _index(trafo_id);
+            if (k < 0 || !std::isfinite(rho)) return;
+            Entry & e = entries_[static_cast<std::size_t>(k)];
+            if (e.out || !e.r_column) return;
+            e.rho = rho;
+            _patch(e);
+        }
         int position(int trafo_id) const;
         int ratio_position(int trafo_id) const;
         /// the phase / ratio tap position of every transformer handled for it, INT_MIN for the
@@ -1064,6 +1086,18 @@ class LS2G_API ShuntControl
         /// switch the sections of its shunts (aligned with the declared list): its B follows
         void set_sections(int bus, const std::vector<int> & counts);
         real_type b(int bus) const;
+        /// put back the continuous susceptance of a controller bus whose column is solved (a
+        /// no-op for the others), as a Newton step leaves it: Ybus follows, its sections and its
+        /// row's target do not move. See BranchControl::set_shift. Inline, so a plugin can use
+        /// it on a core built without it.
+        void set_b(int bus, real_type b) {
+            const int k = _index(bus);
+            if (k < 0 || !std::isfinite(b)) return;
+            Entry & e = entries_[static_cast<std::size_t>(k)];
+            if (!e.column) return;
+            e.b = b;
+            _patch(e);
+        }
         /// the section count of every shunt handled, INT_MIN for the others (by grid id)
         void section_counts(std::vector<int> & out) const;
         /// where its controllers and groups sit in J (appended to `out.shunts` /

@@ -241,6 +241,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   r, x and shunt admittances, without re-sending the whole vectors (#299).
 - [FIXED] batches with outer loops: a row tripping a transformer of a voltage-control group left it in
   the group's ratio mean, so the others took uneven ratios. It now leaves the mean, as in OpenLoadFlow.
+- [FIXED] example plugin ``NROuterRebuild_*``: a rebuild keeps the continuous ratio, shift and susceptance
+  of the controls that stay on, as OpenLoadFlow does, instead of restarting them from their taps.
+- [ADDED] (C++) ``BranchControl::set_shift`` / ``set_ratio`` and ``ShuntControl::set_b``.
 
 
 [1.3.1] 2026-11-13
