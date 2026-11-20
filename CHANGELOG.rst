@@ -244,6 +244,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] example plugin ``NROuterRebuild_*``: a rebuild keeps the continuous ratio, shift and susceptance
   of the controls that stay on, as OpenLoadFlow does, instead of restarting them from their taps.
 - [ADDED] (C++) ``BranchControl::set_shift`` / ``set_ratio`` and ``ShuntControl::set_b``.
+- [FIXED] ``NROuterDist_*`` batches seeded from the "n" solve: a row whose imbalance was below the slack
+  threshold put the units parked at a limit back in the share, which could cycle until the outer-iteration cap.
 
 
 [1.3.1] 2026-11-13

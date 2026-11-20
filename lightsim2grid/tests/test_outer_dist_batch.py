@@ -156,6 +156,31 @@ class TestDistResumeKeepsTheParkedUnits(_Dist, unittest.TestCase):
                 np.testing.assert_allclose(V, V_ref, rtol=0., atol=1e-10)
                 np.testing.assert_allclose(gens[i, :, 0], p_ref, rtol=0., atol=1e-6)
 
+    def test_rows_from_n_with_an_imbalance_below_the_threshold(self):
+        """rows seeded from the "n" solve whose balance differs from it by less than the loop's
+        p_residue_eps_mw: there is nothing to share, so the capped unit stays out of the Newton's
+        share and at its limit. It used to be put back in, pushed past its limit by its share,
+        and parked again by the next check -- which could go on until the outer-iteration cap."""
+        from lightsim2grid.algorithm import DistributedSlack
+        eps = DistributedSlack().p_residue_eps_mw
+        self._n_grid()  # the capped unit is parked in the "n" solve
+        base = self._grid()
+        load = np.asarray(base.get_load_target_p())
+        fractions = (0.1, 0.5, 0.9, -0.5)  # of eps, in total load
+        sweep = tob.InjectionSweepCPP(base)
+        sweep.modify_load_p(np.array([load * (1. + f * eps / load.sum()) for f in fractions]))
+        sweep.init_from_n_powerflow = True
+        sweep.change_algorithm(self.ALGO)
+        sweep.compute_gen_results = True
+        sweep.compute(tob._v0(base), tob.MAX_IT, tob.TOL)
+        gens = sweep.get_gen_results()
+        for i, (f, res) in enumerate(zip(fractions, sweep.get_outer_results())):
+            with self.subTest(fraction_of_eps=f):
+                self.assertTrue(res.converged)
+                self.assertNotIn("DistributedSlack/UNPARK", dict(res.decisions_taken))
+                self.assertAlmostEqual(gens[i, CAPPED_GEN, 0], CAPPED_MAX_P, places=6)
+
+
 class TestDistLostPowerParksTheUnitsItSaturates(unittest.TestCase):
     """a contingency row that loses a unit (redistribute_slack): the units the share of the lost
     power puts at a bound, before the row's first solve, are out of the Newton's share from the

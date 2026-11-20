@@ -406,6 +406,19 @@ OuterLoopStatus DistributedSlackLoop::_check_in_newton(OuterContext & ctx)
         units_, remaining, params_.p_residue_eps_mw, new_mw, saturated);
     // every unit at a bound: none of them shares any more, the reference bus takes the rest
     if (report.all_saturated) saturated.assign(units_.size(), 1);
+    // nothing to share (|remaining| <= p_residue_eps_mw): distribute moved no unit and flagged
+    // none, which does not mean a parked unit came back inside its bounds. One still at the
+    // bound it was parked at stays out of the Newton's share, as below the threshold nothing
+    // changes. Unparked, it would take a share, cross its bound by that share, be parked again
+    // by the next check, and so on: a batch row seeded from its "n" solve, whose imbalance
+    // against that solve's targets is about the threshold, then never settles.
+    if (report.nb_rounds == 0 && !report.all_saturated) {
+        for (std::size_t k = 0; k < units_.size() && k < parked_.size(); ++k) {
+            if (!parked_[k]) continue;
+            const real_type bound = _bound(k, parked_high_[k] != 0);
+            if (!std::isnan(bound) && new_mw[k] == bound) saturated[k] = 1;
+        }
+    }
     const real_type residue = units_.empty() ? remaining : report.not_distributed_mw;
     if (params_.fail_on_residue && std::abs(residue) > params_.p_residue_eps_mw) {
         ctx.record("FAIL_RESIDUE", true, ViolationElementType::GRID, -1, LimitViolationType::SLACK_MISMATCH,
