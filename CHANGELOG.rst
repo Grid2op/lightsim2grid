@@ -232,6 +232,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.1] 20xx-xx-xx
 --------------------
+- [FIXED] ``NROuterDist_*`` batches seeded from the "n" solve: a row whose imbalance was below the slack
+  threshold put the units parked at a limit back in the share, which could cycle until the outer-iteration cap.
 - [FIXED] batches with outer loops: a row tripping a transformer of a voltage-control group left it in
   the group's ratio mean, so the others took uneven ratios. It now leaves the mean, as in OpenLoadFlow.
 - [FIXED] example plugin ``NROuterRebuild_*``: a rebuild keeps the continuous ratio, shift and susceptance
