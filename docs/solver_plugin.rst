@@ -14,6 +14,9 @@ This mechanism lets you add a new solver algorithm — from your own
 repository or a third-party library — **without modifying lightsim2grid's
 source code**.
 
+To add a new *linear solver* (the library that solves :math:`Ax = b` inside an
+algorithm), see :ref:`add_linear_solver` instead.
+
 How the registry works
 -----------------------
 

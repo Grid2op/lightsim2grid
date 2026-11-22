@@ -230,6 +230,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
+[1.3.2] 20xx-xx-xx
+--------------------
+- [ADDED] doc page ``docs/add_linear_solver.rst``: how to add a linear solver (C or C++ API) to
+  lightsim2grid built from source.
+
 [1.3.1] 2026-11-13
 --------------------
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,
