@@ -967,7 +967,7 @@ plugin has not been built, and passes once the ``.so`` is present.
 Other example plugins
 -----------------------
 
-Three more complete, less minimal plugins live in the repository, all following the same build /
+Four more complete, less minimal plugins live in the repository, all following the same build /
 ``load_algorithm_plugin`` / ``change_algorithm`` pattern as ``external_algorithm`` above:
 
 * ``examples/dist_slack_algorithm/`` registers ``NRDistSlack_SparseLU`` / ``NRDistSlack_KLU``: a
@@ -982,6 +982,9 @@ Three more complete, less minimal plugins live in the repository, all following 
   Jacobian holds only the equations active now and is rebuilt -- analyzed again -- whenever the
   loops change them, as OpenLoadFlow does. It is ``OuterLoopAlgo`` around its own ``Inner``
   (``RebuildOuterInner``, a sibling of ``NROuterInner``): a plugin may wrap the outer-loop driver too.
+* ``examples/linear_solver_plugin/`` registers ``NR_MyLU``, ``NRSing_MyLU``, ``NROuter_MyLU`` and
+  ``DC_MyLU``: the built-in algorithms on a linear solver of its own, wrapping a C library. See
+  :ref:`add_linear_solver`.
 
 
 * :ref:`genindex`

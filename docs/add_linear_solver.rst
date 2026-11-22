@@ -1,7 +1,7 @@
 .. _add_linear_solver:
 
-Adding a linear solver (from source)
-====================================
+Adding a linear solver
+======================
 
 Every power-flow algorithm in lightsim2grid that needs to solve :math:`Ax = b` (Newton-Raphson, DC,
 fast-decoupled, and the batch classes built on them) gets its linear algebra from a **linear solver**.
@@ -9,48 +9,19 @@ The ones shipped today are Eigen's ``SparseLU`` (always available), KLU (bundled
 and NICSLU and CKTSO (optional, found at build time). They all live in ``src/core/linear_solvers/``.
 
 This page explains how to add another one, for example a vendor library, a GPU solver, or a solver
-you wrote yourself, by **cloning lightsim2grid, adding a few files and compiling it from source**. It
-works whether the library exposes a C API or a C++ one.
+you wrote yourself, whether it exposes a C API or a C++ one:
 
-.. note::
-    This is the *in-tree* route. If you only want a different *algorithm* (not a different linear
-    solver), the run-time plugin mechanism described in :ref:`solver_plugin` needs no fork at all. See
-    :ref:`add_linear_solver_plugin_route` at the end of this page for how the two relate.
+- `The linear solver interface`_ is what you write in either case: one C++ class, what it receives,
+  what it must do, and when lightsim2grid calls it;
+- `Integrating it`_ gives the two ways of making lightsim2grid use that class: **a plugin**, loaded at
+  run time by an installed lightsim2grid, or **a fork** of lightsim2grid compiled from source;
+- `Testing it`_ applies to both.
 
 The terms used below follow :ref:`algorithm_names`: a *linear solver* is the ``XxxLinearSolver``
-class, an *algorithm* is what wraps it (``NR_Xxx``, ``DC_Xxx``, ...), and an algorithm is selected
+class, an *algorithm* is what uses it (``NR_Xxx``, ``DC_Xxx``, ...), and an algorithm is selected
 by its *name*.
 
-Overview
---------
-
-A linear solver is **not** a virtual class: it is a template parameter of the algorithms, so its
-type is known at compile time and no call goes through a vtable. Adding one therefore means:
-
-.. list-table::
-   :header-rows: 1
-   :widths: 45 55
-
-   * - File
-     - What to add
-   * - ``src/core/linear_solvers/XxxSolver.{hpp,cpp}``
-     - the wrapper class ``XxxLinearSolver`` (`The linear solver contract`_)
-   * - ``src/core/CMakeLists.txt``
-     - find the library, link it, define ``XXX_SOLVER_AVAILABLE`` (`Building it`_)
-   * - ``src/core/linear_solvers/CMakeLists.txt``
-     - compile ``XxxSolver.cpp`` when the library was found
-   * - ``src/core/Solvers.hpp``
-     - the algorithm aliases (``NR_Xxx``, ...) and their ``extern template`` declarations
-   * - ``src/core/SolverInstantiations.cpp``
-     - the explicit instantiations of those aliases
-   * - ``src/core/BuiltinSolversRegistration.cpp``
-     - register each alias under a name
-
-These six files are enough: once they are done, the new algorithms can be selected by name from C++
-and from Python (``grid.change_algorithm("NR_Xxx")``, ``LightSimBackend(algo_type="NR_Xxx")``,
-``ContingencyAnalysis``, ``TimeSeries``, ...). `Exposing it to Python`_ lists the optional extras.
-
-The running example on this page wraps a fictional C library, ``mylu``, whose header is:
+The running example wraps a C library, ``mylu``, whose header is:
 
 .. code-block:: c
 
@@ -64,21 +35,27 @@ The running example on this page wraps a fictional C library, ``mylu``, whose he
     int  mylu_solve(mylu_handle * h, double * b);                /* in place */
 
 All the functions return ``0`` on success. Most sparse direct solvers (KLU, UMFPACK, PARDISO,
-NICSLU, CKTSO, cuDSS, ...) expose this shape: a handle, a symbolic analysis of the sparsity pattern,
-a numeric factorization, a cheaper re-factorization that reuses the analysis, and a solve. A C++
-library is wrapped in exactly the same way: the only difference is that you call its methods instead
-of free functions.
+NICSLU, CKTSO, cuDSS, ...) have this shape: a handle, a symbolic analysis of the sparsity pattern, a
+numeric factorization, a cheaper re-factorization that reuses the analysis, and a solve. A C++
+library is wrapped the same way, calling its methods instead of free functions.
+``examples/linear_solver_plugin/`` holds a stand-in implementation of this header, so that the
+example builds and runs on its own.
 
-The linear solver contract
---------------------------
+The linear solver interface
+---------------------------
 
-The algorithms use the class through ``LinearSolverPolicy<XxxLinearSolver>`` (see
+A linear solver is **not** a virtual class: it is a template parameter of the algorithms
+(``NRAlgo<LinearSolverPolicy<XxxLinearSolver>, ...>``), so its type is known at compile time and no
+call goes through a vtable. The algorithms reach it through ``LinearSolverPolicy`` (see
 ``linear_solvers/LinearSolverPolicy.hpp``), a thin wrapper that counts and times every call and adds
-the refactorization fallback described below. The class must provide:
+the refactorization fallback described below.
+
+What to implement
+~~~~~~~~~~~~~~~~~
 
 .. code-block:: cpp
 
-    class LS2G_API XxxLinearSolver final {
+    class XxxLinearSolver final {
     public:
         XxxLinearSolver() noexcept;               // default-constructible
 
@@ -95,25 +72,75 @@ the refactorization fallback described below. The class must provide:
 
 ``EigenRefConstRealSpMat``, ``RealVect`` and ``ErrorType`` come from ``Utils.hpp``.
 
-The matrix you are given
-~~~~~~~~~~~~~~~~~~~~~~~~
+``reset()``
+    Free everything the previous analysis built, so that the next call can be an ``analyze``. It is
+    also called before any ``analyze`` was done, and it can be called twice in a row: it must not
+    fail in either case.
 
-``J`` is an ``Eigen::SparseMatrix<double>`` seen through an ``Eigen::Ref``. What that means in
-practice:
+``analyze(J)``
+    The symbolic step: ordering, symbolic factorization, allocation. Only the pattern of ``J`` is
+    meaningful at this point; its values are those of the first iteration, but do not rely on them.
 
-- it is **square** and stored in **compressed sparse column** (CSC) format, with **0-based int**
-  indices: ``J.outerIndexPtr()`` (size ``n + 1``) is the column pointer, ``J.innerIndexPtr()`` the
-  row indices and ``J.valuePtr()`` the values, both of size ``J.nonZeros()``. Within a column, the
-  row indices are sorted;
-- it may hold **explicit zeros**. The batch algorithms keep one sparsity pattern for a whole batch
+``factorize(J)``
+    A numeric factorization that **chooses its pivots**.
+
+``refactorize(J)``
+    A numeric factorization with the same pattern, that may **reuse the pivot order** of the last
+    ``factorize``. This is the call that makes a solver fast in lightsim2grid. If the library has no
+    such call, implement ``refactorize`` as ``factorize`` (Eigen's ``SparseLU`` does exactly that).
+    When the reused pivots turn out to be bad (a zero or a tiny pivot), return
+    ``ErrorType::SolverReFactor`` rather than a poor factorization: see `When it is called`_.
+
+``solve(b)``
+    Solve :math:`J x = b` with the last factorization, **in place**: on return ``b`` holds ``x``. If
+    the library cannot work in place, solve into a temporary and copy it back.
+
+``solve_transpose(b)``
+    Solve :math:`J^T x = b` with the factorization of ``J``, in place. Only the gradient-based batch
+    tools (``BatchAdjoint``) use it, and they do not pick up a new linear solver anyway. If you do not
+    implement it, return ``ErrorType::NotImplemented`` and set ``CAN_SOLVE_TRANSPOSE = false``:
+    never solve :math:`J x = b` instead.
+
+``CAN_SOLVE_MAT``
+    Whether ``solve`` accepts a matrix right hand side. ``false`` is always correct.
+
+Return ``ErrorType::NoError`` on success. On failure, return the code of the step that failed
+(``SolverAnalyze``, ``SolverFactor``, ``SolverReFactor``, ``SolverSolve``); ``NotInitError`` for a
+call made before ``analyze``; ``LicenseError`` if a licensed library refuses to start. The algorithm
+stops at the first error and reports it (``get_error()``). **Do not throw** from these methods: a
+failed factorization is an expected outcome (a diverging Newton, a split grid), and the algorithms
+handle it through the return code.
+
+What you receive
+~~~~~~~~~~~~~~~~
+
+``J`` is an ``Eigen::SparseMatrix<double>`` seen through an ``Eigen::Ref``: the Jacobian of the
+Newton-Raphson, or the :math:`B` matrix of the DC and fast-decoupled algorithms.
+
+- It is **square** and stored in **compressed sparse column** (CSC) format, with **0-based int**
+  indices. The three arrays are:
+
+  .. code-block:: cpp
+
+      const int n = static_cast<int>(J.cols());   // == J.rows()
+      const int nnz = static_cast<int>(J.nonZeros());
+      const int * colptr = J.outerIndexPtr();     // size n + 1, colptr[n] == nnz
+      const int * rowind = J.innerIndexPtr();     // size nnz, sorted within a column
+      const double * values = J.valuePtr();       // size nnz, in the order of rowind
+
+  so the entries of column ``j`` are ``values[k]``, at row ``rowind[k]``, for ``k`` from
+  ``colptr[j]`` to ``colptr[j + 1] - 1``.
+- It may hold **explicit zeros**. The batch algorithms keep one sparsity pattern for a whole batch
   and change a bus's role by rewriting values in it: a value can be ``0`` in one call and non-zero in
-  the next. A library that drops zero entries during its analysis cannot be used as is; give it the
-  pattern, not the values, or turn that pruning off;
-- between an ``analyze`` and the next ``reset`` / ``analyze``, the **pattern does not change**: only
-  the values do. The memory address of the arrays is not guaranteed to be the same, so read the
-  pointers again at each call rather than keeping them;
-- it is not symmetric in general (a Newton-Raphson Jacobian is not), and it is not guaranteed to be
+  the next. A library that drops zero entries during its analysis cannot be used as is: give it the
+  pattern, not the values, or turn that pruning off.
+- Between an ``analyze`` and the next ``reset`` / ``analyze``, the **pattern does not change**: only
+  the values do. The memory address of the arrays is not guaranteed to stay the same, so read the
+  pointers again at each call rather than keeping them.
+- It is not symmetric in general (a Newton-Raphson Jacobian is not), and it is not guaranteed to be
   diagonally dominant.
+
+``b`` is a dense vector of ``double`` of size ``n`` (``b.data()`` is a contiguous array).
 
 If your library wants something else, convert in the wrapper:
 
@@ -127,66 +154,55 @@ If your library wants something else, convert in the wrapper:
   hand side in ``solve``. The algorithms always work in ``double`` on the host (``real_type`` in
   ``Utils.hpp``).
 
-The methods
-~~~~~~~~~~~
+When it is called
+~~~~~~~~~~~~~~~~~
 
-The Newton-Raphson algorithm calls them in this order (``NRAlgo.tpp``); DC and fast-decoupled do the
-same with fewer refactorizations::
+``analyze`` is called **when the sparsity pattern changes**, not once per power flow: at the first
+solve, and after a change of topology or of the pv / pq split. Each time, the algorithm first calls
+``reset`` and then ``analyze`` + ``factorize``. As long as the pattern stays the same, the next
+power flows (the next grid2op steps, the next rows of a batch) reuse that analysis.
 
-    reset()                          # new topology, or the algorithm was reset
-    analyze(J); factorize(J)         # first iteration: new pattern
+The **Newton-Raphson** algorithms (``NRAlgo.tpp``) call, for one power flow::
+
+    [ reset(); analyze(J); ]   # only if the pattern changed since the last power flow
+    factorize(J)               # first iteration: right after an analyze, or when asked to
+      or refactorize(J)        #   otherwise
     solve(b)
-    refactorize(J); solve(b)         # next iterations: same pattern, new values
+    refactorize(J); solve(b)   # every next iteration: same pattern, new values
     refactorize(J); solve(b)
     ...
-    reset()                          # and so on, at the next topology change
 
-``reset()``
-    Free everything the previous analysis built, so that the next call can be an ``analyze``. It is
-    also called before any ``analyze`` was done, and it can be called twice in a row: it must not
-    fail in either case.
+``factorize`` without an ``analyze`` happens when the algorithm no longer trusts the pivot order of
+the last factorization (``request_factorize``, used by the outer loops after they rewrite rows). The
+refactor policy of the Newton (``set_refactor_policy``, ``AlwaysRefactor`` by default) can also skip
+the refactorization of some iterations and solve with the previous factors.
 
-``analyze(J)``
-    The symbolic step: ordering, symbolic factorization, allocation. Only the pattern of ``J`` is
-    meaningful at this point (its values are those of the first iteration, but do not rely on them).
-    It is the expensive call, and avoiding it is what most of lightsim2grid's performance work is
-    about: a contingency analysis of thousands of rows calls it **once**.
+**When a refactorization fails**, what happens depends on the algorithm:
 
-``factorize(J)``
-    A numeric factorization that **chooses its pivots**. It is always called right after ``analyze``,
-    and again when the algorithm has a reason to think the previous pivots are no longer good.
+- by default (``NR_*``, ``NRSing_*``, and ``DC_*``), the error is reported and the power flow fails;
+- with the **fallback** on, ``LinearSolverPolicy`` calls ``factorize`` on the same matrix, which
+  chooses new pivots, and the solve goes on; the next iterations refactorize again, on those new
+  pivots. If that ``factorize`` fails too, the error is reported. The fallback is on for
+  ``NRRefactorRetry_*`` and ``NROuter_*``, and the batch classes turn it on when they change a
+  bus's role by value: masking the buses a contingency cut off, switching a bus between PV and PQ,
+  and the like (``set_refactor_fallback``).
 
-``refactorize(J)``
-    A numeric factorization with the same pattern, that may **reuse the pivot order** of the last
-    ``factorize``. This is the call that makes a solver fast in lightsim2grid. If the library has no
-    such call, implement ``refactorize`` as ``factorize`` (Eigen's ``SparseLU`` does exactly that).
+So a ``refactorize`` that returns ``SolverReFactor`` on bad pivots costs one extra ``factorize``
+where the fallback is on, and is a clear error everywhere else. A ``refactorize`` that returns a
+poor factorization instead gives a Newton that diverges, or converges to the wrong point.
 
-    When the reused pivots turn out to be bad (a zero or a tiny pivot), return
-    ``ErrorType::SolverReFactor`` rather than a poor factorization: when the fallback is on
-    (``set_refactor_fallback``; the batch algorithms turn it on), ``LinearSolverPolicy`` then calls
-    ``factorize`` on the same matrix, which chooses new pivots.
+The **DC** algorithms (``BaseDCAlgo.tpp``) call ``analyze`` + ``factorize`` when the pattern
+changes, ``refactorize`` when only the values of the matrix changed (a contingency of a batch), and
+one ``solve`` per power flow. The **fast-decoupled** algorithms hold two linear solvers, for
+:math:`B'` and :math:`B''`. Both matrices stay constant during a solve, so each is analyzed and
+factorized once, then only solved, twice per iteration.
 
-``solve(b)``
-    Solve :math:`J x = b` with the last factorization, **in place**: on return ``b`` holds ``x``. If
-    the library cannot work in place, solve into a temporary and copy it back.
+The batch classes (``ContingencyAnalysis``, ``TimeSeries``, ``InjectionSweep``, ``ScenarioSweep``)
+keep one pattern for every row of the batch: a contingency analysis of thousands of rows calls
+``analyze`` **once**, then ``refactorize`` and ``solve`` for every row.
 
-``solve_transpose(b)``
-    Solve :math:`J^T x = b` with the factorization of ``J``, in place. Only used by the
-    gradient-based batch tools (``BatchAdjoint``), which do not pick it up from a new linear solver
-    anyway. If you do not implement it, return ``ErrorType::NotImplemented`` and set
-    ``CAN_SOLVE_TRANSPOSE = false``: never solve :math:`J x = b` instead.
-
-``CAN_SOLVE_MAT``
-    Whether ``solve`` accepts a matrix right hand side. ``false`` is always correct.
-
-Return ``ErrorType::NoError`` on success. On failure, return the code of the step that failed
-(``SolverAnalyze``, ``SolverFactor``, ``SolverReFactor``, ``SolverSolve``); ``NotInitError`` for a
-call made before ``analyze``; ``LicenseError`` if a licensed library refuses to start. The algorithm
-stops at the first error and reports it (``get_error()``). **Do not throw** from these methods: a
-failed factorization is an expected outcome (a diverging Newton, a split grid), and the algorithms
-handle it through the return code.
-
-Other rules:
+Other rules
+~~~~~~~~~~~
 
 - **No copy, no move.** Delete the four copy and move operations, as the existing solvers do. The
   algorithms hold the solver by value and never copy it.
@@ -197,8 +213,6 @@ Other rules:
   thread pool, a static work buffer) must tolerate several instances alive at the same time.
 - **C++14.** The core is compiled as C++14 (and C++26 in CI): no ``if constexpr``, ``std::optional``
   or structured bindings in the wrapper.
-- The class is marked ``LS2G_API`` (from ``Utils.hpp``) so that it is exported from the shared
-  library on Windows.
 
 Optional capabilities
 ~~~~~~~~~~~~~~~~~~~~~
@@ -223,19 +237,10 @@ If your library decides on its own between a factorization and a refactorization
 counters of ``LinearSolverPolicy`` would report the wrong thing: specialize its ``factorize`` and
 ``refactorize`` for your class, as ``LinearSolverPolicy.hpp`` does for ``NICSLULinearSolver``.
 
-Writing the wrapper
--------------------
-
-The whole class is guarded by ``MYLU_SOLVER_AVAILABLE``, which the build defines only when the
-library was found, so that lightsim2grid still compiles without it.
-
-``src/core/linear_solvers/MyLUSolver.hpp``:
+Example: wrapping ``mylu``
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: cpp
-
-    #ifdef MYLU_SOLVER_AVAILABLE
-    #ifndef MYLUSOLVER_H
-    #define MYLUSOLVER_H
 
     #include <memory>
 
@@ -248,18 +253,53 @@ library was found, so that lightsim2grid still compiles without it.
 
     namespace ls2g {
 
-    class LS2G_API MyLULinearSolver final
+    class MyLULinearSolver final
     {
         public:
             MyLULinearSolver() noexcept = default;
             ~MyLULinearSolver() noexcept = default;  // handle_ frees itself
 
-            ErrorType reset();
-            ErrorType analyze(const EigenRefConstRealSpMat & J);
-            ErrorType factorize(const EigenRefConstRealSpMat & J);
-            ErrorType refactorize(const EigenRefConstRealSpMat & J);
-            ErrorType solve(Eigen::Ref<RealVect> b);
-            ErrorType solve_transpose(Eigen::Ref<RealVect> b);
+            ErrorType reset(){
+                handle_.reset();  // the next call is an analyze()
+                return ErrorType::NoError;
+            }
+
+            ErrorType analyze(const EigenRefConstRealSpMat & J){
+                mylu_handle * raw = nullptr;
+                if(mylu_create(&raw) != 0) return ErrorType::SolverAnalyze;
+                handle_.reset(raw);
+                const int n = static_cast<int>(J.cols());
+                // J is compressed column storage, 0-based, int indices: handed over as is
+                if(mylu_analyze(handle_.get(), n, J.outerIndexPtr(), J.innerIndexPtr()) != 0){
+                    handle_.reset();
+                    return ErrorType::SolverAnalyze;
+                }
+                return ErrorType::NoError;
+            }
+
+            ErrorType factorize(const EigenRefConstRealSpMat & J){
+                if(!handle_) return ErrorType::NotInitError;
+                if(mylu_factor(handle_.get(), J.valuePtr()) != 0) return ErrorType::SolverFactor;
+                return ErrorType::NoError;
+            }
+
+            ErrorType refactorize(const EigenRefConstRealSpMat & J){
+                if(!handle_) return ErrorType::NotInitError;
+                // SolverReFactor: what the fallback answers to, where it is on
+                if(mylu_refactor(handle_.get(), J.valuePtr()) != 0) return ErrorType::SolverReFactor;
+                return ErrorType::NoError;
+            }
+
+            ErrorType solve(Eigen::Ref<RealVect> b){
+                if(!handle_) return ErrorType::NotInitError;
+                if(mylu_solve(handle_.get(), b.data()) != 0) return ErrorType::SolverSolve;
+                if(!b.allFinite()) return ErrorType::InifiniteValue;
+                return ErrorType::NoError;
+            }
+
+            ErrorType solve_transpose(Eigen::Ref<RealVect> /*b*/){
+                return ErrorType::NotImplemented;  // see CAN_SOLVE_TRANSPOSE
+            }
 
             static constexpr bool CAN_SOLVE_MAT = false;
             static constexpr bool CAN_SOLVE_TRANSPOSE = false;
@@ -278,62 +318,198 @@ library was found, so that lightsim2grid still compiles without it.
 
     }  // namespace ls2g
 
-    #endif  // MYLUSOLVER_H
-    #endif  // MYLU_SOLVER_AVAILABLE
+This is ``examples/linear_solver_plugin/MyLULinearSolver.hpp``, header-only. The fork below splits
+the same class in a ``.hpp`` and a ``.cpp``, and adds two things to it.
 
-``src/core/linear_solvers/MyLUSolver.cpp``:
+Integrating it
+--------------
+
+A linear solver on its own is not selectable: what is selected is an *algorithm* using it, by name.
+There are two ways to build and register those algorithms.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * -
+     - a) plugin
+     - b) fork
+   * - lightsim2grid
+     - installed (``pip install lightsim2grid``)
+     - cloned, modified and compiled from source
+   * - your code lives
+     - in your own repository, as a shared library
+     - in ``src/core/`` of your copy of lightsim2grid
+   * - available algorithms
+     - Newton-Raphson (``NR_``, ``NRSing_``, ``NROuter_``, ...) and DC
+     - the same, plus fast-decoupled (``FDPF_``)
+   * - a Python class per algorithm, a ``compilation_options`` flag
+     - no
+     - can be added
+   * - must be loaded before use
+     - yes, ``load_algorithm_plugin`` in every process
+     - no
+
+Start with the plugin unless you need what only the fork has.
+
+a) As a plugin
+~~~~~~~~~~~~~~
+
+lightsim2grid can load algorithms from a shared library at run time (:ref:`solver_plugin`
+describes that mechanism in full). Because the linear solver is a template parameter, a plugin can
+carry its own: it defines ``MyLULinearSolver`` and registers ``NRAlgo<...>`` and the others
+instantiated on it, from the headers an installed lightsim2grid ships. lightsim2grid itself is not
+modified. ``examples/linear_solver_plugin/`` is a complete one:
+
+.. code-block:: text
+
+    examples/linear_solver_plugin/
+    ├── mylu/mylu.h, mylu/mylu.c   the stand-in C library (replace by yours)
+    ├── MyLULinearSolver.hpp       the wrapper above
+    ├── MyLU_plugin.cpp            the algorithms and their registration
+    ├── CMakeLists.txt             builds the plugin against an installed lightsim2grid
+    └── test_plugin.py             loads it and compares it with SparseLU
+
+**The registration** (``MyLU_plugin.cpp``):
 
 .. code-block:: cpp
 
-    #include "MyLUSolver.hpp"
+    #include <memory>
 
-    namespace ls2g {
+    #include <AlgorithmRegistry.hpp>
+    // the algorithm templates, without Solvers.hpp: that one also includes the headers of
+    // KLU, NICSLU and CKTSO, which an installed lightsim2grid does not ship
+    #include <linear_solvers/LinearSolverPolicy.hpp>
+    #include <powerflow_algorithm/BaseDCAlgo.hpp>
+    #include <powerflow_algorithm/NRAlgo.hpp>
+    #include <powerflow_algorithm/NROuterInner.hpp>
+    #include <powerflow_algorithm/OuterLoopAlgo.hpp>
 
-    ErrorType MyLULinearSolver::reset(){
-        handle_.reset();  // the next call is an analyze()
-        return ErrorType::NoError;
+    #include "MyLULinearSolver.hpp"
+
+    namespace {
+        using MyLU = ls2g::LinearSolverPolicy<ls2g::MyLULinearSolver>;
+        using NR_MyLU = ls2g::NRAlgo<MyLU, ls2g::MultiSlackNRSystem>;
+        using NRSing_MyLU = ls2g::NRAlgo<MyLU, ls2g::SingleSlackNRSystem>;
+        using NROuter_MyLU = ls2g::OuterLoopAlgo<ls2g::NROuterInner<MyLU>>;
+        using DC_MyLU = ls2g::BaseDCAlgo<MyLU>;
     }
 
-    ErrorType MyLULinearSolver::analyze(const EigenRefConstRealSpMat & J){
-        mylu_handle * raw = nullptr;
-        if(mylu_create(&raw) != 0) return ErrorType::SolverAnalyze;
-        handle_.reset(raw);
-        const int n = static_cast<int>(J.cols());
-        // J is compressed column storage, 0-based, int indices: handed over as is
-        if(mylu_analyze(handle_.get(), n, J.outerIndexPtr(), J.innerIndexPtr()) != 0){
-            handle_.reset();
-            return ErrorType::SolverAnalyze;
-        }
-        return ErrorType::NoError;
+    static void register_plugin(ls2g::PluginRegistrar& reg) {
+        reg.add("NR_MyLU",      []{ return std::unique_ptr<ls2g::BaseAlgo>(new NR_MyLU()); });
+        reg.add("NRSing_MyLU",  []{ return std::unique_ptr<ls2g::BaseAlgo>(new NRSing_MyLU()); });
+        reg.add("NROuter_MyLU", []{ return std::unique_ptr<ls2g::BaseAlgo>(new NROuter_MyLU()); });
+        reg.add("DC_MyLU",      []{ return std::unique_ptr<ls2g::BaseAlgo>(new DC_MyLU()); });
     }
+    LS2G_PLUGIN_ENTRY(register_plugin)
 
-    ErrorType MyLULinearSolver::factorize(const EigenRefConstRealSpMat & J){
-        if(!handle_) return ErrorType::NotInitError;
-        if(mylu_factor(handle_.get(), J.valuePtr()) != 0) return ErrorType::SolverFactor;
-        return ErrorType::NoError;
-    }
+Any other combination the fork lists in `Declaring the algorithms`_ can be registered the same way,
+except the fast-decoupled ones (see the limits below). The wrapper class carries no ``LS2G_API``:
+that macro is for the symbols of ``lightsim2grid_core`` itself, and means *imported from it* in a
+plugin on Windows.
 
-    ErrorType MyLULinearSolver::refactorize(const EigenRefConstRealSpMat & J){
-        if(!handle_) return ErrorType::NotInitError;
-        if(mylu_refactor(handle_.get(), J.valuePtr()) != 0) return ErrorType::SolverReFactor;
-        return ErrorType::NoError;
-    }
+**The build** (``CMakeLists.txt``) follows the other example plugins: ``find_package`` of the
+installed ``lightsim2grid_core``, a ``MODULE`` library linked to ``lightsim2grid::core`` and to the
+linear solver library, and ``ls2g_match_core_build_flags``. The example builds its stand-in library
+with it; a real one is found instead:
 
-    ErrorType MyLULinearSolver::solve(Eigen::Ref<RealVect> b){
-        if(!handle_) return ErrorType::NotInitError;
-        if(mylu_solve(handle_.get(), b.data()) != 0) return ErrorType::SolverSolve;
-        if(!b.allFinite()) return ErrorType::InifiniteValue;
-        return ErrorType::NoError;
-    }
+.. code-block:: cmake
 
-    ErrorType MyLULinearSolver::solve_transpose(Eigen::Ref<RealVect> /*b*/){
-        return ErrorType::NotImplemented;  // see CAN_SOLVE_TRANSPOSE
-    }
+    find_library(MYLU_LIB NAMES mylu HINTS "${MYLU_ROOT}/lib" REQUIRED)
+    find_path(MYLU_INCLUDE mylu.h HINTS "${MYLU_ROOT}/include" REQUIRED)
+    target_link_libraries(linear_solver_plugin PRIVATE lightsim2grid::core ${MYLU_LIB})
+    target_include_directories(linear_solver_plugin PRIVATE ${MYLU_INCLUDE})
 
-    }  // namespace ls2g
+A static library, compiled as position-independent code, ends up inside the plugin. A shared one
+must be found by the dynamic loader when the plugin is loaded (``LD_LIBRARY_PATH``, the rpath, or
+next to the plugin).
 
-To check that the wrapper compiles, without a full build (from the repository root, with the
-submodules fetched):
+**Building and loading it**:
+
+.. code-block:: bash
+
+    LS2G_CMAKE=$(python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
+    cmake -S examples/linear_solver_plugin -B examples/linear_solver_plugin/build \
+          -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE" -DCMAKE_BUILD_TYPE=Release
+    cmake --build examples/linear_solver_plugin/build --config Release
+    python examples/linear_solver_plugin/test_plugin.py
+
+(``python examples/build_plugins.py linear_solver_plugin --test`` does the same.) Then, in every
+process that uses it:
+
+.. code-block:: python
+
+    import numpy as np
+    import pandapower.networks as pn
+    import lightsim2grid
+    from lightsim2grid.network import init_from_pandapower
+    from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
+
+    lightsim2grid.load_algorithm_plugin("examples/linear_solver_plugin/build/liblinear_solver_plugin.so")
+
+    grid = init_from_pandapower(pn.case118())
+    grid.change_algorithm("NR_MyLU")
+    V = grid.ac_pf(np.ones(grid.total_bus(), dtype=complex), 10, 1e-8)
+    print(grid.get_algo().get_linear_solver_stats())   # analyze / factorize / refactorize / solve counts
+
+    ca = ContingencyAnalysisCPP(grid)                    # the batch classes take the name too
+    ca.change_algorithm("NR_MyLU")
+
+    from lightsim2grid import LightSimBackend            # and so does grid2op
+    backend = LightSimBackend(algo_type="NR_MyLU")
+
+**Limits of the plugin route:**
+
+- **No fast-decoupled algorithm.** Part of their code (``BaseFDPFAlgo::fillBp_Bpp``) is only
+  compiled inside ``lightsim2grid_core``, in ``SolverInstantiations.cpp``, for the linear solvers it
+  knows. A plugin registering one still builds, but loading it fails on that undefined symbol.
+- **The same build flags as the core.** The plugin and ``lightsim2grid_core`` exchange Eigen
+  objects, so they must agree on ``-march=native``: ``ls2g_match_core_build_flags`` takes care of
+  it (see :ref:`solver_plugin`, *Matching build flags*).
+- **Rebuild it for each lightsim2grid version.** The plugin compiles the algorithms from the
+  headers of the version it was built against. Loading only checks that Eigen is configured the
+  same way on both sides, not that those headers match the installed version.
+- **Load it before use, everywhere.** A grid saved (pickled, :ref:`binary-serialization`) while
+  using ``NR_MyLU`` only loads where the plugin is loaded; so does a ``LightSimBackend`` copied to a
+  worker process.
+- **Selected by name only.** There is no ``lightsim2grid.algorithm.NR_MyLU`` Python class and no
+  ``AlgorithmType`` value; ``get_algo_type()`` reads ``AlgorithmType.Custom``.
+
+b) As part of lightsim2grid (fork)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Here the solver becomes a built-in, like KLU or CKTSO: it is compiled into ``lightsim2grid_core``
+when its library is found at build time. That takes six files:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - File
+     - What to add
+   * - ``src/core/linear_solvers/MyLUSolver.{hpp,cpp}``
+     - the wrapper class
+   * - ``src/core/CMakeLists.txt``
+     - find the library, link it, define ``MYLU_SOLVER_AVAILABLE``
+   * - ``src/core/linear_solvers/CMakeLists.txt``
+     - compile ``MyLUSolver.cpp`` when the library was found
+   * - ``src/core/Solvers.hpp``
+     - the algorithm aliases (``NR_MyLU``, ...) and their ``extern template`` declarations
+   * - ``src/core/SolverInstantiations.cpp``
+     - the explicit instantiations of those aliases
+   * - ``src/core/BuiltinSolversRegistration.cpp``
+     - register each alias under a name
+
+**The wrapper.** The class of the example, with two changes:
+
+- it is marked ``LS2G_API`` (from ``Utils.hpp``), so that it is exported from the shared library on
+  Windows: ``class LS2G_API MyLULinearSolver final``;
+- the whole header is guarded by ``#ifdef MYLU_SOLVER_AVAILABLE`` (and the ``.cpp`` with it), which
+  the build defines only when the library was found, so that lightsim2grid still compiles without
+  it.
+
+To check that it compiles, without a full build (from the repository root, with the submodules
+fetched):
 
 .. code-block:: bash
 
@@ -341,13 +517,9 @@ submodules fetched):
         -I src -I src/core -I eigen -I /path/to/mylu/include \
         src/core/linear_solvers/MyLUSolver.cpp
 
-Building it
------------
-
-The existing optional solvers are found through an environment variable pointing at the library's
-root folder (``PATH_NICSLU``, ``PATH_CKTSO``): do the same.
-
-In ``src/core/CMakeLists.txt``, find the library. This block must come **before**
+**Building it.** The existing optional solvers are found through an environment variable pointing
+at the library's root folder (``PATH_NICSLU``, ``PATH_CKTSO``): do the same. In
+``src/core/CMakeLists.txt``, find the library. This block must come **before**
 ``add_subdirectory(linear_solvers)``, which reads ``LIB_MYLU``:
 
 .. code-block:: cmake
@@ -378,9 +550,8 @@ and, further down, next to the NICSLU and CKTSO blocks (once ``lightsim2grid_cor
     endif()
 
 The compile definition is ``PUBLIC`` because the headers that use it (``Solvers.hpp``) are compiled
-by the Python bindings and the C++ tests too.
-
-In ``src/core/linear_solvers/CMakeLists.txt``, compile the wrapper only when the library is there:
+by the Python bindings and the C++ tests too. In ``src/core/linear_solvers/CMakeLists.txt``,
+compile the wrapper only when the library is there:
 
 .. code-block:: cmake
 
@@ -389,15 +560,13 @@ In ``src/core/linear_solvers/CMakeLists.txt``, compile the wrapper only when the
     endif()
 
 If the library comes as a CMake package, ``find_package(MyLU)`` and linking its imported target
-works as well. If it is a shared library outside the system paths, the dynamic loader must find it
-at run time (``LD_LIBRARY_PATH``, the rpath, or next to ``lightsim2grid_core``).
+works as well. A shared library outside the system paths must be found by the dynamic loader at
+run time (``LD_LIBRARY_PATH``, the rpath, or next to ``lightsim2grid_core``).
 
 Declaring the algorithms
-------------------------
+++++++++++++++++++++++++
 
-A linear solver on its own is not selectable: what is selected is an *algorithm* using it. Give it
-the same algorithms as the other solvers, or only those you need. In ``src/core/Solvers.hpp``,
-include the header with the others and declare the aliases:
+In ``src/core/Solvers.hpp``, include the header with the others and declare the aliases:
 
 .. code-block:: cpp
 
@@ -455,7 +624,7 @@ The fast-decoupled algorithms **must** be instantiated there: part of their code
 (``BaseFDPFAlgo::fillBp_Bpp``) is only defined in that file.
 
 Registering them
-----------------
+++++++++++++++++
 
 Finally, give each algorithm a name in ``register_builtin_solvers``
 (``src/core/BuiltinSolversRegistration.cpp``):
@@ -470,21 +639,15 @@ Finally, give each algorithm a name in ``register_builtin_solvers``
         add_builtin("NROuter_MyLU", []{ return std::make_unique<NROuter_MyLU>(); });
     #endif
 
-The name is how the algorithm is selected, and it is **stored** when a grid is saved (pickle or
-:ref:`binary-serialization`): keep to the ``<algorithm>_<LinearSolver>`` convention of
-:ref:`algorithm_names`, stick to ASCII letters, digits and ``_``, and do not rename it once grids
-have been saved with it.
-
 .. note::
     There is no need to add a value to the ``AlgorithmType`` enum. KLU, NICSLU and CKTSO have one
     for historical reasons, and adding one means editing ``AlgorithmSelector.{hpp,cpp}``,
     ``AlgorithmTypeNames.cpp`` and ``binding_enums.cpp`` as well. Recent built-ins
-    (``NRRefactorRetry_*``, ``*_KLUStaticPivot``) are registered by name only, and so is every
-    plugin: ``get_algo_type()`` reports them as ``AlgorithmType.Custom`` and they work everywhere
-    else.
+    (``NRRefactorRetry_*``, ``*_KLUStaticPivot``) are registered by name only, as every plugin is:
+    ``get_algo_type()`` reports them as ``AlgorithmType.Custom`` and they work everywhere else.
 
 Compiling and using it
-----------------------
+++++++++++++++++++++++
 
 Build lightsim2grid from source as described in :ref:`page_install_from_source`, with the variable
 set:
@@ -496,40 +659,14 @@ set:
     pip install -e .
 
 The configure step prints ``MyLU enabled: ...``; if it prints the warning instead, the library was
-not found and the build carries on without it. Then:
-
-.. code-block:: python
-
-    import numpy as np
-    import pandapower.networks as pn
-    from lightsim2grid.network import init_from_pandapower
-    from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
-
-    grid = init_from_pandapower(pn.case118())
-    print([nm for nm in grid.available_algorithm_names() if "MyLU" in nm])
-
-    grid.change_algorithm("NR_MyLU")
-    V0 = np.ones(grid.total_bus(), dtype=complex)
-    V = grid.ac_pf(V0, 10, 1e-8)
-    print(grid.get_algo().get_linear_solver_stats())   # analyze / factorize / refactorize / solve counts
-
-    # in the batch classes
-    ca = ContingencyAnalysisCPP(grid)
-    ca.change_algorithm("NR_MyLU")
-
-    # and in grid2op
-    from lightsim2grid import LightSimBackend
-    backend = LightSimBackend(algo_type="NR_MyLU")
-
-The grid2op-level ``lightsim2grid.ContingencyAnalysis`` takes the same names in its
-``change_algorithm``; for the other grid2op-level wrappers, call it on the C++ object they hold
-(``ts.computer.change_algorithm("NR_MyLU")``).
+not found and the build carries on without it. The algorithms are then used by name exactly as in
+the plugin route, without the ``load_algorithm_plugin`` call.
 
 Exposing it to Python
----------------------
++++++++++++++++++++++
 
-Selecting by name, as above, is all most uses need. Three optional extras, each following what the
-code already does for CKTSO:
+Selecting by name is all most uses need. Three optional extras, each following what the code
+already does for CKTSO:
 
 - **A Python class** (``lightsim2grid.algorithm.NR_MyLU``), to build and drive the algorithm
   directly on a ``Ybus`` / ``Sbus`` without a grid: add a ``py::class_<NR_MyLU>`` block to
@@ -545,36 +682,29 @@ code already does for CKTSO:
   ``CKTSOSolver.hpp`` let Sphinx document the algorithms without the library. Only needed if the
   documentation of your fork must show them.
 
+Choosing the names
+~~~~~~~~~~~~~~~~~~
+
+In both routes the name is how an algorithm is selected, and it is **stored** when a grid is saved
+(pickle or :ref:`binary-serialization`). Keep to the ``<algorithm>_<LinearSolver>`` convention of
+:ref:`algorithm_names`, stick to ASCII letters, digits and ``_``, and do not rename an algorithm
+once grids have been saved with it. A plugin distributed to others should prefix its names with
+something of its own (see :ref:`solver_plugin`).
+
 Testing it
 ----------
 
 The cheapest test that says something is to compare each new algorithm with its ``SparseLU``
 counterpart on the same grid: the linear solver must not change the result, only the time it takes
-to get it. Do it for a single power flow and for a ``ContingencyAnalysis`` with ``add_all_n1()`` on a
-grid where one contingency splits it: that run calls ``analyze`` once, then ``refactorize`` for every
-row, and it puts explicit zeros and masked rows in the matrix, which is where a wrapper gets things
-wrong. Check ``get_linear_solver_stats()`` as well: a contingency analysis that reports one
-``analyze`` per row means the pattern is changing, which is a bug.
+to get it. Do it for a single power flow and for a ``ContingencyAnalysisCPP`` with ``add_all_n1()``
+on a grid where one contingency splits it: that run calls ``analyze`` once, then ``refactorize`` for
+every row, and it puts explicit zeros and masked rows in the matrix, which is where a wrapper gets
+things wrong. Check ``get_linear_solver_stats()`` as well: a contingency analysis that reports more
+than one ``analyze`` means the pattern is changing, which is a bug.
 
-The C++ tests (Catch2, ``src/tests/``) build standalone, without Python, and pick the solver up as
-long as ``PATH_MYLU`` is set when CMake configures (see :ref:`cpp_library`). In Python, the
-``unittest`` files of ``lightsim2grid/tests`` that compare solvers (``test_KLUSolver.py``,
-``test_CKTSOSolver.py``) are a template to copy; skip the test when
+``examples/linear_solver_plugin/test_plugin.py`` does exactly this, and is a template to copy for
+either route. In a fork, the C++ tests (Catch2, ``src/tests/``) build standalone, without Python,
+and pick the solver up as long as ``PATH_MYLU`` is set when CMake configures (see
+:ref:`cpp_library`); the ``unittest`` files of ``lightsim2grid/tests`` that compare solvers
+(``test_KLUSolver.py``, ``test_CKTSOSolver.py``) are another template, skipping the test when
 ``"NR_MyLU" not in grid.available_algorithm_names()``.
-
-.. _add_linear_solver_plugin_route:
-
-Without forking: what exists today
-----------------------------------
-
-lightsim2grid has no run-time plugin mechanism for *linear solvers*, only for *algorithms*
-(:ref:`solver_plugin`). Because a linear solver is a template parameter of the algorithms, an
-algorithm plugin can, in principle, carry its own linear solver: define ``MyLULinearSolver`` in the
-plugin, and register ``NRAlgo<LinearSolverPolicy<MyLULinearSolver>, MultiSlackNRSystem>`` in it,
-instantiated from the installed headers. ``examples/lm_algorithm`` already instantiates a Newton
-algorithm from those headers, with an existing linear solver.
-
-No example covers a new linear solver that way yet, and two limits are known: the fast-decoupled
-algorithms cannot be instantiated outside ``lightsim2grid_core`` (see `Declaring the algorithms`_),
-and the plugin must be compiled with the same flags as the core (see
-:ref:`solver_plugin`, *Matching build flags*). The in-tree route on this page has neither limit.
