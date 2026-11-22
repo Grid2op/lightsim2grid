@@ -483,15 +483,6 @@ have been saved with it.
     plugin: ``get_algo_type()`` reports them as ``AlgorithmType.Custom`` and they work everywhere
     else.
 
-.. warning::
-    One exception, for **DC** algorithms only: ``AlgorithmSelector`` still decides whether the
-    current algorithm is a DC one from its ``AlgorithmType`` (``is_dc``). A ``DC_Xxx`` registered by
-    name only therefore runs a plain ``dc_pf``, but is refused (``"... for a solver that is not
-    DC"``) by the DC contingency analysis (``update_internal_Ybus``) and by ``get_ptdf`` /
-    ``get_lodf``. Until that test asks the algorithm itself, as ``is_fdpf()`` already does, a
-    ``DC_Xxx`` that must serve those needs an ``AlgorithmType`` value, added in the four files above
-    and in the ``is_dc`` list of ``AlgorithmSelector.hpp``.
-
 Compiling and using it
 ----------------------
 

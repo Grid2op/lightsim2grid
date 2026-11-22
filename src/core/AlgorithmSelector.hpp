@@ -154,6 +154,12 @@ class LS2G_API AlgorithmSelector final
         bool is_fdpf() const {
             return get_prt_solver("is_fdpf", false)->is_fdpf();
         }
+        // The same for is_dc(AlgorithmType): get_ptdf, get_lodf and update_internal_Ybus
+        // (the DC contingency analysis) ask the solver itself, so a DC algorithm selected
+        // by name -- a plugin, or a built-in with no AlgorithmType value -- is not refused.
+        bool is_dc() const {
+            return get_prt_solver("is_dc", false)->is_dc();
+        }
 
         // Convenience accessors for the two FDPF SparseLU variants.
         // These exist mainly for internal diagnostic use (exposed as AlgorithmSelector.get_fdpf_*).
@@ -227,21 +233,21 @@ class LS2G_API AlgorithmSelector final
         }
 
         RealMat get_ptdf() {
-            if (!is_dc(_algo_type)) {
+            if (!is_dc()) {
                 throw std::runtime_error("AlgorithmSelector::get_ptdf: cannot get ptdf for a solver that is not DC.");
             }
             return get_prt_solver("get_ptdf", true)->get_ptdf();
         }
 
         RealMat get_lodf(const Eigen::Ref<const IntVect>& from_bus, const Eigen::Ref<const IntVect>& to_bus) {
-            if (!is_dc(_algo_type)) {
+            if (!is_dc()) {
                 throw std::runtime_error("AlgorithmSelector::get_lodf: cannot get lodf for a solver that is not DC.");
             }
             return get_prt_solver("get_lodf", true)->get_lodf(from_bus, to_bus);
         }
 
         void update_internal_Ybus(const Coeff& new_coeffs, bool add) {
-            if (!is_dc(_algo_type)) {
+            if (!is_dc()) {
                 throw std::runtime_error("AlgorithmSelector::update_internal_Ybus: cannot update internal Ybus for a solver that is not DC.");
             }
             get_prt_solver("update_internal_Ybus", true)->update_internal_Ybus(new_coeffs, add);

@@ -11,6 +11,7 @@
 // ScenarioSweep's set_contingency_shunts / set_contingency_loads. The oracle is a one-off
 // powerflow on a copy of the grid with the elements really deactivated.
 
+#include <cmath>
 #include <complex>
 #include <memory>
 #include <stdexcept>
@@ -20,7 +21,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "AlgorithmRegistry.hpp"
 #include "LSGrid.hpp"
+#include "Solvers.hpp"
 #include "batch_algorithm/BaseBatchSweep.hpp"
 #include "powerflow_algorithm/outer_loop/ShuntVoltageControlLoop.hpp"
 
@@ -231,6 +234,66 @@ TEST_CASE("ContingencyAnalysis trips shunts, loads and generators in DC", "[batc
         for(Eigen::Index b = 0; b < ref.size(); ++b){
             CHECK(std::arg(V(row, b)) == Approx(std::arg(ref(b))).margin(1e-8));
         }
+    }
+}
+
+// A DC algorithm selected by registry name only -- a plugin, or a built-in with no
+// AlgorithmType value -- reads AlgorithmType::Custom. AlgorithmSelector used to decide
+// "is this a DC algorithm" from that enum, so the DC contingency analysis
+// (update_internal_Ybus), get_ptdf and get_lodf refused such an algorithm with "... for a
+// solver that is not DC" although it is one. Registers DC_SparseLU under a name of its own
+// and checks it gives what DC_SparseLU gives on all three.
+TEST_CASE("a DC algorithm selected by name only serves the DC contingency analysis, ptdf and lodf", "[batch][contingency_injections][dc]")
+{
+    const std::string name = "__test_DC_SparseLU_by_name__";
+    auto & reg = ls2g::AlgorithmRegistry::instance();
+    if(!reg.is_registered(name)){
+        reg.register_solver(name, []{ return std::unique_ptr<ls2g::BaseAlgo>(new ls2g::DC_SparseLU()); });
+    }
+
+    const LSGrid grid = make_grid(true);
+    SECTION("the DC contingency analysis")
+    {
+    ContingencyAnalysis by_name(grid), by_enum(grid);
+    by_name.change_algorithm(name);
+    by_enum.change_algorithm(AlgorithmType::DC_SparseLU);
+    for(ContingencyAnalysis * ca : {&by_name, &by_enum}){
+        ca->add_contingency({3}, {}, {}, {});
+        ca->add_contingency_load({0});
+        ca->compute(flat(grid), 30, TOL);
+    }
+    const auto & V = by_name.get_voltages();
+    const auto & Vref = by_enum.get_voltages();
+    REQUIRE(V.rows() == 2);
+    REQUIRE(V.cols() == Vref.cols());
+    for(Eigen::Index r = 0; r < V.rows(); ++r){
+        CHECK(by_name.converged_mask()[static_cast<size_t>(r)]);
+        for(Eigen::Index b = 0; b < V.cols(); ++b){
+            CHECK(std::arg(V(r, b)) == Approx(std::arg(Vref(r, b))).margin(1e-10));
+        }
+    }
+    }
+    SECTION("ptdf and lodf")
+    {
+    LSGrid g_name = grid, g_enum = grid;
+    g_name.change_algorithm(name);
+    g_enum.change_algorithm(AlgorithmType::DC_SparseLU);
+    g_name.dc_pf(flat(grid), 10, TOL);
+    g_enum.dc_pf(flat(grid), 10, TOL);
+    const auto ptdf = g_name.get_ptdf();
+    const auto ptdf_ref = g_enum.get_ptdf();
+    REQUIRE(ptdf.size() == ptdf_ref.size());
+    CHECK(ptdf.isApprox(ptdf_ref, 1e-12));
+    const auto lodf = g_name.get_lodf();
+    const auto lodf_ref = g_enum.get_lodf();
+    REQUIRE(lodf.size() == lodf_ref.size());
+    // a branch whose loss splits the grid has no lodf: NaN, in both
+    for(Eigen::Index i = 0; i < lodf.size(); ++i){
+        const real_type a = lodf.data()[i];
+        const real_type b = lodf_ref.data()[i];
+        CHECK(std::isnan(a) == std::isnan(b));
+        if(!std::isnan(b)) CHECK(a == Approx(b).margin(1e-10));
+    }
     }
 }
 

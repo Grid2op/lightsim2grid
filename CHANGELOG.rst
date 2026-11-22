@@ -234,6 +234,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 --------------------
 - [ADDED] doc page ``docs/add_linear_solver.rst``: how to add a linear solver (C or C++ API) to
   lightsim2grid built from source.
+- [FIXED] a DC algorithm selected by name only (a plugin, or a built-in with no ``AlgorithmType``
+  value) was refused by the DC contingency analysis, ``get_ptdf`` and ``get_lodf``.
 
 [1.3.1] 2026-11-13
 --------------------
