@@ -91,6 +91,31 @@ can be embedded as a plain member with no CRTP-style cycle.
  **/
 struct LS2G_API YbusPolicy
 {
+    // the per-row branch parameters of ScenarioSweep set_line_parameters /
+    // set_trafo_parameters: one row per simulation, one column per branch named
+    using ParamRealMat = Eigen::Matrix<real_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    using ParamCplxMat = Eigen::Matrix<cplx_type, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+    /** The branches of one kind (lines, or transformers) whose parameters a ScenarioSweep's
+        rows give, and their value in each row: `ids` the elements (container numbering),
+        each matrix one row per simulation and one column per id. A NaN cell keeps the
+        grid's value (a complex one when either part is NaN). r, x, h1, h2 are in pu, as
+        update_physical_parameters takes them -- for a transformer the neutral values, its
+        tap changers' corrections applied on top; `ratio` and `shift` (radian) what
+        change_ratio / change_shift take, transformers only (no column for lines).
+        Empty: never set. **/
+    struct BranchParams {
+        std::vector<int> ids;
+        ParamRealMat r;
+        ParamRealMat x;
+        ParamCplxMat h1;
+        ParamCplxMat h2;
+        ParamRealMat ratio;
+        ParamRealMat shift;
+        bool empty() const { return ids.empty(); }
+        void clear() { *this = BranchParams(); }
+    };
+
     /** the topology is fixed for the whole batch (TimeSeries, InjectionSweep): no
         state, no work -- the `BaseBatchSweep` per-step loop's before_step/after_step
         hooks are empty for this policy and the compiler elides them entirely. **/
@@ -175,6 +200,23 @@ struct LS2G_API YbusPolicy
         // same, one column per shunt (ScenarioSweep set_contingency_shunts): a shunt is
         // an admittance, so it lives with the branches, as a diagonal coefficient
         Eigen::Matrix<bool, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> shunt_mask;
+
+        // ScenarioSweep set_line_parameters / set_trafo_parameters: the parameters the
+        // rows give some lines / transformers (see BranchParams). Registrations, like the
+        // masks; resolve_branch_models turns them into each row's pi models.
+        BranchParams line_params;
+        BranchParams trafo_params;
+
+        // per row, the pi model of every branch it gives parameters of its own (sorted by
+        // branch id, gridmodel numbering), into `out` (one vector per row; emptied when no
+        // parameter was ever set). A row whose cells are all NaN for a branch keeps it
+        // out. Raises std::invalid_argument for a model that is not finite (r and x both
+        // 0, or x 0 in DC), naming the row and the element.
+        void resolve_branch_models(const LSGrid & grid_model,
+                                   bool ac_solver_used,
+                                   size_t n_line,
+                                   Eigen::Index nb_steps,
+                                   std::vector<std::vector<BranchRowModel> > & out) const;
 
         // per row, the branches (gridmodel numbering, lines then trafos, sorted) that
         // the row's topological action disconnects on top of the masks (ScenarioSweep

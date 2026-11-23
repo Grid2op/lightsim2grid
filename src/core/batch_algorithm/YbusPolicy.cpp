@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <sstream>
+#include <stdexcept>
 
 namespace ls2g {
 
@@ -549,6 +551,73 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
             }
         }
         li_coeffs.push_back(coeffs);
+    }
+}
+
+namespace {
+// every cell of that branch NaN in that row: the row keeps the grid's parameters
+bool keeps_grid(const YbusPolicy::BranchParams & params, Eigen::Index row, Eigen::Index col)
+{
+    const auto nan_c = [](cplx_type v){ return std::isnan(std::real(v)) || std::isnan(std::imag(v)); };
+    if(!std::isnan(params.r(row, col)) || !std::isnan(params.x(row, col))) return false;
+    if(!nan_c(params.h1(row, col)) || !nan_c(params.h2(row, col))) return false;
+    if(params.ratio.cols() > 0 && !std::isnan(params.ratio(row, col))) return false;
+    if(params.shift.cols() > 0 && !std::isnan(params.shift(row, col))) return false;
+    return true;
+}
+
+void check_finite_model(const BranchPiModel & model, bool ac_solver_used, const char * kind, int el_id, Eigen::Index row)
+{
+    bool finite = true;
+    if(ac_solver_used){
+        for(const cplx_type & y : model.yac) finite = finite && std::isfinite(std::real(y)) && std::isfinite(std::imag(y));
+    } else {
+        for(const real_type y : model.ydc) finite = finite && std::isfinite(y);
+        finite = finite && std::isfinite(model.dc_x_tau_shift);
+    }
+    if(finite) return;
+    std::ostringstream exc_;
+    exc_ << "set_" << kind << "_parameters: row " << row << " gives " << kind << " " << el_id
+         << " parameters whose admittance is not finite (r and x both 0"
+         << (ac_solver_used ? "" : ", or x 0 for a DC powerflow") << ").";
+    throw std::invalid_argument(exc_.str());
+}
+}  // anonymous namespace
+
+void YbusPolicy::Contingency::resolve_branch_models(const LSGrid & grid_model,
+                                                    bool ac_solver_used,
+                                                    size_t n_line,
+                                                    Eigen::Index nb_steps,
+                                                    std::vector<std::vector<BranchRowModel> > & out) const
+{
+    out.clear();
+    if(line_params.empty() && trafo_params.empty()) return;
+    out.assign(static_cast<size_t>(nb_steps), std::vector<BranchRowModel>());
+    const auto & lines = grid_model.get_powerlines_as_data();
+    const auto & trafos = grid_model.get_trafos_as_data();
+    for(Eigen::Index row = 0; row < nb_steps; ++row){
+        std::vector<BranchRowModel> & models = out[static_cast<size_t>(row)];
+        for(size_t k = 0; k < line_params.ids.size(); ++k){
+            const Eigen::Index col = static_cast<Eigen::Index>(k);
+            if(keeps_grid(line_params, row, col)) continue;
+            const int el_id = line_params.ids[k];
+            const BranchPiModel model = lines.pi_model_with(el_id, line_params.r(row, col), line_params.x(row, col),
+                                                            line_params.h1(row, col), line_params.h2(row, col));
+            check_finite_model(model, ac_solver_used, "line", el_id, row);
+            models.push_back({el_id, model});
+        }
+        for(size_t k = 0; k < trafo_params.ids.size(); ++k){
+            const Eigen::Index col = static_cast<Eigen::Index>(k);
+            if(keeps_grid(trafo_params, row, col)) continue;
+            const int el_id = trafo_params.ids[k];
+            const BranchPiModel model = trafos.pi_model_with(el_id, trafo_params.r(row, col), trafo_params.x(row, col),
+                                                             trafo_params.h1(row, col), trafo_params.h2(row, col),
+                                                             trafo_params.ratio(row, col), trafo_params.shift(row, col));
+            check_finite_model(model, ac_solver_used, "trafo", el_id, row);
+            models.push_back({static_cast<int>(n_line) + el_id, model});
+        }
+        std::sort(models.begin(), models.end(),
+                  [](const BranchRowModel & a, const BranchRowModel & b){ return a.branch_id < b.branch_id; });
     }
 }
 

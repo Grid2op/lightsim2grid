@@ -370,6 +370,56 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
             ybus_policy_.trafo_mask = mask;
         }
+
+        // ============ per-row branch parameters (Contingency && Vary only) =======
+        /**
+         * ScenarioSweep only: the parameters of the lines `line_ids` in each row, one row
+         * per simulation and one column per id (r, x real; h1, h2 the complex shunt
+         * admittance at each end, g + j.b), in pu -- what update_powerlines_parameters
+         * takes. A NaN cell keeps the grid's value (a complex one when either part is NaN).
+         * The row solves, and reports flows and violations, as the grid would with those
+         * values: its Ybus entries change value, never pattern, so the batch keeps its one
+         * symbolic analysis. A row that also disconnects the line ignores its parameters.
+         *
+         * Locks / checks the number of simulations. Replaces what an earlier call gave;
+         * an empty `line_ids` clears it (the matrices are not read then). Refuses an id out
+         * of range or named twice, a matrix of another shape, an infinite value and r and x
+         * both 0. compute() refuses a row whose values give a non-finite admittance (x 0 in
+         * DC, say).
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_line_parameters(const Eigen::Ref<const IntVect> & line_ids,
+                                 const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & r,
+                                 const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & x,
+                                 const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h1,
+                                 const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h2) {
+            _set_branch_parameters(ybus_policy_.line_params, n_line_, "set_line_parameters",
+                                   line_ids, r, x, h1, h2, nullptr, nullptr);
+        }
+        /**
+         * ScenarioSweep only: the same for the transformers `trafo_ids`, with their ratio
+         * and their shift (radian) too. r, x, h1, h2 are the NEUTRAL values, those
+         * update_trafos_parameters_full takes: a transformer with tap changers (or a
+         * shift-dependent impedance) gets their corrections at their current positions
+         * applied on top, exactly as the grid applies them. `ratio` and `shift_rad` are the
+         * values change_ratio_trafo / change_shift_trafo take (the shift on side 1). Also
+         * refuses a ratio that is not positive. compute() leaves out of the batch
+         * (BATCH_UNSUPPORTED) a row changing a transformer whose taps an outer loop of the
+         * algorithm regulates.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_trafo_parameters(const Eigen::Ref<const IntVect> & trafo_ids,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & r,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & x,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h1,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h2,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & ratio,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & shift_rad) {
+            _set_branch_parameters(ybus_policy_.trafo_params, n_trafos_, "set_trafo_parameters",
+                                   trafo_ids, r, x, h1, h2, &ratio, &shift_rad);
+        }
         /**
          * ScenarioSweep only: row i, column g True means "disconnect generator g for
          * step i". Unlike the two branch masks above this does NOT touch Ybus -- a
@@ -1708,6 +1758,94 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
         }
+        // set_line_parameters / set_trafo_parameters: everything checked before anything
+        // is locked or registered (`ratio` and `shift` null for lines)
+        void _set_branch_parameters(::ls2g::YbusPolicy::BranchParams & table, size_t nb_el, const char * setter_name,
+                                    const Eigen::Ref<const IntVect> & ids,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & r,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & x,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h1,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h2,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> * ratio,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> * shift){
+            const auto fail = [this, setter_name](const std::string & what){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::" << setter_name << ": " << what;
+                throw std::invalid_argument(exc_.str());
+            };
+            if(ids.size() == 0){
+                // cleared: what the rows were given goes, as a registration does
+                clear_batch_inputs();
+                table.clear();
+                return;
+            }
+            const Eigen::Index nb_ids = ids.size();
+            std::vector<int> sorted(ids.data(), ids.data() + nb_ids);
+            for(int id : sorted){
+                if(id < 0 || static_cast<size_t>(id) >= nb_el){
+                    std::ostringstream msg;
+                    msg << "id " << id << " is out of range, the grid has " << nb_el << " of them.";
+                    fail(msg.str());
+                }
+            }
+            std::sort(sorted.begin(), sorted.end());
+            const auto dup = std::adjacent_find(sorted.begin(), sorted.end());
+            if(dup != sorted.end()){
+                std::ostringstream msg;
+                msg << "id " << *dup << " is named twice.";
+                fail(msg.str());
+            }
+            const Eigen::Index nb_rows = r.rows();
+            const auto check_shape = [&](Eigen::Index rows, Eigen::Index cols, const char * name){
+                if(rows == nb_rows && cols == nb_ids) return;
+                std::ostringstream msg;
+                msg << "`" << name << "` has shape (" << rows << ", " << cols << "), expected (" << nb_rows
+                    << ", " << nb_ids << "): one row per simulation, one column per id (the rows of `r` set the count).";
+                fail(msg.str());
+            };
+            check_shape(r.rows(), r.cols(), "r");
+            check_shape(x.rows(), x.cols(), "x");
+            check_shape(h1.rows(), h1.cols(), "h1");
+            check_shape(h2.rows(), h2.cols(), "h2");
+            if(ratio != nullptr) check_shape(ratio->rows(), ratio->cols(), "ratio");
+            if(shift != nullptr) check_shape(shift->rows(), shift->cols(), "shift_rad");
+            const auto cell = [](Eigen::Index row, Eigen::Index col){
+                std::ostringstream msg;
+                msg << "(row " << row << ", column " << col << ")";
+                return msg.str();
+            };
+            for(Eigen::Index row = 0; row < nb_rows; ++row){
+                for(Eigen::Index col = 0; col < nb_ids; ++col){
+                    const cplx_type h1_ = h1(row, col), h2_ = h2(row, col);
+                    if(std::isinf(r(row, col)) || std::isinf(x(row, col)) ||
+                       std::isinf(std::real(h1_)) || std::isinf(std::imag(h1_)) ||
+                       std::isinf(std::real(h2_)) || std::isinf(std::imag(h2_)) ||
+                       (shift != nullptr && std::isinf((*shift)(row, col)))){
+                        fail("an infinite value at " + cell(row, col) + ". Use NaN to keep the grid's value.");
+                    }
+                    if(r(row, col) == 0. && x(row, col) == 0.){
+                        fail("r and x are both 0 at " + cell(row, col) + ": the series impedance would be 0.");
+                    }
+                    if(ratio != nullptr){
+                        const real_type rho = (*ratio)(row, col);
+                        if(!std::isnan(rho) && !(rho > 0. && std::isfinite(rho))){
+                            fail("a ratio that is not a positive number at " + cell(row, col) + ".");
+                        }
+                    }
+                }
+            }
+            _lock_or_check_nb_steps(nb_rows, setter_name);
+            // a registration (L2), as the masks: what was built for the batch goes with it
+            clear_batch_inputs();
+            table.ids.assign(ids.data(), ids.data() + nb_ids);
+            table.r = r;
+            table.x = x;
+            table.h1 = h1;
+            table.h2 = h2;
+            if(ratio != nullptr){ table.ratio = *ratio; table.shift = *shift; }
+            else { table.ratio = ::ls2g::YbusPolicy::ParamRealMat(); table.shift = ::ls2g::YbusPolicy::ParamRealMat(); }
+        }
+
         void _lock_or_check_nb_steps(Eigen::Index rows, const char * setter_name){
             _results_stale_ = true;
             if(_nb_steps_locked < 0){ _nb_steps_locked = rows; return; }
@@ -1716,7 +1854,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 exc_ << algo_name() << "::" << setter_name << ": got " << rows
                      << " rows, but a previous call already fixed the number of "
                         "simulations to " << _nb_steps_locked << ". Every modify_* / "
-                        "set_contingency_* call must agree on the number of rows.";
+                        "set_contingency_* / set_*_parameters call must agree on the number of rows.";
                 throw std::runtime_error(exc_.str());
             }
         }
@@ -2016,7 +2154,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _prepare_ybus_varying(bool ac_solver_used, Eigen::Index nb_steps) {
-            ybus_policy_.init_li_coeffs_from_masks(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_, nb_steps);
+            // each row's own branch parameters, as pi models: the matrix edit below and every
+            // result of the row (flows, violations) read them
+            ybus_policy_.resolve_branch_models(_grid_model, ac_solver_used, n_line_, nb_steps, _row_branch_models_);
+            ybus_policy_.init_li_coeffs_from_masks(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_, nb_steps,
+                                                   _row_branch_models_);
         }
 
         // ----- Sbus-varying preparation: 2-way --------------------------------
@@ -2055,6 +2197,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ybus_policy_.storage_mask = BoolMat();
             ybus_policy_.svc_mask = BoolMat();
             ybus_policy_.hvdc_mask = BoolMat();
+            ybus_policy_.line_params.clear();
+            ybus_policy_.trafo_params.clear();
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _reset_ybus_policy() {}
