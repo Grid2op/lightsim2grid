@@ -1104,6 +1104,27 @@ void bind_batch(py::module_& m) {
              "change_ratio_trafo / change_shift_trafo take. A row changing a transformer whose "
              "taps an outer loop of the algorithm regulates is left out of the batch "
              "(BATCH_UNSUPPORTED).")
+        .def("set_gen_slack_weights", &ScenarioSweep::set_gen_slack_weights<>,
+             py::arg("gen_ids"), py::arg("weights"),
+             "The distributed-slack weight of the generators `gen_ids` in each simulation: "
+             "`weights` has shape (n_simul, len(gen_ids)), raw weights as "
+             "LSGrid.add_gen_slackbus takes them, 0 taking the generator out of that row's "
+             "slack, NaN keeping the grid's weight. The row solves, and reports its "
+             "generators' active power and limit violations, as the grid would with those "
+             "weights; the Jacobian keeps its pattern (the weights are values of its slack "
+             "column).\n\n"
+             "The buses sharing the slack are the grid's: compute() raises ValueError for a "
+             "positive weight to a unit on a bus with no participant of the grid's slack (make "
+             "it one with add_gen_slackbus and give it 0 in the rows where it takes no share), "
+             "or to one the row's topological action places, and for redistribute_slack. A "
+             "row leaving no participant puts the whole slack on the reference bus; under "
+             "outer loops a row giving weights is left out of the batch (BATCH_UNSUPPORTED). "
+             "Locks / checks the number of simulations; replaces an earlier call; an empty "
+             "`gen_ids` clears it.")
+        .def("set_storage_slack_weights", &ScenarioSweep::set_storage_slack_weights<>,
+             py::arg("storage_ids"), py::arg("weights"),
+             "The same as set_gen_slack_weights for the storage units `storage_ids` "
+             "(LSGrid.add_storage_slackbus).")
         .def("set_topo_actions", &ScenarioSweep::set_topo_actions<>, py::arg("actions"),
              "One topological action (TopoAction, grid2op semantics: set_bus on loads / "
              "generators / storage units / line and trafo ends, set_line_status) per row, "

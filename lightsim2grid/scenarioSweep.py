@@ -654,6 +654,72 @@ class ScenarioSweep:
                                            mats["ratio"], mats["shift_rad"])
         self.__computed = False
 
+    def _slack_weight_matrix(self, weights, nb_ids, setter):
+        """internal: `weights` checked to shape (n_simul, nb_ids), as a float matrix"""
+        arr = np.asarray(weights, dtype=float)
+        if nb_ids == 0 and arr.size == 0:
+            return np.zeros((0, 0), dtype=float)
+        if arr.ndim != 2 or arr.shape[1] != nb_ids:
+            raise RuntimeError(f"{setter}: `weights` should be a matrix of shape (n_simul, {nb_ids}): "
+                               f"one row per simulation, one column per element named, got shape {arr.shape}.")
+        return np.ascontiguousarray(arr)
+
+    def set_gen_slack_weights(self, gen_ids, weights):
+        """Per-step distributed-slack weights of some generators: the share of the slack each
+        simulation gives them.
+
+        Parameters
+        ----------
+        gen_ids:
+            The generators whose weight varies (ids, or names), one column each in ``weights``.
+        weights: ``np.ndarray`` of float, shape ``(n_simul, len(gen_ids))``
+            Raw (un-normalised) weights, what ``LSGrid.add_gen_slackbus`` takes. ``0`` takes
+            the generator out of that step's slack, ``NaN`` keeps the grid's weight.
+
+        Notes
+        -----
+        A step solves, and reports its generators' active power and their limit violations, as
+        the grid would with those weights: they are values of the Jacobian's slack column, so
+        the whole sweep keeps a single symbolic factorization. A step that disconnects a
+        generator ignores its weight; a step leaving no participant puts the whole slack on the
+        reference bus.
+
+        The buses that share the slack are the grid's, fixed for the batch. ``compute`` raises
+        for a positive weight to a generator on a bus where no unit takes part in the grid's
+        slack: make it a participant of the grid's slack (``add_gen_slackbus``) and give it
+        ``0`` in the steps where it should take no share. It also raises for a positive weight
+        to a generator the step's topological action moves or reactivates, and when
+        ``redistribute_slack`` is on. Under outer loops a step giving weights is left out of
+        the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
+
+        Locks / checks the number of simulations, as the other setters. A new call replaces the
+        previous one; an empty ``gen_ids`` clears it. Raises for an id out of range or named
+        twice, a matrix of another shape, or a weight that is negative or infinite.
+
+        See :ref:`sweep_slack_weights` for an example.
+        """
+        grid = self.grid2op_env.backend._grid
+        ids = self._branch_ids(gen_ids, grid.get_generators(), "generator")
+        self.computer.set_gen_slack_weights(ids, self._slack_weight_matrix(weights, ids.size, "set_gen_slack_weights"))
+        self.__computed = False
+
+    def set_storage_slack_weights(self, storage_ids, weights):
+        """Per-step distributed-slack weights of some storage units: :func:`set_gen_slack_weights`
+        for the storage units (``LSGrid.add_storage_slackbus``).
+
+        Parameters
+        ----------
+        storage_ids:
+            The storage units whose weight varies (ids, or names).
+        weights: ``np.ndarray`` of float, shape ``(n_simul, len(storage_ids))``
+            As in :func:`set_gen_slack_weights`.
+        """
+        grid = self.grid2op_env.backend._grid
+        ids = self._branch_ids(storage_ids, grid.get_storages(), "storage unit")
+        self.computer.set_storage_slack_weights(ids, self._slack_weight_matrix(weights, ids.size,
+                                                                               "set_storage_slack_weights"))
+        self.__computed = False
+
     def _set_element_mask(self, setter, mask, container, kind):
         """internal: a per-step mask of the elements of one kind of the grid"""
         mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)
