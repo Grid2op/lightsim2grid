@@ -214,14 +214,16 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
          * generators to evaluate as if they were disconnected -- what a batch sweep
          * needs to re-weight the distributed slack for a row whose contingency takes a
          * participating machine out. LSGrid adds the storage units' on top and
-         * normalises (LSGrid::get_slack_weights_solver_without).
+         * normalises (LSGrid::get_slack_weights_solver_without). `over` (nullable): the
+         * weights that row gives some generators instead of theirs.
          */
         void accumulate_slack_weights_solver(Eigen::Ref<RealVect> res,
                                              const SolverBusIdVect & id_grid_to_solver,
                                              const std::vector<bool> * gen_off,
-                                             bool can_participate = false) const {
+                                             bool can_participate = false,
+                                             const SlackWeightOverride * over = nullptr) const {
             slack_.accumulate_raw(res, status_, bus_id_, id_grid_to_solver, gen_off, _element_name(),
-                                  can_participate);
+                                  can_participate, over);
         }
         /// append the grid buses of the flagged generators not in `buses` yet
         void append_slack_bus_id(std::vector<int> & buses) const {slack_.append_slack_buses(buses, bus_id_);}
@@ -238,16 +240,18 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
          * set_p_slack, for a state the caller solved itself and keeps outside this
          * container (a batch row): adds each participant's share to `res_p` instead of
          * res_p_. `gen_off` (empty, or one entry per generator) takes generators out as if
-         * disconnected, the way that row did.
+         * disconnected, the way that row did; `over` (nullable) the weights it gave some
+         * generators instead of theirs.
          */
         void add_p_slack(RealVect & res_p,
                          const Eigen::Ref<const RealVect> & node_mismatch,
                          const SolverBusIdVect & id_grid_to_solver,
                          const Eigen::Ref<const RealVect> & bus_raw_total,
-                         const std::vector<bool> & gen_off) const{
+                         const std::vector<bool> & gen_off,
+                         const SlackWeightOverride * over = nullptr) const{
             if(gen_off.empty()){
                 slack_.split(res_p, 1., node_mismatch, bus_raw_total, status_, bus_id_, id_grid_to_solver,
-                             "GeneratorContainer::add_p_slack");
+                             "GeneratorContainer::add_p_slack", false, over);
                 return;
             }
             std::vector<bool> status(status_);
@@ -255,7 +259,7 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
                 if(gen_off[gen_id]) status[gen_id] = false;
             }
             slack_.split(res_p, 1., node_mismatch, bus_raw_total, status, bus_id_, id_grid_to_solver,
-                         "GeneratorContainer::add_p_slack");
+                         "GeneratorContainer::add_p_slack", false, over);
         }
 
         // modification
