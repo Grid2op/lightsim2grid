@@ -236,6 +236,81 @@ deduplicated; the masks are dense (see the note above); and a row left out of th
 not solved one at a time (`ContingencyAnalysis.batch_unsupported_fallback` has no
 `ScenarioSweep` counterpart).
 
+.. _sweep_slack_weights:
+
+Changing the slack weights
+------------------------------------
+
+`set_gen_slack_weights` and `set_storage_slack_weights` give some units a distributed-slack
+weight of their own in each simulation, with the same layout as the branch parameters:
+
+.. code-block:: python
+
+    sweep.set_gen_slack_weights(gen_ids, weights)
+    sweep.set_storage_slack_weights(storage_ids, weights)
+
+- `gen_ids` / `storage_ids` name the units whose weight varies (ids or names), one column
+  each. `weights` has shape `(n_simul, len(ids))`.
+- A weight is the raw (un-normalised) value `LSGrid.add_gen_slackbus` /
+  `add_storage_slackbus` takes. `0` takes the unit out of that row's slack, and a `NaN` cell
+  keeps the grid's weight.
+
+A row solves as the grid would once it holds the row's weights, and the generators' active
+power (`compute_gen_results`) and their active-power limit violations
+(`compute_physical_violations`) are split with them too. The weights are values in the slack
+column of the Jacobian, so the batch keeps its single symbolic factorization. A row that
+disconnects a unit ignores the weight it gives that unit.
+
+.. warning::
+
+    The buses that share the slack are the grid's, fixed for the whole batch: the Jacobian
+    has a slack entry on those buses only. `compute()` raises for a positive weight to a unit
+    on a bus where no unit takes part in the grid's distributed slack. To vary the share of
+    such a unit, make it a participant of the grid's slack first (`add_gen_slackbus`, with
+    any positive weight) and give it `0` in the rows where it should take no share.
+
+    The grid's algorithm must distribute the slack (`NR_KLU`, `NR_SparseLU`, ..., or a DC
+    one): a single-slack algorithm (`NRSing_*`) puts the whole imbalance on one bus, and the
+    weights then only split that bus' share between the units standing on it.
+
+Other points:
+
+- The angle reference is the batch's, chosen once. A row taking the reference bus's units out
+  of the slack leaves that bus the angle reference, with no share of the slack. The grid would
+  pick another reference bus for the same weights: the voltage angles then differ by a
+  constant, and nothing else changes.
+- A row leaving no participant at all puts the whole slack on the reference bus.
+- `compute()` raises for a positive weight to a unit that the row's topological action moves
+  or reactivates, and when `redistribute_slack` is on (its bounded pre-pass shares with the
+  grid's weights).
+- Under outer loops (`NROuter_*`) the loops share the slack from the grid's weights: a row
+  giving weights of its own is left out of the batch (`LimitViolationType.BATCH_UNSUPPORTED`,
+  the reason in `get_batch_unsupported_reasons()`).
+- The gradients (`keep_jacobian`, `solve_JT`) hold for these rows: each row keeps the
+  Jacobian it solved with, its weights included. No gradient with respect to the weights
+  themselves is provided.
+
+For example, comparing participation factors in proportion to the generators' set-points with
+ones in proportion to their maximum output, on the same injections:
+
+.. code-block:: python
+
+    import numpy as np
+    from lightsim2grid import ScenarioSweep
+
+    grid = env.backend._grid
+    gens = grid.get_generators()
+    # (the grid's distributed slack must already cover these generators' buses)
+    gen_ids = [g.id for g in gens if g.is_slack]
+    by_target = np.array([max(gens[i].target_p_mw, 0.) for i in gen_ids])
+    by_max_p = np.array([env.gen_pmax[i] for i in gen_ids])
+
+    sweep = ScenarioSweep(env)
+    sweep.computer.compute_gen_results = True
+    sweep.set_gen_slack_weights(gen_ids, np.vstack([by_target, by_max_p]))
+    sweep.compute()
+    gen_p = sweep.computer.get_gen_results()[:, :, 0]  # (2, n_gen), MW
+
 Generator contingencies
 ------------------------------------
 
