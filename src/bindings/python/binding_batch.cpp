@@ -1118,8 +1118,11 @@ void bind_batch(py::module_& m) {
              "it one with add_gen_slackbus and give it 0 in the rows where it takes no share), "
              "or to one the row's topological action places. redistribute_slack shares with the "
              "row's weights too. A "
-             "row leaving no participant puts the whole slack on the reference bus; under "
-             "outer loops a row giving weights is left out of the batch (BATCH_UNSUPPORTED). "
+             "row leaving no participant puts the whole slack on the reference bus. Under outer "
+             "loops the DistributedSlack loop shares with the row's weights: only a unit that can "
+             "take part in the grid's slack may get a positive weight, and with "
+             "init_from_n_powerflow such a row starts from the grid's targets, not from where the "
+             "\"n\" solve's loops left them. "
              "Locks / checks the number of simulations; replaces an earlier call; an empty "
              "`gen_ids` clears it.")
         .def("set_storage_slack_weights", &ScenarioSweep::set_storage_slack_weights<>,

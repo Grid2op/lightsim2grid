@@ -690,8 +690,10 @@ class ScenarioSweep:
         ``0`` in the steps where it should take no share. It also raises for a positive weight
         to a generator the step's topological action moves or reactivates. With
         ``redistribute_slack`` the bounded pre-pass shares with the step's weights too. Under
-        outer loops a step giving weights is left out of the batch
-        (``LimitViolationType.BATCH_UNSUPPORTED``).
+        outer loops (``NROuter_*``) the DistributedSlack loop shares with them: only a generator
+        that can take part in the grid's slack may get a positive weight, and with
+        ``init_from_n_powerflow`` such a step starts from the grid's targets, not from where the
+        "n" solve's loops left them (see the warning in :ref:`sweep_slack_weights`).
 
         Locks / checks the number of simulations, as the other setters. A new call replaces the
         previous one; an empty ``gen_ids`` clears it. Raises for an id out of range or named

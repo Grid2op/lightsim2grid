@@ -21,7 +21,8 @@ namespace ls2g {
 namespace {
 
 // the units taking part in the slack, in the row the view shows: connected, in the solved
-// grid, with a "can participate" weight. A unit on a bus the row strands (masked) is not in
+// grid, with a "can participate" weight (the row's where it gives one, see
+// OuterGridView::gen_slack_weight). A unit on a bus the row strands (masked) is not in
 // the solved grid: what it would take never reaches the slack bus. Storage targets are in the
 // load convention, their P limits in the generator one.
 void collect_units(const OuterGridView & view,
@@ -48,12 +49,12 @@ void collect_units(const OuterGridView & view,
     };
     for(int el_id = 0; el_id < gens.nb(); ++el_id){
         add(slack_redistribution::UnitKind::GENERATOR, el_id, view.gen_bus_solver(el_id),
-            gens.get_can_participate_slack_weight(el_id), view.gen_target_p(el_id),
+            view.gen_slack_weight(el_id), view.gen_target_p(el_id),
             gens.get_min_p(el_id), gens.get_max_p(el_id));
     }
     for(int el_id = 0; el_id < storages.nb(); ++el_id){
         add(slack_redistribution::UnitKind::STORAGE, el_id, view.storage_bus_solver(el_id),
-            storages.get_can_participate_slack_weight(el_id), -view.storage_target_p(el_id),
+            view.storage_slack_weight(el_id), -view.storage_target_p(el_id),
             storages.get_min_p(el_id), storages.get_max_p(el_id));
     }
 }
@@ -85,7 +86,9 @@ void DistributedSlackLoop::_declare(const OuterContext & ctx) const
     if (ctx.controls == nullptr || !ctx.controls->supports_slack_share()) return;
     // the bus every unit flagged "can participate" may share the slack from: its own in the
     // grid, connected or not in the solve that declares, and the one this solve places it on.
-    // A batch declares once for all its rows.
+    // A batch declares once for all its rows: a row's own weights (OuterRowView::Units::
+    // slack_weight) may only re-weight these units, or take them out (ScenarioSweep refuses
+    // a positive weight to any other).
     const OuterGridView view = ctx.view();
     const GeneratorContainer & gens = view.grid().get_generators();
     const StorageContainer & storages = view.grid().get_storages();

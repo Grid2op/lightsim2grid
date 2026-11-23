@@ -471,8 +471,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * Locks / checks the number of simulations. Replaces what an earlier call gave; an
          * empty `gen_ids` clears it. Refuses an id out of range or named twice, a matrix
          * of another shape and a value that is negative or infinite. With redistribute_slack
-         * the bounded pre-pass shares with the row's weights too. Not supported under outer
-         * loops (compute() leaves such a row out of the batch, BATCH_UNSUPPORTED).
+         * the bounded pre-pass shares with the row's weights too. Under outer loops the
+         * DistributedSlack loop shares with them; only a unit able to take part in the grid's
+         * slack ("can participate") may get a positive weight there, and such a row does not
+         * resume the "n" solve's loops (init_from_n_powerflow): it starts from the grid's
+         * targets.
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -2816,6 +2819,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _fill_outer_row_trips(i, v);
             _fill_outer_row_topo(i, v);
             _fill_outer_row_branches(i, v);
+            _fill_outer_row_slack_weights(i, v);
+        }
+        // the weights row i gives some units (set_gen_slack_weights): what the DistributedSlack
+        // loop shares the slack with (OuterGridView::gen_slack_weight). Nothing allocated on a
+        // row giving none.
+        void _fill_outer_row_slack_weights(size_t i, OuterRowView & v) const {
+            const auto fill = [i](const SlackWeightTable & table, size_t nb_el, std::vector<real_type> & out){
+                if(!table.has_row(i)) return;
+                out.assign(nb_el, std::numeric_limits<real_type>::quiet_NaN());
+                for(size_t col = 0; col < table.ids.size(); ++col){
+                    out[static_cast<size_t>(table.ids[col])] = table.w(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(col));
+                }
+            };
+            fill(_gen_slack_weights_, static_cast<size_t>(_grid_model.get_generators().nb()), v.gens.slack_weight);
+            fill(_storage_slack_weights_, static_cast<size_t>(_grid_model.get_storages().nb()), v.storages.slack_weight);
         }
         // the generators a ContingencyAnalysis contingency trips (a ScenarioSweep's come
         // with its injections above) and the loads a row's contingency trips, both
@@ -2850,6 +2868,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // this row does not call for); a row seeded from the "n" solve (init_from_n_powerflow,
         // a TimeSeries' first one included) from that solve's; any other from the grid
         void _set_outer_row_resume(size_t i, OuterRowView & v) const {
+            // a row giving units slack weights of its own starts from the grid's targets: the
+            // "n" solve's loops shared its imbalance with the grid's weights, which the row's
+            // would then only complete (see set_gen_slack_weights)
+            if(_gen_slack_weights_.has_row(i) || _storage_slack_weights_.has_row(i)){
+                v.resume = false;
+                v.resume_from = nullptr;
+                return;
+            }
             const bool chained = INIT == BatchInitKind::FromPreviousStep && i > 0;
             v.resume_from = chained ? nullptr : _seeded_row_resume_point();
             v.resume = chained || v.resume_from != nullptr;
@@ -5192,19 +5218,47 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // unit on another bus is refused, as is one to a unit the row's action places
         // somewhere (set_topo_actions refuses that of a grid participant). The bounded
         // redistribution pre-pass shares with the row's weights (_apply_row_slack_weights).
-        // The outer loops own the slack (the DistributedSlack loop shares it from the grid's
-        // participants): such a row is left out of the batch.
+        // Under outer loops the DistributedSlack loop shares the slack, with the row's
+        // weights (OuterRowView::Units::slack_weight), but the buses its Newton share uses
+        // are reserved once for the batch, from the units that can take part in the grid's
+        // slack (DistributedSlackLoop::_declare): a positive weight is refused to any other.
         void _check_slack_weight_rows(size_t nb_steps){
             if(_gen_slack_weights_.empty() && _storage_slack_weights_.empty()) return;
             if(_algo.supports_outer_loops()){
-                for(size_t row = 0; row < nb_steps; ++row){
-                    if(!_gen_slack_weights_.has_row(row) && !_storage_slack_weights_.has_row(row)) continue;
-                    std::ostringstream msg;
-                    msg << "gives units slack weights of their own, with an algorithm running outer loops ("
-                        << _algo.get_name() << "): the loops share the slack from the grid's weights and do not "
-                           "support a row changing them yet";
-                    _mark_row_batch_unsupported(row, msg.str());
-                }
+                const auto check_outer = [&](const SlackWeightTable & table, const char * what, const char * setter,
+                                             const std::function<real_type(int)> & grid_weight,
+                                             const std::function<bool(size_t, int)> & placed){
+                    for(size_t row = 0; row < nb_steps; ++row){
+                        if(!table.has_row(row)) continue;
+                        for(size_t col = 0; col < table.ids.size(); ++col){
+                            const int el_id = table.ids[col];
+                            const real_type w = table.w(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col));
+                            if(!(w >= BaseConstants::_tol_equal_float)) continue;  // NaN, or out of the slack
+                            std::ostringstream exc_;
+                            if(placed(row, el_id)){
+                                exc_ << algo_name() << "::" << setter << ": row " << row << " gives " << what << " " << el_id
+                                     << " a slack weight, and its topological action places that unit on a bus: the slack set "
+                                        "would change with the row, not supported.";
+                                throw std::invalid_argument(exc_.str());
+                            }
+                            if(grid_weight(el_id) > 0.) continue;
+                            exc_ << algo_name() << "::" << setter << ": row " << row << " gives " << what << " " << el_id
+                                 << " a slack weight, but it takes no part in the grid's distributed slack, with an algorithm "
+                                    "running outer loops (" << _algo.get_name() << "): the units sharing the slack are reserved "
+                                    "once for the batch. Make that unit a participant of the grid's slack (add_gen_slackbus / "
+                                    "add_storage_slackbus) and give it 0 in the rows where it should take no share.";
+                            throw std::invalid_argument(exc_.str());
+                        }
+                    }
+                };
+                const auto & gens = _grid_model.get_generators();
+                const auto & stos = _grid_model.get_storages();
+                check_outer(_gen_slack_weights_, "generator", "set_gen_slack_weights",
+                            [&gens](int gen_id){ return gens.get_can_participate_slack_weight(gen_id); },
+                            [this](size_t row, int gen_id){ return this->_gen_placed_in_row(row, gen_id); });
+                check_outer(_storage_slack_weights_, "storage unit", "set_storage_slack_weights",
+                            [&stos](int storage_id){ return stos.get_can_participate_slack_weight(storage_id); },
+                            [this](size_t row, int storage_id){ return this->_storage_placed_in_row(row, storage_id); });
                 return;
             }
             const SolverBusLayout & layout = active_layout();

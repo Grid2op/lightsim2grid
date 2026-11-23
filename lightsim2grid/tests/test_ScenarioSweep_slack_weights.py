@@ -27,13 +27,16 @@ from grid2op.Parameters import Parameters
 from lightsim2grid import LightSimBackend
 from lightsim2grid.algorithm import AlgorithmType
 from lightsim2grid.scenarioSweep import ScenarioSweep, ScenarioSweepCPP, LimitViolationType
+from lightsim2grid.lightsim2grid_cpp import DistributedSlack
 from lightsim2grid.network import init_from_pandapower
 
 try:
-    from lightsim2grid.algorithm import NROuter_KLU  # noqa: F401
+    from lightsim2grid.algorithm import NROuter_KLU, NROuterDist_KLU  # noqa: F401
     OUTER = "NROuter_KLU"
+    OUTER_DIST = "NROuterDist_KLU"
 except ImportError:
     OUTER = "NROuter_SparseLU"
+    OUTER_DIST = "NROuterDist_SparseLU"
 
 
 def _gap_up_to_rotation(a, b):
@@ -230,16 +233,15 @@ class TestScenarioSweepSlackWeightsCPP(unittest.TestCase):
         sweep.compute(self.Vinit, self.max_it, self.tol)
         self.assertTrue(np.all(sweep.converged_mask()))
 
-    def test_outer_loops_leave_the_row_out(self):
+    def test_outer_loops_solve_the_row(self):
+        """under outer loops the row is solved (TestScenarioSweepSlackWeightsOuter checks how)"""
         sweep = self._sweep(weights=False)
         sweep.compute_limit_violations = True
         sweep.change_algorithm(OUTER)
         sweep.set_gen_slack_weights(np.array([0]), np.array([[np.nan], [3.]]))
         sweep.compute(self.Vinit, self.max_it, self.tol)
-        reasons = sweep.get_batch_unsupported_reasons()
-        self.assertEqual(reasons[0], "")
-        self.assertIn("slack weights", reasons[1])
-        self.assertEqual(list(sweep.converged_mask()), [True, False])
+        self.assertEqual(list(sweep.get_batch_unsupported_reasons()), ["", ""])
+        self.assertEqual(list(sweep.converged_mask()), [True, True])
 
 
 class TestScenarioSweepSlackWeightsRedistribute(unittest.TestCase):
@@ -330,6 +332,134 @@ class TestScenarioSweepSlackWeightsRedistribute(unittest.TestCase):
 
     def test_matches_one_off_dc(self):
         self._check(dc=True)
+
+
+class TestScenarioSweepSlackWeightsOuter(unittest.TestCase):
+    """under outer loops the DistributedSlack loop shares the slack with the row's weights. The
+    grid of test_outer_batch: case14, its generators short of reactive power, every one of them
+    able to take part in the slack ("can participate"), generator 1 only 5 MW below its maximum.
+    The reference is that grid holding the row's weights (set_gen_can_participate_slack, the
+    weights the loop shares with) and loads, solved once by the same algorithm."""
+
+    MAX_IT = 30
+    TOL = 1e-8
+
+    def _grid(self, algo, wide_q=False, tight=False):
+        net = pn.case14()
+        net.gen["min_q_mvar"] = -1000. if wide_q else -15.
+        net.gen["max_q_mvar"] = 1000. if wide_q else 15.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pandapower(net)
+        n_gen = len(grid.get_generators())
+        targets = np.array([el.target_p_mw for el in grid.get_generators()])
+        max_p = np.full(n_gen, 300.)
+        max_p[1] = targets[1] + 5.
+        grid.set_gen_p_limits(np.zeros(n_gen), max_p)
+        grid.set_gen_can_participate_slack([True] * n_gen, np.full(n_gen, 300.))
+        grid.change_algorithm(algo)
+        if tight:
+            # the loop stops within its tolerance of the slack bus' mismatch: tight, two solves
+            # starting from different voltages land on the same state
+            loops = list(grid.get_outer_loops())
+            grid.clear_outer_loops()
+            for loop in loops:
+                grid.add_outer_loop(DistributedSlack(slack_bus_p_max_mismatch_mw=1e-6)
+                                    if loop.name() == "DistributedSlack" else loop)
+        return grid
+
+    def setUp(self):
+        grid = self._grid(OUTER)
+        self.n_gen = len(grid.get_generators())
+        self.load_targets = np.array([el.target_p_mw for el in grid.get_loads()])
+        self.V0 = np.full(grid.total_bus(), 1.04 + 0j)
+        # every row loses 40 MW (a heavier load), shared by the loop with the row's weights
+        self.nb_rows = 5
+        self.load_p = np.tile(self.load_targets, (self.nb_rows, 1))
+        self.load_p[:, 3] += 40.
+        self.gen_ids = np.array([1, 2, 3])
+        self.weights = np.full((self.nb_rows, 3), np.nan)
+        self.weights[1] = [3000., np.nan, np.nan]   # generator 1 stops at its maximum
+        self.weights[2] = [np.nan, 0., 900.]
+        self.weights[3] = [0., 0., 0.]
+        self.weights[4] = [30., 600., np.nan]
+
+    def _sweep(self, grid, init_from_n=False):
+        sweep = ScenarioSweepCPP(grid)
+        sweep.compute_gen_results = True
+        sweep.init_from_n_powerflow = init_from_n
+        sweep.modify_load_p(self.load_p)
+        sweep.set_gen_slack_weights(self.gen_ids, self.weights)
+        sweep.compute(self.V0, self.MAX_IT, self.TOL)
+        self.assertTrue(np.all(sweep.converged_mask()))
+        self.assertEqual(set(sweep.get_batch_unsupported_reasons()), {""})
+        return sweep
+
+    def _reference(self, make_grid, row, V_start, uniform_start=True):
+        ref = make_grid()
+        ref.set_uniform_voltage_start(uniform_start)
+        w = np.full(self.n_gen, 300.)
+        for k, gen_id in enumerate(self.gen_ids):
+            if not np.isnan(self.weights[row, k]):
+                w[gen_id] = self.weights[row, k]
+        ref.set_gen_can_participate_slack([bool(x > 0.) for x in w], np.where(w > 0., w, 0.))
+        for load_id, p in enumerate(self.load_p[row]):
+            ref.change_p_load(load_id, float(p))
+        V = ref.ac_pf(V_start, self.MAX_IT, self.TOL)
+        self.assertGreater(V.shape[0], 0, "the one-off reference diverged")
+        return V, np.array([el.res_p_mw for el in ref.get_generators()])
+
+    def _check(self, algo):
+        sweep = self._sweep(self._grid(algo))
+        Vs = sweep.get_voltages()
+        P = sweep.get_gen_results()[:, :, 0]
+        for row in range(self.nb_rows):
+            with self.subTest(row=row):
+                V_ref, p_ref = self._reference(lambda: self._grid(algo), row, self.V0)
+                self.assertLess(_gap_up_to_rotation(Vs[row], V_ref), 1e-9)
+                np.testing.assert_allclose(P[row], p_ref, atol=1e-7, rtol=0)
+        # generator 1 stops at its maximum however heavy its weight; the weights move the rest
+        self.assertAlmostEqual(P[1, 1], P[0, 1], places=6)
+        self.assertGreater(np.max(np.abs(P[2] - P[0])), 1.)
+        self.assertGreater(np.max(np.abs(P[4] - P[0])), 1.)
+
+    def test_rows_match_the_grid_given_their_weights(self):
+        self._check(OUTER)
+
+    def test_rows_match_the_grid_given_their_weights_dist(self):
+        self._check(OUTER_DIST)
+
+    def test_seeded_from_n_a_row_with_weights_starts_from_the_grid_targets(self):
+        """with init_from_n_powerflow a row giving weights does not resume the "n" solve's
+        loops: it is the grid holding its weights solved from the "n" voltages, its loops starting
+        from the grid's targets. Wide reactive limits and a tight DistributedSlack tolerance, so
+        that the voltages the solve starts from decide nothing else."""
+        for algo in (OUTER, OUTER_DIST):
+            with self.subTest(algo=algo):
+                make = lambda: self._grid(algo, wide_q=True, tight=True)  # noqa: E731
+                sweep = self._sweep(make(), init_from_n=True)
+                V_n = make().ac_pf(self.V0, self.MAX_IT, self.TOL)
+                P = sweep.get_gen_results()[:, :, 0]
+                for row in range(1, self.nb_rows):
+                    V_ref, p_ref = self._reference(make, row, V_n, uniform_start=False)
+                    self.assertLess(_gap_up_to_rotation(sweep.get_voltages()[row], V_ref), 1e-9, f"row {row}")
+                    np.testing.assert_allclose(P[row], p_ref, atol=1e-7, rtol=0, err_msg=f"row {row}")
+
+    def test_a_unit_outside_the_grid_slack_is_refused(self):
+        grid = self._grid(OUTER)
+        # generator 2 can no longer take part in the grid's slack
+        flags = [True] * self.n_gen
+        flags[2] = False
+        grid.set_gen_can_participate_slack(flags, np.where(flags, 300., 0.))
+        sweep = ScenarioSweepCPP(grid)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_gen_slack_weights(np.array([2]), np.array([[np.nan], [10.]]))
+        with self.assertRaises(ValueError):
+            sweep.compute(self.V0, self.MAX_IT, self.TOL)
+        # ... and 0 keeps it out, which it already is
+        sweep.set_gen_slack_weights(np.array([2]), np.array([[np.nan], [0.]]))
+        sweep.compute(self.V0, self.MAX_IT, self.TOL)
+        self.assertTrue(np.all(sweep.converged_mask()))
 
 
 class TestScenarioSweepSlackWeights(unittest.TestCase):
