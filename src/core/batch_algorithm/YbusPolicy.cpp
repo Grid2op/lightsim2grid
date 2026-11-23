@@ -390,14 +390,21 @@ void YbusPolicy::Contingency::_append_placement_coeffs(const BranchPlacement & p
                                                         const LSGrid & grid_model,
                                                         bool ac_solver_used,
                                                         size_t n_line,
-                                                        std::vector<Coeff> & out)
+                                                        std::vector<Coeff> & out,
+                                                        const BranchPiModel * model)
 {
     const bool is_trafo = static_cast<size_t>(placement.branch_id) >= n_line;
     const int el_id = is_trafo ? placement.branch_id - static_cast<int>(n_line) : placement.branch_id;
     const BranchContainer & branch = is_trafo ? static_cast<const BranchContainer &>(grid_model.get_trafos_as_data())
                                               : static_cast<const BranchContainer &>(grid_model.get_powerlines_as_data());
     cplx_type y_ff, y_ft, y_tf, y_tt;
-    if(ac_solver_used){
+    if(model != nullptr){
+        // the row's own parameters of it: its raw block (both ends closed)
+        y_ff = ac_solver_used ? model->yac[0] : cplx_type(model->ydc[0], 0.);
+        y_ft = ac_solver_used ? model->yac[1] : cplx_type(model->ydc[1], 0.);
+        y_tf = ac_solver_used ? model->yac[2] : cplx_type(model->ydc[2], 0.);
+        y_tt = ac_solver_used ? model->yac[3] : cplx_type(model->ydc[3], 0.);
+    }else if(ac_solver_used){
         y_ff = branch.yac_11()[el_id];
         y_ft = branch.yac_12()[el_id];
         y_tf = branch.yac_21()[el_id];
@@ -416,12 +423,70 @@ void YbusPolicy::Contingency::_append_placement_coeffs(const BranchPlacement & p
     out.push_back({b2, b1, -y_tf});
 }
 
+void YbusPolicy::Contingency::_append_param_coeffs(int branch_id,
+                                                    const BranchPiModel & model,
+                                                    const LSGrid & grid_model,
+                                                    bool ac_solver_used,
+                                                    const SolverBusIdVect & id_me_to_solver,
+                                                    size_t n_line,
+                                                    std::vector<Coeff> & coeffs,
+                                                    std::vector<std::pair<int, cplx_type> > & sbus_dp)
+{
+    const bool is_trafo = static_cast<size_t>(branch_id) >= n_line;
+    const int el_id = is_trafo ? branch_id - static_cast<int>(n_line) : branch_id;
+    const BranchContainer & branch = is_trafo ? static_cast<const BranchContainer &>(grid_model.get_trafos_as_data())
+                                              : static_cast<const BranchContainer &>(grid_model.get_powerlines_as_data());
+    const size_t el = static_cast<size_t>(el_id);
+    if(!branch.get_status_global()[el]) return;  // in no matrix, nothing to change
+    const bool s1 = branch.get_status_side_1()[el];
+    const bool s2 = branch.get_status_side_2()[el];
+    const auto solver_bus = [&id_me_to_solver](GlobalBusId bus_me){
+        const int b = bus_me.cast_int();
+        return b == GenericContainer::_deactivated_bus_id ? GenericContainer::_deactivated_bus_id : id_me_to_solver[b].cast_int();
+    };
+    const int b1 = s1 ? solver_bus(branch.get_bus_side_1(el_id)) : GenericContainer::_deactivated_bus_id;
+    const int b2 = s2 ? solver_bus(branch.get_bus_side_2(el_id)) : GenericContainer::_deactivated_bus_id;
+    const bool on1 = b1 != GenericContainer::_deactivated_bus_id;
+    const bool on2 = b2 != GenericContainer::_deactivated_bus_id;
+    if(ac_solver_used){
+        // the stamped blocks, the grid's (yac_eff_*) and the row's, for the same end statuses
+        const std::array<cplx_type, 4> row = BranchContainer::kron_block(model.yac, true, s1, s2);
+        const cplx_type d11 = branch.yac_eff_11()[el_id] - row[0];
+        const cplx_type d12 = branch.yac_eff_12()[el_id] - row[1];
+        const cplx_type d21 = branch.yac_eff_21()[el_id] - row[2];
+        const cplx_type d22 = branch.yac_eff_22()[el_id] - row[3];
+        if(on1) coeffs.push_back({b1, b1, d11});
+        if(on2) coeffs.push_back({b2, b2, d22});
+        if(on1 && on2){
+            coeffs.push_back({b1, b2, d12});
+            coeffs.push_back({b2, b1, d21});
+        }
+        return;
+    }
+    // DC: a branch open at one end is in no matrix (see fillBdc), whatever its parameters
+    if(!on1 || !on2) return;
+    coeffs.push_back({b1, b1, cplx_type(branch.ydc_11()[el_id] - model.ydc[0], 0.)});
+    coeffs.push_back({b2, b2, cplx_type(branch.ydc_22()[el_id] - model.ydc[3], 0.)});
+    coeffs.push_back({b1, b2, cplx_type(branch.ydc_12()[el_id] - model.ydc[1], 0.)});
+    coeffs.push_back({b2, b1, cplx_type(branch.ydc_21()[el_id] - model.ydc[2], 0.)});
+    if(!is_trafo) return;
+    // a phase shifter's injection pair (TrafoContainer::hack_Sbus_for_dc_phase_shifter, which
+    // skips a negligible term: the same test here): the grid stamps (-s, +s) at its two
+    // buses, the row (-s_row, +s_row), so the row adds (s - s_row, s_row - s)
+    const auto stamped = [](real_type shift){ return std::abs(shift) < BaseConstants::_tol_equal_float ? real_type(0.) : shift; };
+    const real_type d_shift = stamped(grid_model.get_trafos_as_data().dc_x_tau_shift()(el_id)) - stamped(model.dc_x_tau_shift);
+    if(d_shift == 0.) return;
+    sbus_dp.push_back({b1, cplx_type(d_shift, 0.)});
+    sbus_dp.push_back({b2, cplx_type(-d_shift, 0.)});
+}
+
 void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     const LSGrid & grid_model,
     bool ac_solver_used,
     const SolverBusIdVect & id_me_to_solver,
     size_t n_line,
-    Eigen::Index nb_steps)
+    Eigen::Index nb_steps,
+    const std::vector<std::vector<BranchRowModel> > & row_models)
 {
     li_coeffs.clear();
     li_coeffs.reserve(static_cast<size_t>(nb_steps));
@@ -429,8 +494,35 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
     li_rows.clear();
     for(Eigen::Index row = 0; row < nb_steps; ++row){
         std::vector<std::pair<int, cplx_type> > & row_shift_dp = li_sbus_dp[static_cast<size_t>(row)];
-        std::vector<Coeff> coeffs = _coeffs_for_branch_ids(branch_ids_for_row(row, n_line), grid_model, ac_solver_used, id_me_to_solver, n_line,
+        const std::vector<int> branches_off = branch_ids_for_row(row, n_line);
+        std::vector<Coeff> coeffs = _coeffs_for_branch_ids(branches_off, grid_model, ac_solver_used, id_me_to_solver, n_line,
                                                            row_shift_dp);
+        // the branches the row gives parameters of its own
+        const std::vector<BranchRowModel> * models =
+            (static_cast<size_t>(row) < row_models.size() && !row_models[static_cast<size_t>(row)].empty())
+            ? &row_models[static_cast<size_t>(row)] : nullptr;
+        const auto model_of = [models](int branch_id) -> const BranchPiModel * {
+            if(models == nullptr) return nullptr;
+            const auto it = std::lower_bound(models->begin(), models->end(), branch_id,
+                                             [](const BranchRowModel & m, int id){ return m.branch_id < id; });
+            return (it != models->end() && it->branch_id == branch_id) ? &it->model : nullptr;
+        };
+        if(models != nullptr){
+            for(const BranchRowModel & m : *models){
+                // disconnected by the row: the grid's block went above, the parameters do not matter
+                if(std::binary_search(branches_off.begin(), branches_off.end(), m.branch_id)) continue;
+                // placed by the row's action: its raw block goes in below, at the row's buses
+                bool placed = false;
+                if(static_cast<size_t>(row) < topo_branches_moved.size()){
+                    for(const BranchPlacement & placement : topo_branches_moved[static_cast<size_t>(row)]){
+                        if(placement.branch_id == m.branch_id) placed = true;
+                    }
+                }
+                if(placed) continue;
+                _append_param_coeffs(m.branch_id, m.model, grid_model, ac_solver_used, id_me_to_solver, n_line,
+                                     coeffs, row_shift_dp);
+            }
+        }
         // its shunts (the loads and generators it trips are SbusPolicy::Vary's)
         _append_shunt_trips(shunt_ids_for_row(row), grid_model, ac_solver_used, id_me_to_solver, coeffs, row_shift_dp);
         const auto ids_as_set = [this, row](InjectionTrip kind){
@@ -452,7 +544,8 @@ void YbusPolicy::Contingency::init_li_coeffs_from_masks(
                         unused_shift_dp);
                     coeffs.insert(coeffs.end(), base.begin(), base.end());
                 }
-                _append_placement_coeffs(placement, grid_model, ac_solver_used, n_line, coeffs);
+                _append_placement_coeffs(placement, grid_model, ac_solver_used, n_line, coeffs,
+                                         model_of(placement.branch_id));
             }
         }
         li_coeffs.push_back(coeffs);

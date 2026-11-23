@@ -10,6 +10,7 @@
 #define YBUSPOLICY_H
 
 #include "LSGrid.hpp"
+#include "OperationalCheck.hpp"  // BranchRowModel
 
 #include <set>
 #include <tuple>
@@ -211,11 +212,17 @@ struct LS2G_API YbusPolicy
         // row-aligned with its injections, unlike ContingencyAnalysis's set of
         // distinct scenarios). A row with both masks empty/all-False produces an
         // empty coefficient list for that step (no branch touched).
+        // `row_models`: per row, the branches it gives parameters of its own (see
+        // BranchRowModel, sorted by branch id; empty, or one vector per row): their
+        // stamped block goes from the grid's to the row's, unless the row disconnects
+        // the branch (its grid block simply goes) or places it (the row's raw block goes
+        // in at the row's buses).
         void init_li_coeffs_from_masks(const LSGrid & grid_model,
                                        bool ac_solver_used,
                                        const SolverBusIdVect & id_me_to_solver,
                                        size_t n_line,
-                                       Eigen::Index nb_steps);
+                                       Eigen::Index nb_steps,
+                                       const std::vector<std::vector<BranchRowModel> > & row_models = {});
 
         // per-row branch ids (gridmodel numbering, lines then trafos) implied by
         // line_mask/trafo_mask row `row` -- the ScenarioSweep counterpart of
@@ -304,7 +311,20 @@ struct LS2G_API YbusPolicy
                                                  const LSGrid & grid_model,
                                                  bool ac_solver_used,
                                                  size_t n_line,
-                                                 std::vector<Coeff> & out);
+                                                 std::vector<Coeff> & out,
+                                                 const BranchPiModel * model = nullptr);
+            // a branch the row gives parameters of its own (and leaves where the grid has
+            // it): what the grid stamps for it minus what `model` stamps, on the same
+            // entries, into `coeffs`; in DC the change of a phase shifter's injection pair
+            // into `sbus_dp` (see li_sbus_dp). Nothing for a branch off in the grid.
+            static void _append_param_coeffs(int branch_id,
+                                             const BranchPiModel & model,
+                                             const LSGrid & grid_model,
+                                             bool ac_solver_used,
+                                             const SolverBusIdVect & id_me_to_solver,
+                                             size_t n_line,
+                                             std::vector<Coeff> & coeffs,
+                                             std::vector<std::pair<int, cplx_type> > & sbus_dp);
             // what tripping these shunts / loads / generators adds to an entry: a
             // diagonal coefficient per shunt (AC) into `coeffs`, and into `sbus_dp`
             // the injection terms li_sbus_dp describes. An element off in the base grid
