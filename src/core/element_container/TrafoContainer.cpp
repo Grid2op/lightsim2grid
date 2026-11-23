@@ -237,63 +237,97 @@ void TrafoContainer::set_shift_dependent_rx(
     solver_control.tell_recompute_ybus();
 }
 
-void TrafoContainer::_update_model_coeffs_one_el(int el_id)
+void TrafoContainer::_at_taps_and_shift(int el_id, real_type shift, real_type & r, real_type & x,
+                                       cplx_type & h1, cplx_type & h2) const
 {
     // the pi model at the tap positions: the neutral r, x, g, b times the corrections of
     // each changer's step (OpenLoadFlow's Transformers.getTapCharacteristics)
-    const bool tapped = ratio_taps_.has(el_id) || phase_taps_.has(el_id);
+    const bool tapped = _tapped(el_id);
     // phase-shifting transformers whose series impedance follows the phase-shift angle
-    // (set_shift_dependent_rx): the correction interpolated at the current `shift_`, so that
+    // (set_shift_dependent_rx): the correction interpolated at `shift`, so that
     // `change_shift` keeps r / x in sync. Relative to the phase changer's step when there is
     // one: at its position, the step alone decides.
-    const bool shift_dependent = shift_dependent_rx_ && !rx_corr_alpha_[el_id].empty();
-    if(tapped || shift_dependent){
-        real_type r = base_r_(el_id);
-        real_type x = base_x_(el_id);
-        if(tapped){
-            r *= ratio_taps_.r_factor(el_id) * phase_taps_.r_factor(el_id);
-            x *= ratio_taps_.x_factor(el_id) * phase_taps_.x_factor(el_id);
-            const real_type g_factor = ratio_taps_.g_factor(el_id) * phase_taps_.g_factor(el_id);
-            const real_type b_factor = ratio_taps_.b_factor(el_id) * phase_taps_.b_factor(el_id);
-            h_side_1_(el_id) = {std::real(base_h1_(el_id)) * g_factor, std::imag(base_h1_(el_id)) * b_factor};
-            h_side_2_(el_id) = {std::real(base_h2_(el_id)) * g_factor, std::imag(base_h2_(el_id)) * b_factor};
-        }
-        if(shift_dependent){
-            real_type corr = my_one_ + _shift_rx_corr_pct(el_id) / 100.;
-            if(phase_taps_.has(el_id)) corr /= my_one_ + _rx_corr_pct_at(el_id, phase_taps_.alpha(el_id)) / 100.;
-            r *= corr;
-            x *= corr;
-        }
-        r_(el_id) = r;
-        x_(el_id) = x;
+    const bool shift_dependent = _shift_dependent(el_id);
+    if(tapped){
+        r *= ratio_taps_.r_factor(el_id) * phase_taps_.r_factor(el_id);
+        x *= ratio_taps_.x_factor(el_id) * phase_taps_.x_factor(el_id);
+        const real_type g_factor = ratio_taps_.g_factor(el_id) * phase_taps_.g_factor(el_id);
+        const real_type b_factor = ratio_taps_.b_factor(el_id) * phase_taps_.b_factor(el_id);
+        h1 = {std::real(h1) * g_factor, std::imag(h1) * b_factor};
+        h2 = {std::real(h2) * g_factor, std::imag(h2) * b_factor};
     }
+    if(shift_dependent){
+        real_type corr = my_one_ + _rx_corr_pct_at(el_id, shift) / 100.;
+        if(phase_taps_.has(el_id)) corr /= my_one_ + _rx_corr_pct_at(el_id, phase_taps_.alpha(el_id)) / 100.;
+        r *= corr;
+        x *= corr;
+    }
+}
 
+BranchPiModel TrafoContainer::_trafo_pi_model(real_type r, real_type x, cplx_type h1, cplx_type h2,
+                                              real_type ratio, real_type shift, bool tap_side1,
+                                              bool ignore_tap_side_for_shift)
+{
+    BranchPiModel res;
     // for AC
-    const std::array<cplx_type, 4> block = _pi_coeffs(r_(el_id), x_(el_id), h_side_1_(el_id), h_side_2_(el_id),
-                                                      ratio_(el_id), shift_(el_id), is_tap_side1_[el_id],
-                                                      ignore_tap_side_for_shift_);
-    yac_11_(el_id) = block[0];
-    yac_12_(el_id) = block[1];
-    yac_21_(el_id) = block[2];
-    yac_22_(el_id) = block[3];
-    real_type tau = ratio_(el_id);
-    real_type theta_shift = shift_(el_id);
-    if(!is_tap_side1_[el_id]){
+    res.yac = _pi_coeffs(r, x, h1, h2, ratio, shift, tap_side1, ignore_tap_side_for_shift);
+    real_type tau = ratio;
+    real_type theta_shift = shift;
+    if(!tap_side1){
         tau = my_one_ / tau;
-        if (!ignore_tap_side_for_shift_) theta_shift = -theta_shift;
+        if (!ignore_tap_side_for_shift) theta_shift = -theta_shift;
     }
     const real_type _1_tau = my_one_ / tau;
 
     // for DC
     // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
     // except here I only care about the real part (1/x), so I remove the "1/j"
-    const real_type tmp = 1. / x_(el_id) * _1_tau;
-    ydc_11_(el_id) = tmp;
-    ydc_22_(el_id) = tmp;
-    ydc_21_(el_id) = -tmp;
-    ydc_12_(el_id) = -tmp;
+    const real_type tmp = 1. / x * _1_tau;
+    res.ydc = {tmp, -tmp, -tmp, tmp};
+    res.dc_x_tau_shift = -tmp * theta_shift;
+    return res;
+}
 
-    dc_x_tau_shift_(el_id) = -tmp * theta_shift;
+void TrafoContainer::_update_model_coeffs_one_el(int el_id)
+{
+    if(_tapped(el_id) || _shift_dependent(el_id)){
+        // r, x (and, with a tap changer, h) at the taps and the current shift, from the
+        // neutral values
+        real_type r = base_r_(el_id);
+        real_type x = base_x_(el_id);
+        cplx_type h1 = _tapped(el_id) ? base_h1_(el_id) : h_side_1_(el_id);
+        cplx_type h2 = _tapped(el_id) ? base_h2_(el_id) : h_side_2_(el_id);
+        _at_taps_and_shift(el_id, shift_(el_id), r, x, h1, h2);
+        r_(el_id) = r;
+        x_(el_id) = x;
+        h_side_1_(el_id) = h1;
+        h_side_2_(el_id) = h2;
+    }
+    const BranchPiModel model = _trafo_pi_model(r_(el_id), x_(el_id), h_side_1_(el_id), h_side_2_(el_id),
+                                                ratio_(el_id), shift_(el_id), is_tap_side1_[el_id],
+                                                ignore_tap_side_for_shift_);
+    _assign_model(el_id, model);
+    dc_x_tau_shift_(el_id) = model.dc_x_tau_shift;
+}
+
+BranchPiModel TrafoContainer::pi_model_with(int el_id, real_type r, real_type x, cplx_type h1, cplx_type h2,
+                                            real_type ratio, real_type shift_rad) const
+{
+    _check_in_range(el_id, ratio_, "TrafoContainer::pi_model_with");
+    // the neutral values the container holds: base_* where the taps or the shift correct
+    // them, the current ones (which are then the same) otherwise -- so that every argument
+    // NaN gives the coefficients the transformer has, bit for bit
+    const bool tapped = _tapped(el_id);
+    const bool corrected = tapped || _shift_dependent(el_id);
+    const auto keep = [](cplx_type v){ return std::isnan(std::real(v)) || std::isnan(std::imag(v)); };
+    if(std::isnan(r)) r = corrected ? base_r_(el_id) : r_(el_id);
+    if(std::isnan(x)) x = corrected ? base_x_(el_id) : x_(el_id);
+    if(keep(h1)) h1 = tapped ? base_h1_(el_id) : h_side_1_(el_id);
+    if(keep(h2)) h2 = tapped ? base_h2_(el_id) : h_side_2_(el_id);
+    if(std::isnan(ratio)) ratio = ratio_(el_id);
+    if(std::isnan(shift_rad)) shift_rad = shift_(el_id);
+    if(corrected) _at_taps_and_shift(el_id, shift_rad, r, x, h1, h2);
+    return _trafo_pi_model(r, x, h1, h2, ratio, shift_rad, is_tap_side1_[el_id], ignore_tap_side_for_shift_);
 }
 
 std::array<cplx_type, 4> TrafoContainer::_pi_coeffs(real_type r, real_type x, cplx_type h1, cplx_type h2,

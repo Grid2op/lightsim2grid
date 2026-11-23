@@ -9,12 +9,26 @@
 #ifndef BRANCH_CONTAINER_H
 #define BRANCH_CONTAINER_H
 
+#include <array>
+#include <cmath>
 #include <limits>
 
 #include "TwoSidesContainer.hpp"
 #include "BranchEndContainer.hpp"
 
 namespace ls2g {
+
+/**
+ * The pi model of one branch, as a container computes it from its parameters: the raw
+ * AC block (y11, y12, y21, y22, pu, both ends closed), the DC block and, for a phase
+ * shifter, the DC injection term of its shift (0 for a line). What is stamped for a
+ * branch open at one end is `BranchContainer::kron_block` of the raw block.
+ */
+struct BranchPiModel {
+    std::array<cplx_type, 4> yac;
+    std::array<real_type, 4> ydc;
+    real_type dc_x_tau_shift;
+};
 
 /**
  * A pi-model branch -- a line or a transformer: two BranchEndContainer ends, a
@@ -456,6 +470,21 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
         Eigen::Ref<const RealVect> ydc_12() const {return ydc_12_;}
         Eigen::Ref<const RealVect> ydc_21() const {return ydc_21_;}
         Eigen::Ref<const RealVect> ydc_22() const {return ydc_22_;}
+
+        /**
+         * The block a branch with raw block `y` stamps, given its global status `on` and
+         * the status of its two ends: the raw block with both ends closed, the open end
+         * Kron-reduced out with one end open, 0 otherwise (what `yac_eff_*` holds).
+         */
+        static std::array<cplx_type, 4> kron_block(const std::array<cplx_type, 4> & y, bool on, bool s1, bool s2) {
+            const cplx_type zero(0., 0.);
+            if (!on || (!s1 && !s2)) return {zero, zero, zero, zero};
+            // side 1 open, side 2 connected: Kron-reduce out the open end
+            if (!s1) return {zero, zero, zero, y[3] - y[2] * y[1] / y[0]};
+            // side 1 connected, side 2 open: Kron-reduce out the open end
+            if (!s2) return {y[0] - y[2] * y[1] / y[3], zero, zero, zero};
+            return y;
+        }
 
         // connection status accessors (explicit, needed by external Ybus builders)
         const std::vector<bool>& get_status_side_1() const { return side_1_.get_status(); }
@@ -919,47 +948,45 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
          * status of its two ends and of the element, which must be up to date.
          */
         void _update_kron_coeffs(int el_id) {
-            const bool s1 = side_1_.get_status(el_id);
-            const bool s2 = side_2_.get_status(el_id);
-            if (!status_global_[el_id] || (!s1 && !s2)) {
-                yac_eff_11_(el_id) = yac_eff_12_(el_id) = 0.;
-                yac_eff_21_(el_id) = yac_eff_22_(el_id) = 0.;
-            } else if (!s1) {
-                // side 1 open, side 2 connected: Kron-reduce out the open end
-                yac_eff_11_(el_id) = yac_eff_12_(el_id) = yac_eff_21_(el_id) = 0.;
-                yac_eff_22_(el_id) = yac_22_(el_id) - yac_21_(el_id) * yac_12_(el_id) / yac_11_(el_id);
-            } else if (!s2) {
-                // side 1 connected, side 2 open: Kron-reduce out the open end
-                yac_eff_12_(el_id) = yac_eff_21_(el_id) = yac_eff_22_(el_id) = 0.;
-                yac_eff_11_(el_id) = yac_11_(el_id) - yac_21_(el_id) * yac_12_(el_id) / yac_22_(el_id);
-            } else {
-                // both sides connected
-                yac_eff_11_(el_id) = yac_11_(el_id);
-                yac_eff_12_(el_id) = yac_12_(el_id);
-                yac_eff_21_(el_id) = yac_21_(el_id);
-                yac_eff_22_(el_id) = yac_22_(el_id);
-            }
+            const std::array<cplx_type, 4> eff = kron_block(
+                {yac_11_(el_id), yac_12_(el_id), yac_21_(el_id), yac_22_(el_id)},
+                status_global_[el_id], side_1_.get_status(el_id), side_2_.get_status(el_id));
+            yac_eff_11_(el_id) = eff[0];
+            yac_eff_12_(el_id) = eff[1];
+            yac_eff_21_(el_id) = eff[2];
+            yac_eff_22_(el_id) = eff[3];
         }
 
-        virtual void _update_model_coeffs_one_el(int el_id){
+        // the pi model of a line of these parameters (pu)
+        static BranchPiModel _line_pi_model(real_type r, real_type x, cplx_type h1, cplx_type h2) {
+            BranchPiModel res;
             // for AC
             // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.2
-            const cplx_type ys = 1. / cplx_type(r_(el_id), x_(el_id));
-            const cplx_type h_or = h_side_1_(el_id);
-            const cplx_type h_ex = h_side_2_(el_id);
-            yac_11_(el_id) = (ys + h_or);
-            yac_22_(el_id) = (ys + h_ex);
-            yac_12_(el_id) = -ys;
-            yac_21_(el_id) = -ys;
-
+            const cplx_type ys = 1. / cplx_type(r, x);
+            res.yac = {ys + h1, -ys, -ys, ys + h2};
             // for DC
             // see https://matpower.org/docs/MATPOWER-manual.pdf eq. 3.21
             // except here I only care about the real part (1/x), so I remove the "1/j"
-            const real_type tmp = 1. / x_(el_id);
-            ydc_11_(el_id) = tmp;
-            ydc_22_(el_id) = tmp;
-            ydc_21_(el_id) = -tmp;
-            ydc_12_(el_id) = -tmp;
+            const real_type tmp = 1. / x;
+            res.ydc = {tmp, -tmp, -tmp, tmp};
+            res.dc_x_tau_shift = 0.;
+            return res;
+        }
+
+        // writes `model` as the coefficients of `el_id` (the raw and DC blocks)
+        void _assign_model(int el_id, const BranchPiModel & model) {
+            yac_11_(el_id) = model.yac[0];
+            yac_12_(el_id) = model.yac[1];
+            yac_21_(el_id) = model.yac[2];
+            yac_22_(el_id) = model.yac[3];
+            ydc_11_(el_id) = model.ydc[0];
+            ydc_12_(el_id) = model.ydc[1];
+            ydc_21_(el_id) = model.ydc[2];
+            ydc_22_(el_id) = model.ydc[3];
+        }
+
+        virtual void _update_model_coeffs_one_el(int el_id){
+            _assign_model(el_id, _line_pi_model(r_(el_id), x_(el_id), h_side_1_(el_id), h_side_2_(el_id)));
         }
 
     protected:
