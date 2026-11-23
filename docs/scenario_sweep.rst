@@ -62,7 +62,9 @@ Unlike `TimeSerie` / `InjectionSweep`'s single bundled `compute_V_from_inj` call
 `ScenarioSweep` is built up incrementally: call as many of `modify_gen_p` /
 `modify_sgen_p` / `modify_load_p` / `modify_load_q` / `modify_gen_v` /
 `set_contingency_lines` / `set_contingency_trafos` / `set_contingency_gens` /
-`set_contingency_shunts` / `set_contingency_loads` as are relevant, then `compute()`.
+`set_contingency_shunts` / `set_contingency_loads` / `set_line_parameters` /
+`set_trafo_parameters` (see :ref:`sweep_branch_parameters`) as are relevant, then
+`compute()`.
 
 - **Row-count locking.** The first setter you call fixes the number of simulations for
   the whole object; every later setter is checked against it immediately -- a shape
@@ -108,6 +110,131 @@ shunts, loads and generators together, `ScenarioSweep` takes one mask per kind o
     Dense contingency masks cost real memory at scale (eg 10k simulations x 3k branches
     ~= 30 MB) -- fine for typical use, a lighter-weight representation may be added in a
     future release if that becomes a bottleneck.
+
+.. _sweep_branch_parameters:
+
+Changing branch parameters
+------------------------------------
+
+`set_line_parameters` and `set_trafo_parameters` give some branches values of their own in
+each simulation:
+
+.. code-block:: python
+
+    sweep.set_line_parameters(line_ids, r=..., x=..., h1=..., h2=...)
+    sweep.set_trafo_parameters(trafo_ids, r=..., x=..., h1=..., h2=..., ratio=..., shift_rad=...)
+
+- `line_ids` / `trafo_ids` name the branches that vary (ids or names, lightsim2grid's
+  numbering, as the contingency masks), one column each. Every matrix has shape
+  `(n_simul, len(ids))`.
+- `r`, `x` are the series resistance and reactance, `h1`, `h2` the shunt admittance
+  `g + j.b` at side 1 and side 2, all in pu. `ratio` is what `LSGrid.change_ratio_trafo`
+  takes, `shift_rad` what `LSGrid.change_shift_trafo` takes (radian, side 1).
+- A matrix left out, or a `NaN` cell (a complex one when either part is `NaN`), keeps the
+  grid's value: `set_line_parameters([7], x=...)` varies the reactance of line 7 only.
+
+A row solves as the grid would once it holds the row's values (as
+`LSGrid.update_powerlines_parameters` / `update_trafos_parameters_full`,
+`change_ratio_trafo` and `change_shift_trafo` set them), and its flows, branch results,
+current violations and `get_Ybus(row)` use those values too. In DC only `x`, `ratio` and
+`shift_rad` matter.
+
+This keeps the batch on a single symbolic factorization. A branch whose parameters change
+keeps every entry it has in the admittance matrix: only their values change, so the row
+refactorizes, exactly as a row with a contingency does. A row that disconnects a branch (its
+mask or its topological action) ignores the parameters it gives that branch.
+
+.. warning::
+
+    For a transformer, `r`, `x`, `h1` and `h2` are the values at the **neutral tap**:
+    the values `LSGrid.update_trafos_parameters_full` takes. A transformer with tap
+    changers (or an impedance that depends on its phase shift) gets their corrections at
+    their current positions applied on top, exactly as the grid applies them. Giving the
+    impedance read on the transformer at its current tap (`grid.get_trafos()[i].x_pu`)
+    applies that correction twice. Without a tap changer the two values are the same.
+
+A row changing a transformer whose taps an outer loop of the algorithm regulates
+(`TransformerVoltageControl`, `PhaseControl`) is left out of the batch: such a loop moves the
+tap from the grid's parameters and would undo the row's. The row is reported
+`LimitViolationType.BATCH_UNSUPPORTED`, with the reason in `get_batch_unsupported_reasons()`.
+It is not solved: `ScenarioSweep` has no one-at-a-time fallback.
+
+Neither :class:`lightsim2grid.injectionSweep.InjectionSweep` nor
+:class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis` takes branch parameters.
+The two sections below show how to get each of them with `ScenarioSweep`.
+
+.. _sweep_branch_parameters_injections:
+
+Branch parameters together with the injections
+++++++++++++++++++++++++++++++++++++++++++++++
+
+An :class:`lightsim2grid.injectionSweep.InjectionSweep` (see :doc:`time_series`) whose
+branches change from one scenario to the next is a `ScenarioSweep` that sets the injections
+(`modify_*`), the branch parameters and no contingency. Every row starts from the same
+voltage, the results do not depend on the order of the rows, and `nb_thread` spreads them over
+several threads, as with `InjectionSweep`:
+
+.. code-block:: python
+
+    import numpy as np
+    from lightsim2grid import ScenarioSweep
+
+    # gen_p, load_p, load_q: (n_simul, n_gen) / (n_simul, n_load) arrays, one scenario per row
+    n_simul = load_p.shape[0]
+    x7 = env.backend._grid.get_lines()[7].x_pu
+
+    sweep = ScenarioSweep(env)
+    sweep.modify_gen_p(gen_p)
+    sweep.modify_load_p(load_p)
+    sweep.modify_load_q(load_q)
+    # the reactance of line 7, its own value in each scenario
+    sweep.set_line_parameters([7], x=x7 * np.linspace(0.9, 1.1, n_simul).reshape(-1, 1))
+    sweep.nb_thread = 4
+    sweep.compute()
+    res_v, res_a, res_p = sweep.get_voltages(), sweep.compute_A(), sweep.compute_P()
+
+.. _sweep_branch_parameters_contingencies:
+
+Branch parameters together with line / trafo contingencies
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+A :class:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis` (see
+:doc:`security_analysis`) whose contingencies change branch parameters is a `ScenarioSweep`
+that sets contingency masks and branch parameters, and no `modify_*`: every row then keeps the
+grid's own injection, as the base case of a `ContingencyAnalysis` does. One example is
+losing one circuit of a double line modelled as a single branch: its series impedance doubles
+and its shunt admittance halves. The rows below play an N-1 on every line, plus one row where
+line 7 loses one of its two circuits:
+
+.. code-block:: python
+
+    import numpy as np
+    from lightsim2grid import ScenarioSweep
+
+    grid = env.backend._grid
+    n_line = len(grid.get_lines())
+    line7 = grid.get_lines()[7]
+
+    n_simul = n_line + 1  # one row per line out, then the half-lost line 7
+    line_mask = np.zeros((n_simul, n_line), dtype=bool)
+    line_mask[np.arange(n_line), np.arange(n_line)] = True
+
+    r = np.full((n_simul, 1), np.nan)
+    x = np.full((n_simul, 1), np.nan)
+    h = np.full((n_simul, 2), np.nan, dtype=complex)
+    r[-1], x[-1] = 2. * line7.r_pu, 2. * line7.x_pu
+    h[-1] = line7.h1_pu / 2., line7.h2_pu / 2.
+
+    sweep = ScenarioSweep(env)
+    sweep.compute_limit_violations = True
+    sweep.set_contingency_lines(line_mask)
+    sweep.set_line_parameters([7], r=r, x=x, h1=h[:, :1], h2=h[:, 1:])
+    res = sweep.run()  # a SecurityAnalysisResult, the type ContingencyAnalysis.run returns
+
+What differs from a `ContingencyAnalysis`: the rows are yours, in your order, and are not
+deduplicated; the masks are dense (see the note above); and a row left out of the batch is
+not solved one at a time (`ContingencyAnalysis.batch_unsupported_fallback` has no
+`ScenarioSweep` counterpart).
 
 Generator contingencies
 ------------------------------------

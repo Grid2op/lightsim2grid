@@ -230,6 +230,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
       injection profile").
 
 
+[1.3.2] 20xx-xx-xx
+--------------------
+- [ADDED] ``ScenarioSweep.set_line_parameters`` / ``set_trafo_parameters``: per-row r, x, h (and a
+  transformer's ratio and shift), keeping the batch's single symbolic analysis.
+
 [1.3.1] 2026-11-13
 --------------------
 - [BREAKING] (C++ / plugins) ``BaseAlgo`` gains ``supports_tripped_voltage_controllers``,

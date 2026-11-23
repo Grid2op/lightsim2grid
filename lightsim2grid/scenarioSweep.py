@@ -595,6 +595,8 @@ class ScenarioSweep:
         h1, h2: ``np.ndarray`` of complex, shape ``(n_simul, len(line_ids))``
             Shunt admittance ``g + j.b`` at side 1 and side 2, in pu.
 
+        Notes
+        -----
         Any of the four may be omitted, and a ``NaN`` cell (a complex one when either part is
         ``NaN``) keeps the grid's value: give only ``x`` to vary the reactances. The values mean
         what ``LSGrid.update_powerlines_parameters`` takes: a step
@@ -616,18 +618,6 @@ class ScenarioSweep:
         """Per-step parameters of some transformers: :func:`set_line_parameters` for the
         transformers, with their ratio and phase shift as well.
 
-        Parameters
-        ----------
-        trafo_ids:
-            The transformers whose parameters vary (ids, or names).
-        r, x, h1, h2:
-            As in :func:`set_line_parameters`, in pu -- the **neutral** values, see the warning.
-        ratio: ``np.ndarray`` of float, shape ``(n_simul, len(trafo_ids))``
-            The ratio, what ``LSGrid.change_ratio_trafo`` takes.
-        shift_rad: ``np.ndarray`` of float, shape ``(n_simul, len(trafo_ids))``
-            The phase shift, in radian (on side 1), what
-            ``LSGrid.change_shift_trafo`` takes.
-
         .. warning::
             ``r``, ``x``, ``h1`` and ``h2`` are the values at the **neutral tap**, those
             ``LSGrid.update_trafos_parameters_full`` takes. A
@@ -636,6 +626,20 @@ class ScenarioSweep:
             does: giving the impedance you read on the transformer at its current tap applies
             that correction twice. Without a tap changer the two are the same.
 
+        Parameters
+        ----------
+        trafo_ids:
+            The transformers whose parameters vary (ids, or names).
+        r, x, h1, h2: ``np.ndarray``, shape ``(n_simul, len(trafo_ids))``
+            As in :func:`set_line_parameters`, in pu: the **neutral** values, see the warning.
+        ratio: ``np.ndarray`` of float, shape ``(n_simul, len(trafo_ids))``
+            The ratio, what ``LSGrid.change_ratio_trafo`` takes.
+        shift_rad: ``np.ndarray`` of float, shape ``(n_simul, len(trafo_ids))``
+            The phase shift, in radian (on side 1), what
+            ``LSGrid.change_shift_trafo`` takes.
+
+        Notes
+        -----
         A step changing a transformer whose taps an outer loop of the algorithm regulates
         (TransformerVoltageControl, PhaseControl) is left out of the batch
         (``LimitViolationType.BATCH_UNSUPPORTED``, the reason in

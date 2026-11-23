@@ -55,6 +55,39 @@ to / from other data sources.
     ("n") case instead of a flat start -- this is usually faster. See
     :func:`lightsim2grid.contingencyAnalysis.ContingencyAnalysis.init_from_n_powerflow`.
 
+Contingencies that change branch parameters
+-------------------------------------------
+
+A contingency here disconnects elements. To simulate one that changes the parameters of a
+branch instead -- losing one circuit of a double line modelled as a single branch, whose
+impedance doubles and whose shunt admittance halves, say -- use
+:class:`lightsim2grid.scenarioSweep.ScenarioSweep` with contingency masks and branch
+parameters, and no injection change: every row keeps the grid's injection, as the base case
+here (see :ref:`sweep_branch_parameters_contingencies`):
+
+.. code-block:: python
+
+    import numpy as np
+    from lightsim2grid import ScenarioSweep
+
+    grid = env.backend._grid
+    n_line = len(grid.get_lines())
+    line7 = grid.get_lines()[7]
+    # rows 0 .. n_line - 1: one line out each; last row: line 7 loses one of its two circuits
+    line_mask = np.zeros((n_line + 1, n_line), dtype=bool)
+    line_mask[np.arange(n_line), np.arange(n_line)] = True
+    x = np.full((n_line + 1, 1), np.nan)  # NaN: the grid's value
+    x[-1] = 2. * line7.x_pu
+
+    sweep = ScenarioSweep(env)
+    sweep.compute_limit_violations = True
+    sweep.set_contingency_lines(line_mask)
+    sweep.set_line_parameters([7], x=x)
+    res = sweep.run()  # a SecurityAnalysisResult, as ContingencyAnalysis.run returns
+
+The rows are then yours, in your order and not deduplicated, and a row the batch does not
+support is not solved one at a time (there is no `batch_unsupported_fallback`).
+
 Tripping shunts, loads and generators
 -------------------------------------------
 
