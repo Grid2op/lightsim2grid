@@ -2678,7 +2678,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_lines, _violations[i],
-                                     overrides, 0);
+                                     overrides, 0, nullptr, _row_models(i));
             // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks)
             const auto * blocks = (i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty())
                                   ? &_row_trafo_blocks_[i] : nullptr;
@@ -2687,7 +2687,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_trafos, _violations[i],
-                                     overrides, n_line_, blocks);
+                                     overrides, n_line_, blocks, _row_models(i));
         }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t i, const CplxVect & V, const std::vector<int> * masked_ids) {
@@ -3189,6 +3189,43 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             }
         }
 
+        // the transformer blocks an outer loop's detection reads for row i (see
+        // OuterRowView::moved_trafo_blocks), null where it reads the container's: the taps
+        // the row's loops left elsewhere (_record_row_trafo_blocks), else the stamped block
+        // of a transformer the row gives parameters of its own, built into `scratch`
+        const std::vector<std::pair<int, std::array<cplx_type, 4> > > * _row_detect_trafo_blocks(
+            size_t i, std::vector<std::pair<int, std::array<cplx_type, 4> > > & scratch) const {
+            const auto * moved = (i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty()) ? &_row_trafo_blocks_[i] : nullptr;
+            const std::vector<BranchRowModel> * models = _row_models(i);
+            if(models == nullptr) return moved;
+            const int nb_lines = static_cast<int>(n_line_);
+            const TrafoContainer & trafos = _grid_model.get_trafos_as_data();
+            scratch.clear();
+            if(moved != nullptr) scratch = *moved;
+            const auto moved_has = [moved](int t){
+                return moved != nullptr && std::binary_search(moved->begin(), moved->end(), std::make_pair(t, std::array<cplx_type, 4>()),
+                    [](const std::pair<int, std::array<cplx_type, 4> > & a, const std::pair<int, std::array<cplx_type, 4> > & b){ return a.first < b.first; });
+            };
+            for(const BranchRowModel & m : *models){
+                if(m.branch_id < nb_lines) continue;
+                const int t = m.branch_id - nb_lines;
+                if(moved_has(t)) continue;
+                // the row's placement of it (a topological action) closes both ends
+                bool on = trafos.get_status_global()[static_cast<size_t>(t)];
+                bool s1 = trafos.get_status_side_1()[static_cast<size_t>(t)];
+                bool s2 = trafos.get_status_side_2()[static_cast<size_t>(t)];
+                if(i < _row_branch_overrides_.size()){
+                    for(const BranchBusOverride & ov : _row_branch_overrides_[i]){
+                        if(ov.branch_id == m.branch_id){ on = ov.connected; s1 = s2 = true; }
+                    }
+                }
+                scratch.emplace_back(t, BranchContainer::kron_block(m.model.yac, on, s1, s2));
+            }
+            std::sort(scratch.begin(), scratch.end(),
+                      [](const std::pair<int, std::array<cplx_type, 4> > & a, const std::pair<int, std::array<cplx_type, 4> > & b){ return a.first < b.first; });
+            return &scratch;
+        }
+
         void _record_row_physical(size_t i, AlgorithmSelector & algo,
                                   const Eigen::Ref<const CplxVect> & V_solver,
                                   const Eigen::Ref<const RealVect> & slack_weights,
@@ -3201,8 +3238,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             OuterRowView row;
             _fill_outer_row_view(i, masked, row);
             _take_moved_targets(algo, row);
-            // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks)
-            if(i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty()) row.moved_trafo_blocks = &_row_trafo_blocks_[i];
+            // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks),
+            // and the transformers it gives parameters of its own
+            std::vector<std::pair<int, std::array<cplx_type, 4> > > row_trafo_blocks;
+            row.moved_trafo_blocks = _row_detect_trafo_blocks(i, row_trafo_blocks);
             _record_outer_detect(algo, V_solver, row, _physical_violations_[i]);
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
                 // the row's converged voltage, against the target this row gives the machine

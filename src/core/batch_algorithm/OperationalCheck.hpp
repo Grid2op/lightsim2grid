@@ -46,6 +46,40 @@ struct BranchBusOverride {
     bool connected;
 };
 
+// a row's own parameters of one branch (ScenarioSweep set_line_parameters /
+// set_trafo_parameters, see BaseBatchSolverSynch::_row_branch_models_): the pi model it
+// has in that row, read in place of the container's coefficients
+struct BranchRowModel {
+    int branch_id;   // gridmodel numbering, lines then trafos
+    BranchPiModel model;
+};
+
+/**
+ * Walks one row's branch models (sorted by branch id, or null) alongside a loop over the
+ * elements of one container, by increasing element id: `at(el_id)` is that element's model
+ * in the row, or null where it keeps the container's coefficients. `lag_id` is the offset of
+ * the container's ids in the branch numbering (0 for lines, n_line for trafos).
+ */
+class BranchRowModelCursor {
+    public:
+        BranchRowModelCursor(const std::vector<BranchRowModel> * models, size_t lag_id):
+            models_(models != nullptr && !models->empty() ? models : nullptr),
+            lag_id_(lag_id) {}
+
+        const BranchPiModel * at(size_t el_id) {
+            if(models_ == nullptr) return nullptr;
+            const int id = static_cast<int>(el_id + lag_id_);
+            while(next_ < models_->size() && (*models_)[next_].branch_id < id) ++next_;
+            if(next_ < models_->size() && (*models_)[next_].branch_id == id) return &(*models_)[next_].model;
+            return nullptr;
+        }
+
+    private:
+        const std::vector<BranchRowModel> * models_;
+        size_t lag_id_;
+        size_t next_ = 0;
+};
+
 namespace batch_sweep_detail {
 
 // `violation_rel_tol` must be a finite number in [0, 1[ (1 would make low_eff * (1 -
@@ -171,9 +205,13 @@ inline void check_current_violations(
     size_t lag_id = 0,
     // the pi block of the elements whose taps an outer loop moved (a transformer's, in this
     // container's ids, sorted): its current is the one at those taps; nullptr for none
-    const std::vector<std::pair<int, std::array<cplx_type, 4> > > * blocks = nullptr)
+    const std::vector<std::pair<int, std::array<cplx_type, 4> > > * blocks = nullptr,
+    // the row's own parameters of some branches (see BranchRowModel), sorted by branch
+    // id, in the same numbering as `overrides`; nullptr for none
+    const std::vector<BranchRowModel> * models = nullptr)
 {
     if(limit1.size() == 0 && limit2.size() == 0) return;  // thermal limits never configured
+    BranchRowModelCursor row_models(models, lag_id);
 
     const auto & el_status = structure_data.get_status_global();
     const auto & status1 = structure_data.get_status_side_1();
@@ -253,6 +291,8 @@ inline void check_current_violations(
         const real_type v_from_kv = s1 ? std::abs(Efrom) * bus_vn_kv(bus_from_me) : real_type(1.);
         const real_type v_to_kv = s2 ? std::abs(Eto) * bus_vn_kv(bus_to_me) : real_type(1.);
 
+        // the row's own parameters of that branch, if it gives it some
+        const BranchPiModel * model = row_models.at(el_id);
         real_type amps1 = 0.;
         real_type amps2 = 0.;
         if(ac_solver_used){
@@ -261,6 +301,12 @@ inline void check_current_violations(
             cplx_type y12 = own_placement ? yac_raw_12(el_idx) : yac_eff_12(el_idx);
             cplx_type y21 = own_placement ? yac_raw_21(el_idx) : yac_eff_21(el_idx);
             cplx_type y22 = own_placement ? yac_raw_22(el_idx) : yac_eff_22(el_idx);
+            if(model != nullptr){
+                // stamped as the container would with these parameters (both ends closed
+                // for a branch the row placed)
+                const std::array<cplx_type, 4> y = BranchContainer::kron_block(model->yac, true, s1, s2);
+                y11 = y[0]; y12 = y[1]; y21 = y[2]; y22 = y[3];
+            }
             // ... and a transformer at the taps the outer loops left it at
             if(blocks != nullptr && !own_placement){
                 while(next_block < blocks->size() && (*blocks)[next_block].first < static_cast<int>(el_id)) ++next_block;
@@ -281,9 +327,14 @@ inline void check_current_violations(
             const real_type theta_to = std::arg(Eto);
             // the phase shift included: the model dc_pf publishes (see dc_branch_p_pu)
             real_type p_from, p_to;
-            dc_branch_p_pu(ydc_11(el_idx), ydc_12(el_idx), ydc_21(el_idx), ydc_22(el_idx),
-                           has_tau_shift ? dc_x_tau_shift(el_idx) : real_type(0.),
-                           theta_from, theta_to, p_from, p_to);
+            if(model != nullptr){
+                dc_branch_p_pu(model->ydc[0], model->ydc[1], model->ydc[2], model->ydc[3],
+                               model->dc_x_tau_shift, theta_from, theta_to, p_from, p_to);
+            } else {
+                dc_branch_p_pu(ydc_11(el_idx), ydc_12(el_idx), ydc_21(el_idx), ydc_22(el_idx),
+                               has_tau_shift ? dc_x_tau_shift(el_idx) : real_type(0.),
+                               theta_from, theta_to, p_from, p_to);
+            }
             amps1 = std::abs(p_from) * sn_mva / (sqrt_3 * v_from_kv);
             amps2 = std::abs(p_to) * sn_mva / (sqrt_3 * v_to_kv);
         }
