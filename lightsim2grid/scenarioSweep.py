@@ -538,6 +538,118 @@ class ScenarioSweep:
         self.computer.set_contingency_loads(mask)
         self.__computed = False
 
+    def _branch_ids(self, ids, container, kind):
+        """internal: element ids (ints, or names) of one kind of branch, as an int array"""
+        ids = list(ids)
+        names = None
+        res = []
+        for el in ids:
+            if isinstance(el, str):
+                if names is None:
+                    names = {e.name: e.id for e in container}
+                if el not in names:
+                    raise RuntimeError(f"No {kind} named \"{el}\" on the grid.")
+                res.append(names[el])
+            else:
+                res.append(int(el))
+        return np.asarray(res, dtype=np.int32)
+
+    def _branch_param_matrices(self, nb_ids, setter, **matrices):
+        """internal: the given matrices checked to shape (n_simul, nb_ids), the missing ones
+        all NaN (the grid's value) of that shape"""
+        given = {k: v for k, v in matrices.items() if v is not None}
+        if nb_ids and not given:
+            raise RuntimeError(f"{setter}: give at least one of {', '.join(matrices)}.")
+        nb_rows = None
+        res = {}
+        for name, val in given.items():
+            dtype = complex if name in ("h1", "h2") else float
+            arr = np.asarray(val, dtype=dtype)
+            if arr.ndim != 2 or arr.shape[1] != nb_ids:
+                raise RuntimeError(f"{setter}: `{name}` should be a matrix of shape (n_simul, {nb_ids}): "
+                                   f"one row per simulation, one column per element named, got shape {arr.shape}.")
+            if nb_rows is None:
+                nb_rows = arr.shape[0]
+            elif arr.shape[0] != nb_rows:
+                raise RuntimeError(f"{setter}: `{name}` has {arr.shape[0]} rows, the other matrices {nb_rows}.")
+            res[name] = np.ascontiguousarray(arr)
+        if nb_rows is None:
+            nb_rows = 0
+        for name in matrices:
+            if name not in res:
+                fill = complex(np.nan, np.nan) if name in ("h1", "h2") else np.nan
+                res[name] = np.full((nb_rows, nb_ids), fill, dtype=complex if name in ("h1", "h2") else float)
+        return res
+
+    def set_line_parameters(self, line_ids, r=None, x=None, h1=None, h2=None):
+        """Per-step parameters of some powerlines: the values each simulation gives them.
+
+        Parameters
+        ----------
+        line_ids:
+            The powerlines whose parameters vary (ids, or names), one column each in the
+            matrices below. Lightsim2grid's powerline numbering, as
+            :func:`set_contingency_lines` (transformers have :func:`set_trafo_parameters`).
+        r, x: ``np.ndarray`` of float, shape ``(n_simul, len(line_ids))``
+            Series resistance and reactance, in pu.
+        h1, h2: ``np.ndarray`` of complex, shape ``(n_simul, len(line_ids))``
+            Shunt admittance ``g + j.b`` at side 1 and side 2, in pu.
+
+        Any of the four may be omitted, and a ``NaN`` cell (a complex one when either part is
+        ``NaN``) keeps the grid's value: give only ``x`` to vary the reactances. The values mean
+        what ``LSGrid.update_powerlines_parameters`` takes: a step
+        solves, and reports flows and violations, as the grid would with them. Only the values
+        of existing admittance-matrix entries change, so the whole sweep keeps a single symbolic
+        factorization. A step that also disconnects the line ignores its parameters.
+
+        Locks / checks the number of simulations, as the other setters. A new call replaces the
+        previous one; an empty ``line_ids`` clears it. Raises for an id out of range or named
+        twice, a matrix of another shape, an infinite value or ``r`` and ``x`` both 0.
+        """
+        grid = self.grid2op_env.backend._grid
+        ids = self._branch_ids(line_ids, grid.get_lines(), "powerline")
+        mats = self._branch_param_matrices(ids.size, "set_line_parameters", r=r, x=x, h1=h1, h2=h2)
+        self.computer.set_line_parameters(ids, mats["r"], mats["x"], mats["h1"], mats["h2"])
+        self.__computed = False
+
+    def set_trafo_parameters(self, trafo_ids, r=None, x=None, h1=None, h2=None, ratio=None, shift_rad=None):
+        """Per-step parameters of some transformers: :func:`set_line_parameters` for the
+        transformers, with their ratio and phase shift as well.
+
+        Parameters
+        ----------
+        trafo_ids:
+            The transformers whose parameters vary (ids, or names).
+        r, x, h1, h2:
+            As in :func:`set_line_parameters`, in pu -- the **neutral** values, see the warning.
+        ratio: ``np.ndarray`` of float, shape ``(n_simul, len(trafo_ids))``
+            The ratio, what ``LSGrid.change_ratio_trafo`` takes.
+        shift_rad: ``np.ndarray`` of float, shape ``(n_simul, len(trafo_ids))``
+            The phase shift, in radian (on side 1), what
+            ``LSGrid.change_shift_trafo`` takes.
+
+        .. warning::
+            ``r``, ``x``, ``h1`` and ``h2`` are the values at the **neutral tap**, those
+            ``LSGrid.update_trafos_parameters_full`` takes. A
+            transformer with tap changers (or an impedance that depends on its shift) gets
+            their corrections at their current positions applied on top, exactly as the grid
+            does: giving the impedance you read on the transformer at its current tap applies
+            that correction twice. Without a tap changer the two are the same.
+
+        A step changing a transformer whose taps an outer loop of the algorithm regulates
+        (TransformerVoltageControl, PhaseControl) is left out of the batch
+        (``LimitViolationType.BATCH_UNSUPPORTED``, the reason in
+        :func:`get_batch_unsupported_reasons`): the loop would move the tap from the grid's
+        parameters. Also raises for a ratio that is not positive.
+        """
+        grid = self.grid2op_env.backend._grid
+        ids = self._branch_ids(trafo_ids, grid.get_trafos(), "transformer")
+        mats = self._branch_param_matrices(ids.size, "set_trafo_parameters", r=r, x=x, h1=h1, h2=h2,
+                                           ratio=ratio, shift_rad=shift_rad)
+        self.computer.set_trafo_parameters(ids, mats["r"], mats["x"], mats["h1"], mats["h2"],
+                                           mats["ratio"], mats["shift_rad"])
+        self.__computed = False
+
     def _set_element_mask(self, setter, mask, container, kind):
         """internal: a per-step mask of the elements of one kind of the grid"""
         mask = self._check_2d(mask, "mask").astype(dtype=bool, copy=False)

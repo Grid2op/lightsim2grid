@@ -485,7 +485,9 @@ void bind_row_ybus(py::class_<T> & cls)
              },
              py::arg("row"), py::arg("solver_numbering") = false,
              "The admittance matrix row `row` of the last compute() was solved with (AC "
-             "algorithm only): the base one without the branches that row disconnects. An entry "
+             "algorithm only): the base one without the branches that row disconnects, and with "
+             "the parameters it gives its branches (ScenarioSweep set_line_parameters / "
+             "set_trafo_parameters). An entry "
              "only those branches contributed to is removed, not kept as an explicit zero, so "
              "the pattern is the one a one-at-a-time solve of that topology builds. Grid bus "
              "numbering, shape (total_bus, total_bus) like LSGrid.get_Ybus, or the solver one "
