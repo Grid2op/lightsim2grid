@@ -682,6 +682,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // ... and, where asked, the OLF-style redistribution of what each row loses (it
     // reads the per-row injections above, the masks and the generator contingencies:
     // after all of them, before the "n" solve it leaves untouched)
+    // the slack weights rows give units of their own: checked against the layout, the
+    // rows' actions and contingencies above, and the slack options
+    _check_slack_weight_rows(nb_steps);
     _prepare_slack_redistribution(nb_steps);
     // A row whose slack weights differ from the base case's (a participant it disconnects,
     // one its pre-pass saturates) zeroes a value of the Jacobian's slack column that the
