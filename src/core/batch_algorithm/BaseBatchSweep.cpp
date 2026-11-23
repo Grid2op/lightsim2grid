@@ -654,6 +654,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
         // a regulating shunt a row trips is not supported under the outer loops: that row
         // is left out of the batch (after the two above, which say which rows are skipped anyway)
         _check_shunt_trips(nb_steps);
+        // ... nor a transformer a row gives parameters of its own while a loop moves its taps
+        _check_trafo_param_rows(nb_steps);
         // the storage units the contingencies trip (ContingencyAnalysis)
         _prepare_storage_trips(nb_steps);
         _check_svc_trips(nb_steps);

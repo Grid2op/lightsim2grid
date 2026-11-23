@@ -112,6 +112,7 @@ add_executable(lightsim2grid_unit_tests
     test_outer_row_view.cpp
     test_outer_adjoint.cpp
     test_branch_pi_model.cpp
+    test_scenario_sweep_branch_params.cpp
 )
 target_link_libraries(lightsim2grid_unit_tests PRIVATE lightsim2grid_core Catch2::Catch2WithMain)
 

@@ -4926,6 +4926,43 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return lost;
         }
 
+        // A transformer a row gives parameters of its own (ScenarioSweep set_trafo_parameters)
+        // must not be one whose taps an outer loop of the algorithm moves: the
+        // TransformerVoltageControl / PhaseControl loops (and the Newton's BranchControl
+        // they act through) stamp its block at a new tap from the GRID's parameters
+        // (TrafoContainer::pi_block_at), patching Ybus by the difference with what they
+        // believe is stamped there, so they would undo the row's values. Such a row is left
+        // out of the batch (_mark_row_batch_unsupported), as a regulating shunt a row trips is.
+        void _check_trafo_param_rows(size_t nb_steps){
+            if(_row_branch_models_.empty() || !_algo.supports_outer_loops()) return;
+            bool ratio_loop = false, phase_loop = false;
+            for(const auto & loop : _grid_model.get_outer_loops()){
+                if(loop == nullptr) continue;
+                if(loop->name() == "TransformerVoltageControl") ratio_loop = true;
+                if(loop->name() == "PhaseControl") phase_loop = true;
+            }
+            if(!ratio_loop && !phase_loop) return;
+            const TrafoContainer & trafos = _grid_model.get_trafos();
+            const TapChangers & ratio_taps = trafos.get_tap_changers(false);
+            const TapChangers & phase_taps = trafos.get_tap_changers(true);
+            const int nb_lines = static_cast<int>(n_line_);
+            for(size_t row = 0; row < nb_steps && row < _row_branch_models_.size(); ++row){
+                for(const BranchRowModel & m : _row_branch_models_[row]){
+                    if(m.branch_id < nb_lines) continue;
+                    const int t = m.branch_id - nb_lines;
+                    const bool by_ratio = ratio_loop && t < ratio_taps.nb() && ratio_taps.has(t) && ratio_taps.regulating(t);
+                    const bool by_phase = phase_loop && t < phase_taps.nb() && phase_taps.has(t) && phase_taps.regulating(t);
+                    if(!by_ratio && !by_phase) continue;
+                    std::ostringstream msg;
+                    msg << "gives transformer " << t << " parameters of its own, with an algorithm running outer "
+                           "loops (" << _algo.get_name() << "): the " << (by_ratio ? "TransformerVoltageControl" : "PhaseControl")
+                        << " loop moves its taps from the grid's parameters and does not support a row changing them yet";
+                    _mark_row_batch_unsupported(row, msg.str());
+                    break;
+                }
+            }
+        }
+
         // A shunt a row trips must not be one the ShuntVoltageControl outer loop moves:
         // its sections are that loop's (NRSystem's ShuntControl patches the diagonal by
         // the difference with what it believes is stamped there), and it does not know
