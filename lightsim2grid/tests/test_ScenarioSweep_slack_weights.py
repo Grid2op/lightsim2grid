@@ -20,12 +20,14 @@ import unittest
 import warnings
 
 import numpy as np
+import pandapower.networks as pn
 import grid2op
 from grid2op.Parameters import Parameters
 
 from lightsim2grid import LightSimBackend
 from lightsim2grid.algorithm import AlgorithmType
 from lightsim2grid.scenarioSweep import ScenarioSweep, ScenarioSweepCPP, LimitViolationType
+from lightsim2grid.network import init_from_pandapower
 
 try:
     from lightsim2grid.algorithm import NROuter_KLU  # noqa: F401
@@ -227,11 +229,6 @@ class TestScenarioSweepSlackWeightsCPP(unittest.TestCase):
         sweep.set_gen_slack_weights(np.array([0]), np.array([[np.nan], [0.]]))
         sweep.compute(self.Vinit, self.max_it, self.tol)
         self.assertTrue(np.all(sweep.converged_mask()))
-        # the bounded redistribution reads the grid's weights
-        sweep = self._sweep()
-        sweep.redistribute_slack = True
-        with self.assertRaises(ValueError):
-            sweep.compute(self.Vinit, self.max_it, self.tol)
 
     def test_outer_loops_leave_the_row_out(self):
         sweep = self._sweep(weights=False)
@@ -243,6 +240,96 @@ class TestScenarioSweepSlackWeightsCPP(unittest.TestCase):
         self.assertEqual(reasons[0], "")
         self.assertIn("slack weights", reasons[1])
         self.assertEqual(list(sweep.converged_mask()), [True, False])
+
+
+class TestScenarioSweepSlackWeightsRedistribute(unittest.TestCase):
+    """with redistribute_slack: the bounded pre-pass shares what a row's injections take out
+    of the balance with the row's weights. The reference is the one-off path of
+    test_batch_redistribute_slack: a copy of the grid holding the row's weights and
+    set-points, LSGrid.redistribute_active_power of what the row loses, then the powerflow."""
+
+    MAX_IT = 30
+    TOL = 1e-10
+
+    def setUp(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            self.grid = init_from_pandapower(pn.case14())
+        self.n_gen = len(self.grid.get_generators())
+        for gen_id in range(self.n_gen):
+            self.grid.add_gen_slackbus(gen_id, 1.)
+        self.targets = np.array([el.target_p_mw for el in self.grid.get_generators()])
+        self.load_targets = np.array([el.target_p_mw for el in self.grid.get_loads()])
+        # generator 1 can only move 2 MW up: a heavy weight saturates it
+        min_p = np.full(self.n_gen, -np.inf)
+        max_p = np.full(self.n_gen, np.inf)
+        max_p[1] = self.targets[1] + 2.
+        self.grid.set_gen_p_limits(min_p, max_p)
+        self.V0 = np.full(self.grid.total_bus(), 1.04 + 0j)
+        # every row loses 30 MW (a heavier load); the weights decide who makes it up
+        self.nb_rows = 5
+        self.load_p = np.tile(self.load_targets, (self.nb_rows, 1))
+        self.load_p[:, 2] += 30.
+        self.gen_ids = np.array([1, 2, 3])
+        self.weights = np.full((self.nb_rows, 3), np.nan)
+        self.weights[1] = [10., np.nan, np.nan]   # generator 1 saturates
+        self.weights[2] = [np.nan, 0., 5.]        # generator 2 out, 3 heavier
+        self.weights[3] = [0., 0., 0.]
+        self.weights[4] = [0.1, 3., np.nan]       # generator 1 light: stays inside
+
+    def _sweep(self, dc):
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(AlgorithmType.DC_KLU if dc else AlgorithmType.NR_KLU)
+        sweep.compute_gen_results = True
+        sweep.redistribute_slack = True
+        sweep.modify_load_p(self.load_p)
+        sweep.set_gen_slack_weights(self.gen_ids, self.weights)
+        sweep.compute(self.V0, self.MAX_IT, self.TOL)
+        return sweep
+
+    def _reference(self, row, dc):
+        ref = self.grid.copy()
+        ref.change_algorithm(AlgorithmType.DC_KLU if dc else AlgorithmType.NR_KLU)
+        for k, gen_id in enumerate(self.gen_ids):
+            w = self.weights[row, k]
+            if np.isnan(w):
+                continue
+            if w > 0.:
+                ref.add_gen_slackbus(int(gen_id), float(w))
+            else:
+                ref.remove_gen_slackbus(int(gen_id))
+        for load_id, p in enumerate(self.load_p[row]):
+            ref.change_p_load(load_id, float(p))
+        lost = -float(np.sum(self.load_targets - self.load_p[row]))
+        report = ref.redistribute_active_power(lost)
+        V = ref.dc_pf(self.V0, self.MAX_IT, self.TOL) if dc else ref.ac_pf(self.V0, self.MAX_IT, self.TOL)
+        self.assertGreater(V.shape[0], 0, "the one-off reference diverged")
+        return V, np.array([el.res_p_mw for el in ref.get_generators()]), report
+
+    def _check(self, dc):
+        sweep = self._sweep(dc)
+        self.assertTrue(np.all(sweep.converged_mask()))
+        Vs = sweep.get_voltages()
+        P = sweep.get_gen_results()[:, :, 0]
+        saturated = []
+        for row in range(self.nb_rows):
+            with self.subTest(row=row):
+                V_ref, p_ref, report = self._reference(row, dc)
+                saturated.append(report.nb_saturated)
+                self.assertLess(_gap_up_to_rotation(Vs[row], V_ref), 1e-8)
+                np.testing.assert_allclose(P[row], p_ref, atol=1e-6, rtol=0)
+        # the weights decide who saturates: generator 1 in row 1 only
+        self.assertEqual(saturated[1], 1)
+        self.assertEqual(saturated[4], 0)
+        self.assertAlmostEqual(P[1, 1], self.targets[1] + 2., places=6)
+        # ... and what the others take: not the grid's split
+        self.assertGreater(np.max(np.abs(P[2] - P[0])), 1.)
+
+    def test_matches_one_off_ac(self):
+        self._check(dc=False)
+
+    def test_matches_one_off_dc(self):
+        self._check(dc=True)
 
 
 class TestScenarioSweepSlackWeights(unittest.TestCase):

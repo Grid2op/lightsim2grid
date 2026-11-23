@@ -281,8 +281,9 @@ Other points:
   constant, and nothing else changes.
 - A row leaving no participant at all puts the whole slack on the reference bus.
 - `compute()` raises for a positive weight to a unit that the row's topological action moves
-  or reactivates, and when `redistribute_slack` is on (its bounded pre-pass shares with the
-  grid's weights).
+  or reactivates.
+- With `redistribute_slack = True` the bounded pre-pass (see below) shares with the row's
+  weights too: a positive weight makes the unit one of its participants, `0` leaves it out.
 - Under outer loops (`NROuter_*`) the loops share the slack from the grid's weights: a row
   giving weights of its own is left out of the batch (`LimitViolationType.BATCH_UNSUPPORTED`,
   the reason in `get_batch_unsupported_reasons()`).

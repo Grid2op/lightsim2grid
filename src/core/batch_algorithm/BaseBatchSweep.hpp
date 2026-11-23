@@ -470,9 +470,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          *
          * Locks / checks the number of simulations. Replaces what an earlier call gave; an
          * empty `gen_ids` clears it. Refuses an id out of range or named twice, a matrix
-         * of another shape and a value that is negative or infinite. Not supported with
-         * redistribute_slack (compute() refuses it) nor under outer loops (compute() leaves
-         * such a row out of the batch, BATCH_UNSUPPORTED).
+         * of another shape and a value that is negative or infinite. With redistribute_slack
+         * the bounded pre-pass shares with the row's weights too. Not supported under outer
+         * loops (compute() leaves such a row out of the batch, BATCH_UNSUPPORTED).
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -3346,6 +3346,83 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class InIsland, class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         void _append_topo_storage_participants(size_t, const InIsland &, std::vector<slack_redistribution::Participant> &) const {}
+        // The pre-pass's participants of row i with the weights the row gives some units
+        // (ScenarioSweep set_gen_slack_weights / set_storage_slack_weights), as the grid
+        // would list them holding those weights: a positive weight makes the unit a slack
+        // participant with it (add_gen_slackbus: in the slack, its "can participate" weight
+        // the same), 0 takes it out of both (remove_gen_slackbus). A unit only the row's
+        // weight brings in is added where the grid would list it: connected, on its bus, on
+        // a bus `keep_bus` keeps, not disconnected by the row (one the row's action places
+        // with a positive weight is refused, see _check_slack_weight_rows).
+        template<class KeepBus>
+        void _apply_row_slack_weights(size_t i, const KeepBus & keep_bus,
+                                      std::vector<slack_redistribution::Participant> & units) const {
+            using slack_redistribution::UnitKind;
+            const SlackWeightOverride gen_w = _gen_slack_weights_.row(i);
+            const SlackWeightOverride storage_w = _storage_slack_weights_.row(i);
+            if(gen_w.row == nullptr && storage_w.row == nullptr) return;
+            const auto over_of = [&](UnitKind kind) -> const SlackWeightOverride & {
+                return kind == UnitKind::GENERATOR ? gen_w : storage_w;
+            };
+            // the units already listed: re-weighted, or dropped
+            std::vector<char> listed_gen(static_cast<size_t>(_grid_model.get_generators().nb()), 0);
+            std::vector<char> listed_storage(static_cast<size_t>(_grid_model.get_storages().nb()), 0);
+            std::vector<slack_redistribution::Participant> kept;
+            kept.reserve(units.size());
+            for(slack_redistribution::Participant & unit : units){
+                (unit.kind == UnitKind::GENERATOR ? listed_gen : listed_storage)[static_cast<size_t>(unit.el_id)] = 1;
+                const SlackWeightOverride & over = over_of(unit.kind);
+                if(over.has(unit.el_id)){
+                    const real_type w = over.of(unit.el_id);
+                    if(!(w >= BaseConstants::_tol_equal_float)) continue;
+                    unit.weight = w;
+                    unit.in_slack = true;
+                    unit.overshoot_mw = 0.;
+                }
+                kept.push_back(unit);
+            }
+            // the units only the row's weight brings in
+            bool added = false;
+            const auto add_family = [&](const auto & container, UnitKind kind, const SlackWeightTable & table,
+                                        const std::vector<char> & listed, real_type target_sign,
+                                        const auto & is_off, const auto & injection_of){
+                const SlackWeightOverride & over = over_of(kind);
+                if(over.row == nullptr) return;
+                const std::vector<bool> & status = container.get_status();
+                const GlobalBusIdVect & buses = container.get_bus_id();
+                for(int el_id : table.ids){
+                    if(listed[static_cast<size_t>(el_id)] || !over.has(el_id)) continue;
+                    const real_type w = over.of(el_id);
+                    if(!(w >= BaseConstants::_tol_equal_float)) continue;
+                    if(!status[static_cast<size_t>(el_id)] || is_off(el_id)) continue;
+                    const int bus_me = buses(el_id).cast_int();
+                    if(bus_me == BaseConstants::_deactivated_bus_id || !keep_bus(bus_me)) continue;
+                    slack_redistribution::Participant unit;
+                    unit.kind = kind;
+                    unit.el_id = el_id;
+                    unit.bus = bus_me;
+                    unit.injection_mw = target_sign * injection_of(el_id);
+                    unit.weight = w;
+                    unit.min_p_mw = container.get_min_p(el_id);
+                    unit.max_p_mw = container.get_max_p(el_id);
+                    unit.in_slack = true;
+                    unit.overshoot_mw = 0.;
+                    kept.push_back(unit);
+                    added = true;
+                }
+            };
+            const auto & storages = _grid_model.get_storages();
+            add_family(_grid_model.get_generators(), UnitKind::GENERATOR, _gen_slack_weights_, listed_gen, 1.,
+                       [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id) || this->_gen_placed_in_row(i, gen_id); },
+                       [this, i](int gen_id){ return this->_gen_target_p_in_row(i, gen_id); });
+            add_family(storages, UnitKind::STORAGE, _storage_slack_weights_, listed_storage, -1.,
+                       [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id) ||
+                                                         this->_storage_placed_in_row(i, storage_id); },
+                       [&storages](int storage_id){ return storages.get_target_p()(storage_id); });
+            units.swap(kept);
+            if(added) _sort_participants(units);
+        }
+
         static void _sort_participants(std::vector<slack_redistribution::Participant> & units){
             std::stable_sort(units.begin(), units.end(),
                              [](const slack_redistribution::Participant & a, const slack_redistribution::Participant & b){
@@ -5114,17 +5191,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // only there (the DC is held to the same contract) -- so a positive weight to a
         // unit on another bus is refused, as is one to a unit the row's action places
         // somewhere (set_topo_actions refuses that of a grid participant). The bounded
-        // redistribution pre-pass reads the grid's weights: refused with it. The outer
-        // loops own the slack (the DistributedSlack loop shares it from the grid's
+        // redistribution pre-pass shares with the row's weights (_apply_row_slack_weights).
+        // The outer loops own the slack (the DistributedSlack loop shares it from the grid's
         // participants): such a row is left out of the batch.
         void _check_slack_weight_rows(size_t nb_steps){
             if(_gen_slack_weights_.empty() && _storage_slack_weights_.empty()) return;
-            if(_redistribute_slack_){
-                std::ostringstream exc_;
-                exc_ << algo_name() << "::compute: slack weights given per row (set_gen_slack_weights / "
-                        "set_storage_slack_weights) are not supported together with redistribute_slack yet.";
-                throw std::invalid_argument(exc_.str());
-            }
             if(_algo.supports_outer_loops()){
                 for(size_t row = 0; row < nb_steps; ++row){
                     if(!_gen_slack_weights_.has_row(row) && !_storage_slack_weights_.has_row(row)) continue;
@@ -5779,6 +5850,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); },
                     [&storages](int storage_id){ return storages.get_target_p()(storage_id); }, units);
                 _append_topo_storage_participants(i, in_island_solver, units);
+                // the weights the row gives some units (set_gen_slack_weights) stand for theirs
+                _apply_row_slack_weights(i, keep_bus, units);
                 if(units.empty()) continue;  // the row's own fallback stays (see _row_slack_weights)
 
                 const slack_redistribution::Report report = slack_redistribution::distribute(

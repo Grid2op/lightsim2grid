@@ -235,7 +235,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] ``ScenarioSweep.set_line_parameters`` / ``set_trafo_parameters``: per-row r, x, h (and a
   transformer's ratio and shift), keeping the batch's single symbolic analysis.
 - [ADDED] ``ScenarioSweep.set_gen_slack_weights`` / ``set_storage_slack_weights``: per-row
-  distributed-slack weights, on the buses the grid's slack already covers.
+  distributed-slack weights, on the buses the grid's slack already covers, ``redistribute_slack``
+  included.
 
 [1.3.1] 2026-11-13
 --------------------

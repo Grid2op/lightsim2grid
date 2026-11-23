@@ -688,9 +688,10 @@ class ScenarioSweep:
         for a positive weight to a generator on a bus where no unit takes part in the grid's
         slack: make it a participant of the grid's slack (``add_gen_slackbus``) and give it
         ``0`` in the steps where it should take no share. It also raises for a positive weight
-        to a generator the step's topological action moves or reactivates, and when
-        ``redistribute_slack`` is on. Under outer loops a step giving weights is left out of
-        the batch (``LimitViolationType.BATCH_UNSUPPORTED``).
+        to a generator the step's topological action moves or reactivates. With
+        ``redistribute_slack`` the bounded pre-pass shares with the step's weights too. Under
+        outer loops a step giving weights is left out of the batch
+        (``LimitViolationType.BATCH_UNSUPPORTED``).
 
         Locks / checks the number of simulations, as the other setters. A new call replaces the
         previous one; an empty ``gen_ids`` clears it. Raises for an id out of range or named

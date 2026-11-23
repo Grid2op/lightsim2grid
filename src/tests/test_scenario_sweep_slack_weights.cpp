@@ -9,7 +9,8 @@
 // ScenarioSweep::set_gen_slack_weights / set_storage_slack_weights: a row solves, and splits
 // the slack onto its generators, as the grid would with its weights (add_gen_slackbus /
 // remove_gen_slackbus / add_storage_slackbus), AC and DC, in one symbolic analysis; what the
-// batch cannot do with them is refused. C++14 only.
+// batch cannot do with them is refused (the bounded redistribution with them is checked
+// against the one-off path in test_ScenarioSweep_slack_weights.py). C++14 only.
 
 #include <cmath>
 #include <complex>
@@ -189,10 +190,12 @@ TEST_CASE("a row's slack weights are checked when given and at compute", "[batch
         sweep.set_gen_slack_weights(gen2, w);
         CHECK_NOTHROW(sweep.compute(flat(grid), 30, 1e-10));
     }
-    SECTION("with redistribute_slack") {
+    SECTION("with redistribute_slack: accepted, its pre-pass shares with the row's weights") {
         ScenarioSweep sweep(grid);
         sweep.set_redistribute_slack(true);
         sweep.set_gen_slack_weights(ids, WeightMat::Constant(2, 1, 3.));
-        CHECK_THROWS_AS(sweep.compute(flat(grid), 30, 1e-10), std::invalid_argument);
+        CHECK_NOTHROW(sweep.compute(flat(grid), 30, 1e-10));
+        CHECK(sweep.converged_mask()[0]);
+        CHECK(sweep.converged_mask()[1]);
     }
 }
