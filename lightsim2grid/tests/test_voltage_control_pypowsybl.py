@@ -25,6 +25,7 @@ try:
     import pypowsybl as pp
     from lightsim2grid.network import init_from_pypowsybl
     from lightsim2grid.network.from_pypowsybl import bake_outer_loops
+    from _pypowsybl_compat import set_svc_slope
     HAS_PYPOWSYBL = True
 except ImportError:
     HAS_PYPOWSYBL = False
@@ -101,7 +102,7 @@ def _svc_net(mode=VOLTAGE, target_v=398.0, target_q=0.0, slope=0.0, remote=False
         if remote:
             n.update_static_var_compensators(id="SVC1", regulated_element_id="LD2")  # regulate B2
         if slope != 0.0:
-            n.create_extensions("voltagePerReactivePowerControl", id="SVC1", slope=slope)
+            set_svc_slope(n, "SVC1", slope)
     return n
 
 
@@ -315,8 +316,11 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         ref = pp.loadflow.run_ac(n, parameters=self._params("VL1"))
         self.assertEqual(ref[0].status, pp.loadflow.ComponentStatus.CONVERGED)
         bake_outer_loops(n, bake_remote_voltage_control=True)
-        # G1 is now a LOCAL controller of its own terminal
+        # G1 is now a LOCAL controller of its own terminal, at its solved voltage (pypowsybl
+        # 1.17 resets the target when the regulated terminal moves: it used to be lost)
         self.assertEqual(n.get_generators().loc["G1", "regulated_element_id"], "G1")
+        self.assertAlmostEqual(n.get_generators().loc["G1", "target_v"],
+                               n.get_buses().loc[n.get_generators().loc["G1", "bus_id"], "v_mag"], places=9)
         _, V = self._run_ls(n, "G1")  # used to raise; now supported via baking
         self._assert_bus_parity(n, V, "remote-gen-on-slack-baked")
 
@@ -400,8 +404,33 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
                       "VL0", "G", "svc-remote-V")
 
     def test_svc_local_slope(self):
-        self._compare(_svc_net(mode=VOLTAGE, target_v=398.0, slope=0.05),
-                      "VL0", "G", "svc-local-slope")
+        n = _svc_net(mode=VOLTAGE, target_v=398.0, slope=0.05)
+        ref = pp.loadflow.run_ac(n, parameters=self._params("VL0"))
+        self.assertEqual(ref[0].status, pp.loadflow.ComponentStatus.CONVERGED)
+        olf_ignores_slope = (abs(n.get_buses().at["VL1_0", "v_mag"] - 398.0) < 1e-9
+                             and abs(n.get_static_var_compensators().at["SVC1", "q"]) > 1e-3)
+        model, V = self._run_ls(n, "G")
+        if olf_ignores_slope:
+            # the OpenLoadFlow of pypowsybl 1.17.0 ignores the slope once it is the SVC's
+            # `slope` column rather than the removed extension: check our own slope law
+            # Vm = vset - s_pu * Q_pu instead, as test_svc_remote_slope does
+            s_pu = 0.05 * SN_MVA / 400.0
+            q_pu = model.get_svcs()[0].res_q_mvar / SN_MVA
+            self.assertLess(abs(abs(V[1]) - (398.0 / 400.0 - s_pu * q_pu)), self.tol,
+                            "local SVC slope law Vm=vset-s*Q broken")
+            return
+        self._assert_bus_parity(n, V, "svc-local-slope")
+
+    def test_svc_slope_is_read(self):
+        # pypowsybl 1.17 moved the slope from the (removed) voltagePerReactivePowerControl
+        # extension to a `slope` column of the SVC table. The converter only read the
+        # extension, and swallowed its absence, so the slope silently became 0.
+        n = _svc_net(mode=VOLTAGE, target_v=398.0, slope=0.05)
+        model = init_from_pypowsybl(n, gen_slack_id="G", sort_index=True)
+        self.assertAlmostEqual(model.get_svcs()[0].slope_pu, 0.05 * SN_MVA / 400.0, places=12)
+        # and an SVC with no slope keeps none
+        model = init_from_pypowsybl(_svc_net(mode=VOLTAGE, target_v=398.0), gen_slack_id="G", sort_index=True)
+        self.assertEqual(model.get_svcs()[0].slope_pu, 0.)
 
     def test_svc_remote_slope(self):
         # Remote SVC voltage control WITH a slope is underspecified in OLF: OLF holds

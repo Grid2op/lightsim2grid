@@ -239,6 +239,15 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid can be updated in place instead of rebuilt (#299).
 - [ADDED] ``update_one_powerline_parameters`` / ``update_one_trafo_parameters_full``: one branch's
   r, x and shunt admittances, without re-sending the whole vectors (#299).
+- [FIXED] pypowsybl 1.17: the converter crashed on a ratio tap changer with no regulating terminal
+  (``terminal not found for per unit V``), and could have dropped every ratio tap changer silently.
+- [FIXED] pypowsybl 1.17: an SVC's slope is read from the SVC table's new ``slope`` column; it was
+  silently dropped once the ``voltagePerReactivePowerControl`` extension was removed.
+- [FIXED] pypowsybl 1.17: a battery's voltage regulation is read from (and baked into) the battery
+  table's ``regulating`` / ``regulation_value`` columns; it was silently lost with the
+  ``voltageRegulation`` extension.
+- [FIXED] pypowsybl 1.17: ``bake_outer_loops(bake_remote_voltage_control=True)`` kept the remote
+  target voltage instead of the solved terminal one.
 
 
 [1.3.1] 2026-11-13
