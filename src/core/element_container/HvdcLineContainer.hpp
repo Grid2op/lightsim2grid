@@ -277,6 +277,60 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
             side_2_.change_v(hvdc_id, new_v_pu, solver_control);
         }
 
+        // ---- the IIDM parameters, as `init` takes them ------------------------------
+        // Each one re-derives the station targets the way `init` does
+        // (update_station_targets), which raises Sbus (and pv for a station going to or
+        // from 0 MW) through the stations. The ones the angle-droop reads raise Sbus
+        // on top: the droop data is pulled from the line at every solve.
+
+        /**
+         * The active power setpoint as IIDM gives it: `p_setpoint_mw` (>= 0) drawn at the
+         * rectifier, `converters_mode` saying which side rectifies (ConvertersMode). Unlike
+         * `change_p`, nothing is derived back through the losses, so the setpoint is kept
+         * bit for bit, 0 MW included. Allowed on a disconnected line (it applies once the
+         * line is reconnected). Clears the line's `ac_emulation_frozen` flag when it moves.
+         */
+        void set_active_power_setpoint(int hvdc_id, int converters_mode, real_type p_setpoint_mw,
+                                       DualAlgoControl & solver_control);
+        /// the dc line resistance (ohm, >= 0) and its nominal voltage (kV, >= 0; 0: no resistive loss)
+        void set_dc_line_parameters(int hvdc_id, real_type r_ohm, real_type nominal_v_kv,
+                                    DualAlgoControl & solver_control);
+        /// the loss factors of the two stations (fractions in [0, 1))
+        void set_loss_factors(int hvdc_id, real_type loss_factor_1, real_type loss_factor_2,
+                              DualAlgoControl & solver_control);
+        /// the power factors of the two stations (in (0, 1]), read for an LCC only
+        void set_power_factors(int hvdc_id, real_type power_factor_1, real_type power_factor_2,
+                               DualAlgoControl & solver_control);
+        /**
+         * Enable or disable the angle-droop (AC emulation) of a line. Enabling it asks what
+         * `init` asks (two VSC stations, no legacy loss_percent / loss_mw) and, on a
+         * connected line, both stations connected. The droop adds Jacobian entries, so the
+         * Newton solvers rebuild their pattern (pv_changed; not a solver reset, so the
+         * outer loops' resumed state is kept). The regime goes back to linear
+         * (status_droop 0), and an `ac_emulation_frozen` flag is cleared on enabling.
+         */
+        void set_droop_enabled(int hvdc_id, bool enabled, DualAlgoControl & solver_control);
+        /// the droop law `p = p0 + k * (theta1 - theta2)`: p0 in MW, k in MW per DEGREE (as `init`)
+        void set_droop_parameters(int hvdc_id, real_type p0_mw, real_type k_mw_per_deg,
+                                  DualAlgoControl & solver_control);
+        /// the active power limits of the droop (MW, >= 0), one per direction. A line's
+        /// `ac_emulation_frozen` flag is cleared when the limit of its direction moves.
+        void set_droop_pmax(int hvdc_id, real_type pmax_1to2_mw, real_type pmax_2to1_mw,
+                            DualAlgoControl & solver_control);
+
+        /// voltage regulation on / off of the station of `side` (1 or 2)
+        void set_station_voltage_regulator_on(int hvdc_id, int side, bool on, DualAlgoControl & solver_control){
+            station_of(side, "set_station_voltage_regulator_on").set_voltage_regulator_on(hvdc_id, on, solver_control);
+        }
+        /// reactive limits (MVAr) of the station of `side`
+        void set_station_q_limits(int hvdc_id, int side, real_type min_q, real_type max_q, DualAlgoControl & solver_control){
+            station_of(side, "set_station_q_limits").set_q_limits(hvdc_id, min_q, max_q, solver_control);
+        }
+        /// reactive setpoint (MVAr, generator convention) of the VSC station of `side`
+        void change_station_q(int hvdc_id, int side, real_type new_q, DualAlgoControl & solver_control){
+            station_of(side, "change_station_q").change_q_setpoint(hvdc_id, new_q, solver_control);
+        }
+
         // droop API
         /**
          * The droop regime the next compute_results publishes each line's flows in, by line
@@ -471,6 +525,13 @@ class LS2G_API HvdcLineContainer final : public TwoSidesContainer<ConverterStati
         }
 
     private:
+        ConverterStationContainer & station_of(int side, const char * fun_name){
+            if(side == 1) return side_1_;
+            if(side == 2) return side_2_;
+            std::ostringstream exc_;
+            exc_ << "HvdcLineContainer::" << fun_name << ": side should be 1 or 2, found " << side << ".";
+            throw std::runtime_error(exc_.str());
+        }
         /**
          * Recompute the two station active powers (and the LCC reactive
          * consumptions) from `converters_mode_` / `p_setpoint_mw_`.

@@ -519,6 +519,87 @@ void bind_gridmodel(py::module_& m) {
         .def("change_v_gen", &LSGrid::change_v_gen, DocLSGrid::change_v_gen.c_str())
         .def("set_gen_regulated_bus", &LSGrid::set_gen_regulated_bus, DocLSGrid::set_gen_regulated_bus.c_str())
         .def("set_gen_reactive_key", &LSGrid::set_gen_reactive_key, DocLSGrid::set_gen_reactive_key.c_str())
+
+        // the remaining non-structural setters: values only `init_*` used to take, which a
+        // kept grid can now be updated with in place (and warm-started) instead of rebuilt
+        .def("set_gen_voltage_regulator_on", &LSGrid::set_gen_voltage_regulator_on,
+             py::arg("gen_id"), py::arg("on"),
+             "Switch the voltage regulation of a generator on or off (``voltage_regulator_on`` of "
+             "``init_generators_full``). Off, it injects its reactive setpoint (``change_q_gen``).")
+        .def("set_gen_q_limits", &LSGrid::set_gen_q_limits,
+             py::arg("gen_id"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
+             "The reactive limits of a generator, MVAr. Raises if ``min_q_mvar > max_q_mvar``.")
+        .def("set_storage_voltage_regulator_on", &LSGrid::set_storage_voltage_regulator_on,
+             py::arg("storage_id"), py::arg("on"),
+             "Switch the voltage regulation (of its own bus) of a storage unit on or off "
+             "(``voltage_regulator_on`` of ``init_storages_full``). Switching it on raises if the "
+             "unit has no finite reactive range or voltage target (a unit built with "
+             "``init_storages``): set them first with ``set_storage_q_limits`` and ``change_v_storage``.")
+        .def("set_storage_q_limits", &LSGrid::set_storage_q_limits,
+             py::arg("storage_id"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
+             "The reactive limits of a storage unit, MVAr, generator convention. Raises if "
+             "``min_q_mvar > max_q_mvar``.")
+        .def("change_v_svc", &LSGrid::change_v_svc, py::arg("svc_id"), py::arg("new_v_pu"),
+             "The voltage setpoint of an SVC, pu, read in VOLTAGE mode.")
+        .def("change_q_svc", &LSGrid::change_q_svc, py::arg("svc_id"), py::arg("new_q_mvar"),
+             "The reactive setpoint of an SVC, MVAr, injected in REACTIVE_POWER mode.")
+        .def("set_svc_regulation_mode", &LSGrid::set_svc_regulation_mode, py::arg("svc_id"), py::arg("mode"),
+             "The regulation mode of an SVC: 0 OFF, 1 VOLTAGE, 2 REACTIVE_POWER (as ``init_svcs``). "
+             "Raises for VOLTAGE on an SVC that regulates no bus.")
+        .def("set_svc_slope", &LSGrid::set_svc_slope, py::arg("svc_id"), py::arg("slope_pu"),
+             "The voltage / reactive slope of an SVC (0: none), same unit as ``init_svcs``.")
+        .def("set_svc_b_limits", &LSGrid::set_svc_b_limits, py::arg("svc_id"), py::arg("b_min"), py::arg("b_max"),
+             "The susceptance range of an SVC, same unit as ``init_svcs``. Raises if ``b_min > b_max``.")
+        .def("set_hvdc_station_voltage_regulator_on", &LSGrid::set_hvdc_station_voltage_regulator_on,
+             py::arg("hvdc_id"), py::arg("side"), py::arg("on"),
+             "Switch the voltage regulation of the converter station of ``side`` (1 or 2) of an hvdc "
+             "line on or off. An LCC station cannot regulate.")
+        .def("set_hvdc_station_q_limits", &LSGrid::set_hvdc_station_q_limits,
+             py::arg("hvdc_id"), py::arg("side"), py::arg("min_q_mvar"), py::arg("max_q_mvar"),
+             "The reactive limits, MVAr, of the converter station of ``side`` (1 or 2) of an hvdc line.")
+        .def("change_hvdc_station_q", &LSGrid::change_hvdc_station_q,
+             py::arg("hvdc_id"), py::arg("side"), py::arg("new_q_mvar"),
+             "The reactive setpoint, MVAr (generator convention), of the VSC station of ``side`` "
+             "(1 or 2), injected when it does not regulate. Raises for an LCC station.")
+        .def("set_hvdc_loss_factors", &LSGrid::set_hvdc_loss_factors,
+             py::arg("hvdc_id"), py::arg("loss_factor_1"), py::arg("loss_factor_2"),
+             "The loss factors (fractions in [0, 1)) of the two converter stations of an hvdc line. "
+             "The station active powers are derived again from the line's setpoint.")
+        .def("set_hvdc_power_factors", &LSGrid::set_hvdc_power_factors,
+             py::arg("hvdc_id"), py::arg("power_factor_1"), py::arg("power_factor_2"),
+             "The power factors (in (0, 1]) of the two converter stations of an hvdc line, read "
+             "for an LCC station.")
+        .def("set_hvdc_active_power_setpoint", &LSGrid::set_hvdc_active_power_setpoint,
+             py::arg("hvdc_id"), py::arg("converters_mode"), py::arg("p_setpoint_mw"),
+             "The active power setpoint of an hvdc line as the IIDM model gives it, and as "
+             "``init_hvdc_lines`` takes it: ``p_setpoint_mw`` (>= 0) drawn at the rectifier, "
+             "``converters_mode`` 0 (side 1 rectifier) or 1 (side 2 rectifier). The setpoint is "
+             "kept exactly, 0 included, unlike ``change_p_dcline`` which derives it back from a "
+             "side-1 injection.")
+        .def("set_hvdc_dc_line_parameters", &LSGrid::set_hvdc_dc_line_parameters,
+             py::arg("hvdc_id"), py::arg("r_ohm"), py::arg("nominal_v_kv"),
+             "The dc line resistance (ohm) and dc nominal voltage (kV, 0: no resistive loss) of an "
+             "hvdc line.")
+        .def("set_hvdc_droop_enabled", &LSGrid::set_hvdc_droop_enabled, py::arg("hvdc_id"), py::arg("enabled"),
+             "Enable or disable the angle-droop (AC emulation) of an hvdc line. Enabling it needs two "
+             "VSC stations, no legacy ``loss_percent`` / ``loss_mw`` and, on a connected line, both "
+             "stations connected. The droop regime goes back to linear, and the next Newton solve "
+             "rebuilds its Jacobian pattern (the outer loops' resumed state is kept).")
+        .def("set_hvdc_droop_parameters", &LSGrid::set_hvdc_droop_parameters,
+             py::arg("hvdc_id"), py::arg("p0_mw"), py::arg("k_mw_per_deg"),
+             "The droop law ``p = p0 + k * (theta1 - theta2)`` of an hvdc line: ``p0`` in MW, ``k`` "
+             "in MW per degree (as ``init_hvdc_lines``).")
+        .def("set_hvdc_droop_pmax", &LSGrid::set_hvdc_droop_pmax,
+             py::arg("hvdc_id"), py::arg("pmax_1to2_mw"), py::arg("pmax_2to1_mw"),
+             "The active power limits, MW, of the angle-droop of an hvdc line, one per direction. "
+             "Clears the line's ``ac_emulation_frozen`` flag when the limit of the direction it is "
+             "frozen in moves.")
+        .def("update_one_powerline_parameters", &LSGrid::update_one_powerline_parameters,
+             py::arg("line_id"), py::arg("r"), py::arg("x"), py::arg("h1"), py::arg("h2"),
+             "``update_powerlines_parameters`` for one powerline (pu).")
+        .def("update_one_trafo_parameters_full", &LSGrid::update_one_trafo_parameters_full,
+             py::arg("trafo_id"), py::arg("r"), py::arg("x"), py::arg("h1"), py::arg("h2"),
+             "``update_trafos_parameters_full`` for one transformer (pu; side 1: the high voltage one).")
         .def("deactivate_svc", &LSGrid::deactivate_svc, DocLSGrid::deactivate_svc.c_str())
         .def("reactivate_svc", &LSGrid::reactivate_svc, DocLSGrid::reactivate_svc.c_str())
         .def("change_bus_svc", &LSGrid::change_bus_svc_python, DocLSGrid::change_bus_svc.c_str())
