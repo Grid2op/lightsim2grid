@@ -252,6 +252,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``voltageRegulation`` extension.
 - [FIXED] pypowsybl 1.17: ``bake_outer_loops(bake_remote_voltage_control=True)`` kept the remote
   target voltage instead of the solved terminal one.
+- [FIXED] pandapower converter: out of service generators were reconnected when a generator was
+  appended for the ``ext_grid`` (#239).
 
 
 [1.3.1] 2026-11-13

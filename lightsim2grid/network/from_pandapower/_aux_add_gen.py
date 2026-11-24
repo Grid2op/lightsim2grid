@@ -29,9 +29,14 @@ def _aux_add_gen(model, pp_net, pp_to_ls):
                           pp_net.gen["max_q_mvar"].to_numpy(),
                           pp_bus_to_ls(pp_net.gen["bus"].to_numpy(), pp_to_ls)
                           )
+    _deactivate_offline_gens(model, pp_net)
+
+
+def _deactivate_offline_gens(model, pp_net):
+    """Disconnect the generators that are out of service in pandapower. ``init_generators`` connects
+    all of them, so this has to be redone after each call to it."""
     for gen_id, is_connected in enumerate(pp_net.gen["in_service"].to_numpy()):
         if not is_connected:
-            # generator is deactivated
             model.deactivate_gen(gen_id)
 
 

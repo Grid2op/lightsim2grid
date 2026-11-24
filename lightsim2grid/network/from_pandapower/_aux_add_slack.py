@@ -12,7 +12,7 @@ import numpy as np
 
 from ._pp_bus_to_ls_bus import pp_bus_to_ls
 from ._my_const import ALLOWED_PP_ORIG_FILE
-from ._aux_add_gen import _gen_p_mw
+from ._aux_add_gen import _gen_p_mw, _deactivate_offline_gens
 
 
 def _aux_add_slack(
@@ -132,6 +132,8 @@ def _aux_add_slack(
             gen_min_q = np.concatenate((pp_net.gen["min_q_mvar"].to_numpy(), [-999999. for _ in range(nb_slack)]))
             gen_max_q = np.concatenate((pp_net.gen["max_q_mvar"].to_numpy(), [+99999. for _ in range(nb_slack)]))
             model.init_generators(gen_p, gen_v, gen_min_q, gen_max_q, gen_bus)
+            # init_generators reconnects every generator, the offline ones included
+            _deactivate_offline_gens(model, pp_net)
             added_gen_bus = np.array(slack_bus_ids)
 
     # handle the possible distributed slack bus
