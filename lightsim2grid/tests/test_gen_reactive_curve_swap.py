@@ -33,9 +33,17 @@ class TestGenReactiveCurveSwap(unittest.TestCase):
         self.gid = self.net.get_generators().index[0]
         # reproduces the real-world curve found in the wild: the p=0.99 point
         # has min_q (0.053) > max_q (0.04), a data-entry error.
-        self.net.create_curve_reactive_limits(
-            id=[self.gid, self.gid], p=[-0.15, 0.99],
-            min_q=[0.0, 0.053], max_q=[0.0, 0.04])
+        try:
+            self.net.create_curve_reactive_limits(
+                id=[self.gid, self.gid], p=[-0.15, 0.99],
+                min_q=[0.0, 0.053], max_q=[0.0, 0.04])
+        except Exception as exc:  # noqa: BLE001 - pypowsybl's error type is not public
+            # pypowsybl 1.17 validates the curve: such a network can no longer be built,
+            # nor imported from a file (its `iidm.import.repair-invalid-reactive-curve-limits`
+            # sorts the pair on the way in), so the converter cannot meet it any more.
+            if "maximum reactive power is expected to be greater" not in str(exc):
+                raise
+            self.skipTest("this pypowsybl refuses a reactive curve point with min_q > max_q")
 
     def test_does_not_crash_and_sorts_the_pair(self):
         with warnings.catch_warnings():

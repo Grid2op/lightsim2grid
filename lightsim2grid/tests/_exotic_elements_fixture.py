@@ -52,6 +52,8 @@ import pypowsybl as pp
 
 from lightsim2grid.network import init_from_pypowsybl
 
+from _pypowsybl_compat import set_svc_slope
+
 
 def build_exotic_elements_network() -> "pp.network.Network":
     """Return the raw pypowsybl ``Network`` (not yet solved / converted), for
@@ -62,7 +64,7 @@ def build_exotic_elements_network() -> "pp.network.Network":
     n.create_static_var_compensators(id="SVC1", voltage_level_id="VL14", bus_id="B14",
                                      regulation_mode="VOLTAGE", regulating=True,
                                      target_v=12.0, target_q=0.0, b_min=-0.02, b_max=0.02)
-    n.create_extensions("voltagePerReactivePowerControl", id="SVC1", slope=0.01)
+    set_svc_slope(n, "SVC1", 0.01)
 
     # storage unit (battery), on the (otherwise load-only) leaf bus B13
     n.create_batteries(id="BATT1", voltage_level_id="VL13", bus_id="B13",

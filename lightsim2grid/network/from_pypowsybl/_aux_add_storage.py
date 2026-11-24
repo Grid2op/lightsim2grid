@@ -9,9 +9,38 @@
 import warnings
 
 import numpy as np
+import pandas as pd
 
 from . import _olf_rules
-from ._aux_common import _aux_get_bus
+from ._aux_common import _aux_get_bus, _aux_has_extension
+
+
+def _aux_battery_voltage_regulation_table(net):
+    """The voltage regulation of the batteries, as columns ``voltage_regulator_on``,
+    ``target_v`` (kV) and ``regulated_element_id``, ``None`` if pypowsybl has none.
+
+    Up to pypowsybl 1.16 it is the ``voltageRegulation`` extension. pypowsybl 1.17
+    removed it and made it columns of the battery table: ``regulating``,
+    ``regulation_mode`` (only ``VOLTAGE`` regulates a voltage) and ``regulation_value``
+    (the target voltage, in kV)."""
+    if _aux_has_extension("voltageRegulation"):
+        try:
+            ext = net.get_extensions("voltageRegulation")
+        except Exception:  # noqa: BLE001 - extension tables absent on old pypowsybl
+            return None
+        if ext is None or "voltage_regulator_on" not in ext.columns:
+            return None
+        return ext
+    try:
+        bat = net.get_batteries(attributes=["regulating", "regulation_mode", "regulation_value",
+                                            "regulated_element_id"])
+    except Exception:  # noqa: BLE001 - neither the extension nor the columns
+        return None
+    return pd.DataFrame({
+        "voltage_regulator_on": bat["regulating"].fillna(False).astype(bool) & (bat["regulation_mode"] == "VOLTAGE"),
+        "target_v": bat["regulation_value"].astype(float),
+        "regulated_element_id": bat["regulated_element_id"].fillna(""),
+    }, index=bat.index)
 
 
 def _aux_battery_voltage_regulation(net, df_batt, batt_bus, batt_disco, voltage_levels):
@@ -23,11 +52,8 @@ def _aux_battery_voltage_regulation(net, df_batt, batt_bus, batt_disco, voltage_
     n = len(df_batt)
     vreg = np.zeros(n, dtype=bool)
     target_vm = np.ones(n, dtype=float)
-    try:
-        ext = net.get_extensions("voltageRegulation")
-    except Exception:
-        return vreg, target_vm
-    if ext is None or not len(ext) or "voltage_regulator_on" not in ext.columns:
+    ext = _aux_battery_voltage_regulation_table(net)
+    if ext is None or not len(ext):
         return vreg, target_vm
     ext = ext.reindex(df_batt.index)
     on = ext["voltage_regulator_on"].fillna(False).to_numpy(bool) & ~np.asarray(batt_disco, dtype=bool)
