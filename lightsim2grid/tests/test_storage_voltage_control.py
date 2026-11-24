@@ -32,6 +32,7 @@ except ImportError:
 try:
     import pypowsybl as pypo
     import pypowsybl.loadflow as pypo_lf
+    from _pypowsybl_compat import set_battery_voltage_regulation
     from lightsim2grid.network import init_from_pypowsybl
     PYPO_AVAILABLE = True
 except ImportError:
@@ -161,8 +162,7 @@ class TestBatteryVoltageRegulationPypowsybl(unittest.TestCase):
         net.create_batteries(id="BAT1", voltage_level_id=vl, bus_id=bus, min_p=-20., max_p=20.,
                              target_p=3.0, target_q=0.0)
         net.create_minmax_reactive_limits(id="BAT1", min_q=-100., max_q=100.)
-        net.create_extensions("voltageRegulation", id="BAT1", voltage_regulator_on=bool(regulating),
-                              target_v=VM * vls.at[vl, "nominal_v"])
+        set_battery_voltage_regulation(net, "BAT1", regulating, VM * vls.at[vl, "nominal_v"])
         return net
 
     def test_converter_reads_the_extension(self):
@@ -183,6 +183,24 @@ class TestBatteryVoltageRegulationPypowsybl(unittest.TestCase):
             warnings.simplefilter("ignore")
             grid_off = init_from_pypowsybl(net_off, sort_index=False, buses_for_sub=False)
         self.assertFalse(grid_off.get_storages()[0].voltage_regulator_on)
+
+    def test_bake_switches_off_a_battery_at_its_limit(self):
+        # a battery whose target voltage OpenLoadFlow could not hold (stopped at a reactive
+        # limit) is baked to a PQ unit at its realized output. With pypowsybl 1.17 the
+        # regulation is battery columns, not the removed extension, and the bake saw none.
+        from lightsim2grid.network.from_pypowsybl import bake_outer_loops
+        net = self._network()
+        net.create_minmax_reactive_limits(id="BAT1", min_q=-1., max_q=1.)
+        res = pypo_lf.run_ac(net, pypo_lf.Parameters(distributed_slack=False, use_reactive_limits=True))
+        self.assertEqual(res[0].status, pypo_lf.ComponentStatus.CONVERGED)
+        q = net.get_batteries().at["BAT1", "q"]
+        self.assertAlmostEqual(abs(q), 1., places=6)  # at its limit: the voltage is not held
+        bake_outer_loops(net)
+        self.assertAlmostEqual(net.get_batteries().at["BAT1", "target_q"], -q, places=9)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            grid = init_from_pypowsybl(net, sort_index=False, buses_for_sub=False)
+        self.assertFalse(grid.get_storages()[0].voltage_regulator_on)
 
     def test_matches_openloadflow(self):
         net = self._network()

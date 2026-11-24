@@ -30,3 +30,12 @@ def set_svc_slope(net, svc_id, slope):
     else:
         net.update_static_var_compensators(id=svc_id, slope=slope)
 
+
+def set_battery_voltage_regulation(net, battery_id, regulating, target_v):
+    """A battery regulating the voltage of its own bus at ``target_v`` (kV)."""
+    if _has_extension("voltageRegulation"):
+        net.create_extensions("voltageRegulation", id=battery_id, voltage_regulator_on=bool(regulating),
+                              target_v=target_v)
+    else:
+        net.update_batteries(id=battery_id, regulation_mode="VOLTAGE", regulation_value=target_v,
+                             regulating=bool(regulating))

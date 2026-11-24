@@ -170,6 +170,8 @@ from ._olf_const import (
 )
 from ._aux_add_hvdc import _hvdc_pmax_per_direction
 from ._aux_add_svc import _svc_standby_b0
+from ._aux_add_storage import _aux_battery_voltage_regulation_table
+from ._aux_common import _aux_has_extension
 
 
 def _q_limit_tol(qmin, qmax):
@@ -890,16 +892,14 @@ def _bake_battery_voltage_control(network, keep_only_main_comp=True, df_bus=None
     the extension switched off and its realized reactive output as fixed ``target_q``.
 
     The decision itself -- :func:`_target_v_held` on the regulated bus -- is the shared
-    one. What does not merge is the plumbing around it: a battery's regulation flag,
-    target voltage and regulated element live in an extension frame rather than in
-    columns of ``get_batteries()``, and switching it off is an ``update_extensions`` call
-    rather than an ``update_batteries`` one.
+    one. What does not merge is the plumbing around it: up to pypowsybl 1.16 a battery's
+    regulation flag, target voltage and regulated element live in an extension frame
+    rather than in columns of ``get_batteries()``, and switching it off is an
+    ``update_extensions`` call; since 1.17 they are columns (``regulating``,
+    ``regulation_value``) named differently from a generator's.
     """
-    try:
-        vr = network.get_extensions("voltageRegulation")
-    except Exception:
-        return
-    if vr is None or not len(vr) or "voltage_regulator_on" not in vr.columns:
+    vr = _aux_battery_voltage_regulation_table(network)
+    if vr is None or not len(vr):
         return
     bat = network.get_batteries(attributes=["q", "connected", "bus_id"])
     if keep_only_main_comp:
@@ -918,7 +918,11 @@ def _bake_battery_voltage_control(network, keep_only_main_comp=True, df_bus=None
     if not freeze.any():
         return
     frozen = ids[freeze]
-    network.update_extensions("voltageRegulation", pd.DataFrame({"voltage_regulator_on": False}, index=frozen))
+    if _aux_has_extension("voltageRegulation"):
+        network.update_extensions("voltageRegulation", pd.DataFrame({"voltage_regulator_on": False}, index=frozen))
+    else:
+        # pypowsybl 1.17: the regulation is columns of the battery table
+        network.update_batteries(pd.DataFrame({"regulating": False}, index=frozen))
     network.update_batteries(pd.DataFrame({"target_q": -bat.loc[frozen, "q"].to_numpy()}, index=frozen))
 
 

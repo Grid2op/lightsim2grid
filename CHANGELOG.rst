@@ -243,6 +243,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   (``terminal not found for per unit V``), and could have dropped every ratio tap changer silently.
 - [FIXED] pypowsybl 1.17: an SVC's slope is read from the SVC table's new ``slope`` column; it was
   silently dropped once the ``voltagePerReactivePowerControl`` extension was removed.
+- [FIXED] pypowsybl 1.17: a battery's voltage regulation is read from (and baked into) the battery
+  table's ``regulating`` / ``regulation_value`` columns; it was silently lost with the
+  ``voltageRegulation`` extension.
 
 
 [1.3.1] 2026-11-13
