@@ -473,6 +473,28 @@ class ContingencyAnalysis(object):
         self.computer.violation_rel_tol = val
 
     @property
+    def violations_new_or_worse_only(self):
+        """Whether the violations of a contingency are reduced to what it adds to the base case
+        (default ``False``, the complete state of the contingency). A violation is kept when it
+        is absent from the base case (`get_violations_n`), or present there with a worse value:
+        a larger current or high voltage, a lower low voltage, by more than a relative ``1e-6``
+        of the base value. Comparing values keeps an element that is above its limit in the
+        base case and goes further above it. Divergence entries are always kept. This is the
+        set a security analysis such as OpenLoadFlow's reports.
+
+        Only used when `compute_limit_violations` is `True`. Changing it invalidates any
+        already-computed results, the registered contingencies being kept.
+        """
+        return self.computer.violations_new_or_worse_only
+
+    @violations_new_or_worse_only.setter
+    def violations_new_or_worse_only(self, val):
+        val = bool(val)
+        if val != self.computer.violations_new_or_worse_only:
+            self.clear(with_contlist=False)
+        self.computer.violations_new_or_worse_only = val
+
+    @property
     def compute_physical_violations(self):
         """Whether every converged contingency reports the PHYSICAL limits its solution
         leaves -- a state the grid cannot reach at all, as opposed to the operational limits

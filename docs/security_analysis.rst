@@ -489,6 +489,36 @@ Changing it, in either direction, discards the already-computed results (the reg
 contingencies are kept). ``LSGrid.get_violations(threshold, ac, rel_tol)`` takes the same
 tolerance.
 
+.. _sa_new_or_worse:
+
+Reporting only what a contingency adds: ``violations_new_or_worse_only``
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+``get_violations`` returns the complete post-contingency state: every element violating a limit,
+those that already violate in the base case (``get_violations_n``) included. A security analysis
+such as OpenLoadFlow's reports that state minus the base case violations that did not get worse.
+Set ``violations_new_or_worse_only = True`` (on ``ContingencyAnalysis`` and ``ContingencyAnalysisCPP``)
+to get that set:
+
+.. code-block:: python
+
+    ca = ContingencyAnalysisCPP(grid, True)
+    ca.violations_new_or_worse_only = True
+    ca.add_all_n1()
+    ca.compute(v0, max_iter, tol)
+    new_or_worse = ca.get_violations()   # get_violations_n() still lists the whole base case
+
+A violation is kept when it is absent from the base case, or present there with a worse value: a
+larger current or high voltage, a lower low voltage. Values are compared, not only presence, so an
+element above its limit in the base case that goes further above it after the contingency is kept.
+"Worse" means by more than a relative ``1e-6`` of the base value, because two solves of the same grid
+differ by the solver tolerance. Entries not tied to an element (a diverging contingency) are always
+kept. The default is ``False``. Changing it, in either direction, discards the already-computed
+results (the registered contingencies are kept).
+
+When comparing against pypowsybl, currents are in kA here and in A there, and sides are ``1`` / ``2``
+here and ``ONE`` / ``TWO`` there.
+
 .. _sa_benchmarks:
 
 Benchmarks (Contingency Analysis)

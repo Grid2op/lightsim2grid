@@ -1281,6 +1281,14 @@ void bind_batch(py::module_& m) {
                       [](const ContingencyAnalysis & self){ return self.get_violation_rel_tol(); },
                       [](ContingencyAnalysis & self, real_type val){ self.set_violation_rel_tol(val); },
                       DocContingencyAnalysis::violation_rel_tol.c_str())
+        .def_property("violations_new_or_worse_only",
+                      [](const ContingencyAnalysis & self){ return self.get_violations_new_or_worse_only(); },
+                      [](ContingencyAnalysis & self, bool val){ self.set_violations_new_or_worse_only(val); },
+                      "Whether get_violations() reports only the violations a contingency adds to the base "
+                      "case: those absent from get_violations_n(), and those present there whose value is "
+                      "worse (a larger current or high voltage, a lower low voltage, by more than a relative "
+                      "1e-6 of the base value). Defaults to ``False``: the complete state of each contingency. "
+                      "Divergence entries are always kept. Changing it clears any previously-computed results.")
         // physical-limit checks: same names and semantics as on the three
         // batch_sweep_common classes (this class is bound by hand, see the note above)
         .def_property("compute_physical_violations",
