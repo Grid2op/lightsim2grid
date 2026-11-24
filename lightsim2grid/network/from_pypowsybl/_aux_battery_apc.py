@@ -28,8 +28,9 @@ the ``droop = 0`` / ``participate = false`` ones take no part.
 
 pypowsybl up to 1.16.1 does not expose that extension on a battery
 (``get_extensions("activePowerControl")`` only lists generators; fixed by pypowsybl PR
-#1276, not released yet), so :func:`battery_active_power_control` can fall back to reading
-it off an export of the network.
+#1276, released in 1.17.0), so there :func:`battery_active_power_control` falls back to
+reading it off an export of the network. From 1.17.0 on it reads the extension directly,
+and the network is never exported.
 """
 
 import io

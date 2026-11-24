@@ -23,6 +23,7 @@ from typing import Dict
 from ...lightsim2grid_cpp import LSGrid  # type: ignore
 from ._aux_common import (
     _aux_ensure_net_pu,
+    _aux_get_tap_changers,
     _aux_get_2wt_all_attrs,
     _aux_trafo_alpha,
     _aux_trafo_rho,
@@ -330,7 +331,7 @@ def _aux_add_buses(model, net, net_pu, sort_index, buses_for_sub, n_busbar_per_s
             df_trafo_fuse = df_trafo_fuse.sort_index()
         if df_trafo_fuse.shape[0] > 0:
             df_trafo_fuse_pu = _aux_get_2wt_all_attrs(net_pu).loc[df_trafo_fuse.index]
-            ratio_tap_changer_fuse = net_pu.get_ratio_tap_changers()
+            ratio_tap_changer_fuse = _aux_get_tap_changers(net_pu)
             alpha_fuse = _aux_trafo_alpha(df_trafo_fuse_pu, net)
             rho_fuse = _aux_trafo_rho(df_trafo_fuse_pu, ratio_tap_changer_fuse)
             both_conn_t = (df_trafo_fuse["connected1"].values & df_trafo_fuse["connected2"].values)
