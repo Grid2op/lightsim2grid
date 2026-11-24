@@ -72,6 +72,7 @@ This is a work in progress at the moment
    differentiable
    cpp_library
    solver_plugin
+   add_linear_solver
    binary_serialization
    security
 

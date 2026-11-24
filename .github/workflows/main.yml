@@ -787,7 +787,7 @@ jobs:
         run: |
           mkdir -p _tmp_cmake_dir
           LS2G_CMAKE=$(cd _tmp_cmake_dir && python -c "import lightsim2grid; print(lightsim2grid.get_cmake_dir())")
-          for ex in external_algorithm lm_algorithm dist_slack_algorithm rebuild_outer_algorithm; do
+          for ex in external_algorithm lm_algorithm dist_slack_algorithm rebuild_outer_algorithm linear_solver_plugin; do
             cmake -S examples/$ex -B examples/$ex/build \
                   -DLIGHTSIM2GRID_CMAKE_DIR="$LS2G_CMAKE" \
                   -DCMAKE_BUILD_TYPE=Release
@@ -799,7 +799,7 @@ jobs:
         # rebuild_outer_algorithm compares with NROuter_* on pandapower's cases
         run: |
           python -m pip install pandapower
-          for ex in external_algorithm lm_algorithm dist_slack_algorithm rebuild_outer_algorithm; do
+          for ex in external_algorithm lm_algorithm dist_slack_algorithm rebuild_outer_algorithm linear_solver_plugin; do
             python examples/$ex/test_plugin.py
           done
 
