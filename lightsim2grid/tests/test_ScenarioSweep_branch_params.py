@@ -28,6 +28,8 @@ from lightsim2grid import LightSimBackend
 from lightsim2grid.algorithm import AlgorithmType
 from lightsim2grid.scenarioSweep import ScenarioSweep, ScenarioSweepCPP
 from test_ContingencyAnalysis_limit_violations import _set_tight_limits
+from test_ScenarioSweep_exotic import (build_grid as build_exotic_grid, HALF_OPEN_LINE, HALF_OPEN_TRAFO,
+                                       MAX_IT, TOL)
 
 NAN_C = complex(np.nan, np.nan)
 
@@ -38,6 +40,27 @@ def _nan(shape):
 
 def _nan_c(shape):
     return np.full(shape, NAN_C, dtype=complex)
+
+
+def _grid_holding_row(grid_base, row, line_ids, line_mats, trafo_ids, trafo_mats, trafo_ratio, trafo_shift):
+    """a copy of `grid_base` holding row `row`'s values, given the way LSGrid takes them
+    (`line_mats` / `trafo_mats`: the r, x, h1, h2 matrices; a NaN keeps the grid's value)"""
+    grid = grid_base.copy()
+    for el_ids, mats, elements, update in (
+            (line_ids, line_mats, grid_base.get_lines(), grid.update_powerlines_parameters),
+            (trafo_ids, trafo_mats, grid_base.get_trafos(), grid.update_trafos_parameters_full)):
+        vects = [np.array([getattr(el, attr) for el in elements]) for attr in ("r_pu", "x_pu", "h1_pu", "h2_pu")]
+        for k, el_id in enumerate(el_ids):
+            for vect, mat in zip(vects, mats):
+                if not np.isnan(mat[row, k]):
+                    vect[el_id] = mat[row, k]
+        update(*vects)
+    for k, el_id in enumerate(trafo_ids):
+        if not np.isnan(trafo_ratio[row, k]):
+            grid.change_ratio_trafo(int(el_id), trafo_ratio[row, k])
+        if not np.isnan(trafo_shift[row, k]):
+            grid.change_shift_trafo(int(el_id), trafo_shift[row, k])
+    return grid
 
 
 class TestScenarioSweepBranchParamsCPP(unittest.TestCase):
@@ -100,33 +123,10 @@ class TestScenarioSweepBranchParamsCPP(unittest.TestCase):
 
     def _grid_of_row(self, row):
         """the grid holding row `row`'s values, given the way LSGrid takes them"""
-        grid = self.grid.copy()
-        lines = self.grid.get_lines()
-        trafos = self.grid.get_trafos()
-        r = np.array([el.r_pu for el in lines])
-        x = np.array([el.x_pu for el in lines])
-        h1 = np.array([el.h1_pu for el in lines])
-        h2 = np.array([el.h2_pu for el in lines])
-        for k, el_id in enumerate(self.line_ids):
-            for vect, mat in ((r, self.line_r), (x, self.line_x), (h1, self.line_h1), (h2, self.line_h2)):
-                if not np.isnan(mat[row, k]):
-                    vect[el_id] = mat[row, k]
-        grid.update_powerlines_parameters(r, x, h1, h2)
-        r = np.array([el.r_pu for el in trafos])
-        x = np.array([el.x_pu for el in trafos])
-        h1 = np.array([el.h1_pu for el in trafos])
-        h2 = np.array([el.h2_pu for el in trafos])
-        for k, el_id in enumerate(self.trafo_ids):
-            for vect, mat in ((r, self.trafo_r), (x, self.trafo_x), (h1, self.trafo_h1), (h2, self.trafo_h2)):
-                if not np.isnan(mat[row, k]):
-                    vect[el_id] = mat[row, k]
-        grid.update_trafos_parameters_full(r, x, h1, h2)
-        for k, el_id in enumerate(self.trafo_ids):
-            if not np.isnan(self.trafo_ratio[row, k]):
-                grid.change_ratio_trafo(int(el_id), self.trafo_ratio[row, k])
-            if not np.isnan(self.trafo_shift[row, k]):
-                grid.change_shift_trafo(int(el_id), self.trafo_shift[row, k])
-        return grid
+        return _grid_holding_row(self.grid, row,
+                                 self.line_ids, (self.line_r, self.line_x, self.line_h1, self.line_h2),
+                                 self.trafo_ids, (self.trafo_r, self.trafo_x, self.trafo_h1, self.trafo_h2),
+                                 self.trafo_ratio, self.trafo_shift)
 
     def _check_rows_against_grid(self, ac):
         algo = None if ac else AlgorithmType.DC_KLU
@@ -310,6 +310,128 @@ class TestScenarioSweepBranchParamsGrid2op(unittest.TestCase):
         self.assertEqual(sweep.get_voltages().shape[0], 3)
         self.assertTrue(np.all(sweep.computer.converged_mask()))
         self.assertEqual(len(trafos), len(self.grid.get_trafos()))
+
+
+class TestScenarioSweepBranchParamsHalfOpen(unittest.TestCase):
+    """Parameters given to branches the grid holds open at one end: what such a branch
+    stamps is its block with the open end Kron-reduced out, in the Ybus edit, the flows and
+    the branch results alike. In DC it is in no matrix, whatever its parameters.
+
+    With no shunt admittance a branch open at one end stamps nothing, whatever its r, x or
+    ratio, so the rows that change those also give the branch shunts: otherwise they would
+    pass however the parameters were read."""
+
+    SHUNTS = (0.04j, 0.08j, 0.01 + 0.03j, 0.05j)  # line h1, h2, trafo h1, h2
+
+    def setUp(self):
+        self.grid = build_exotic_grid()
+        lines = self.grid.get_lines()
+        trafos = self.grid.get_trafos()
+        line = lines[HALF_OPEN_LINE]
+        trafo = trafos[HALF_OPEN_TRAFO]
+        self.assertTrue(line.connected_global and line.connected1 and not line.connected2)
+        self.assertTrue(trafo.connected_global and not trafo.connected1 and trafo.connected2)
+        self.V0 = np.ones(self.grid.total_bus(), dtype=complex)
+        self.nb_rows = 7
+        n = self.nb_rows
+        # the half-open line and a line closed at both ends; the half-open trafo
+        self.line_ids = np.array([HALF_OPEN_LINE, 3])
+        self.trafo_ids = np.array([HALF_OPEN_TRAFO])
+        self.line_r, self.line_x = _nan((n, 2)), _nan((n, 2))
+        self.line_h1, self.line_h2 = _nan_c((n, 2)), _nan_c((n, 2))
+        self.trafo_r, self.trafo_x, self.trafo_ratio, self.trafo_shift = (_nan((n, 1)) for _ in range(4))
+        self.trafo_h1, self.trafo_h2 = _nan_c((n, 1)), _nan_c((n, 1))
+        # row 0 changes nothing
+        self.line_x[1, 0] = 2. * line.x_pu
+        self.line_h1[2, 0] = 0.05j                       # the shunts only, the open end's too
+        self.line_h2[2, 0] = 0.1j
+        self.line_r[3, 0] = 3. * line.r_pu + 0.01
+        self.trafo_x[4, 0] = 1.5 * trafo.x_pu
+        self.trafo_ratio[4, 0] = 1.05
+        self.trafo_shift[5, 0] = 0.1
+        self.trafo_h2[5, 0] = 0.02j
+        self.line_x[6, :] = [0.5 * line.x_pu, 1.3 * lines[3].x_pu]
+        self.trafo_r[6, 0] = 2. * trafo.r_pu + 0.002
+        # the rows changing r, x or the ratio: shunts on both branches, so that those matter
+        self.rx_rows = (1, 3, 4, 6)
+        for row in self.rx_rows:
+            self.line_h1[row, 0], self.line_h2[row, 0] = self.SHUNTS[0], self.SHUNTS[1]
+            self.trafo_h1[row, 0], self.trafo_h2[row, 0] = self.SHUNTS[2], self.SHUNTS[3]
+
+    def _sweep(self, algo):
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(algo)
+        sweep.set_line_parameters(self.line_ids, self.line_r, self.line_x, self.line_h1, self.line_h2)
+        sweep.set_trafo_parameters(self.trafo_ids, self.trafo_r, self.trafo_x, self.trafo_h1, self.trafo_h2,
+                                   self.trafo_ratio, self.trafo_shift)
+        return sweep
+
+    def _grid_of_row(self, row):
+        return _grid_holding_row(self.grid, row,
+                                 self.line_ids, (self.line_r, self.line_x, self.line_h1, self.line_h2),
+                                 self.trafo_ids, (self.trafo_r, self.trafo_x, self.trafo_h1, self.trafo_h2),
+                                 self.trafo_ratio, self.trafo_shift)
+
+    def _shunts_only(self, algo):
+        """the voltages with the rx rows' shunts and the grid's r, x, ratio"""
+        one = lambda v: np.full((1, 1), v, dtype=complex)  # noqa: E731
+        sweep = ScenarioSweepCPP(self.grid)
+        sweep.change_algorithm(algo)
+        sweep.set_line_parameters(np.array([HALF_OPEN_LINE]), _nan((1, 1)), _nan((1, 1)),
+                                  one(self.SHUNTS[0]), one(self.SHUNTS[1]))
+        sweep.set_trafo_parameters(self.trafo_ids, _nan((1, 1)), _nan((1, 1)), one(self.SHUNTS[2]),
+                                   one(self.SHUNTS[3]), _nan((1, 1)), _nan((1, 1)))
+        sweep.compute(self.V0, MAX_IT, TOL)
+        return 1. * sweep.get_voltages()[0]
+
+    def _check(self, ac):
+        algo = AlgorithmType.NR_KLU if ac else AlgorithmType.DC_KLU
+        if algo not in ScenarioSweepCPP(self.grid).available_default_algorithms():
+            self.skipTest(f"{algo} is not available")
+        sweep = self._sweep(algo)
+        sweep.compute(self.V0, MAX_IT, TOL)
+        self.assertTrue(np.all(sweep.converged_mask()))
+        for stats in sweep.get_linear_solver_stats_per_algo():
+            self.assertLessEqual(stats.nb_analyze, 1)
+        Vs = 1. * sweep.get_voltages()
+        P = 1. * sweep.compute_power_flows()
+        A = 1. * sweep.compute_flows()
+        res = 1. * sweep.compute_branch_results() if ac else None
+        for row in range(self.nb_rows):
+            grid = self._grid_of_row(row)
+            V = grid.ac_pf(self.V0, MAX_IT, TOL) if ac else grid.dc_pf(self.V0, MAX_IT, TOL)
+            self.assertEqual(V.shape[0], Vs.shape[1], f"row {row}: the grid's solve diverged")
+            on = np.abs(Vs[row]) > 0.
+            np.testing.assert_allclose(Vs[row][on], V[on], atol=1e-9, rtol=0, err_msg=f"row {row}")
+            p_ref = np.array([el.res_p1_mw for el in grid.get_lines()] + [el.res_p1_mw for el in grid.get_trafos()])
+            np.testing.assert_allclose(P[row], p_ref, atol=1e-7, rtol=0, err_msg=f"row {row}")
+            if not ac:
+                continue
+            a_ref = np.array([el.res_a1_ka for el in grid.get_lines()] + [el.res_a1_ka for el in grid.get_trafos()])
+            np.testing.assert_allclose(A[row], a_ref, atol=1e-8, rtol=0, err_msg=f"row {row}")
+            diff = (sweep.get_Ybus(row) - grid.get_Ybus()).toarray()
+            self.assertLess(np.abs(diff).max(), 1e-10, f"row {row}")
+            # both ends of every branch (the side-2 results of the half-open trafo included)
+            ref = ScenarioSweepCPP(grid)
+            ref.change_algorithm(algo)
+            ref.set_contingency_lines(np.zeros((1, len(grid.get_lines())), dtype=bool))
+            ref.compute(self.V0, MAX_IT, TOL)
+            np.testing.assert_allclose(res[row], ref.compute_branch_results()[0], atol=1e-7, rtol=0,
+                                       err_msg=f"row {row}")
+        return Vs, algo
+
+    def test_ac(self):
+        Vs, algo = self._check(ac=True)
+        # guard the guard: the r, x and ratio of those rows did change the solve
+        V_shunts = self._shunts_only(algo)
+        for row in self.rx_rows:
+            self.assertGreater(np.abs(Vs[row] - V_shunts).max(), 1e-6, f"row {row}")
+
+    def test_dc(self):
+        Vs, _ = self._check(ac=False)
+        # nothing of the half-open branches reaches the DC matrix: rows 1 to 5 are the grid's
+        for row in range(1, 6):
+            np.testing.assert_array_equal(Vs[row], Vs[0], err_msg=f"row {row}")
 
 
 if __name__ == "__main__":
