@@ -11,7 +11,7 @@ import copy
 import numpy as np
 import pandas as pd
 
-from ._aux_common import _aux_get_bus, _aux_regulated_bus_view_ids
+from ._aux_common import _aux_get_bus, _aux_has_extension, _aux_regulated_bus_view_ids
 
 
 def _aux_svc_can_be_pv_flags(can_be_pv, svc_index):
@@ -137,16 +137,20 @@ def _aux_add_svc(model, net, sort_index, voltage_levels, bus_df, first_bus_per_v
         # extension at all -- `slope` comes back numerically identical whether
         # or not `per_unit` is set (checked empirically) -- so there is no
         # `net_pu` value to defer to here; the conversion has to be done by hand.
-        try:
-            df_slope = net.get_extensions("voltagePerReactivePowerControl")
-        except Exception:
-            # extension tables may be unavailable on (very) old pypowsybl versions
-            df_slope = None
+        # Since pypowsybl 1.17 the slope is a `slope` column of the SVC table (NaN: no
+        # slope) and the extension no longer exists; before, only the extension has it.
+        if _aux_has_extension("voltagePerReactivePowerControl"):
+            try:
+                df_slope = net.get_extensions("voltagePerReactivePowerControl")
+            except Exception:
+                # extension tables may be unavailable on (very) old pypowsybl versions
+                df_slope = None
+        else:
+            df_slope = net.get_static_var_compensators(attributes=["slope"])
         if df_slope is not None and df_slope.shape[0]:
-            for svc_pos, svc_id in enumerate(df_svc.index):
-                if svc_id in df_slope.index:
-                    slope_kv_per_mvar = float(df_slope.loc[svc_id, "slope"])
-                    svc_slope_pu[svc_pos] = slope_kv_per_mvar * sn_mva_used / svc_reg_vn[svc_pos]
+            slope_kv_per_mvar = df_slope["slope"].reindex(df_svc.index).to_numpy(float)
+            has_slope = np.isfinite(slope_kv_per_mvar)
+            svc_slope_pu[has_slope] = slope_kv_per_mvar[has_slope] * sn_mva_used / svc_reg_vn[has_slope]
 
     olf_monitor = np.zeros(nb_svc, dtype=bool)
     olf_b0 = None

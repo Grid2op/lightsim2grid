@@ -22,6 +22,16 @@ PP_BUG_RATIO_TAP_CHANGER = version.parse("1.9")
 PYPOWSYBL_VER = version.parse(pypo.__version__)
 
 
+def _aux_has_extension(name):
+    """Whether the installed pypowsybl knows the network extension ``name``. pypowsybl
+    1.17 folded some of them into columns of the element tables (``voltageRegulation``
+    of a battery, ``voltagePerReactivePowerControl`` of an SVC) and removed them."""
+    try:
+        return name in pypo.network.get_extensions_names()
+    except Exception:  # noqa: BLE001 - very old pypowsybl
+        return True
+
+
 def _aux_get_bus(vl_df, bus_df, first_bus_per_vl, el_type, df, conn_key="connected", bus_key="bus_id", vl_key="voltage_level_id"):
     if df.shape[0] == 0:
         # no element of this type so no problem
