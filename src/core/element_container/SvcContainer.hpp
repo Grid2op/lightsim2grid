@@ -169,6 +169,19 @@ class LS2G_API SvcContainer final : public VoltageSourceContainer<SvcContainer>,
         }
 
         /**
+         * The regulation mode of an SVC (RegulationMode: OFF, VOLTAGE, REACTIVE_POWER),
+         * what `init` takes. `voltage_regulator_on_` follows it. A VOLTAGE-mode SVC is a
+         * controller of a voltage-control group, a REACTIVE_POWER one injects its Q
+         * setpoint and an OFF one nothing: the switch moves Sbus, the pv/pq split and the
+         * plan. Refuses VOLTAGE for an SVC that regulates no bus.
+         */
+        void set_regulation_mode(int svc_id, int mode, DualAlgoControl & solver_control);
+        /// the voltage / reactive slope (pu, 0: none) of a VOLTAGE-mode SVC
+        void set_slope(int svc_id, real_type slope_pu, DualAlgoControl & solver_control);
+        /// the susceptance range (pu, same base as `init`), refuses `b_min > b_max`
+        void set_b_limits(int svc_id, real_type b_min, real_type b_max, DualAlgoControl & solver_control);
+
+        /**
          * The "standby automaton" of each SVC (one entry per SVC): whether it carries
          * one, and its low / high voltage thresholds, in pu of the nominal voltage of the
          * bus it regulates (ignored, and stored as NaN, where `standby` is false). A

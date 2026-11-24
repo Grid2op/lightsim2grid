@@ -2210,6 +2210,96 @@ class LS2G_API LSGrid final
         void set_gen_reactive_key(int gen_id, real_type key) {
             generators_.set_reactive_key(gen_id, key, algo_controler_);
         }
+
+        // ---- the remaining non-structural setters --------------------------------------
+        // Values that only `init_*` used to take. None changes the set of elements, so a
+        // kept grid can be updated in place (and warm-started) instead of being rebuilt.
+        // Each raises the flags its change needs, see the container setters.
+
+        /// voltage regulation on / off (`voltage_regulator_on` of init_generators_full)
+        void set_gen_voltage_regulator_on(int gen_id, bool on) {
+            generators_.set_voltage_regulator_on(gen_id, on, algo_controler_);
+        }
+        /// reactive limits, MVAr (refuses min_q > max_q)
+        void set_gen_q_limits(int gen_id, real_type min_q_mvar, real_type max_q_mvar) {
+            generators_.set_q_limits(gen_id, min_q_mvar, max_q_mvar, algo_controler_);
+        }
+        /// voltage regulation (of its own bus) on / off (`voltage_regulator_on` of init_storages_full)
+        void set_storage_voltage_regulator_on(int storage_id, bool on) {
+            storages_.set_voltage_regulator_on(storage_id, on, algo_controler_);
+        }
+        /// reactive limits, MVAr, generator convention (refuses min_q > max_q)
+        void set_storage_q_limits(int storage_id, real_type min_q_mvar, real_type max_q_mvar) {
+            storages_.set_q_limits(storage_id, min_q_mvar, max_q_mvar, algo_controler_);
+        }
+
+        /// voltage setpoint (pu) of an SVC, read in VOLTAGE mode
+        void change_v_svc(int svc_id, real_type new_v_pu) {svcs_.change_v_nothrow(svc_id, new_v_pu, algo_controler_); }
+        /// reactive setpoint (MVAr) of an SVC, injected in REACTIVE_POWER mode
+        void change_q_svc(int svc_id, real_type new_q_mvar) {svcs_.change_q_nothrow(svc_id, new_q_mvar, algo_controler_); }
+        /// regulation mode of an SVC: 0 OFF, 1 VOLTAGE, 2 REACTIVE_POWER (see SvcContainer::set_regulation_mode)
+        void set_svc_regulation_mode(int svc_id, int mode) {svcs_.set_regulation_mode(svc_id, mode, algo_controler_); }
+        /// voltage / reactive slope (pu, 0: none) of an SVC, same unit as init_svcs
+        void set_svc_slope(int svc_id, real_type slope_pu) {svcs_.set_slope(svc_id, slope_pu, algo_controler_); }
+        /// susceptance range of an SVC, same unit as init_svcs (refuses b_min > b_max)
+        void set_svc_b_limits(int svc_id, real_type b_min, real_type b_max) {
+            svcs_.set_b_limits(svc_id, b_min, b_max, algo_controler_);
+        }
+
+        /// voltage regulation on / off of the converter station of `side` (1 or 2); an LCC cannot regulate
+        void set_hvdc_station_voltage_regulator_on(int hvdc_id, int side, bool on) {
+            hvdc_lines_.set_station_voltage_regulator_on(hvdc_id, side, on, algo_controler_);
+        }
+        /// reactive limits (MVAr) of the converter station of `side` (1 or 2)
+        void set_hvdc_station_q_limits(int hvdc_id, int side, real_type min_q_mvar, real_type max_q_mvar) {
+            hvdc_lines_.set_station_q_limits(hvdc_id, side, min_q_mvar, max_q_mvar, algo_controler_);
+        }
+        /// reactive setpoint (MVAr, generator convention) of the VSC station of `side`, injected when it does not regulate
+        void change_hvdc_station_q(int hvdc_id, int side, real_type new_q_mvar) {
+            hvdc_lines_.change_station_q(hvdc_id, side, new_q_mvar, algo_controler_);
+        }
+        /// loss factors (fractions in [0, 1)) of the two stations; the station targets are re-derived
+        void set_hvdc_loss_factors(int hvdc_id, real_type loss_factor_1, real_type loss_factor_2) {
+            hvdc_lines_.set_loss_factors(hvdc_id, loss_factor_1, loss_factor_2, algo_controler_);
+        }
+        /// power factors (in (0, 1]) of the two stations, read for an LCC
+        void set_hvdc_power_factors(int hvdc_id, real_type power_factor_1, real_type power_factor_2) {
+            hvdc_lines_.set_power_factors(hvdc_id, power_factor_1, power_factor_2, algo_controler_);
+        }
+        /**
+         * The active power setpoint as the IIDM model gives it, and as init_hvdc_lines takes
+         * it: `p_setpoint_mw` (>= 0) drawn at the rectifier, `converters_mode` 0 (side 1
+         * rectifier) or 1 (side 2 rectifier). Kept exactly, unlike `change_p_dcline` which
+         * derives it back from a side-1 injection. See HvdcLineContainer::set_active_power_setpoint.
+         */
+        void set_hvdc_active_power_setpoint(int hvdc_id, int converters_mode, real_type p_setpoint_mw) {
+            hvdc_lines_.set_active_power_setpoint(hvdc_id, converters_mode, p_setpoint_mw, algo_controler_);
+        }
+        /// dc line resistance (ohm) and dc nominal voltage (kV, 0: no resistive loss)
+        void set_hvdc_dc_line_parameters(int hvdc_id, real_type r_ohm, real_type nominal_v_kv) {
+            hvdc_lines_.set_dc_line_parameters(hvdc_id, r_ohm, nominal_v_kv, algo_controler_);
+        }
+        /// angle-droop (AC emulation) on / off, see HvdcLineContainer::set_droop_enabled
+        void set_hvdc_droop_enabled(int hvdc_id, bool enabled) {
+            hvdc_lines_.set_droop_enabled(hvdc_id, enabled, algo_controler_);
+        }
+        /// the droop law p = p0 + k * (theta1 - theta2): p0 in MW, k in MW per degree (as init_hvdc_lines)
+        void set_hvdc_droop_parameters(int hvdc_id, real_type p0_mw, real_type k_mw_per_deg) {
+            hvdc_lines_.set_droop_parameters(hvdc_id, p0_mw, k_mw_per_deg, algo_controler_);
+        }
+        /// the droop's active power limits, MW, one per direction
+        void set_hvdc_droop_pmax(int hvdc_id, real_type pmax_1to2_mw, real_type pmax_2to1_mw) {
+            hvdc_lines_.set_droop_pmax(hvdc_id, pmax_1to2_mw, pmax_2to1_mw, algo_controler_);
+        }
+
+        /// update_powerlines_parameters for one powerline (pu)
+        void update_one_powerline_parameters(int line_id, real_type r, real_type x, cplx_type h1, cplx_type h2) {
+            powerlines_.update_physical_parameters_of(line_id, r, x, h1, h2, algo_controler_);
+        }
+        /// update_trafos_parameters_full for one transformer (pu; side 1: the high voltage one)
+        void update_one_trafo_parameters_full(int trafo_id, real_type r, real_type x, cplx_type h1, cplx_type h2) {
+            trafos_.update_physical_parameters_of(trafo_id, r, x, h1, h2, algo_controler_);
+        }
         /**
          * Change the bus on the dc line "side 1" dcline_id.
          * 

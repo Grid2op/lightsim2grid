@@ -210,6 +210,65 @@ void SvcContainer::set_state(SvcContainer::StateRes & my_state)
     reset_results();
 }
 
+void SvcContainer::set_regulation_mode(int svc_id, int mode, DualAlgoControl & solver_control)
+{
+    _check_in_range(svc_id, regulation_mode_, "set_regulation_mode");
+    if((mode != RegulationMode::OFF) && (mode != RegulationMode::VOLTAGE) && (mode != RegulationMode::REACTIVE_POWER)){
+        std::ostringstream exc_;
+        exc_ << "SvcContainer::set_regulation_mode: unknown regulation mode " << mode << " for svc " << svc_id
+             << " (0 = OFF, 1 = VOLTAGE, 2 = REACTIVE_POWER).";
+        throw std::runtime_error(exc_.str());
+    }
+    if(regulation_mode_(svc_id) == mode) return;
+    if((mode == RegulationMode::VOLTAGE) && (regulated_bus_id_(svc_id) == _deactivated_bus_id)){
+        std::ostringstream exc_;
+        exc_ << "SvcContainer::set_regulation_mode: svc " << svc_id
+             << " regulates no bus, it cannot be put in VOLTAGE mode.";
+        throw std::runtime_error(exc_.str());
+    }
+    regulation_mode_(svc_id) = mode;
+    voltage_regulator_on_[svc_id] = (mode == RegulationMode::VOLTAGE);
+    if(!status_[svc_id]) return;  // read by nothing until it is reconnected
+    // REACTIVE_POWER stamps its Q in Sbus, VOLTAGE makes it a group controller, OFF (with
+    // a standby automaton) a voltage monitor the plan may hold: all three move
+    solver_control.tell_recompute_sbus();
+    solver_control.tell_pv_changed();
+    solver_control.tell_v_changed();
+}
+
+void SvcContainer::set_slope(int svc_id, real_type slope_pu, DualAlgoControl & solver_control)
+{
+    _check_in_range(svc_id, slope_pu_, "set_slope");
+    if(!std::isfinite(slope_pu)){
+        std::ostringstream exc_;
+        exc_ << "SvcContainer::set_slope: the slope of svc " << svc_id << " should be finite.";
+        throw std::runtime_error(exc_.str());
+    }
+    if(slope_pu_(svc_id) == slope_pu) return;
+    slope_pu_(svc_id) = slope_pu;
+    if(!voltage_regulator_on_[svc_id]) return;  // only a VOLTAGE-mode SVC reads it
+    // a value of the plan (the slope entry is declared for every SVC controller, 0 or
+    // not, so the pattern holds), and whether set_vm seeds its regulated bus
+    solver_control.ac_algo_controler().tell_voltage_control_changed();
+    solver_control.tell_v_changed();
+}
+
+void SvcContainer::set_b_limits(int svc_id, real_type b_min, real_type b_max, DualAlgoControl & solver_control)
+{
+    _check_in_range(svc_id, b_min_, "set_b_limits");
+    if(b_min > b_max){
+        std::ostringstream exc_;
+        exc_ << "SvcContainer::set_b_limits: b_min (" << b_min << ") is above b_max (" << b_max
+             << ") for svc " << svc_id << ".";
+        throw std::runtime_error(exc_.str());
+    }
+    if(b_min_(svc_id) == b_min && b_max_(svc_id) == b_max) return;
+    b_min_(svc_id) = b_min;
+    b_max_(svc_id) = b_max;
+    // the reactive sharing weight of its group (AC only)
+    solver_control.ac_algo_controler().tell_voltage_control_changed();
+}
+
 void SvcContainer::_derive_voltage_regulator_on()
 {
     const int nb_svc = nb();
