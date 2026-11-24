@@ -522,10 +522,33 @@ class LS2G_API BranchContainer : public TwoSidesContainer<BranchEndContainer>
             solver_control.tell_recompute_ybus();
         }
 
+        /**
+         * update_physical_parameters for ONE element: the same meaning and the same
+         * flags, without re-sending the whole vectors.
+         */
+        void update_physical_parameters_of(int el_id,
+                                           real_type branch_r,
+                                           real_type branch_x,
+                                           cplx_type branch_h_side_1,
+                                           cplx_type branch_h_side_2,
+                                           DualAlgoControl & solver_control)
+        {
+            _check_in_range(el_id, r_, "update_physical_parameters_of");
+            r_(el_id) = branch_r;
+            x_(el_id) = branch_x;
+            h_side_1_(el_id) = branch_h_side_1;
+            h_side_2_(el_id) = branch_h_side_2;
+            _on_physical_parameters_updated_of(el_id, solver_control);
+            _update_internal_coeffs(el_id);
+            solver_control.tell_recompute_ybus();
+        }
+
     protected:
         // called by update_physical_parameters once r_, x_, h_side_1_ and h_side_2_ are
         // assigned, before the coefficients are recomputed.
         virtual void _on_physical_parameters_updated(DualAlgoControl & /*solver_control*/) {}
+        // the same, for update_physical_parameters_of (only `el_id` was assigned)
+        virtual void _on_physical_parameters_updated_of(int /*el_id*/, DualAlgoControl & /*solver_control*/) {}
 
         // solver interface
         void _fillYbus(

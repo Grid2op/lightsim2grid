@@ -132,6 +132,30 @@ class LS2G_API ConverterStationContainer final : public VoltageSourceContainer<C
         real_type get_min_q(int station_id) const {return min_q_.coeff(station_id);}
         real_type get_max_q(int station_id) const {return max_q_.coeff(station_id);}
         real_type get_target_p(int station_id) const {return target_p_mw_(station_id);}
+        real_type get_power_factor(int station_id) const {return power_factor_(station_id);}
+
+        /// voltage regulation on / off (a VSC only: an LCC is refused), see
+        /// VoltageSourceContainer::_set_voltage_regulator_on
+        void set_voltage_regulator_on(int station_id, bool on, DualAlgoControl & solver_control);
+        /// reactive limits (MVAr), see VoltageSourceContainer::_set_q_limits_impl
+        void set_q_limits(int station_id, real_type min_q, real_type max_q, DualAlgoControl & solver_control){
+            _set_q_limits_impl(min_q_, max_q_, station_id, min_q, max_q, solver_control,
+                               "ConverterStationContainer::set_q_limits");
+        }
+        /// reactive setpoint (MVAr, generator convention) of a VSC, injected when it does not
+        /// regulate. Refused for an LCC, whose reactive power follows its active power.
+        void change_q_setpoint(int station_id, real_type new_q, DualAlgoControl & solver_control);
+        /**
+         * The loss factor (fraction, in [0, 1)) and the power factor (LCC, in (0, 1]) of a
+         * station. Only written here: the active power they act on is the owning
+         * HvdcLineContainer's, which re-derives the station targets right after (see
+         * HvdcLineContainer::set_loss_factors / set_power_factors).
+         */
+        void set_loss_factor(int station_id, real_type loss_factor);
+        void set_power_factor(int station_id, real_type power_factor);
+        /// the checks of the two setters above, alone: throw if the value is out of its range
+        static void check_loss_factor(int station_id, real_type loss_factor);
+        static void check_power_factor(int station_id, real_type power_factor);
 
         /**
          * The generators' `can_be_pv`, for the VSC stations: the ones a caller knows an

@@ -328,6 +328,56 @@ class VoltageSourceContainer : public OneSideContainer_PQ
         const Leaf & leaf() const { return static_cast<const Leaf &>(*this); }
 
         /**
+         * Switch the voltage regulation of `el_id` on or off: what `init_*` sets through
+         * `voltage_regulator_on`. Protected: a generator, a storage unit and a converter
+         * station expose it (a station refusing it for an LCC); an SVC derives it from its
+         * regulation mode instead.
+         *
+         * A regulating element pins a bus (or joins a control group) and injects no
+         * reactive setpoint; a non-regulating one injects `target_q_mvar`. So the switch
+         * moves the injections (Sbus), the pv/pq split and the voltage-control plan built
+         * on it (pv), and which buses `set_vm` seeds with a setpoint (v). A disconnected
+         * element is read by none of them, and its reconnection raises what it needs.
+         */
+        void _set_voltage_regulator_on(int el_id, bool on, DualAlgoControl & solver_control){
+            _check_in_range(el_id, status_, "set_voltage_regulator_on");
+            if(voltage_regulator_on_[el_id] == on) return;
+            voltage_regulator_on_[el_id] = on;
+            if(!status_[el_id]) return;
+            solver_control.tell_recompute_sbus();
+            solver_control.tell_pv_changed();
+            solver_control.tell_v_changed();
+        }
+
+        /**
+         * The reactive limits (MVAr) of `el_id`, kept by the leaf (`min_q` / `max_q`).
+         * Nothing enforces them inside a solve: the voltage-control plan shares reactive
+         * power by their range (AC only), the outer loops and the checks read them when
+         * they run. Refuses `min_q > max_q`, as `init_*` does.
+         */
+        static void _set_q_limits_impl(RealVect & min_q, RealVect & max_q, int el_id,
+                                       real_type new_min_q, real_type new_max_q,
+                                       DualAlgoControl & solver_control, const char * fun_name){
+            _check_in_range(el_id, min_q, fun_name);
+            if(new_min_q > new_max_q){
+                std::ostringstream exc_;
+                exc_ << fun_name << ": min_q (" << new_min_q << ") is above max_q (" << new_max_q
+                     << ") for " << Leaf::_element_name() << " " << el_id << ".";
+                throw std::runtime_error(exc_.str());
+            }
+            if(_same_value(min_q(el_id), new_min_q) && _same_value(max_q(el_id), new_max_q)) return;
+            min_q(el_id) = new_min_q;
+            max_q(el_id) = new_max_q;
+            // the sharing weights of the voltage-control plan; the pv/pq split does not read them
+            solver_control.ac_algo_controler().tell_voltage_control_changed();
+        }
+
+        // equal, NaN included (an unset limit written again is not a change)
+        static bool _same_value(real_type a, real_type b){
+            return (a == b) || (std::isnan(a) && std::isnan(b));
+        }
+
+        /**
         THE walk: every element set_vm() would write, in the order it writes them, with
         the bus it would write. `id_grid_to_solver` null answers in GRID numbering and
         keeps every regulated bus; non-null answers in SOLVER numbering and drops the
