@@ -58,6 +58,7 @@ class MyLULinearSolver final
 
         ErrorType refactorize(const EigenRefConstRealSpMat & J){
             if(!handle_) return ErrorType::NotInitError;
+            // a library with no refactorization of its own can simply `return factorize(J);` here.
             // SolverReFactor, not SolverFactor: what LinearSolverPolicy's fallback (a fresh
             // factorize on the same matrix) answers to, when it is on
             if(mylu_refactor(handle_.get(), J.valuePtr()) != 0) return ErrorType::SolverReFactor;
@@ -84,6 +85,8 @@ class MyLULinearSolver final
         MyLULinearSolver & operator=(MyLULinearSolver &&) = delete;
 
     private:
+        // RAII (good practice): the unique_ptr frees the handle, in reset() and in the destructor,
+        // whatever happens in between
         struct HandleDeleter {
             void operator()(mylu_handle * h) const noexcept { mylu_destroy(h); }
         };

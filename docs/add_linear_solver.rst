@@ -3,8 +3,10 @@
 Adding a linear solver
 ======================
 
-Every power-flow algorithm in lightsim2grid that needs to solve :math:`Ax = b` (Newton-Raphson, DC,
-fast-decoupled, and the batch classes built on them) gets its linear algebra from a **linear solver**.
+The power-flow algorithms of lightsim2grid that solve a sparse linear system :math:`Ax = b`
+(Newton-Raphson, DC, fast-decoupled, and the batch classes built on them) get that linear algebra
+from a **linear solver**. Not all of them do: Gauss-Seidel, for example, updates one bus at a time
+and uses none.
 The ones shipped today are Eigen's ``SparseLU`` (always available), KLU (bundled from SuiteSparse),
 and NICSLU and CKTSO (optional, found at build time). They all live in ``src/core/linear_solvers/``.
 
@@ -86,17 +88,18 @@ What to implement
 
 ``refactorize(J)``
     A numeric factorization with the same pattern, that may **reuse the pivot order** of the last
-    ``factorize``. This is the call that makes a solver fast in lightsim2grid. If the library has no
-    such call, implement ``refactorize`` as ``factorize`` (Eigen's ``SparseLU`` does exactly that).
-    When the reused pivots turn out to be bad (a zero or a tiny pivot), return
-    ``ErrorType::SolverReFactor`` rather than a poor factorization: see `When it is called`_.
+    ``factorize``. This is the call that makes a solver fast in lightsim2grid. A library that has no
+    such call (Eigen's own ``SparseLU``, for example) can simply call its ``factorize`` here: the
+    results are the same, the computation is only slower. When the reused pivots turn out to be
+    bad (a zero or a tiny pivot), return ``ErrorType::SolverReFactor`` rather than a poor
+    factorization: see `When it is called`_.
 
 ``solve(b)``
     Solve :math:`J x = b` with the last factorization, **in place**: on return ``b`` holds ``x``. If
     the library cannot work in place, solve into a temporary and copy it back.
 
-``solve_transpose(b)``
-    Solve :math:`J^T x = b` with the factorization of ``J``, in place. Only the gradient-based batch
+``solve_transpose(b)`` (optional)
+    The method must exist, but it does not have to solve anything. When implemented, it solves :math:`J^T x = b` with the factorization of ``J``, in place. Only the gradient-based batch
     tools (``BatchAdjoint``) use it, and they do not pick up a new linear solver anyway. If you do not
     implement it, return ``ErrorType::NotImplemented`` and set ``CAN_SOLVE_TRANSPOSE = false``:
     never solve :math:`J x = b` instead.
@@ -107,9 +110,12 @@ What to implement
 Return ``ErrorType::NoError`` on success. On failure, return the code of the step that failed
 (``SolverAnalyze``, ``SolverFactor``, ``SolverReFactor``, ``SolverSolve``); ``NotInitError`` for a
 call made before ``analyze``; ``LicenseError`` if a licensed library refuses to start. The algorithm
-stops at the first error and reports it (``get_error()``). **Do not throw** from these methods: a
-failed factorization is an expected outcome (a diverging Newton, a split grid), and the algorithms
-handle it through the return code.
+stops at the first error and reports it (``get_error()``).
+
+.. danger::
+    **Do not throw** from these methods. A failed factorization is an expected outcome (a diverging
+    Newton, a split grid), and the algorithms handle it through the return code: report it as an
+    ``ErrorType``, not as an exception.
 
 What you receive
 ~~~~~~~~~~~~~~~~
@@ -201,18 +207,28 @@ The batch classes (``ContingencyAnalysis``, ``TimeSeries``, ``InjectionSweep``, 
 keep one pattern for every row of the batch: a contingency analysis of thousands of rows calls
 ``analyze`` **once**, then ``refactorize`` and ``solve`` for every row.
 
-Other rules
-~~~~~~~~~~~
+Good practice
+~~~~~~~~~~~~~
 
-- **No copy, no move.** Delete the four copy and move operations, as the existing solvers do. The
-  algorithms hold the solver by value and never copy it.
-- **Own what you allocate** with RAII (``std::unique_ptr`` with a custom deleter for a C handle), so
-  that ``reset`` and the destructor cannot leak, and a destructor never throws.
-- **One instance per algorithm, one thread per instance.** The batch classes run several algorithms
-  in parallel, each with its own linear solver. Global state in the library (a licence check, a
-  thread pool, a static work buffer) must tolerate several instances alive at the same time.
-- **C++14.** The core is compiled as C++14 (and C++26 in CI): no ``if constexpr``, ``std::optional``
-  or structured bindings in the wrapper.
+None of the following is checked by lightsim2grid, and none of it is required to get a working
+solver. The linear solver is your code, outside lightsim2grid: a leak in it, or a licence that
+restricts how the library may be used, is the solver's concern, not lightsim2grid's. It can still
+make some lightsim2grid features unusable with that solver, which is why these are recommended.
+
+- **Copy and move.** Linear solvers are never copied nor moved: the algorithms hold theirs by
+  value. A compile-time check is always preferable to a run-time surprise, so it is good practice
+  to delete the four copy and move operations, as the existing solvers do.
+- **Memory.** Be careful with memory allocation: we strongly encourage RAII (``std::unique_ptr``
+  with a custom deleter for a C handle, as in the example below), so that ``reset`` and the
+  destructor cannot leak, and a destructor never throws.
+- **Several instances.** The batch classes run several algorithms, sometimes in parallel, each with
+  its own linear solver. A library with global state (a licence check, a thread pool, a static work
+  buffer) that does not tolerate several instances alive at the same time may not be usable with
+  these more advanced features of lightsim2grid.
+- **C++ standard.** For a later integration in lightsim2grid itself, the core is written in C++14
+  at the time of writing (and compiled up to C++26 in CI), so no ``if constexpr``,
+  ``std::optional`` or structured bindings there. A plugin, or code of your own in a fork, can use
+  any standard, as long as it is compiled with the same toolchain as lightsim2grid.
 
 Optional capabilities
 ~~~~~~~~~~~~~~~~~~~~~
@@ -285,6 +301,8 @@ Example: wrapping ``mylu``
 
             ErrorType refactorize(const EigenRefConstRealSpMat & J){
                 if(!handle_) return ErrorType::NotInitError;
+                // a library with no refactorization of its own can simply
+                // `return factorize(J);` here
                 // SolverReFactor: what the fallback answers to, where it is on
                 if(mylu_refactor(handle_.get(), J.valuePtr()) != 0) return ErrorType::SolverReFactor;
                 return ErrorType::NoError;
@@ -310,6 +328,8 @@ Example: wrapping ``mylu``
             MyLULinearSolver & operator=(MyLULinearSolver &&) = delete;
 
         private:
+            // RAII (good practice): the unique_ptr frees the handle, in reset() and in the
+            // destructor, whatever happens in between
             struct HandleDeleter {
                 void operator()(mylu_handle * h) const noexcept { mylu_destroy(h); }
             };
@@ -473,7 +493,8 @@ process that uses it:
   using ``NR_MyLU`` only loads where the plugin is loaded; so does a ``LightSimBackend`` copied to a
   worker process.
 - **Selected by name only.** There is no ``lightsim2grid.algorithm.NR_MyLU`` Python class and no
-  ``AlgorithmType`` value; ``get_algo_type()`` reads ``AlgorithmType.Custom``.
+  ``AlgorithmType`` value: ``get_algo_type()`` reads ``AlgorithmType.Custom``. The algorithm in use
+  is still known by its name, through ``get_algo_name()`` (``"NR_MyLU"``).
 
 b) As part of lightsim2grid (fork)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -644,7 +665,8 @@ Finally, give each algorithm a name in ``register_builtin_solvers``
     for historical reasons, and adding one means editing ``AlgorithmSelector.{hpp,cpp}``,
     ``AlgorithmTypeNames.cpp`` and ``binding_enums.cpp`` as well. Recent built-ins
     (``NRRefactorRetry_*``, ``*_KLUStaticPivot``) are registered by name only, as every plugin is:
-    ``get_algo_type()`` reports them as ``AlgorithmType.Custom`` and they work everywhere else.
+    ``get_algo_type()`` reports them as ``AlgorithmType.Custom``, ``get_algo_name()`` gives their
+    name, and they work everywhere else.
 
 Compiling and using it
 ++++++++++++++++++++++
@@ -708,3 +730,57 @@ and pick the solver up as long as ``PATH_MYLU`` is set when CMake configures (se
 :ref:`cpp_library`); the ``unittest`` files of ``lightsim2grid/tests`` that compare solvers
 (``test_KLUSolver.py``, ``test_CKTSOSolver.py``) are another template, skipping the test when
 ``"NR_MyLU" not in grid.available_algorithm_names()``.
+
+And then
+--------
+
+Once the plugin is loaded, or the fork installed, the new algorithms are used like the built-in
+ones: load a grid from any of the sources lightsim2grid reads (:ref:`network-init-formats`), select the algorithm
+by name, and run a load flow or a batch.
+
+.. code-block:: python
+
+    import json
+    import numpy as np
+    import lightsim2grid
+    from lightsim2grid.network import (init_from_pandapower, init_from_pypowsybl,
+                                       init_from_matpower, init_from_powermodels)
+    from lightsim2grid.lightsim2grid_cpp import ContingencyAnalysisCPP
+
+    # plugin route only: in every process, before the algorithm is selected
+    lightsim2grid.load_algorithm_plugin("examples/linear_solver_plugin/build/liblinear_solver_plugin.so")
+
+    # 1. load a grid, whichever the source
+    import pandapower.networks as pn
+    grid = init_from_pandapower(pn.case118())          # a pandapower network
+
+    import pypowsybl as pp
+    grid = init_from_pypowsybl(pp.network.create_ieee118())   # a pypowsybl network
+
+    grid = init_from_matpower("case118.m")             # a MATPOWER case file (.m or .mat)
+
+    with open("network.json") as f:                    # a PowerModels.jl network data dictionary
+        grid = init_from_powermodels(json.load(f))
+
+    # 2. select the algorithm that uses the new linear solver
+    grid.change_algorithm("NR_MyLU")
+    print(grid.get_algo_name())                        # "NR_MyLU"
+
+    # 3. a load flow
+    V0 = np.ones(grid.total_bus(), dtype=complex)
+    V = grid.ac_pf(V0, 10, 1e-8)                       # empty if it did not converge
+    p_or, q_or, v_or, a_or = grid.get_line_res1()      # flows at side 1 of the lines
+
+    # 4. a contingency analysis: every line and transformer disconnected in turn
+    ca = ContingencyAnalysisCPP(grid)
+    ca.change_algorithm("NR_MyLU")
+    ca.handle_disconnected_grid = True                 # solve the rows that cut buses off too
+    ca.add_all_n1()
+    ca.compute(V0, 10, 1e-8)
+    voltages = ca.get_voltages()                       # one row per contingency
+    amps = ca.compute_flows()                          # current flows, one row per contingency
+    print(ca.get_linear_solver_stats())                # one analyze for the whole batch
+
+In grid2op, pass the name to the backend instead: ``LightSimBackend(algo_type="NR_MyLU")``.
+:ref:`network-init-formats` describes the loaders and their options, and :doc:`security_analysis`
+the contingency analysis.
