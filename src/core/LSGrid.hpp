@@ -310,7 +310,8 @@ class LS2G_API LSGrid final
          * the stranded generators / static generators, minus the stranded loads /
          * storage units / shunts) is shared on the remaining slack units OLF-style,
          * with their [min_p, max_p] bounds: see redistribute_active_power. The report
-         * says what was lost and what was done with it.
+         * says what was lost and what was done with it, and which bus holds the angle
+         * reference afterwards (ref_slack_bus, ref_slack_moved).
          */
         slack_redistribution::Report consider_only_main_component(bool redistribute_slack = true);
         /**
@@ -3196,6 +3197,10 @@ class LS2G_API LSGrid final
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
+        // the bus (gridmodel id) an AC solve takes as the angle reference among the slack
+        // buses `slack_buses_me` (as _slack_bus_id_me lists them): the forced one if it is
+        // among them, else the first (see build_solver_input)
+        [[nodiscard]] int _reference_among(const GlobalBusIdVect & slack_buses_me) const;
         // whether a connected generator or storage unit stands on a bus of `bus_in_main_cc`:
         // what _assign_slack_most_connected needs to give that component a slack
         [[nodiscard]] bool _main_component_has_unit(const std::vector<bool> & bus_in_main_cc) const;

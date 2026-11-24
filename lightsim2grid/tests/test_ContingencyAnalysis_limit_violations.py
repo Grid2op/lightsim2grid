@@ -406,6 +406,38 @@ class TestPythonWrapperRun(unittest.TestCase):
             assert cont.converged is True
             assert len(cont.limit_violations) > 0
 
+    def test_run_reports_the_reference_slack(self):
+        # a leaf bus with a generator made the forced reference: its branch strands it, and the
+        # fallback solves that contingency with another reference, which run() reports
+        from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
+        grid = self.env.backend._grid
+        leaf_bus = 7
+        leaf_gens = [gen.id for gen in grid.get_generators() if gen.bus_id == leaf_bus]
+        branches = list(grid.get_lines()) + list(grid.get_trafos())
+        leaf_branch = [k for k, br in enumerate(branches) if leaf_bus in (br.bus1_id, br.bus2_id)]
+        assert len(leaf_gens) == 1 and len(leaf_branch) == 1, "bus 7 of case14 should be a leaf with a generator"
+        grid.add_gen_slackbus(leaf_gens[0], 1.)
+        grid.set_reference_slack_bus(leaf_bus)
+
+        sa = ContingencyAnalysis(self.env, compute_limit_violations=True)
+        sa.handle_disconnected_grid = True
+        sa.batch_unsupported_fallback = True
+        sa.add_single_contingency(leaf_branch[0])
+        sa.add_single_contingency(0)
+        res = sa.run()
+        ref = res.pre_contingency_result.ref_slack_bus
+        assert ref == leaf_bus
+        leaf_res, other_res = res.post_contingency_results
+        assert leaf_res.converged
+        assert "strands the reference slack bus" in leaf_res.batch_unsupported_reason
+        assert leaf_res.ref_slack_bus not in (-1, leaf_bus)
+        assert other_res.converged
+        assert other_res.ref_slack_bus == ref
+        assert other_res.batch_unsupported_reason == ""
+        # the same, in the C++-side order
+        assert sorted(sa.get_row_ref_slack_bus()) == sorted([leaf_res.ref_slack_bus, ref])
+        assert sa.get_ref_slack_bus() == ref
+
     def test_run_ac_and_run_dc(self):
         from lightsim2grid.contingencyAnalysis import ContingencyAnalysis
         sa = ContingencyAnalysis(self.env, compute_limit_violations=True)

@@ -124,7 +124,9 @@ This is implemented **without re-triggering the symbolic factorization** of the 
 (the Jacobian, resp. the DC matrix, sparsity pattern is left unchanged), so it stays compatible
 with the speed of the contingency analysis. To make it possible, the reference slack is chosen
 once, before the computation, so as to minimise the number of contingencies that still have to be
-skipped (those that would disconnect the chosen reference slack itself).
+skipped (those that would disconnect the chosen reference slack itself). See
+:ref:`sa_reference_slack` for that choice, and for how the contingencies that strand it can still
+be solved.
 
 The mode works both in **AC** (with a Newton-Raphson algorithm) and in **DC**: in DC the masked
 buses' rows of the reduced system are forced to the identity (so their angle is 0), the masked
@@ -136,6 +138,75 @@ cases the masked buses are reported as ``0.``.
     This mode **requires a Newton-Raphson algorithm** (AC, the default) or the **DC** solver.
     Selecting an AC *non* Newton-Raphson algorithm (*eg* Gauss-Seidel or Fast-Decoupled) and
     enabling the mode raises an error.
+
+.. _sa_reference_slack:
+
+The reference slack
++++++++++++++++++++
+
+With ``handle_disconnected_grid``, every contingency is solved with **one** reference slack bus
+(the angle reference, ``theta = 0``), chosen once for the whole batch:
+
+- the one forced on the grid with ``LSGrid.set_reference_slack_bus``, if any (set it on the grid
+  *before* building the contingency analysis, which works on a copy). It is always kept, even if
+  some contingencies strand it;
+- otherwise, among the slack buses, the one the fewest contingencies strand (then the largest
+  slack weight). ``ContingencyAnalysisCPP.pick_reference_slack()`` returns that choice before a
+  computation.
+
+``get_ref_slack_bus()`` gives the reference the last computation used (``run()`` puts it in
+``pre_contingency_result.ref_slack_bus``).
+
+A contingency that strands this reference -- typically the line or the step-up transformer of
+the unit holding it -- is **not simulated** (``NOT_SIMULATED``). With
+``batch_unsupported_fallback = True`` (AC, ``ContingencyAnalysis`` only) it is solved instead,
+after the batch, one at a time, like the contingencies the batch does not support (see below):
+
+- its ``batch_unsupported_reason`` says that it strands the reference;
+- it is solved on its main component (``LSGrid.consider_only_main_component`` on a copy of the
+  grid), which gives the reference to another slack bus of the component, or, when none is left
+  there, to the bus it gives the slack (see :ref:`main_component`);
+- its angles are measured from that bus. ``get_row_ref_slack_bus()`` gives, per contingency, the
+  bus its angles are measured from (``-1`` when it has no converged solution), and ``run()``
+  puts it in each result's ``ref_slack_bus``.
+
+This holds whether the reference was forced on the grid or picked by the batch. The other
+contingencies the fallback solves keep the batch's reference.
+
+**Finding these contingencies.** They are the converged ones whose reference is not the
+batch's:
+
+.. code-block:: python
+
+    security_analysis.handle_disconnected_grid = True
+    security_analysis.batch_unsupported_fallback = True
+    res = security_analysis.run()
+
+    ref = res.pre_contingency_result.ref_slack_bus
+    moved = [cont for cont in res.post_contingency_results
+             if cont.converged and cont.ref_slack_bus != ref]
+
+**When the choice of the reference matters.** Moving the reference does two things:
+
+- it shifts every angle of the contingency by a constant. To compare its angles with the other
+  contingencies', subtract on both sides the angle of a bus that stays in the main component of
+  both;
+- it may move where the active power imbalance goes. With a distributed slack (several slack
+  buses in the Newton solve, an ``NROuterDist_*`` algorithm or the ``DistributedSlack`` outer
+  loop), the participants share it whatever the reference, and the voltage magnitudes, flows and
+  limit violations agree up to the slack mismatch tolerance.
+
+With a **single slack bus** and no distributed slack, the new reference absorbs the whole active
+power imbalance of the contingency, losses included, so the flows around it depend on that
+choice. To impose your own reference on these contingencies, solve them again: on a copy of the
+grid, make the unit of your choice the slack (``LSGrid.add_gen_slackbus``, and
+``remove_gen_slackbus`` for the old one if it must not share the slack) or, if it is already a
+slack bus, force it with ``LSGrid.set_reference_slack_bus``; then run a new contingency analysis
+on these contingencies only. A reference none of them strands keeps every one of them in the
+batch.
+
+In DC, and on a ``ScenarioSweep`` (which has no fallback), a row that strands the reference is
+always ``NOT_SIMULATED``.
 
 Running the contingencies on multiple threads
 ---------------------------------------------
@@ -354,7 +425,9 @@ the same results as the others -- voltages, flows, limit and physical violations
 Jacobian for the gradients, and keep their ``batch_unsupported_reason``, so the slower path stays visible.
 A contingency that splits the grid under ``handle_disconnected_grid`` is solved on its main
 component, as the batch does it (``LSGrid.consider_only_main_component`` on a copy of its own).
-Without outer loops, ``redistribute_slack`` is not reproduced by a one-off solve: those
+The fallback also solves the contingencies that strand the batch's reference slack, with another
+reference: see :ref:`sa_reference_slack`. The other contingencies it solves keep the batch's
+reference. Without outer loops, ``redistribute_slack`` is not reproduced by a one-off solve: those
 contingencies stay ``BATCH_UNSUPPORTED``.
 
 Violation checking is fully compatible with the ``handle_disconnected_grid`` and ``nb_thread``

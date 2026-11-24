@@ -567,6 +567,8 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     // next to it. Rows never reached this compute() (eg a TimeSeries chain that
     // aborts, or the diverging-"n"-case early return below) stay 0.
     _converged_mask_.assign(nb_steps, 0);
+    _ref_slack_bus_ = -1;
+    _row_ref_slack_bus_.assign(nb_steps, -1);
     _row_solve_time_.assign(nb_steps, 0.);
     _row_nb_iter_.assign(nb_steps, 0);
     _row_lin_stats_.assign(nb_steps, LinearSolverStats());
@@ -797,9 +799,15 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::compute(
     _batch_inputs_valid_ = true;
     _prepared_nb_steps_ = nb_steps;
 
+    // the reference every row the batch solves measures its angles from; the rows a previous
+    // compute() handed to the fallback for stranding it are plain skipped rows again
+    _ref_slack_bus_ = _batch_ref_slack_bus();
+    _reset_ref_row_reasons();
     // compute the powerflows, possibly split across several threads
     _compute_threaded(nb_steps, Vinit_solver, ac_solver_used, max_iter, tol, sn_mva, _timer_thread_init);
-    // ... and, where asked, the rows the batch does not support, one at a time (ContingencyAnalysis)
+    _record_rows_ref_slack_bus();
+    // ... and, where asked, the rows the batch does not support -- and the ones that strand its
+    // reference slack -- one at a time (ContingencyAnalysis)
     _maybe_solve_batch_unsupported_rows(Vinit, Vinit_solver, max_iter, tol);
 
     // each row's outcome next to what its loops did, once every worker is done

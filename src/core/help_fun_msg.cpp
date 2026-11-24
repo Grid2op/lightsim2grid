@@ -4142,7 +4142,9 @@ const std::string DocLSGrid::set_reference_slack_bus = R"mydelimiter(
 
     It is kept by :func:`copy`, hence by the batch algorithms built from this grid, which use
     it as the reference of the whole batch: with ``handle_disconnected_grid``, the
-    contingencies that strand it are skipped. Set it before building the batch object (it
+    contingencies that strand it are skipped (``NOT_SIMULATED``), or, on a
+    ``ContingencyAnalysis`` with ``batch_unsupported_fallback`` (AC), solved one at a time with
+    another reference (see ``get_row_ref_slack_bus``). Set it before building the batch object (it
     works on a copy of the grid); ``ContingencyAnalysis.pick_reference_slack`` suggests one.
     Kept by a pickle and by :func:`save_binary` as well.
 
@@ -4635,6 +4637,11 @@ const std::string DocLSGrid::consider_only_main_component = R"mydelimiter(
 
     Returns a :class:`SlackRedistributionReport`: ``mismatch_mw`` is the power lost (even when
     ``redistribute_slack`` is ``False``), the other fields say what was done with it.
+    ``ref_slack_bus`` is the bus (gridmodel id) the next AC solve takes as the angle reference,
+    and ``ref_slack_moved`` is ``True`` when that is no longer the bus it took before the call:
+    the island cut the reference off, and another slack bus of the main component, or the bus
+    given the slack above, now holds it. The angles of the next solve are then measured from
+    that bus, and with a single slack bus it also absorbs the active power imbalance.
 
     Requires at least one slack bus to already be defined (see
     :func:`assign_slack_to_most_connected`); raises otherwise. Also raises, leaving the grid
@@ -7951,6 +7958,41 @@ const std::string DocTimeSeries::converged_mask = R"mydelimiter(
     False too -- indistinguishable from an outright divergence, the same
     "never attempted" == "did not converge" convention `nb_solved()` /
     `nb_converged()` already use.
+
+)mydelimiter";
+
+const std::string DocTimeSeries::get_ref_slack_bus = R"mydelimiter(
+    The slack bus (gridmodel id) the last `compute()` solved its rows with, the angle
+    reference of their voltages: the one forced on the grid
+    (``LSGrid.set_reference_slack_bus``), or else, with ``handle_disconnected_grid``, the
+    slack bus the fewest contingencies strand (``pick_reference_slack``), or else the grid's
+    first slack bus. ``-1`` before a `compute()`. See `get_row_ref_slack_bus()` for the rows
+    solved with another one.
+
+)mydelimiter";
+
+const std::string DocTimeSeries::get_row_ref_slack_bus = R"mydelimiter(
+    Per row of the last `compute()`, as a list[int] in the row order of `converged_mask()`:
+    the bus (gridmodel id) that row's angles are measured from, ``-1`` for a row with no
+    converged solution.
+
+    Every row the batch solves reads `get_ref_slack_bus()`. Only a contingency the
+    ``ContingencyAnalysis`` fallback solves (``batch_unsupported_fallback``) can read
+    another bus: one that strands the batch's reference slack is solved on its main
+    component, where ``LSGrid.consider_only_main_component`` gives the reference to another
+    slack bus, or, when no slack bus is left there, to the bus it gives the slack. So the rows
+    where ``get_row_ref_slack_bus()[i] not in (-1, get_ref_slack_bus())`` are the ones solved
+    with another reference.
+
+    On such a row the angles are measured from another bus: shift them by the angle of a bus
+    live in both rows to compare them with the other rows. With a single slack bus (no
+    distributed slack in the Newton solve, no ``DistributedSlack`` outer loop), the new
+    reference also takes the whole active power imbalance, the losses included, so the flows
+    near it depend on that choice. When that matters, solve those contingencies again with a
+    reference of your choice: on a copy of the grid, set it with
+    ``LSGrid.set_reference_slack_bus`` (the bus must be a slack bus: ``add_gen_slackbus``),
+    then run a new contingency analysis on these contingencies only, or ``ac_pf`` with the
+    contingency applied and ``consider_only_main_component``.
 
 )mydelimiter";
 

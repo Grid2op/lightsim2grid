@@ -124,14 +124,19 @@ class TestMainComponentSlack(unittest.TestCase):
             if gen.id != self.leaf_gen[0]:
                 self.model.remove_gen_slackbus(gen.id)
         self._isolate_leaf()
-        self.model.consider_only_main_component(False)
+        report = self.model.consider_only_main_component(False)
         gens = self.model.get_generators()
         self.assertFalse(gens[self.leaf_gen[0]].connected)
         self.assertEqual(sum(gen.connected for gen in gens), self.n_gen - 1)
         # the main component got a slack of its own
         self.assertEqual(sum(gen.is_slack for gen in gens if gen.connected), 1)
+        new_slack_bus = [gen.bus_id for gen in gens if gen.connected and gen.is_slack][0]
+        # ... which holds the angle reference now, and the report says so
+        self.assertTrue(report.ref_slack_moved)
+        self.assertEqual(report.ref_slack_bus, new_slack_bus)
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0)
+        self.assertEqual(int(self.model.get_slack_ids()[0]), report.ref_slack_bus)
         # every bus but the leaf solved
         to_solver = np.asarray(self.model.id_me_to_ac_solver())
         self.assertLess(to_solver[_LEAF_BUS], 0)
@@ -154,10 +159,14 @@ class TestMainComponentSlack(unittest.TestCase):
     def test_stranded_forced_reference_is_cleared(self):
         self.model.set_reference_slack_bus(_LEAF_BUS)
         self._isolate_leaf()
-        self.model.consider_only_main_component()
+        report = self.model.consider_only_main_component()
         self.assertEqual(self.model.get_reference_slack_bus(), -1)
+        # another slack bus of the main component holds the reference: the report says which
+        self.assertTrue(report.ref_slack_moved)
+        self.assertNotEqual(report.ref_slack_bus, _LEAF_BUS)
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0)
+        self.assertEqual(int(self.model.get_slack_ids()[0]), report.ref_slack_bus)
 
     def test_reference_out_of_range_is_refused(self):
         # consider_only_main_component indexes its per-bus flags with the reference: an id
@@ -178,6 +187,8 @@ class TestMainComponentSlack(unittest.TestCase):
         report = self.model.consider_only_main_component()
         self.assertEqual(sum(gen.is_slack for gen in self.model.get_generators()), nb_slack)
         self.assertEqual(self.model.get_reference_slack_bus(), _LEAF_BUS)
+        self.assertEqual(report.ref_slack_bus, _LEAF_BUS)
+        self.assertFalse(report.ref_slack_moved)
         # nothing lost: nothing redistributed
         self.assertEqual(report.mismatch_mw, 0.)
         self.assertEqual(report.nb_rounds, 0)
@@ -285,6 +296,16 @@ class TestMainComponentSlack(unittest.TestCase):
         self.assertEqual(self._slack_flags()[others].sum(), others.size)
         V = self._ac_pf()
         self.assertGreater(V.shape[0], 0)
+
+    def test_stranded_slack_bus_not_reference_keeps_reference(self):
+        # the leaf is a slack bus but not the reference: islanding it leaves the reference where it was
+        assert self._ac_pf().shape[0] > 0
+        ref = int(self.model.get_slack_ids()[0])
+        assert ref != _LEAF_BUS
+        self._isolate_leaf()
+        report = self.model.consider_only_main_component()
+        self.assertEqual(report.ref_slack_bus, ref)
+        self.assertFalse(report.ref_slack_moved)
 
     def test_redistribute_active_power_standalone(self):
         # no islanding at all: share 30 MW then -25 MW on the slack units, with limits

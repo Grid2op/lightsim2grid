@@ -672,12 +672,119 @@ class TestContingencySplitReferenceSlack(unittest.TestCase):
         row_leaf = self._row_of(SA, self.LEAF_LINE)
         assert not SA.converged()[row_leaf]
         assert self._not_simulated(SA, row_leaf)
+        assert SA.get_batch_unsupported_reasons()[row_leaf] == ""
         # ... and it is the reference of the other ones
         row_mesh = self._row_of(SA, self.MESH_LINE)
         assert SA.converged()[row_mesh]
         v = SA.get_voltages()[row_mesh]
         assert abs(np.angle(v[self.LEAF_BUS]) - self.v_angles[self.LEAF_BUS]) <= 1e-12, \
             "the forced reference should be the reference of the solver"
+        assert SA.get_ref_slack_bus() == self.LEAF_BUS
+        assert SA.get_row_ref_slack_bus()[row_mesh] == self.LEAF_BUS
+        assert SA.get_row_ref_slack_bus()[row_leaf] == -1, "no solution, no reference"
+
+    # ---- the fallback solves the contingencies that strand the reference ------------
+    def _one_off(self, grid, line_id, V0):
+        """the contingency solved alone, as the fallback does it: (voltages, report)"""
+        one = grid.copy()
+        one.deactivate_powerline(line_id)
+        report = one.consider_only_main_component(False)
+        V = one.ac_pf(1. * V0, self.MAX_IT, self.TOL)
+        assert V.shape[0] > 0
+        return V, report
+
+    def _check_leaf_row_solved(self, SA, grid):
+        """the leaf row, which strands the batch's reference (the leaf), is solved by the
+        fallback with the reference the one-off solve gives its main component"""
+        row_leaf = self._row_of(SA, self.LEAF_LINE)
+        row_mesh = self._row_of(SA, self.MESH_LINE)
+        assert SA.get_ref_slack_bus() == self.LEAF_BUS
+        assert SA.converged()[row_leaf], "the fallback should solve the row stranding the reference"
+        assert not self._not_simulated(SA, row_leaf)
+        assert "strands the reference slack bus" in SA.get_batch_unsupported_reasons()[row_leaf]
+        V_one, report = self._one_off(grid, self.LEAF_LINE, self.V_ang)
+        assert report.ref_slack_moved
+        row_ref = SA.get_row_ref_slack_bus()[row_leaf]
+        assert row_ref == report.ref_slack_bus
+        assert row_ref not in (-1, self.LEAF_BUS)
+        # its angles are measured from that bus: it keeps its starting angle
+        v = SA.get_voltages()[row_leaf]
+        assert abs(np.angle(v[row_ref]) - self.v_angles[row_ref]) <= 1e-12
+        assert v[self.LEAF_BUS] == 0., "the islanded leaf should be reported as 0"
+        live = np.arange(3, self.LEAF_BUS)
+        assert np.max(np.abs(v[live] - V_one[live])) <= 1e-8, "fallback row / one-off solve mismatch"
+        # the other rows keep the batch's reference, the reason of none of them changes
+        assert SA.get_row_ref_slack_bus()[row_mesh] == self.LEAF_BUS
+        assert SA.get_batch_unsupported_reasons()[row_mesh] == ""
+        return row_leaf
+
+    def _fallback_analysis(self, grid=None):
+        SA = self._analysis(grid)
+        SA.init_from_n_powerflow = False
+        # without outer loops, the fallback does not reproduce redistribute_slack (see
+        # test_fallback_refused_with_redistribute_slack)
+        SA.redistribute_slack = False
+        SA.batch_unsupported_fallback = True
+        return SA
+
+    def test_fallback_solves_row_stranding_forced_reference(self):
+        self.grid.set_reference_slack_bus(self.LEAF_BUS)
+        SA = self._fallback_analysis()
+        SA.compute(1. * self.V_ang, self.MAX_IT, self.TOL)
+        self._check_leaf_row_solved(SA, self.grid)
+
+    def test_fallback_solves_row_stranding_picked_reference(self):
+        # the leaf generator is the only slack: the batch picks its bus, which the leaf line strands
+        for gen in self.grid.get_generators():
+            if gen.bus_id != self.LEAF_BUS:
+                self.grid.remove_gen_slackbus(gen.id)
+        assert self.grid.get_reference_slack_bus() == -1
+        SA = self._fallback_analysis()
+        assert SA.pick_reference_slack() == self.LEAF_BUS
+        SA.compute(1. * self.V_ang, self.MAX_IT, self.TOL)
+        row_leaf = self._check_leaf_row_solved(SA, self.grid)
+        # the main component got the slack on its most connected bus, which takes the imbalance
+        assert SA.get_row_ref_slack_bus()[row_leaf] != self.LEAF_BUS
+
+    def test_fallback_toggled_off_skips_again(self):
+        self.grid.set_reference_slack_bus(self.LEAF_BUS)
+        SA = self._fallback_analysis()
+        SA.compute(1. * self.V_ang, self.MAX_IT, self.TOL)
+        row_leaf = self._row_of(SA, self.LEAF_LINE)
+        assert SA.converged()[row_leaf]
+        SA.batch_unsupported_fallback = False
+        SA.compute(1. * self.V_ang, self.MAX_IT, self.TOL)
+        assert not SA.converged()[row_leaf]
+        assert self._not_simulated(SA, row_leaf)
+        assert SA.get_batch_unsupported_reasons()[row_leaf] == ""
+        assert SA.get_row_ref_slack_bus()[row_leaf] == -1
+        SA.batch_unsupported_fallback = True
+        SA.compute(1. * self.V_ang, self.MAX_IT, self.TOL)
+        self._check_leaf_row_solved(SA, self.grid)
+
+    def test_fallback_refused_with_redistribute_slack(self):
+        # redistribute_slack without outer loops: the fallback does not run the row, which
+        # is then reported as the rows the batch does not support are
+        self.grid.set_reference_slack_bus(self.LEAF_BUS)
+        SA = self._fallback_analysis()
+        SA.redistribute_slack = True
+        SA.compute(1. * self.V_ang, self.MAX_IT, self.TOL)
+        row_leaf = self._row_of(SA, self.LEAF_LINE)
+        assert not SA.converged()[row_leaf]
+        assert [v.violation_type for v in SA.get_violations()[row_leaf]] == [LimitViolationType.BATCH_UNSUPPORTED]
+        reason = SA.get_batch_unsupported_reasons()[row_leaf]
+        assert "strands the reference slack bus" in reason and "did not run it" in reason
+        assert SA.get_row_ref_slack_bus()[row_leaf] == -1
+
+    def test_fallback_does_not_run_in_dc(self):
+        self.grid.set_reference_slack_bus(self.LEAF_BUS)
+        SA = self._analysis(algorithm=AlgorithmType.DC_SparseLU)
+        SA.batch_unsupported_fallback = True
+        SA.compute(1. * self.V_ang, self.MAX_IT, self.TOL)
+        row_leaf = self._row_of(SA, self.LEAF_LINE)
+        assert not SA.converged()[row_leaf]
+        assert self._not_simulated(SA, row_leaf)
+        assert SA.get_row_ref_slack_bus()[row_leaf] == -1
 
     def test_copy_keeps_forced_reference(self):
         self.grid.set_reference_slack_bus(self.LEAF_BUS)

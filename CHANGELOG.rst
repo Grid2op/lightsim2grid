@@ -252,6 +252,12 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``voltageRegulation`` extension.
 - [FIXED] pypowsybl 1.17: ``bake_outer_loops(bake_remote_voltage_control=True)`` kept the remote
   target voltage instead of the solved terminal one.
+- [IMPROVED] ``batch_unsupported_fallback`` also solves the contingencies that strand the batch's
+  reference slack (forced or picked), on their main component with another reference.
+- [ADDED] ``get_ref_slack_bus`` / ``get_row_ref_slack_bus`` on the batch classes, ``ref_slack_bus``
+  in ``ContingencyAnalysis.run``: the bus each result's angles are measured from.
+- [ADDED] ``SlackRedistributionReport.ref_slack_bus`` / ``ref_slack_moved``: where
+  ``consider_only_main_component`` left the angle reference.
 
 
 [1.3.1] 2026-11-13

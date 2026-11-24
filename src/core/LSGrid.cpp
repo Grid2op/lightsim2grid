@@ -4071,6 +4071,8 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
 
     // TODO DEBUG MODE
     if(slack_buses_id.size() == 0) throw std::runtime_error("LSGrid::consider_only_main_component: no slack is defined on your grid. This function cannot be used.");
+    // the angle reference before anything is cut off, to tell the caller whether it moved
+    const int ref_before = _reference_among(slack_buses_id);
     
     // build the graph
     const auto nb_busbars = substations_.nb_bus();
@@ -4202,7 +4204,19 @@ slack_redistribution::Report LSGrid::consider_only_main_component(bool redistrib
         report = redistribute_active_power(lost_mw);
     }
     report.mismatch_mw = lost_mw;
+    // where the angle reference went: a forced one in an island was cleared above, a slack
+    // bus in an island left the slack list (see _slack_bus_id_me)
+    report.ref_slack_bus = _reference_among(_slack_bus_id_me());
+    report.ref_slack_moved = report.ref_slack_bus != ref_before;
     return report;
+}
+
+int LSGrid::_reference_among(const GlobalBusIdVect & slack_buses_me) const {
+    if(slack_buses_me.size() == 0) return -1;
+    for(const auto & el : slack_buses_me){
+        if(el.cast_int() == _forced_ref_slack_bus_id) return _forced_ref_slack_bus_id;
+    }
+    return slack_buses_me[0].cast_int();
 }
 
 } // namespace ls2g
