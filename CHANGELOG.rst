@@ -252,6 +252,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``voltageRegulation`` extension.
 - [FIXED] pypowsybl 1.17: ``bake_outer_loops(bake_remote_voltage_control=True)`` kept the remote
   target voltage instead of the solved terminal one.
+- [FIXED] ``init_from_pandapower``: a pandapower grid whose ``sgen`` limit columns (``min_p_mw``, ``max_p_mw``,
+  ``min_q_mvar``, ``max_q_mvar``) have ``object`` dtype, as the SimBench grids do, raised a ``TypeError``
+  from ``np.isfinite``. The columns are read as float, as the generator converter already does.
 
 
 [1.3.1] 2026-11-13
