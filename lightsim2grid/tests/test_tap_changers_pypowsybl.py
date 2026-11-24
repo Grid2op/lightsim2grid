@@ -113,6 +113,25 @@ class TestTapChangersPypowsybl(unittest.TestCase):
         self.assertTrue(shunt.has_sections)
         self.assertEqual((shunt.section_count, shunt.max_section_count), (1, 1))
 
+    def test_ratio_tap_changer_without_regulating_terminal(self):
+        # pypowsybl 1.17: a ratio tap changer with no regulating terminal (all of ieee9's)
+        # makes `get_ratio_tap_changers()` raise, for the `regulated_element_id` column and,
+        # in per unit, for `regulation_value` / `target_deadband`. The converter crashed on
+        # the per-unit read, and its tap-changer pass swallowed the error of the other one,
+        # which would have dropped every ratio tap changer without a word.
+        net = pp.network.create_ieee9()
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            grid = init_from_pypowsybl(net, gen_slack_id=net.get_generators().index[0],
+                                       sort_index=False, buses_for_sub=False)
+        steps = net.get_ratio_tap_changer_steps()
+        with_rtc = set(steps.index.get_level_values(0))
+        self.assertTrue(with_rtc)
+        for twt in grid.get_trafos():
+            self.assertEqual(twt.has_ratio_tap_changer, twt.name in with_rtc, twt.name)
+            if twt.has_ratio_tap_changer:
+                self.assertFalse(twt.ratio_regulating, twt.name)
+
     def test_same_as_olf(self):
         net = _net()
         self._assert_same_as_olf(net, _grid(net))

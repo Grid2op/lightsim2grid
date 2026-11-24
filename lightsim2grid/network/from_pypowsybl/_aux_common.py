@@ -136,6 +136,49 @@ def _aux_get_2wt_all_attrs(net_like):
         return net_like.get_2_windings_transformers()
 
 
+def _aux_tap_changer_columns(phase, all_attributes):
+    """The columns of pypowsybl's ratio (or phase) tap changer table -- all of them,
+    or only those returned by default -- ``None`` if they cannot be listed."""
+    try:
+        from pypowsybl import _pypowsybl as _pp
+        el_type = _pp.ElementType.PHASE_TAP_CHANGER if phase else _pp.ElementType.RATIO_TAP_CHANGER
+        return [m.name for m in _pp.get_network_elements_dataframe_metadata(el_type)
+                if not m.is_index and (all_attributes or m.is_default)]
+    except Exception:  # noqa: BLE001 - internal API, absent or different on some versions
+        return None
+
+
+def _aux_get_tap_changers(net_like, phase=False, all_attributes=False):
+    """``get_ratio_tap_changers()`` (or ``get_phase_tap_changers()``), robust to a
+    column pypowsybl fails to compute.
+
+    pypowsybl 1.17 raises on the whole table as soon as one tap changer has no
+    regulating terminal: on ``regulated_element_id``, and in per unit on
+    ``regulation_value`` and ``target_deadband`` too (their per-unit base is the
+    regulated terminal's voltage). The table is then read one column at a time, and
+    a column that cannot be read is left empty -- NaN, or ``""`` for an ``_id`` column
+    -- for every tap changer: it carries no regulation data the converter could have
+    used for the changers lacking a terminal. Legacy pypowsybl versions without
+    ``all_attributes`` raise ``TypeError``, which is let through for the caller."""
+    getter = net_like.get_phase_tap_changers if phase else net_like.get_ratio_tap_changers
+    kwargs = {"all_attributes": True} if all_attributes else {}
+    try:
+        return getter(**kwargs)
+    except TypeError:
+        raise
+    except Exception:  # noqa: BLE001 - pypowsybl's error type is not public on every version
+        columns = _aux_tap_changer_columns(phase, all_attributes)
+        if columns is None:
+            raise
+    res = getter(attributes=[])
+    for col in columns:
+        try:
+            res[col] = getter(attributes=[col])[col]
+        except Exception:  # noqa: BLE001
+            res[col] = "" if col.endswith("_id") else np.nan
+    return res
+
+
 def _aux_trafo_alpha(df_trafo_pu, net):
     """Phase-shift angle, in **degree**, for every transformer in `df_trafo_pu`
     (a per-unit `get_2_windings_transformers()` table)."""

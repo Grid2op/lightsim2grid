@@ -239,6 +239,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid can be updated in place instead of rebuilt (#299).
 - [ADDED] ``update_one_powerline_parameters`` / ``update_one_trafo_parameters_full``: one branch's
   r, x and shunt admittances, without re-sending the whole vectors (#299).
+- [FIXED] pypowsybl 1.17: the converter crashed on a ratio tap changer with no regulating terminal
+  (``terminal not found for per unit V``), and could have dropped every ratio tap changer silently.
 
 
 [1.3.1] 2026-11-13

@@ -14,6 +14,7 @@ from ._aux_common import (
     _aux_get_bus,
     _aux_current_limits,
     _aux_get_2wt_all_attrs,
+    _aux_get_tap_changers,
     _aux_trafo_alpha,
     _aux_trafo_rho,
 )
@@ -86,10 +87,10 @@ def _aux_tap_changers(model, net, trafo_index, bus_df, voltage_levels, olf_rules
     for phase in (False, True):
         try:
             if phase:
-                changers = net.get_phase_tap_changers(all_attributes=True)
+                changers = _aux_get_tap_changers(net, phase=True, all_attributes=True)
                 steps = net.get_phase_tap_changer_steps(all_attributes=True)
             else:
-                changers = net.get_ratio_tap_changers(all_attributes=True)
+                changers = _aux_get_tap_changers(net, all_attributes=True)
                 steps = net.get_ratio_tap_changer_steps(all_attributes=True)
         except Exception:  # noqa: BLE001 - not available on legacy pypowsybl
             continue
@@ -160,7 +161,7 @@ def _aux_add_trafos(model, net, net_pu, sort_index, voltage_levels, bus_df, firs
 
     df_trafo_pu = _aux_get_2wt_all_attrs(net_pu)
     df_trafo_pu = df_trafo_pu.loc[df_trafo.index]
-    ratio_tap_changer = net_pu.get_ratio_tap_changers()
+    ratio_tap_changer = _aux_get_tap_changers(net_pu)
 
     shift_ = _aux_trafo_alpha(df_trafo_pu, net)
     # tap is side 2 in IIDM
