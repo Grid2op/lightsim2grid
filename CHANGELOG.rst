@@ -246,6 +246,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] pypowsybl 1.17: a battery's voltage regulation is read from (and baked into) the battery
   table's ``regulating`` / ``regulation_value`` columns; it was silently lost with the
   ``voltageRegulation`` extension.
+- [FIXED] pypowsybl 1.17: ``bake_outer_loops(bake_remote_voltage_control=True)`` kept the remote
+  target voltage instead of the solved terminal one.
 
 
 [1.3.1] 2026-11-13

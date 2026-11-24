@@ -316,8 +316,11 @@ class TestVoltageControlPypowsybl(unittest.TestCase):
         ref = pp.loadflow.run_ac(n, parameters=self._params("VL1"))
         self.assertEqual(ref[0].status, pp.loadflow.ComponentStatus.CONVERGED)
         bake_outer_loops(n, bake_remote_voltage_control=True)
-        # G1 is now a LOCAL controller of its own terminal
+        # G1 is now a LOCAL controller of its own terminal, at its solved voltage (pypowsybl
+        # 1.17 resets the target when the regulated terminal moves: it used to be lost)
         self.assertEqual(n.get_generators().loc["G1", "regulated_element_id"], "G1")
+        self.assertAlmostEqual(n.get_generators().loc["G1", "target_v"],
+                               n.get_buses().loc[n.get_generators().loc["G1", "bus_id"], "v_mag"], places=9)
         _, V = self._run_ls(n, "G1")  # used to raise; now supported via baking
         self._assert_bus_parity(n, V, "remote-gen-on-slack-baked")
 

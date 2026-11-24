@@ -1341,10 +1341,13 @@ def _bake_remote_voltage_control(network, keep_only_main_comp=True, df_bus=None)
     gen = gen[remote]
     if not len(gen):
         return
-    upd = pd.DataFrame(index=gen.index)
-    upd["target_v"] = df_bus.loc[gen["bus_id"].values, "v_mag"].values  # own terminal, kV
-    upd["regulated_element_id"] = gen.index  # regulate own terminal -> local control
-    network.update_generators(upd)
+    # Two calls, the regulated element first: since pypowsybl 1.17 moving the regulated
+    # terminal resets the target voltage, and the columns of one update are applied in
+    # order, so a target written in the same call before it was lost.
+    network.update_generators(pd.DataFrame({"regulated_element_id": gen.index},  # own terminal -> local
+                                           index=gen.index))
+    network.update_generators(pd.DataFrame({"target_v": df_bus.loc[gen["bus_id"].values, "v_mag"].values},  # kV
+                                           index=gen.index))
 
 
 def _gen_target_p_range(network, gen):
