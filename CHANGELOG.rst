@@ -252,6 +252,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``voltageRegulation`` extension.
 - [FIXED] pypowsybl 1.17: ``bake_outer_loops(bake_remote_voltage_control=True)`` kept the remote
   target voltage instead of the solved terminal one.
+- [ADDED] ``ContingencyAnalysis.violations_new_or_worse_only``: ``get_violations`` keeps only the
+  violations a contingency adds to the base case, absent from it or worse than in it (#302).
 
 
 [1.3.1] 2026-11-13

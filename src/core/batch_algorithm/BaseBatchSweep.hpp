@@ -906,6 +906,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             clear_batch_outputs();
             _violation_rel_tol_ = val;
         }
+        // Report only what a row adds to the base case ("n"): a violation absent from the
+        // base case, or present in it and WORSE there (a current that grew, a voltage
+        // further outside its band, by more than NEW_OR_WORSE_REL_TOL of the base value).
+        // This is the set a security analysis (eg OpenLoadFlow's) reports. Comparing the
+        // values, not only the presence, keeps an element already above its limit in the
+        // base case that goes further above it. Grid-level entries (a diverging row) are
+        // always kept. Off by default: get_violations() is then the complete state of the row.
+        // L3, like violation_rel_tol: either direction changes what a row records.
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        bool get_violations_new_or_worse_only() const noexcept {return _violations_new_or_worse_only_;}
+        template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
+        void set_violations_new_or_worse_only(bool val){
+            if(val == _violations_new_or_worse_only_) return;
+            clear_batch_outputs();
+            _violations_new_or_worse_only_ = val;
+        }
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && !S::supports_vary, int>::type = 0>
         const std::vector<char> & converged() const {
@@ -2688,6 +2704,35 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_trafos, _violations[i],
                                      overrides, n_line_, blocks);
+            if(_violations_new_or_worse_only_) _keep_new_or_worse_violations(_violations[i]);
+        }
+        // Relative margin by which a violation has to exceed its base case value to count as
+        // worse: two solves of the same grid differ by the solver tolerance, so a bare
+        // comparison would report every pre-existing violation a far away contingency
+        // leaves unchanged.
+        static constexpr real_type NEW_OR_WORSE_REL_TOL = 1e-6;
+        static std::tuple<int, int, int, int> _violation_key(const LimitViolation & v){
+            return std::make_tuple(static_cast<int>(v.element_type), v.element_id, v.side,
+                                   static_cast<int>(v.violation_type));
+        }
+        // Built once per compute(), from the "n" violations, before any row is recorded.
+        void _index_n_case_violations(){
+            _violations_n_index_.clear();
+            if(!_violations_new_or_worse_only_) return;
+            for(const LimitViolation & v : _violations_n_) _violations_n_index_[_violation_key(v)] = v.value;
+        }
+        // Read only (the rows of a threaded batch call it concurrently).
+        void _keep_new_or_worse_violations(std::vector<LimitViolation> & row) const {
+            row.erase(std::remove_if(row.begin(), row.end(), [this](const LimitViolation & v){
+                if(v.element_type == ViolationElementType::GRID) return false;
+                const auto it = _violations_n_index_.find(_violation_key(v));
+                if(it == _violations_n_index_.end()) return false;  // new
+                const real_type base = it->second;
+                const real_type margin = NEW_OR_WORSE_REL_TOL * std::abs(base);
+                const bool worse = (v.violation_type == LimitViolationType::LOW_VOLTAGE) ?
+                                   (v.value < base - margin) : (v.value > base + margin);
+                return !worse;
+            }), row.end());
         }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t i, const CplxVect & V, const std::vector<int> * masked_ids) {
@@ -3285,6 +3330,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, no_skip, _violations_n_);
+            _index_n_case_violations();
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _record_n_case_violations(const CplxVect &){}
@@ -5745,6 +5791,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<std::vector<LimitViolation> > _violations;
         bool _converged_n_ = false;
         std::vector<LimitViolation> _violations_n_;
+        bool _violations_new_or_worse_only_ = false;
+        // key (element type, id, side, violation type) -> value of the "n" violation, see
+        // set_violations_new_or_worse_only
+        std::map<std::tuple<int, int, int, int>, real_type> _violations_n_index_;
         // physical-limit checks (every instantiation, see
         // set_compute_physical_violations). The plans are the routing the per-row checks
         // need and are rebuilt once per compute(), from the labelling the batch solves in
