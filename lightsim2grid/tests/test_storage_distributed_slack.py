@@ -30,6 +30,7 @@ from lightsim2grid.network import LSGrid
 try:
     import pypowsybl as pypo
     import pypowsybl.loadflow as pypo_lf
+    from _pypowsybl_compat import set_battery_voltage_regulation
     from lightsim2grid.network import init_from_pypowsybl
     from lightsim2grid.network.from_pypowsybl import (
         bake_outer_loops,
@@ -55,8 +56,7 @@ def _network(bat_p=BAT_P, min_p=-300., max_p=300., bus="B3", regulating=False, t
     if regulating:
         net.create_minmax_reactive_limits(id="BAT", min_q=-100., max_q=100.)
         nominal_v = net.get_voltage_levels().at[vl, "nominal_v"]
-        net.create_extensions("voltageRegulation", id="BAT", voltage_regulator_on=True,
-                              target_v=target_v_pu * nominal_v)
+        set_battery_voltage_regulation(net, "BAT", True, target_v_pu * nominal_v)
     net.update_loads(id="B3-L", p0=net.get_loads().at["B3-L", "p0"] + EXTRA_LOAD)
     return net
 
