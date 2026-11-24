@@ -252,6 +252,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   ``voltageRegulation`` extension.
 - [FIXED] pypowsybl 1.17: ``bake_outer_loops(bake_remote_voltage_control=True)`` kept the remote
   target voltage instead of the solved terminal one.
+- [FIXED] ``LSGrid.set_shunt_sections`` forwards ``min_section_count`` (default 0), as ``ShuntContainer``
+  already took it, and ``ShuntInfo.min_section_count`` exposes it (#270).
 
 
 [1.3.1] 2026-11-13

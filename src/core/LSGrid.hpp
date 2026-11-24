@@ -2013,8 +2013,9 @@ class LS2G_API LSGrid final
         /// the sections of shunt `shunt_id`, see ShuntContainer::set_sections
         void set_shunt_sections(int shunt_id, int section_count,
                                 const std::vector<real_type> & p_mw,
-                                const std::vector<real_type> & q_mvar){
-            shunts_.set_sections(shunt_id, section_count, p_mw, q_mvar, algo_controler_);
+                                const std::vector<real_type> & q_mvar,
+                                int min_section_count = 0){
+            shunts_.set_sections(shunt_id, section_count, p_mw, q_mvar, algo_controler_, min_section_count);
         }
         /// the voltage they regulate, see ShuntContainer::set_section_regulation. Read by the
         /// ShuntVoltageControl outer loop.
