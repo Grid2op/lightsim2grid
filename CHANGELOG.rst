@@ -232,6 +232,10 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.2] 20xx-xx-xx
 --------------------
+- [ADDED] doc page ``docs/add_linear_solver.rst``: how to add a linear solver (C or C++ API), as a
+  plugin or in a fork, with an example plugin (``examples/linear_solver_plugin``).
+- [FIXED] a DC algorithm selected by name only (a plugin, or a built-in with no ``AlgorithmType``
+  value) was refused by the DC contingency analysis, ``get_ptdf`` and ``get_lodf``.
 - [ADDED] ``LSGrid`` setters for what only ``init_*`` used to take: voltage regulation on / off and
   reactive limits (generators, storage units, converter stations), SVC mode, setpoints, slope and
   susceptance range, converter station Q setpoint, loss and power factors, hvdc IIDM setpoint
