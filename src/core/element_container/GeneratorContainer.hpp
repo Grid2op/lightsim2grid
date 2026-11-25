@@ -357,8 +357,10 @@ class LS2G_API GeneratorContainer final: public VoltageSourceContainer<Generator
             if((std::isnan(old_key) && std::isnan(key)) || old_key == key) return;
             reactive_key_(gen_id) = key;
             // the sharing weights of the voltage-control plan (AC only); the pattern of
-            // the sharing rows does not depend on them
-            if(voltage_regulator_on_[gen_id]) solver_control.ac_algo_controler().tell_voltage_control_changed();
+            // the sharing rows does not depend on them. Raised whatever the regulator: a
+            // non-regulating generator on a controller bus counts in that bus' share too
+            // (VoltageControlPlan, the passive units of a controller bus).
+            solver_control.ac_algo_controler().tell_voltage_control_changed();
         }
         // the reactive setpoint a NON voltage-regulating generator injects (a
         // regulating one's reactive output is solved for, not set -- see fillSbus,
