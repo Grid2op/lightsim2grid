@@ -489,10 +489,20 @@ void RebuildOuterInner<LinearSolver>::apply_controls()
             if (bc.second->requested_control() >= 0) shunt->set_control_on(bc.first, bc.second->requested_control() == 1);
         }
     }
+    // the magnitudes a loop reset: set (robust mode), or reached within the first step (a
+    // bus back to PV at its set-point), in the order they were asked for -- as
+    // NROuterInner::apply_controls. The restructure above is done first, so the next
+    // Newton's update_state does not drop the lift.
     std::vector<int> buses;
     std::vector<real_type> vm;
-    controls_.take_pending_vm(buses, vm);
-    if (!buses.empty()) system.set_vm_at(buses, vm);
+    std::vector<char> lift;
+    controls_.take_pending_vm(buses, vm, lift);
+    for (std::size_t k = 0; k < buses.size(); ++k) {
+        const std::vector<int> b(1, buses[k]);
+        const std::vector<real_type> v(1, vm[k]);
+        if (lift[k]) system.set_vm_lift_at(b, v);
+        else system.set_vm_at(b, v);
+    }
 }
 
 }  // namespace ls2g

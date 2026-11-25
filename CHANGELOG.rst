@@ -253,6 +253,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] ``NROuter_*``: a bus switched back to PV now reaches its set-point within the next Newton's
   first step, as in OpenLoadFlow, instead of being reset to it by value; next to a nearly zero
   impedance branch, the reset could send the Newton to a low-voltage solution.
+- [BREAKING] (C++ / plugins) ``OuterControls::take_pending_vm`` takes a third vector, the buses to
+  reach their magnitude within the first step (``NRSystem::set_vm_lift_at``).
 - [FIXED] pypowsybl 1.17: the converter crashed on a ratio tap changer with no regulating terminal
   (``terminal not found for per unit V``), and could have dropped every ratio tap changer silently.
 - [FIXED] pypowsybl 1.17: an SVC's slope is read from the SVC table's new ``slope`` column; it was
