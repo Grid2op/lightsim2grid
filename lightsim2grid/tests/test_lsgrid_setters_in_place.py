@@ -181,6 +181,20 @@ class TestSettersInPlace(unittest.TestCase):
         with self.assertRaises(IndexError):
             kept.set_gen_q_limits(99, -1., 1.)
 
+    def test_gen_reactive_key_of_a_passive_unit(self):
+        # generators 1 and 2 share bus 6, generator 3 sits on bus 7 without regulating:
+        # every unit of the group keyed, the key of generator 3 moves the bus shares
+        group = _group_with(2, 6)
+
+        def setup(grid):
+            group(grid)
+            grid.change_bus_gen(3, 7)
+            grid.set_gen_voltage_regulator_on(3, False)
+            for gen_id in (1, 2, 3):
+                grid.set_gen_reactive_key(gen_id, 1.)
+        kept, V_before, V_kept = self._check(lambda g: g.set_gen_reactive_key(3, 5.), None, setup=setup)
+        self.assertGreater(np.max(np.abs(V_kept - V_before)), 1e-6)   # the change is seen
+
     # ---- storage units -------------------------------------------------------------
     def test_storage_voltage_regulation(self):
         def full(self, orig, args):
