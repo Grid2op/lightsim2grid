@@ -33,7 +33,8 @@ What it does
    but take no share of it while disconnected: the slack is only distributed on the main component. They take their
    share again once reconnected (``reactivate_gen``, ``update_topo``, ...).
 5. **The reference slack bus** forced with :meth:`LSGrid.set_reference_slack_bus` that is outside the component
-   is cleared.
+   is cleared. The reference then goes to the first slack bus left in the component, or to the bus step 6 gives the
+   slack; the report says which (``ref_slack_bus``) and whether it moved (``ref_slack_moved``).
 6. **If no slack unit is left in the component**, it is given one as :meth:`LSGrid.assign_slack_to_most_connected`
    does, with the buses compared on their nominal voltage first (OpenLoadFlow's most meshed bus is among the buses of
    the highest nominal voltage): the highest-voltage, most connected bus that has a producing unit absorbs what the islanding
@@ -91,6 +92,13 @@ Both functions return a :class:`SlackRedistributionReport`:
      - what could not be placed
    * - ``all_saturated``
      - whether every unit of the distributed slack saturated (in which case none left it)
+   * - ``ref_slack_bus``
+     - ``consider_only_main_component`` only (``-1`` otherwise): the bus (gridmodel id) the next AC solve takes as
+       the angle reference
+   * - ``ref_slack_moved``
+     - ``consider_only_main_component`` only (``False`` otherwise): whether that is another bus than before the call,
+       because the island cut the reference off. The angles of the next solve are measured from the new bus, and with a
+       single slack bus it also absorbs the active power imbalance
 
 Units that sat at a limit in a reference solve
 ----------------------------------------------
@@ -111,7 +119,8 @@ Related functions
   and clears the rest of the slack. Returns ``(bus_id, gen_id)``.
 - :meth:`LSGrid.set_reference_slack_bus`: forces which slack bus is the angle reference, without changing the slack
   set or weights; it is kept by a copy, a pickle and ``save_binary``, and used by the batch classes built from the grid
-  as the reference of the whole batch (a contingency that strands it is skipped with ``handle_disconnected_grid``).
+  as the reference of the whole batch (a contingency that strands it is skipped with ``handle_disconnected_grid``, or
+  solved with another reference by ``batch_unsupported_fallback``: see :ref:`sa_reference_slack`).
 - :meth:`LSGrid.cap_slack_at_active_limits`: after a solve, takes the units pushed past an active limit out of the slack at
   that limit and solves again (see :doc:`physical_violations` for the ``LOW_P`` / ``HIGH_P`` records it acts on).
 

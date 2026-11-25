@@ -61,6 +61,9 @@ class PreContingencyResult:
     #: carries OPERATIONAL limits it can leave (and the SOLVER sentinel of a non-converged
     #: case).
     physical_violations: List[LimitViolation] = field(default_factory=list)
+    #: the slack bus (gridmodel id) the contingencies were solved with, the angle reference of
+    #: their voltages (see `ContingencyAnalysis.get_ref_slack_bus`)
+    ref_slack_bus: int = -1
 
 
 @dataclass
@@ -97,6 +100,11 @@ class ContingencyResult:
     #: why the batch could not solve this contingency (empty if it could), see
     #: `ContingencyAnalysis.get_batch_unsupported_reasons`
     batch_unsupported_reason: str = ""
+    #: the bus (gridmodel id) the angles of this contingency are measured from, -1 if it has no
+    #: converged solution. Another bus than `PreContingencyResult.ref_slack_bus` for a
+    #: contingency that strands that reference and that `batch_unsupported_fallback` solved on
+    #: its main component (see `ContingencyAnalysis.get_row_ref_slack_bus`)
+    ref_slack_bus: int = -1
 
 
 @dataclass
@@ -283,6 +291,12 @@ class ContingencyAnalysis(object):
         without triggering any extra matrix re-factorization. Supported by the Newton-Raphson
         family (AC) and by the DC solver; a non Newton-Raphson AC algorithm (*eg* Gauss-Seidel
         or Fast-Decoupled) is rejected.
+
+        Every contingency is then solved with one reference slack, chosen once (see
+        :func:`get_ref_slack_bus`): the one forced on the grid (``LSGrid.set_reference_slack_bus``),
+        or else the slack bus the fewest contingencies strand. A contingency that strands it is
+        not simulated (``NOT_SIMULATED``), unless :attr:`batch_unsupported_fallback` solves it
+        one at a time, with another reference (see :func:`get_row_ref_slack_bus`).
         """
         return self.computer.handle_disconnected_grid
 
@@ -302,6 +316,11 @@ class ContingencyAnalysis(object):
         are solved after it, one at a time, with ``ac_pf`` on a private copy of the grid (the
         contingency's elements deactivated, the same algorithm, outer loops and parameters). They
         then get results as the other contingencies do, and keep their ``batch_unsupported_reason``.
+        With :attr:`handle_disconnected_grid` (AC), so are the contingencies that strand the
+        batch's reference slack, the reference forced on the grid or not: each is solved on its
+        main component, which ``LSGrid.consider_only_main_component`` gives another reference
+        (another slack bus, or the bus it gives the slack). Its angles are measured from that
+        bus, which :func:`get_row_ref_slack_bus` (and each result's ``ref_slack_bus``) gives.
         Sequential and as slow as one powerflow per such contingency. Default: ``False``. See
         ``ContingencyAnalysisCPP.batch_unsupported_fallback``.
         """
@@ -622,6 +641,34 @@ class ContingencyAnalysis(object):
         ``LimitViolationType.BATCH_UNSUPPORTED`` violation instead of making the whole computation fail.
         Prefer :func:`run`, whose results carry it as ``batch_unsupported_reason``."""
         return self.computer.get_batch_unsupported_reasons()
+
+    def get_ref_slack_bus(self):
+        """The slack bus (gridmodel id) the last computation solved its contingencies with, the
+        angle reference of their voltages: the one forced on the grid
+        (``LSGrid.set_reference_slack_bus``), or else, with :attr:`handle_disconnected_grid`, the
+        slack bus the fewest contingencies strand, or else the grid's first slack bus. ``-1``
+        before a computation. :func:`run` gives it as ``pre_contingency_result.ref_slack_bus``."""
+        return self.computer.get_ref_slack_bus()
+
+    def get_row_ref_slack_bus(self):
+        """Per contingency, in the C++-side order (`my_defaults()`): the bus (gridmodel id) its
+        angles are measured from, ``-1`` for one with no converged solution. It is
+        :func:`get_ref_slack_bus` for every contingency the batch solves. A contingency that
+        strands that reference and that :attr:`batch_unsupported_fallback` solved on its main
+        component reads the bus ``LSGrid.consider_only_main_component`` gave the reference to
+        there. :func:`run` gives it as each result's ``ref_slack_bus``.
+
+        To find them, and redo them if the choice of the reference matters (see the "reference
+        slack" section of the security analysis documentation):
+
+        .. code-block:: python
+
+            res = contingency_analysis.run()
+            ref = res.pre_contingency_result.ref_slack_bus
+            moved = [cont for cont in res.post_contingency_results
+                     if cont.converged and cont.ref_slack_bus != ref]
+        """
+        return self.computer.get_row_ref_slack_bus()
 
     def get_physical_violations(self):
         """Per contingency, in the C++-side order (`my_defaults()`): the list of
@@ -1070,6 +1117,7 @@ class ContingencyAnalysis(object):
                 cont.converged
                 cont.limit_violations
                 cont.physical_violations  # only if compute_physical_violations is on too
+                cont.ref_slack_bus     # the bus its angles are measured from (see get_row_ref_slack_bus)
 
         .. note::
             `limit_violations` and `physical_violations` are kept apart because they are
@@ -1114,11 +1162,13 @@ class ContingencyAnalysis(object):
         with_phys = self.computer.compute_physical_violations
         phys = self.computer.get_physical_violations() if with_phys else None
         unsupported = self.computer.get_batch_unsupported_reasons()
+        row_ref = self.computer.get_row_ref_slack_bus()
 
         pre_contingency_result = PreContingencyResult(
             converged=self.computer.converged_n(),
             limit_violations=list(self.computer.get_violations_n()),
             physical_violations=list(self.computer.get_physical_violations_n()) if with_phys else [],
+            ref_slack_bus=int(self.computer.get_ref_slack_bus()),
         )
         post_contingency_results = [
             ContingencyResult(
@@ -1136,6 +1186,7 @@ class ContingencyAnalysis(object):
                 svc_ids=list(all_conts[id_cpp][8]),
                 hvdc_ids=list(all_conts[id_cpp][9]),
                 batch_unsupported_reason=str(unsupported[id_cpp]) if id_cpp < len(unsupported) else "",
+                ref_slack_bus=int(row_ref[id_cpp]) if id_cpp < len(row_ref) else -1,
             )
             for id_me, id_cpp in enumerate(orders_)
         ]

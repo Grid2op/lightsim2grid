@@ -77,6 +77,12 @@ struct Report {
     int nb_rounds = 0;                 // 0: nothing was shared
     real_type not_distributed_mw = 0.; // what no unit could take (all saturated)
     bool all_saturated = false;        // every unit of the slack hit its bound: none left it
+    // LSGrid::consider_only_main_component only (left at their defaults otherwise): the bus
+    // (gridmodel id) the next AC solve takes as the angle reference, and whether it is no
+    // longer the one it took before the call -- the island cut the reference off, and
+    // another slack bus, or the bus _assign_slack_most_connected picked, holds it now
+    int ref_slack_bus = -1;
+    bool ref_slack_moved = false;
 };
 
 constexpr real_type default_eps_mw = 1e-6;

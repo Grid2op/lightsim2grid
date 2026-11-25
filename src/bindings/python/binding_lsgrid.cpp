@@ -20,13 +20,19 @@ void bind_gridmodel(py::module_& m) {
         "What LSGrid.redistribute_active_power / consider_only_main_component(redistribute_slack=True) did: "
         "the imbalance shared (MW, > 0: the units inject more), how many units took part, how many reached "
         "a bound (and left the distributed slack), how many rounds it took, what could not be placed, and "
-        "whether every unit of the distributed slack saturated (in which case none left it).")
+        "whether every unit of the distributed slack saturated (in which case none left it). "
+        "consider_only_main_component also says which bus (gridmodel id) holds the angle reference "
+        "afterwards (ref_slack_bus) and whether that is another bus than before the call "
+        "(ref_slack_moved: the island cut the reference off); redistribute_active_power leaves them "
+        "at -1 / False.")
         .def_readonly("mismatch_mw", &slack_redistribution::Report::mismatch_mw)
         .def_readonly("nb_participants", &slack_redistribution::Report::nb_participants)
         .def_readonly("nb_saturated", &slack_redistribution::Report::nb_saturated)
         .def_readonly("nb_rounds", &slack_redistribution::Report::nb_rounds)
         .def_readonly("not_distributed_mw", &slack_redistribution::Report::not_distributed_mw)
         .def_readonly("all_saturated", &slack_redistribution::Report::all_saturated)
+        .def_readonly("ref_slack_bus", &slack_redistribution::Report::ref_slack_bus)
+        .def_readonly("ref_slack_moved", &slack_redistribution::Report::ref_slack_moved)
         .def("__repr__", [](const slack_redistribution::Report & r){
             std::ostringstream ss;
             ss << "SlackRedistributionReport(mismatch_mw=" << r.mismatch_mw
@@ -34,7 +40,9 @@ void bind_gridmodel(py::module_& m) {
                << ", nb_saturated=" << r.nb_saturated
                << ", nb_rounds=" << r.nb_rounds
                << ", not_distributed_mw=" << r.not_distributed_mw
-               << ", all_saturated=" << (r.all_saturated ? "True" : "False") << ")";
+               << ", all_saturated=" << (r.all_saturated ? "True" : "False")
+               << ", ref_slack_bus=" << r.ref_slack_bus
+               << ", ref_slack_moved=" << (r.ref_slack_moved ? "True" : "False") << ")";
             return ss.str();
         });
 

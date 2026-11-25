@@ -256,6 +256,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 _li_masked.clear();
                 _cont_connected_.clear();
                 _skip_mask.clear();
+                _row_skipped_for_ref_.clear();
                 _row_batch_unsupported_reason_.clear();
                 _gen_contingency_active_ = false;
                 _switchable_buses_.clear();
@@ -281,6 +282,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _adjoint_info_.clear();
             _converged.clear();
             _converged_mask_.clear();
+            _ref_slack_bus_ = -1;
+            _row_ref_slack_bus_.clear();
             _row_solve_time_.clear();
             _row_nb_iter_.clear();
             _row_lin_stats_.clear();
@@ -1046,6 +1049,18 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // which matches nb_solved()/nb_converged()'s own "never attempted" == "did
         // not converge" convention.
         const std::vector<char> & converged_mask() const { return _converged_mask_; }
+        // The angle reference of the results. get_ref_slack_bus(): the slack bus (gridmodel id)
+        // the last compute() solved its rows with -- the one forced on the grid
+        // (LSGrid::set_reference_slack_bus), or else, with handle_disconnected_grid, the slack
+        // bus the fewest rows strand (pick_reference_slack), or else the grid's first slack bus;
+        // -1 before a compute(). get_row_ref_slack_bus(): per row, the bus that row's angles
+        // are measured from, -1 for a row with no converged solution. It is the batch's
+        // reference on every row the batch solves; a row the fallback solves
+        // (ContingencyAnalysis, set_batch_unsupported_fallback) can read another bus: one that
+        // strands the batch's reference is solved on its main component, where
+        // LSGrid::consider_only_main_component gives the reference to another bus.
+        int get_ref_slack_bus() const { return _ref_slack_bus_; }
+        const std::vector<int> & get_row_ref_slack_bus() const { return _row_ref_slack_bus_; }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         const std::vector<std::vector<LimitViolation> > & get_violations() const {
             _check_limit_violations_enabled("get_violations");
@@ -2179,7 +2194,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // from _li_masked (see _prepare_connectivity, which must have run), chooses
         // the reference slack, moves it to index 0 of BOTH slack_bus_id_solver (the
         // one the solver reads) and slack_bus_id_me (kept aligned with it), and fills
-        // _skip_mask with the contingencies that strand it.
+        // _skip_mask with the contingencies that strand it (_row_skipped_for_ref_ too:
+        // the fallback can solve those one at a time, with another reference).
         // The reference is, with `respect_forced`, the one forced on the grid
         // (LSGrid::set_reference_slack_bus): it is chosen for the whole batch, so it
         // is kept even if some contingencies strand it (those are skipped). Otherwise,
@@ -2194,6 +2210,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _select_ref_slack_and_masks(bool respect_forced){
             const size_t nb_cont = ybus_policy_.li_coeffs.size();
             _skip_mask.assign(nb_cont, 0);
+            _row_skipped_for_ref_.assign(nb_cont, 0);
 
             SolverBusLayout & layout = active_layout();
             const int nb_slack = static_cast<int>(layout.slack_bus_id_solver.size());
@@ -2253,11 +2270,17 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 
             const int ref_solver = layout.slack_bus_id_solver[0].cast_int();
             for(size_t cont_id = 0; cont_id < nb_cont; ++cont_id){
-                if(is_masked(_li_masked[cont_id], ref_solver)) _skip_mask[cont_id] = 1;
+                if(is_masked(_li_masked[cont_id], ref_solver)){
+                    _skip_mask[cont_id] = 1;
+                    _row_skipped_for_ref_[cont_id] = 1;
+                }
                 // the masked loop runs for the topological actions' sake as well: without
                 // handle_disconnected_grid a row that strands a bus keeps its legacy
                 // answer, NOT_SIMULATED
-                if(!_handle_disconnected_grid && !_only_masked_by_design(cont_id, _li_masked[cont_id])) _skip_mask[cont_id] = 1;
+                if(!_handle_disconnected_grid && !_only_masked_by_design(cont_id, _li_masked[cont_id])){
+                    _skip_mask[cont_id] = 1;
+                    _row_skipped_for_ref_[cont_id] = 0;
+                }
             }
         }
 
@@ -4383,7 +4406,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // Q = 0 by the VoltageControl extension (see VoltageControl::set_masked_buses),
         // and in a group with only some of them stranded the live ones hold the bus and
         // share among themselves, the stranded ones' reactive power landing on masked
-        // rows. Called after _select_ref_slack_and_masks, which (re)fills _skip_mask.
+        // rows. Called after _select_ref_slack_and_masks, which (re)fills _skip_mask. A
+        // row skipped for stranding the reference only is looked at too: a one-off solve
+        // of it (the fallback) would meet the same group, so this rule makes it a plain
+        // skipped row, which the fallback leaves alone.
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _skip_rows_stranding_regulated_bus(){
             if(!_algo.ac_solver_used()) return;  // no voltage control in DC
@@ -4397,7 +4423,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const size_t nb_rows = std::min(_skip_mask.size(), _li_masked.size());
             for(size_t row = 0; row < nb_rows; ++row){
                 const std::vector<int> & masked = _li_masked[row];
-                if(_skip_mask[row] || masked.empty()) continue;
+                if((_skip_mask[row] && !_row_skipped_for_ref(row)) || masked.empty()) continue;
                 for(int g = 0; g < ng; ++g){
                     if(!is_masked(masked, ctrl.reg_bus(g))) continue;
                     const int first = ctrl.grp_start(g);
@@ -4414,7 +4440,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                            _is_tripped(InjectionTrip::HVDC, row, ctrl.elem_id(first + off))) continue;
                         some_live = !is_masked(masked, ctrl.bus(first + off));
                     }
-                    if(some_live){ _skip_mask[row] = 1; break; }
+                    if(some_live){
+                        _skip_mask[row] = 1;
+                        _row_skipped_for_ref_[row] = 0;
+                        break;
+                    }
                 }
             }
         }
@@ -4431,11 +4461,42 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return row < _row_batch_unsupported_reason_.size() && !_row_batch_unsupported_reason_[row].empty();
         }
         // whether the connectivity check already skips that row (NOT_SIMULATED): it wins,
-        // the row is not marked as well -- there is nothing a one-off solve of it could do
+        // the row is not marked as well (a row skipped for stranding the reference only goes
+        // to the fallback, if on, after the batch: see _maybe_solve_batch_unsupported_rows)
         bool _row_skipped_by_precheck(size_t row) const {
             if(_mask_mode()) return row < _skip_mask.size() && _skip_mask[row] != 0;
             return _algo.ac_solver_used() && row < _cont_connected_.size() && _cont_connected_[row] == 0;
         }
+        // whether row `row` is skipped (NOT_SIMULATED) only because it strands the batch's
+        // reference slack: handle_disconnected_grid solves every row with one reference,
+        // chosen once (see _select_ref_slack_and_masks). A one-off solve of it takes
+        // another reference on its main component: the fallback runs it
+        bool _row_skipped_for_ref(size_t row) const {
+            return row < _row_skipped_for_ref_.size() && _row_skipped_for_ref_[row] != 0;
+        }
+        // the reference slack bus (gridmodel id) every row the batch solves measures its
+        // angles from: slack_ids[0] of the layout the rows are solved on
+        int _batch_ref_slack_bus() {
+            const SolverBusLayout & layout = active_layout();
+            return layout.slack_bus_id_me.size() == 0 ? -1 : layout.slack_bus_id_me[0].cast_int();
+        }
+        // what get_row_ref_slack_bus() reads once the batch has run: the batch's reference
+        // on a converged row, -1 elsewhere (the fallback then fills the rows it solves)
+        void _record_rows_ref_slack_bus(){
+            _row_ref_slack_bus_.assign(_converged_mask_.size(), -1);
+            for(size_t i = 0; i < _converged_mask_.size(); ++i){
+                if(_converged_mask_[i]) _row_ref_slack_bus_[i] = _ref_slack_bus_;
+            }
+        }
+        // a row skipped for the reference, handed to the fallback by a previous compute(),
+        // carries a reason (see _maybe_solve_batch_unsupported_rows): dropped before this
+        // compute()'s rows run, so the row is skipped as such again -- NOT_SIMULATED, which
+        // the fallback, if still on, turns into a reason again
+        void _reset_ref_row_reasons(){
+            const size_t n = std::min(_row_skipped_for_ref_.size(), _row_batch_unsupported_reason_.size());
+            for(size_t i = 0; i < n; ++i) if(_row_skipped_for_ref_[i]) _row_batch_unsupported_reason_[i].clear();
+        }
+
         // `what` completes "row <row> ..."; the first reason given to a row is kept
         void _mark_row_batch_unsupported(size_t row, const std::string & what){
             if(row >= _row_batch_unsupported_reason_.size() || _row_is_batch_unsupported(row)) return;
@@ -4446,7 +4507,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
 
         // ----- the fallback: the rows the batch does not support, one at a time, with LSGrid::ac_pf
-        // ContingencyAnalysis only (set_batch_unsupported_fallback), after the batch. Each row is
+        // ContingencyAnalysis only (set_batch_unsupported_fallback), after the batch. So do the
+        // rows skipped only because they strand the batch's reference slack (see
+        // _row_skipped_for_ref): they get a reason saying so, and from then on are rows the batch
+        // does not support like the others. The grid copy keeps the batch's reference
+        // (LSGrid::set_reference_slack_bus), so that a row solved there measures its angles
+        // from the same bus as the batch's rows -- unless it strands it: on its main component,
+        // consider_only_main_component gives the reference to another slack bus, or to the bus
+        // it gives the slack (get_row_ref_slack_bus, and the row's reason, say which). Each row is
         // solved on a private copy of the grid, made once per compute(), as a one-off solve
         // of the contingency would be: its elements deactivated, ac_pf with the batch's own
         // algorithm, configuration, outer loops, max_iter and tol, then its elements put back.
@@ -4467,6 +4535,16 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void _maybe_solve_batch_unsupported_rows(const Eigen::Ref<const CplxVect> & Vinit, const CplxVect & Vinit_solver,
                                         int max_iter, real_type tol){
             if(!_batch_unsupported_fallback_ || !_algo.ac_solver_used()) return;
+            // the rows skipped for the reference only, handed over (see above)
+            std::vector<char> ref_row(_row_batch_unsupported_reason_.size(), 0);
+            for(size_t i = 0; i < _row_batch_unsupported_reason_.size(); ++i){
+                if(!_row_skipped_for_ref(i) || _row_is_batch_unsupported(i)) continue;
+                std::ostringstream msg;
+                msg << algo_name() << ": row " << i << " strands the reference slack bus " << _ref_slack_bus_
+                    << ", with which handle_disconnected_grid solves every row of the batch.";
+                _row_batch_unsupported_reason_[i] = msg.str();
+                ref_row[i] = 1;
+            }
             std::vector<size_t> rows;
             for(size_t i = 0; i < _row_batch_unsupported_reason_.size(); ++i) if(_row_is_batch_unsupported(i)) rows.push_back(i);
             if(rows.empty()) return;
@@ -4474,6 +4552,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             LSGrid grid(_grid_model);
             grid.change_algorithm(_algo.get_name());
             grid.set_ac_algo_config(_algo.get_config());
+            // the batch's reference, also where the batch picked it rather than the grid
+            // forcing it: the rows solved here measure their angles from it too
+            if(_ref_slack_bus_ >= 0) grid.set_reference_slack_bus(_ref_slack_bus_);
             const bool outer = grid.get_algo().supports_outer_loops();
             const bool resume_from_n = outer && _init_from_n_powerflow;
             if(outer) grid.set_resume_outer_state(false);
@@ -4496,6 +4577,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 const std::string why_not = _fallback_refuses(i, outer);
                 if(!why_not.empty()){
                     _row_batch_unsupported_reason_[i] += " The fallback did not run it: " + why_not + ".";
+                    // a row skipped for the reference was reported NOT_SIMULATED by the batch:
+                    // it now has a reason, as the rows the batch does not support
+                    if(ref_row[i] && _compute_limit_violations_ && i < _violations.size()){
+                        for(auto & v : _violations[i]){
+                            if(v.element_type == ViolationElementType::GRID &&
+                               v.violation_type == LimitViolationType::NOT_SIMULATED) v.violation_type = LimitViolationType::BATCH_UNSUPPORTED;
+                        }
+                    }
                     continue;
                 }
                 auto timer = CustTimer();
@@ -4505,6 +4594,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 FallbackUndo undo;
                 // the grid this row is solved on: the shared copy, or its own (see above)
                 const bool splits = _fallback_row_splits(i);
+                // the bus the row's angles are measured from: the batch's, unless its islands take it
+                int row_ref = _ref_slack_bus_;
                 std::unique_ptr<LSGrid> own_grid;
                 try {
                     if(splits) own_grid.reset(new LSGrid(grid));
@@ -4522,7 +4613,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         // the islands go, as the batch masks them. Their lost power is the
                         // distributed slack's, or the DistributedSlack loop's, as in the batch
                         // (redistribute_slack without outer loops is refused above)
-                        if(splits) row_grid.consider_only_main_component(false);
+                        if(splits) row_ref = row_grid.consider_only_main_component(false).ref_slack_bus;
                         const LinearSolverStats lin_before = row_grid.get_algo().get_linear_solver_stats_before_solve();
                         res = row_grid.ac_pf(V_start, max_iter, tol);
                         ++_nb_solved;
@@ -4544,6 +4635,13 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     }
                     _voltages.raw().row(static_cast<Eigen::Index>(i))(solver_to_me.as_eigen()) = V_solver.array();
                     _record_fallback_row_results(i, splits ? *own_grid : grid, V_solver);
+                    if(i < _row_ref_slack_bus_.size()) _row_ref_slack_bus_[i] = row_ref;
+                    if(row_ref != _ref_slack_bus_){
+                        std::ostringstream msg;
+                        msg << " Solved one at a time with the reference slack on bus " << row_ref
+                            << ": its angles are measured from that bus, not from the batch's.";
+                        _row_batch_unsupported_reason_[i] += msg.str();
+                    }
                 }
                 _converged_mask_[i] = conv ? 1 : 0;
                 if(_compute_limit_violations_){
@@ -6325,6 +6423,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         std::vector<char> _cont_connected_;
         BusGraph bus_graph_;
         std::vector<char> _skip_mask;
+        // the rows _skip_mask skips only because they strand the batch's reference slack
+        // (L2, see _row_skipped_for_ref)
+        std::vector<char> _row_skipped_for_ref_;
         // per row, the controllers of the voltage-control groups it trips (positions in the plan's
         // controller list, sorted). Empty when no row trips one (_maybe_prepare_gen_contingency).
         std::vector<std::vector<int> > _row_tripped_controllers_;
@@ -6344,6 +6445,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // ContingencyAnalysis; not gated behind compute_limit_violations) -- see
         // converged_mask().
         std::vector<char> _converged_mask_;
+        // L3: the reference slack bus (gridmodel id) the rows were solved with, and per row
+        // the bus its angles are measured from, -1 for a row with no converged solution (see
+        // get_row_ref_slack_bus)
+        int _ref_slack_bus_ = -1;
+        std::vector<int> _row_ref_slack_bus_;
         std::vector<std::vector<LimitViolation> > _violations;
         bool _converged_n_ = false;
         std::vector<LimitViolation> _violations_n_;

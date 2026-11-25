@@ -551,6 +551,8 @@ void bind_batch_sweep_common(py::class_<T> & cls)
                  return std::vector<bool>(c.begin(), c.end());
              },
              DocTimeSeries::converged_mask.c_str())
+        .def("get_ref_slack_bus", &T::get_ref_slack_bus, DocTimeSeries::get_ref_slack_bus.c_str())
+        .def("get_row_ref_slack_bus", &T::get_row_ref_slack_bus, DocTimeSeries::get_row_ref_slack_bus.c_str())
 
         // status
         // `<>`: see the comment above modify_gen_p -- Clang (used for the macOS/arm64
@@ -1442,7 +1444,12 @@ void bind_batch(py::module_& m) {
                       "where the batch's rows put theirs, their reason is kept; their Jacobian is not "
                       "(keep_jacobian). One splitting the grid with handle_disconnected_grid is solved "
                       "on its main component, as the batch does it (LSGrid.consider_only_main_component "
-                      "on a copy of its own). With redistribute_slack and no outer loops the fallback "
+                      "on a copy of its own). So is a contingency that strands the batch's reference "
+                      "slack, which handle_disconnected_grid would otherwise skip (NOT_SIMULATED), the "
+                      "reference forced on the grid or not: its reason says so, and its main component "
+                      "gets another reference -- another slack bus, or the bus consider_only_main_component "
+                      "gives the slack. get_row_ref_slack_bus() says which; its angles are measured from "
+                      "that bus. With redistribute_slack and no outer loops the fallback "
                       "does not run: those contingencies stay BATCH_UNSUPPORTED and their reason says why. "
                       "Sequential, and as slow as one ac_pf per contingency (two with outer loops and "
                       "init_from_n_powerflow). Off by default.")
@@ -1454,8 +1461,14 @@ void bind_batch(py::module_& m) {
                       "are skipped (their voltages are left at 0), reproducing the legacy "
                       "behaviour. When True, the largest connected component is solved while "
                       "the buses of the other component(s) are masked (their voltage is "
-                      "reported as 0). Supported by the Newton-Raphson family (AC) and the DC "
-                      "solver; a non Newton-Raphson AC algorithm is rejected.")
+                      "reported as 0). Every contingency is solved with one reference slack, "
+                      "chosen once (get_ref_slack_bus): the one forced on the grid "
+                      "(LSGrid.set_reference_slack_bus), or else the slack bus the fewest "
+                      "contingencies strand. A contingency that strands it is skipped "
+                      "(NOT_SIMULATED), unless batch_unsupported_fallback (AC) solves it one at "
+                      "a time with another reference (see get_row_ref_slack_bus). Supported by "
+                      "the Newton-Raphson family (AC) and the DC solver; a non Newton-Raphson AC "
+                      "algorithm is rejected.")
         .def_property("nb_thread",
                       [](const ContingencyAnalysis & self){ return self.get_nb_thread(); },
                       [](ContingencyAnalysis & self, int val){ self.set_nb_thread(val); },
@@ -1550,7 +1563,9 @@ void bind_batch(py::module_& m) {
              "handle_disconnected_grid skips as few contingencies as possible. A suggestion "
              "only: it ignores a reference already forced on the grid, and does not change "
              "the reference the next compute() uses (a forced one, always kept, or else "
-             "this same automatic choice).")
+             "this same automatic choice; get_ref_slack_bus() reads it after the compute). "
+             "With batch_unsupported_fallback, the contingencies that strand it are solved "
+             "one at a time with another reference instead of being skipped.")
 
         // perform computation
         .def("compute", &ContingencyAnalysis::compute, py::call_guard<py::gil_scoped_release>(), DocContingencyAnalysis::compute.c_str())
@@ -1588,6 +1603,8 @@ void bind_batch(py::module_& m) {
              "get_batch_unsupported_reasons) or LimitViolationType.DIVERGENCE (the solver ran but did not "
              "converge).",
              py::return_value_policy::reference_internal)
+        .def("get_ref_slack_bus", &ContingencyAnalysis::get_ref_slack_bus, DocTimeSeries::get_ref_slack_bus.c_str())
+        .def("get_row_ref_slack_bus", &ContingencyAnalysis::get_row_ref_slack_bus, DocTimeSeries::get_row_ref_slack_bus.c_str())
         .def("converged_n", &ContingencyAnalysis::converged_n<>,
              "Whether the pre-contingency ('n') powerflow converged.")
         .def("get_violations_n", &ContingencyAnalysis::get_violations_n<>,
