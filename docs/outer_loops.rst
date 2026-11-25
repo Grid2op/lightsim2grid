@@ -194,10 +194,13 @@ The loop that enforces the reactive limits.
 - **PV to PQ**: the reactive power a bus needed to hold its voltage is beyond what its units can
   produce (their summed limits, plus a tolerance). The bus is switched to PQ and its units are frozen at the limit.
 - **PQ to PV**: the voltage of a frozen bus is back across its target on the right side: the units
-  regulate again.
+  regulate again. The bus is **not** reset to its target before the next solve: that solve's first
+  Newton step starts it from the magnitude it had and brings it to its target, as OpenLoadFlow's
+  voltage equation does (see :ref:`outer-loops-back-to-pv`).
 - A bus may go back to PV at most ``max_pq_pv_switch`` times, which stops a bus from switching back and forth.
 - **Robust mode**: a *remote* controller whose own bus voltage is outside the realistic band stops
   regulating (it is switched to PQ at its target reactive power) and its bus restarts at ``robust_restart_vm_pu``.
+  That restart is a reset by value, as OpenLoadFlow's.
 
 The limits are taken at the **current** active power target of each unit: when ``DistributedSlack``
 moved it, a capability curve is read at the new value (``set_gen_capability_curves``; interpolated,
@@ -234,6 +237,18 @@ Transformers whose ratio tap changer regulates a voltage (``set_trafo_ratio_tap_
 regulated bus, a target and a deadband), as OpenLoadFlow's ``AFTER_GENERATOR_VOLTAGE_CONTROL``: a group whose bus is
 already regulated by a generator's voltage control is hidden by it, and only has its taps rounded. The ratios are solved
 continuously, the generators of the low-voltage buses being frozen as PQ meanwhile, then rounded to the closest tap.
+
+The loop works in three steps, as OpenLoadFlow's:
+
+1. **Switching on**: every group off its target by more than half its deadband switches its transformers on. The
+   generators regulating a bus of at most ``max_controlled_nominal_voltage`` kV (step-up units aside) are frozen as
+   PQ at the reactive power their bus injects, so that they do not fight the transformers. A transformer with no PV
+   bus left on its other side is switched off. The Newton-Raphson then solves for the ratios.
+2. **Control**: a transformer whose ratio left its range is rounded to its extreme tap and switched off, and the
+   Newton-Raphson runs again. Once none does, every transformer is rounded to its closest tap and switched off, and
+   the frozen generators are released: they regulate their bus again. As for ``ReactiveLimits``, a released bus is
+   not reset to its target: the next solve's first step brings it there (see :ref:`outer-loops-back-to-pv`).
+3. **Complete**: stable.
 
 .. code-block:: python
 
@@ -315,6 +330,29 @@ The driver follows OpenLoadFlow's engine:
 4. a loop that returns ``FAILED`` stops everything;
 5. the unrealistic-voltage check runs after the last loop able to fix it;
 6. the loops are cleaned up in reverse order.
+
+.. _outer-loops-back-to-pv:
+
+A bus back to PV
+~~~~~~~~~~~~~~~~
+
+When a loop gives a bus its voltage control back between two solves (``ReactiveLimits`` releasing a bus frozen at a
+reactive limit, ``TransformerVoltageControl`` releasing the generators it froze), its magnitude is not set to its
+target before the next solve. The next Newton-Raphson evaluates its first mismatch and Jacobian with the bus at the
+magnitude it had, and moves it to its target within that first step, the rest of the grid following through the
+Jacobian. This is the step OpenLoadFlow takes: it only switches the voltage control back on, and its equation
+``V = target`` is linear, so it is met after one iteration. Later iterations are unchanged.
+
+Setting the bus to its target up front (what lightsim2grid did before version 1.3.2) puts the whole move on the bus'
+branches before any step is taken. Next to a very low impedance branch, the first mismatch is then large enough to
+send the Newton-Raphson to another, low-voltage solution, or to make it diverge, where OpenLoadFlow converges.
+Elsewhere both give the same solution, and the new start can take one Newton iteration fewer.
+
+This is the step :func:`lightsim2grid.network.LSGrid.set_uniform_voltage_start` takes for the first solve. It is
+always on for a bus back to PV, whatever that option: the option is about where the first solve starts, and is not
+needed here. That first step is never damped. The rows of the distributed slack, of the voltage-control groups and of the HVDC do not see the
+target move in it, as with the uniform start. A remote controller released by ``ReactiveLimits`` needs none of this:
+the bus it regulates already has a voltage equation, which brings it to its target.
 
 .. _outer-loops-driver:
 
