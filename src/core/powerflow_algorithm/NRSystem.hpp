@@ -833,7 +833,10 @@ class LS2G_API Hvdc
  *     F = rho_i - rho_target_i                 (its control off: BRANCH_TARGET_RHO1)
  *     F = Vm(bus) - v_target                   (the first one on: BUS_TARGET_V)
  *     F = sum_j rho_j / n - rho_i              (any other one on: DISTR_RHO)
- * so every slot reserves the n columns and the bus' Vm column. The transformers of a group
+ * so every slot reserves the n columns and the bus' Vm column. The sum and n run over the
+ * transformers in this solve: one the solve opens (a contingency, see set_in_solve) is held
+ * like a controller off but left out of the others' mean, as OpenLoadFlow drops a disabled
+ * branch's terms; a controller merely off stays in it. The transformers of a group
  * that is not solved (hidden by a generator's voltage control) own nothing: only their tap moves.
  * The P and Q rows of a transformer's two buses get dS/da_t, dS/drho_t for its columns. A
  * transformer may not be both a phase controller and in a solved ratio group (its ratio column
@@ -899,6 +902,28 @@ class LS2G_API BranchControl
         void set_ratio_tap(int trafo_id, int position);
         real_type shift(int trafo_id) const;
         real_type ratio(int trafo_id) const;
+        /// put back the continuous shift / ratio of a transformer whose column is solved (a
+        /// no-op for the others), as a Newton step leaves it: its block follows, its tap and
+        /// its row's target do not move. For an algorithm that sets the Newton up again in the
+        /// middle of a solve (which starts the shifts and ratios again from their taps) and
+        /// must resume from where the last solve left them, as OpenLoadFlow does. Inline, so
+        /// a plugin can use it on a core built without it.
+        void set_shift(int trafo_id, real_type a) {
+            const int k = _index(trafo_id);
+            if (k < 0 || !std::isfinite(a)) return;
+            Entry & e = entries_[static_cast<std::size_t>(k)];
+            if (e.out || !e.column) return;
+            e.a = a;
+            _patch(e);
+        }
+        void set_ratio(int trafo_id, real_type rho) {
+            const int k = _index(trafo_id);
+            if (k < 0 || !std::isfinite(rho)) return;
+            Entry & e = entries_[static_cast<std::size_t>(k)];
+            if (e.out || !e.r_column) return;
+            e.rho = rho;
+            _patch(e);
+        }
         int position(int trafo_id) const;
         int ratio_position(int trafo_id) const;
         /// the phase / ratio tap position of every transformer handled for it, INT_MIN for the
@@ -967,6 +992,15 @@ class LS2G_API BranchControl
         int _index(int trafo_id) const {
             if (trafo_id < 0 || static_cast<std::size_t>(trafo_id) >= index_of_trafo_.size()) return -1;
             return index_of_trafo_[static_cast<std::size_t>(trafo_id)];
+        }
+        // the members of a group in this solve, the n of its DISTR_RHO rows (see the class
+        // comment); at least 1 whenever such a row exists, as its own member is in
+        std::size_t _nb_in(const RatioGroup & g) const {
+            std::size_t res = 0;
+            for (int i : g.members) {
+                if (!entries_[static_cast<std::size_t>(i)].out) ++res;
+            }
+            return res > 0 ? res : 1;
         }
         // the block at shift a and ratio rho (the taps' r, x, g, b)
         static std::array<cplx_type, 4> _block_at(const Entry & e, real_type a, real_type rho) {
@@ -1052,6 +1086,18 @@ class LS2G_API ShuntControl
         /// switch the sections of its shunts (aligned with the declared list): its B follows
         void set_sections(int bus, const std::vector<int> & counts);
         real_type b(int bus) const;
+        /// put back the continuous susceptance of a controller bus whose column is solved (a
+        /// no-op for the others), as a Newton step leaves it: Ybus follows, its sections and its
+        /// row's target do not move. See BranchControl::set_shift. Inline, so a plugin can use
+        /// it on a core built without it.
+        void set_b(int bus, real_type b) {
+            const int k = _index(bus);
+            if (k < 0 || !std::isfinite(b)) return;
+            Entry & e = entries_[static_cast<std::size_t>(k)];
+            if (!e.column) return;
+            e.b = b;
+            _patch(e);
+        }
         /// the section count of every shunt handled, INT_MIN for the others (by grid id)
         void section_counts(std::vector<int> & out) const;
         /// where its controllers and groups sit in J (appended to `out.shunts` /
@@ -2113,10 +2159,12 @@ public:
     // corrector to start from.
     void cpf_predict_into(CplxVect& V_pred, const Eigen::Ref<const RealVect>& z, real_type coeff) const;
 
-    // ----- uniform start (LSGrid::set_uniform_voltage_start) ----------------------
+    // ----- uniform start (LSGrid::set_uniform_voltage_start), buses back to PV --------
     //
     // The first iteration of a solve whose grid published the caller's starting
-    // magnitudes, taken as OpenLoadFlow takes it from its uniform start. A bus whose
+    // magnitudes, taken as OpenLoadFlow takes it from its uniform start. The same for the
+    // buses an outer loop put back to PV since the last Newton (set_vm_lift_at): their
+    // starting magnitude is the one they had, which overrides the caller's. A bus whose
     // magnitude is an unknown just starts from the caller's magnitude (seeded at a
     // target, it has a voltage row to reach it). A bus with none (PV, slack pinned by
     // a local regulator), or kept still by a masked / PV-pinned identity row, holds the
@@ -2125,7 +2173,8 @@ public:
     //
     //   begin_vm_lift()      puts the buses at the caller's magnitudes (returns false,
     //                        and changes nothing, when none differs or when this solve
-    //                        already did it: once per update_state);
+    //                        already did it: once per update_state, and once per
+    //                        set_vm_lift_at for the buses back to PV);
     //   add_vm_lift_rhs(res) once J is filled there, moves the jump of the held
     //                        magnitudes to the right-hand side through their dS/dVm
     //                        column -- J . dx = res - dS/dVm . dVm, the step of a system
@@ -2196,14 +2245,38 @@ public:
     Eigen::Ref<const RealVect> Vm() const { return Vm_; }
 
     // Set the magnitude of some buses (solver ids, pu) between two Newton solves, their
-    // angle kept: an outer loop putting a bus back to PV at its set-point (a pinned Q row
-    // keeps the magnitude the bus has, see set_pv_pinned_buses), or OpenLoadFlow's robust
-    // mode restarting a bus from 1 pu. Values only.
+    // angle kept: OpenLoadFlow's robust mode restarting a bus from 1 pu, a bus resuming the
+    // magnitude a previous solve left it at. Values only. A later set_vm_at of a bus drops
+    // a set_vm_lift_at of it.
     void set_vm_at(const std::vector<int>& buses, const std::vector<real_type>& vm) {
         ybus_v_at_V_ = false;
         for (std::size_t k = 0; k < buses.size() && k < vm.size(); ++k) {
             const int b = buses[k];
             if (b < 0 || b >= Vm_.size()) continue;
+            _drop_released_lift(b);
+            Vm_(b) = vm[k];
+            V_(b) = std::polar(vm[k], Va_(b));
+        }
+    }
+
+    // An outer loop putting a bus back to PV at its set-point `vm`, between two Newton
+    // solves (its pinned Q row keeps the magnitude the bus has, see set_pv_pinned_buses).
+    // The bus is seeded at `vm`, like set_vm_at, but the next Newton's first step starts it
+    // from the magnitude it had and moves it to `vm` within the step (begin_vm_lift), as
+    // OpenLoadFlow's `v = target` equation does. Restarting it there by value instead puts
+    // the whole jump on its branches before any step: next to a nearly zero impedance
+    // branch, a large enough mismatch to send the Newton to another solution.
+    void set_vm_lift_at(const std::vector<int>& buses, const std::vector<real_type>& vm) {
+        ybus_v_at_V_ = false;
+        for (std::size_t k = 0; k < buses.size() && k < vm.size(); ++k) {
+            const int b = buses[k];
+            if (b < 0 || b >= Vm_.size()) continue;
+            _drop_released_lift(b);
+            const real_type from = Vm_(b);
+            if (std::isfinite(from) && from > 0. && from != vm[k]) {
+                released_lift_buses_.push_back(b);
+                released_lift_start_.push_back(from);
+            }
             Vm_(b) = vm[k];
             V_(b) = std::polar(vm[k], Va_(b));
         }
@@ -2545,6 +2618,18 @@ private:
     std::vector<int>                       vm_lift_buses_;
     std::vector<real_type>                 vm_lift_target_;
     mutable CplxVect                       vm_lift_dS_;
+    // the buses back to PV since the last Newton (set_vm_lift_at) and the magnitudes they
+    // had, which the next begin_vm_lift starts them from
+    std::vector<int>                       released_lift_buses_;
+    std::vector<real_type>                 released_lift_start_;
+    void _drop_released_lift(int b) {
+        for (std::size_t k = 0; k < released_lift_buses_.size(); ++k) {
+            if (released_lift_buses_[k] != b) continue;
+            released_lift_buses_.erase(released_lift_buses_.begin() + static_cast<std::ptrdiff_t>(k));
+            released_lift_start_.erase(released_lift_start_.begin() + static_cast<std::ptrdiff_t>(k));
+            return;
+        }
+    }
 
     // Holds the state for HVDC, DistSlack, etc.
     std::tuple<Rest...>                    extensions_;

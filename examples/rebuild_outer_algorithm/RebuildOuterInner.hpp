@@ -18,6 +18,7 @@
 #include <cmath>
 #include <functional>
 #include <iterator>
+#include <utility>
 #include <limits>
 #include <vector>
 
@@ -51,7 +52,9 @@ namespace ls2g {
  * state again from the grid: the voltages, the controllers' reactive outputs and the ratio taps
  * and shunt sections a loop moved are carried over; Ybus is put back as the grid stamped it
  * first, since the transformers and shunts patch it from there. The continuous shift / ratio /
- * susceptance of a control that stays on restarts from its tap.
+ * susceptance of a control that stays on is carried over too, as OpenLoadFlow's state vector
+ * starts each solve from the network's last values (AcSolverUtil.initStateVector): restarted
+ * from its tap, the next solve would begin further from the solution and take more iterations.
  */
 template<class LinearSolver>
 class RebuildOuterInner
@@ -385,6 +388,16 @@ bool RebuildOuterInner<LinearSolver>::_restructure(const Structure & s)
     ShuntControl * shunt = system.shunt_control();
     if (branch != nullptr) branch->ratio_positions(ratio_pos);
     if (shunt != nullptr) shunt->section_counts(sections);
+    // the continuous values of the controls that stay on: setting up starts them again from
+    // their taps / sections, where OpenLoadFlow resumes from the last solve's
+    std::vector<std::pair<int, real_type> > shifts, ratios, susceptances;
+    if (branch != nullptr) {
+        for (int t : s.shift_on) shifts.emplace_back(t, branch->shift(t));
+        for (int t : s.ratio_on) ratios.emplace_back(t, branch->ratio(t));
+    }
+    if (shunt != nullptr) {
+        for (int bus : s.shunt_on) susceptances.emplace_back(bus, shunt->b(bus));
+    }
 
     // Ybus as the grid stamped it: the transformers and shunts patch it from there
     std::copy(ybus_values_.begin(), ybus_values_.end(), ybus_->valuePtr());
@@ -416,6 +429,15 @@ bool RebuildOuterInner<LinearSolver>::_restructure(const Structure & s)
                 if (counts.size() == g.shunts[c].size()) shunt->set_sections(g.controller_buses[c], counts);
             }
         }
+    }
+    // after the taps and sections, which set them to theirs (a control the rebuild has no
+    // column for is left alone, see BranchControl::set_shift)
+    if (branch != nullptr) {
+        for (const auto & ta : shifts) branch->set_shift(ta.first, ta.second);
+        for (const auto & tr : ratios) branch->set_ratio(tr.first, tr.second);
+    }
+    if (shunt != nullptr) {
+        for (const auto & bb : susceptances) shunt->set_b(bb.first, bb.second);
     }
     built_ = s;
     analyze_pending_ = true;
@@ -467,10 +489,20 @@ void RebuildOuterInner<LinearSolver>::apply_controls()
             if (bc.second->requested_control() >= 0) shunt->set_control_on(bc.first, bc.second->requested_control() == 1);
         }
     }
+    // the magnitudes a loop reset: set (robust mode), or reached within the first step (a
+    // bus back to PV at its set-point), in the order they were asked for -- as
+    // NROuterInner::apply_controls. The restructure above is done first, so the next
+    // Newton's update_state does not drop the lift.
     std::vector<int> buses;
     std::vector<real_type> vm;
-    controls_.take_pending_vm(buses, vm);
-    if (!buses.empty()) system.set_vm_at(buses, vm);
+    std::vector<char> lift;
+    controls_.take_pending_vm(buses, vm, lift);
+    for (std::size_t k = 0; k < buses.size(); ++k) {
+        const std::vector<int> b(1, buses[k]);
+        const std::vector<real_type> v(1, vm[k]);
+        if (lift[k]) system.set_vm_lift_at(b, v);
+        else system.set_vm_at(b, v);
+    }
 }
 
 }  // namespace ls2g

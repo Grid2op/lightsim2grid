@@ -243,6 +243,18 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   grid can be updated in place instead of rebuilt (#299).
 - [ADDED] ``update_one_powerline_parameters`` / ``update_one_trafo_parameters_full``: one branch's
   r, x and shunt admittances, without re-sending the whole vectors (#299).
+- [FIXED] batches with outer loops: a row tripping a transformer of a voltage-control group left it in
+  the group's ratio mean, so the others took uneven ratios. It now leaves the mean, as in OpenLoadFlow.
+- [FIXED] example plugin ``NROuterRebuild_*``: a rebuild keeps the continuous ratio, shift and susceptance
+  of the controls that stay on, as OpenLoadFlow does, instead of restarting them from their taps.
+- [ADDED] (C++) ``BranchControl::set_shift`` / ``set_ratio`` and ``ShuntControl::set_b``.
+- [FIXED] ``NROuterDist_*`` batches seeded from the "n" solve: a row whose imbalance was below the slack
+  threshold put the units parked at a limit back in the share, which could cycle until the outer-iteration cap.
+- [FIXED] ``NROuter_*``: a bus switched back to PV now reaches its set-point within the next Newton's
+  first step, as in OpenLoadFlow, instead of being reset to it by value; next to a nearly zero
+  impedance branch, the reset could send the Newton to a low-voltage solution.
+- [BREAKING] (C++ / plugins) ``OuterControls::take_pending_vm`` takes a third vector, the buses to
+  reach their magnitude within the first step (``NRSystem::set_vm_lift_at``).
 - [FIXED] pypowsybl 1.17: the converter crashed on a ratio tap changer with no regulating terminal
   (``terminal not found for per unit V``), and could have dropped every ratio tap changer silently.
 - [FIXED] pypowsybl 1.17: an SVC's slope is read from the SVC table's new ``slope`` column; it was

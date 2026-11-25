@@ -309,11 +309,18 @@ void NROuterInner<LinearSolver, NRSystem>::apply_controls()
     // the switchable buses: PV (pinned) unless a loop made them PQ, a caller's on top
     pinned_ = controls_.pinned_buses();
     system.set_pv_pinned_buses(pinned_);
-    // the magnitudes a loop reset (a bus back to PV at its set-point, robust mode)
+    // the magnitudes a loop reset: set (robust mode), or reached within the first step (a
+    // bus back to PV at its set-point), in the order they were asked for
     std::vector<int> buses;
     std::vector<real_type> vm;
-    controls_.take_pending_vm(buses, vm);
-    if(!buses.empty()) system.set_vm_at(buses, vm);
+    std::vector<char> lift;
+    controls_.take_pending_vm(buses, vm, lift);
+    for(std::size_t k = 0; k < buses.size(); ++k) {
+        const std::vector<int> b(1, buses[k]);
+        const std::vector<real_type> v(1, vm[k]);
+        if(lift[k]) system.set_vm_lift_at(b, v);
+        else system.set_vm_at(b, v);
+    }
     // the units' weights in the Newton's share of the slack, normalised; none: the reference
     // bus takes it all
     if(system.has_multi_slack()) {

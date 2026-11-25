@@ -563,8 +563,9 @@ void ReactiveLimitsLoop::_release(OuterContext & ctx, ControllerBus & bus) const
     CplxVect & Sbus = *st.Sbus;
     Sbus(bus.bus_solver) = cplx_type(std::real(Sbus(bus.bus_solver)), std::imag((*st.Sbus_target)(bus.bus_solver)));
     if (bus.voltage != nullptr) bus.voltage->set_pv();
-    // a pinned row keeps the magnitude the bus has: back at its set-point
-    ctx.controls->reset_vm(bus.bus_solver, bus.target_vm);
+    // a pinned row keeps the magnitude the bus has: brought back to its set-point by the
+    // next solve's first step (OpenLoadFlow leaves v as it is, its voltage equation does it)
+    ctx.controls->lift_vm(bus.bus_solver, bus.target_vm);
     bus.state = 0;
     bus.realistic = false;
     bus.frozen_q = 0.;

@@ -104,6 +104,8 @@ inline void NRSystem<Base, Rest...>::update_state(
     vm_lift_pending_ = base_.uniform_start_vm().size() == n && n > 0;
     vm_lift_buses_.clear();
     vm_lift_target_.clear();
+    released_lift_buses_.clear();
+    released_lift_start_.clear();
     // the one extension that reads the complex voltages when J is filled
     BranchControl* ps = _find_extension<BranchControl>();
     if (ps != nullptr) ps->bind_voltages(&V_);
@@ -576,13 +578,22 @@ inline void NRSystem<Base, Rest...>::cpf_predict_into(CplxVect& V_pred,
 template <typename... Rest>
 inline bool NRSystem<Base, Rest...>::begin_vm_lift()
 {
-    if (!vm_lift_pending_) return false;
+    const bool uniform = vm_lift_pending_;
+    if (!uniform && released_lift_buses_.empty()) return false;
     vm_lift_pending_ = false;  // once per solve: an outer loop's next Newton resumes
     vm_lift_buses_.clear();
     vm_lift_target_.clear();
-    const RealVect & start = base_.uniform_start_vm();
     const Eigen::Index n = Vm_.size();
-    if (start.size() != n) return false;
+    RealVect start;
+    if (uniform && base_.uniform_start_vm().size() == n) start = base_.uniform_start_vm();
+    else start = RealVect::Zero(n);  // not lifted (see below), unless back to PV
+    // the buses back to PV start from the magnitude they had, once
+    for (std::size_t k = 0; k < released_lift_buses_.size(); ++k) {
+        const int b = released_lift_buses_[k];
+        if (b >= 0 && b < n) start(b) = released_lift_start_[k];
+    }
+    released_lift_buses_.clear();
+    released_lift_start_.clear();
 
     // A bus whose magnitude is an unknown is reached by the Newton from wherever it
     // starts -- seeded at a target, it has a voltage row bringing it there -- so it
@@ -651,6 +662,10 @@ inline void NRSystem<Base, Rest...>::add_vm_lift_rhs(Eigen::Ref<RealVect> res) c
 template <typename... Rest>
 inline void NRSystem<Base, Rest...>::end_vm_lift()
 {
+    // a Newton whose seeded voltage already converged took no lifted step: the buses back
+    // to PV stay at their set-points, and the next Newton does not lift them
+    released_lift_buses_.clear();
+    released_lift_start_.clear();
     if (vm_lift_buses_.empty()) return;
     for (std::size_t k = 0; k < vm_lift_buses_.size(); ++k) {
         const int b = vm_lift_buses_[k];

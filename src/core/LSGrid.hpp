@@ -596,6 +596,11 @@ class LS2G_API LSGrid final
          * "n" solve and the rows seeded from the caller's voltage, see
          * BaseBatchSolverSynch::_publish_uniform_start); part of `get_state` / the
          * binary format.
+         *
+         * The option is about the first solve only. A bus an outer loop gives its
+         * voltage control back between two solves takes the same lifted step whatever
+         * the option (OuterControls::lift_vm, NRSystem::set_vm_lift_at): the jump of a
+         * released bus is the same problem, and OpenLoadFlow never resets it either.
          */
         void set_uniform_voltage_start(bool uniform) noexcept {uniform_voltage_start_ = uniform;}
         [[nodiscard]] bool get_uniform_voltage_start() const noexcept {return uniform_voltage_start_;}

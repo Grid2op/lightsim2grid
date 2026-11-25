@@ -38,7 +38,7 @@ class LSGrid;
  * Fixed pattern. A controller bus holding its own voltage (the ordinary PV path) reserves a
  * BusVoltageControl (its Vm unknown and Q row, pinned while it is PV); making it PQ is a
  * value edit of the algorithm's injection (OuterInjections::Sbus) and of that control; making it
- * PV again resets its magnitude to its set-point (OuterControls::reset_vm). The bus' units share what is frozen as the results split any bus'
+ * PV again brings its magnitude back to its set-point within the next solve's first step (OuterControls::lift_vm). The bus' units share what is frozen as the results split any bus'
  * reactive power. A bus whose units are controllers of a voltage-control group (remote
  * regulation, an SVC) is frozen by holding each of them at its own limit
  * (VoltageControllerHold, VoltageControl::set_held_controllers), the group's other

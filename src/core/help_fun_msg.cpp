@@ -6628,6 +6628,12 @@ const std::string DocLSGrid::set_uniform_voltage_start = R"mydelimiter(
     voltage passed take the uniform start, not a row starting from a solved state), and kept
     by a pickle and by :func:`save_binary`.
 
+    The option is about the first solve only. Between two solves of an ``NROuter_*``
+    algorithm, a bus an outer loop gives its voltage control back (``ReactiveLimits``,
+    ``TransformerVoltageControl``) always takes this same lifted step, whatever the option:
+    it starts from the magnitude it had and reaches its target within the next solve's first
+    step, as in OpenLoadFlow (see "A bus back to PV" in the outer loops documentation).
+
     Parameters
     ----------
     uniform: ``bool``

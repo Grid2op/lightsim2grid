@@ -43,7 +43,10 @@ class LSGrid;
  *  - CONTROL: a transformer whose ratio left its group's range is rounded to its extreme tap
  *    and switched off, and the Newton runs again; once none does, each ratio is mapped back
  *    around its initial tap (TransformerRatioManager, `use_initial_tap_position`), every
- *    transformer is rounded to its closest tap and switched off, and the generators released;
+ *    transformer is rounded to its closest tap and switched off, and the generators released.
+ *    A released local bus is not reset to its set-point: the next solve's first step brings
+ *    it there from the magnitude it had (OuterControls::lift_vm), as OpenLoadFlow, which only
+ *    switches the voltage control back on; a released group controller regulates again;
  *  - COMPLETE: stable.
  * Everything is declared up front (a ratio column per transformer of a visible group, the
  * union of its rows; the switchable buses and held controllers of the freeze), so the whole
