@@ -2159,10 +2159,12 @@ public:
     // corrector to start from.
     void cpf_predict_into(CplxVect& V_pred, const Eigen::Ref<const RealVect>& z, real_type coeff) const;
 
-    // ----- uniform start (LSGrid::set_uniform_voltage_start) ----------------------
+    // ----- uniform start (LSGrid::set_uniform_voltage_start), buses back to PV --------
     //
     // The first iteration of a solve whose grid published the caller's starting
-    // magnitudes, taken as OpenLoadFlow takes it from its uniform start. A bus whose
+    // magnitudes, taken as OpenLoadFlow takes it from its uniform start. The same for the
+    // buses an outer loop put back to PV since the last Newton (set_vm_lift_at): their
+    // starting magnitude is the one they had, which overrides the caller's. A bus whose
     // magnitude is an unknown just starts from the caller's magnitude (seeded at a
     // target, it has a voltage row to reach it). A bus with none (PV, slack pinned by
     // a local regulator), or kept still by a masked / PV-pinned identity row, holds the
@@ -2171,7 +2173,8 @@ public:
     //
     //   begin_vm_lift()      puts the buses at the caller's magnitudes (returns false,
     //                        and changes nothing, when none differs or when this solve
-    //                        already did it: once per update_state);
+    //                        already did it: once per update_state, and once per
+    //                        set_vm_lift_at for the buses back to PV);
     //   add_vm_lift_rhs(res) once J is filled there, moves the jump of the held
     //                        magnitudes to the right-hand side through their dS/dVm
     //                        column -- J . dx = res - dS/dVm . dVm, the step of a system
@@ -2242,14 +2245,38 @@ public:
     Eigen::Ref<const RealVect> Vm() const { return Vm_; }
 
     // Set the magnitude of some buses (solver ids, pu) between two Newton solves, their
-    // angle kept: an outer loop putting a bus back to PV at its set-point (a pinned Q row
-    // keeps the magnitude the bus has, see set_pv_pinned_buses), or OpenLoadFlow's robust
-    // mode restarting a bus from 1 pu. Values only.
+    // angle kept: OpenLoadFlow's robust mode restarting a bus from 1 pu, a bus resuming the
+    // magnitude a previous solve left it at. Values only. A later set_vm_at of a bus drops
+    // a set_vm_lift_at of it.
     void set_vm_at(const std::vector<int>& buses, const std::vector<real_type>& vm) {
         ybus_v_at_V_ = false;
         for (std::size_t k = 0; k < buses.size() && k < vm.size(); ++k) {
             const int b = buses[k];
             if (b < 0 || b >= Vm_.size()) continue;
+            _drop_released_lift(b);
+            Vm_(b) = vm[k];
+            V_(b) = std::polar(vm[k], Va_(b));
+        }
+    }
+
+    // An outer loop putting a bus back to PV at its set-point `vm`, between two Newton
+    // solves (its pinned Q row keeps the magnitude the bus has, see set_pv_pinned_buses).
+    // The bus is seeded at `vm`, like set_vm_at, but the next Newton's first step starts it
+    // from the magnitude it had and moves it to `vm` within the step (begin_vm_lift), as
+    // OpenLoadFlow's `v = target` equation does. Restarting it there by value instead puts
+    // the whole jump on its branches before any step: next to a nearly zero impedance
+    // branch, a large enough mismatch to send the Newton to another solution.
+    void set_vm_lift_at(const std::vector<int>& buses, const std::vector<real_type>& vm) {
+        ybus_v_at_V_ = false;
+        for (std::size_t k = 0; k < buses.size() && k < vm.size(); ++k) {
+            const int b = buses[k];
+            if (b < 0 || b >= Vm_.size()) continue;
+            _drop_released_lift(b);
+            const real_type from = Vm_(b);
+            if (std::isfinite(from) && from > 0. && from != vm[k]) {
+                released_lift_buses_.push_back(b);
+                released_lift_start_.push_back(from);
+            }
             Vm_(b) = vm[k];
             V_(b) = std::polar(vm[k], Va_(b));
         }
@@ -2591,6 +2618,18 @@ private:
     std::vector<int>                       vm_lift_buses_;
     std::vector<real_type>                 vm_lift_target_;
     mutable CplxVect                       vm_lift_dS_;
+    // the buses back to PV since the last Newton (set_vm_lift_at) and the magnitudes they
+    // had, which the next begin_vm_lift starts them from
+    std::vector<int>                       released_lift_buses_;
+    std::vector<real_type>                 released_lift_start_;
+    void _drop_released_lift(int b) {
+        for (std::size_t k = 0; k < released_lift_buses_.size(); ++k) {
+            if (released_lift_buses_[k] != b) continue;
+            released_lift_buses_.erase(released_lift_buses_.begin() + static_cast<std::ptrdiff_t>(k));
+            released_lift_start_.erase(released_lift_start_.begin() + static_cast<std::ptrdiff_t>(k));
+            return;
+        }
+    }
 
     // Holds the state for HVDC, DistSlack, etc.
     std::tuple<Rest...>                    extensions_;

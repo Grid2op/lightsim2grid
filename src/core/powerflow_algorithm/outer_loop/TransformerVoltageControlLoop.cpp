@@ -374,7 +374,7 @@ void TransformerVoltageControlLoop::_release_generators(OuterContext & ctx)
             Sbus(f.bus_solver) = cplx_type(std::real(Sbus(f.bus_solver)), std::imag((*st.Sbus_target)(f.bus_solver)));
             BusVoltageControl * voltage = ctx.controls->bus_voltage(f.bus_solver);
             if (voltage != nullptr) voltage->set_pv();
-            ctx.controls->reset_vm(f.bus_solver, f.target_vm);
+            ctx.controls->lift_vm(f.bus_solver, f.target_vm);
         } else {
             for (int c : plan_.buses[static_cast<std::size_t>(f.entry)].ctrl_pos) {
                 VoltageControllerHold * hold = ctx.controls->controller_hold(c);

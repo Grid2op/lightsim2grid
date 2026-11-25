@@ -246,6 +246,9 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [ADDED] (C++) ``BranchControl::set_shift`` / ``set_ratio`` and ``ShuntControl::set_b``.
 - [FIXED] ``NROuterDist_*`` batches seeded from the "n" solve: a row whose imbalance was below the slack
   threshold put the units parked at a limit back in the share, which could cycle until the outer-iteration cap.
+- [FIXED] ``NROuter_*``: a bus switched back to PV now reaches its set-point within the next Newton's
+  first step, as in OpenLoadFlow, instead of being reset to it by value; next to a nearly zero
+  impedance branch, the reset could send the Newton to a low-voltage solution.
 - [FIXED] pypowsybl 1.17: the converter crashed on a ratio tap changer with no regulating terminal
   (``terminal not found for per unit V``), and could have dropped every ratio tap changer silently.
 - [FIXED] pypowsybl 1.17: an SVC's slope is read from the SVC table's new ``slope`` column; it was

@@ -270,13 +270,15 @@ void OuterControls::reset_states()
     suspended_.clear();
 }
 
-void OuterControls::take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm)
+void OuterControls::take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm, std::vector<char> & lift)
 {
     buses.clear();
     vm.clear();
+    lift.clear();
     for (const auto & bv : pending_vm_) {
-        buses.push_back(bv.first);
-        vm.push_back(bv.second);
+        buses.push_back(bv.bus);
+        vm.push_back(bv.vm);
+        lift.push_back(bv.lift ? 1 : 0);
     }
     pending_vm_.clear();
 }

@@ -365,9 +365,14 @@ class LS2G_API OuterControls
         }
 
         // ----- edits that need no reservation --------------------------------------------
-        /// restart the magnitude of `bus` from `vm_pu` at the next solve, once (a bus back to
-        /// PV at its set-point, the robust mode's 1 pu); the last one asked for a bus wins
-        void reset_vm(int bus, real_type vm_pu) { pending_vm_.emplace_back(bus, vm_pu); }
+        /// restart the magnitude of `bus` from `vm_pu` at the next solve, once (the robust
+        /// mode's 1 pu, a frozen bus resuming its last magnitude); the last one asked for a
+        /// bus wins
+        void reset_vm(int bus, real_type vm_pu) { pending_vm_.push_back(PendingVm{bus, vm_pu, false}); }
+        /// a bus back to PV: the next solve starts it from the magnitude it has and its first
+        /// step brings it to `vm_pu` (NRSystem::set_vm_lift_at), as OpenLoadFlow's voltage
+        /// equation does, rather than restarting it there by value
+        void lift_vm(int bus, real_type vm_pu) { pending_vm_.push_back(PendingVm{bus, vm_pu, true}); }
         /// a controller bus whose voltage control a loop took over for a while
         /// (TransformerVoltageControl): the other loops leave it alone meanwhile
         void set_suspended(int bus, bool val) { if (val) suspended_.insert(bus); else suspended_.erase(bus); }
@@ -425,8 +430,9 @@ class LS2G_API OuterControls
         const std::vector<ShuntGroup> & shunt_groups() const { return shunt_groups_; }
         const std::map<int, ShuntSectionControl *> & shunt_controllers() const { return shunt_controller_of_; }
 
-        /// the magnitudes to reset (bus, pu), in the order they were asked for, then forgotten
-        void take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm);
+        /// the magnitudes to reset (bus, pu), in the order they were asked for, then forgotten;
+        /// `lift[k]` whether the k-th is reached within the first step (lift_vm) rather than set
+        void take_pending_vm(std::vector<int> & buses, std::vector<real_type> & vm, std::vector<char> & lift);
 
     protected:
         // what the solve reads back, for the controls above (the inner algorithm's)
@@ -471,7 +477,8 @@ class LS2G_API OuterControls
         std::map<int, ShuntSectionControl *> shunt_controller_of_;
         std::vector<int> caller_switchable_;  // sorted, unique
         std::vector<int> caller_pinned_;      // sorted, unique
-        std::vector<std::pair<int, real_type> > pending_vm_;
+        struct PendingVm { int bus; real_type vm; bool lift; };
+        std::vector<PendingVm> pending_vm_;
         std::set<int> suspended_;
         SlackShareControl slack_share_;
         bool slack_share_reserved_ = false;
