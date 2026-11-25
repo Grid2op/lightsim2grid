@@ -52,6 +52,12 @@ class InjectionSweep(TimeSerie):
         sweep.nb_thread = 4  # optional, the results do not depend on it
         res_p, res_a, res_v = sweep.get_flows(scenario_id=..., seed=...)
 
+    See also
+    --------
+    :class:`lightsim2grid.scenarioSweep.ScenarioSweep`, to change the parameters of some
+    branches (``set_line_parameters`` / ``set_trafo_parameters``) together with the
+    injections in each scenario: :ref:`sweep_branch_parameters_injections`.
+
     """
 
     _CPP_CLASS = InjectionSweepCPP

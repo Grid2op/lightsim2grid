@@ -270,6 +270,7 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // a wrong answer.
         virtual void clear_batch_inputs() {
             _row_branch_overrides_.clear();
+            _row_branch_models_.clear();
             if(_batch_inputs_valid_){
                 _batch_inputs_valid_ = false;
                 _algo.reset();
@@ -447,6 +448,8 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
             if(overrides != nullptr){
                 while(next_override < overrides->size() && (*overrides)[next_override].branch_id < static_cast<int>(lag_id)) ++next_override;
             }
+            // this row's own parameters of some branches (ScenarioSweep set_*_parameters)
+            BranchRowModelCursor row_models(_row_models(static_cast<size_t>(i)), lag_id);
 
             // AC uses complex (Kron-reduced) coefficients, DC uses real susceptance coefficients
             Eigen::Ref<const CplxVect> vect_yac_ff = structure_data.yac_eff_11();
@@ -504,12 +507,20 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 // is exactly 0 regardless, so the base only has to avoid a 0/0.
                 const real_type bus_vn_kv_f = s1 ? bus_vn_kv(from_me) : (s2 ? bus_vn_kv(to_me) : real_type(1.));
 
+                // the row's own parameters of that branch: stamped as the container
+                // would with them (both ends closed for a branch the row placed)
+                const BranchPiModel * model = row_models.at(el_id);
                 real_type res;
                 if(is_ac){
                     const cplx_type Efrom = s1 ? V_row[from_me] : cplx_type(0., 0.);
                     const cplx_type Eto = s2 ? V_row[to_me] : cplx_type(0., 0.);
                     cplx_type y_ff = own_placement ? vect_yac_raw_ff(el_id) : vect_yac_ff(el_id);
                     cplx_type y_ft = own_placement ? vect_yac_raw_ft(el_id) : vect_yac_ft(el_id);
+                    if(model != nullptr){
+                        const std::array<cplx_type, 4> y = BranchContainer::kron_block(model->yac, true, s1, s2);
+                        y_ff = y[0];
+                        y_ft = y[1];
+                    }
                     // the taps this row's outer loops left the transformer at
                     const std::array<cplx_type, 4> * block = is_trafo ? _row_trafo_block(i, static_cast<int>(el_id)) : nullptr;
                     if(block != nullptr){ y_ff = (*block)[0]; y_ft = (*block)[1]; }
@@ -539,10 +550,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     const real_type theta_from = dc_lazy ? theta_row[from_me] : std::arg(V_row[from_me]);
                     const real_type theta_to = dc_lazy ? theta_row[to_me] : std::arg(V_row[to_me]);
                     real_type p_from, p_to;
-                    dc_branch_p_pu(vect_ydc_ff(el_id), vect_ydc_ft(el_id),
-                                   vect_ydc_tf(el_id), vect_ydc_tt(el_id),
-                                   is_trafo ? dc_x_tau_shift(el_id) : real_type(0.),
-                                   theta_from, theta_to, p_from, p_to);
+                    if(model != nullptr){
+                        dc_branch_p_pu(model->ydc[0], model->ydc[1], model->ydc[2], model->ydc[3],
+                                       model->dc_x_tau_shift, theta_from, theta_to, p_from, p_to);
+                    } else {
+                        dc_branch_p_pu(vect_ydc_ff(el_id), vect_ydc_ft(el_id),
+                                       vect_ydc_tf(el_id), vect_ydc_tt(el_id),
+                                       is_trafo ? dc_x_tau_shift(el_id) : real_type(0.),
+                                       theta_from, theta_to, p_from, p_to);
+                    }
                     res = p_from * sn_mva;
                     if(amps){
                         res = std::abs(res);
@@ -666,6 +682,9 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 while(next_override < overrides->size() && (*overrides)[next_override].branch_id < static_cast<int>(lag_id)) ++next_override;
             }
 
+            // this row's own parameters of some branches (ScenarioSweep set_*_parameters)
+            BranchRowModelCursor row_models(_row_models(static_cast<size_t>(i)), lag_id);
+
             real_type * out = _branch_results.row(i).data() + 4 * lag_id;
             const size_t nb_el = structure_data.nb();
             for(size_t el_id = 0; el_id < nb_el; ++el_id){
@@ -689,16 +708,24 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                 }
                 if(!on) continue;
                 real_type * dst = out + 4 * el_id;
+                // the row's own parameters of that branch: stamped as the container would
+                // with them (both ends closed for a branch the row placed)
+                const BranchPiModel * model = row_models.at(el_id);
                 if(is_ac){
                     const cplx_type Ef = s1 ? V_row[from_me] : cplx_type(0., 0.);
                     const cplx_type Et = s2 ? V_row[to_me] : cplx_type(0., 0.);
                     // the taps this row's outer loops left the transformer at, else the
                     // container's coefficients (the raw block for a branch the row placed)
                     const std::array<cplx_type, 4> * block = is_trafo ? _row_trafo_block(i, static_cast<int>(el_id)) : nullptr;
-                    const cplx_type y11 = block != nullptr ? (*block)[0] : (own_placement ? yac_raw_11(el_id) : yac_11(el_id));
-                    const cplx_type y12 = block != nullptr ? (*block)[1] : (own_placement ? yac_raw_12(el_id) : yac_12(el_id));
-                    const cplx_type y21 = block != nullptr ? (*block)[2] : (own_placement ? yac_raw_21(el_id) : yac_21(el_id));
-                    const cplx_type y22 = block != nullptr ? (*block)[3] : (own_placement ? yac_raw_22(el_id) : yac_22(el_id));
+                    std::array<cplx_type, 4> y;
+                    if(block != nullptr) y = *block;
+                    else if(model != nullptr) y = BranchContainer::kron_block(model->yac, true, s1, s2);
+                    else if(own_placement) y = {yac_raw_11(el_id), yac_raw_12(el_id), yac_raw_21(el_id), yac_raw_22(el_id)};
+                    else y = {yac_11(el_id), yac_12(el_id), yac_21(el_id), yac_22(el_id)};
+                    const cplx_type y11 = y[0];
+                    const cplx_type y12 = y[1];
+                    const cplx_type y21 = y[2];
+                    const cplx_type y22 = y[3];
                     const cplx_type S_f = Ef * std::conj(y11 * Ef + y12 * Et);
                     const cplx_type S_t = Et * std::conj(y22 * Et + y21 * Ef);
                     dst[0] = std::real(S_f) * sn_mva;
@@ -710,9 +737,14 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
                     const real_type theta_f = theta_row != nullptr ? theta_row[from_me] : std::arg(V_row[from_me]);
                     const real_type theta_t = theta_row != nullptr ? theta_row[to_me] : std::arg(V_row[to_me]);
                     real_type p1, p2;
-                    dc_branch_p_pu(ydc_11(el_id), ydc_12(el_id), ydc_21(el_id), ydc_22(el_id),
-                                   is_trafo ? dc_x_tau_shift(el_id) : real_type(0.),
-                                   theta_f, theta_t, p1, p2);
+                    if(model != nullptr){
+                        dc_branch_p_pu(model->ydc[0], model->ydc[1], model->ydc[2], model->ydc[3],
+                                       model->dc_x_tau_shift, theta_f, theta_t, p1, p2);
+                    } else {
+                        dc_branch_p_pu(ydc_11(el_id), ydc_12(el_id), ydc_21(el_id), ydc_22(el_id),
+                                       is_trafo ? dc_x_tau_shift(el_id) : real_type(0.),
+                                       theta_f, theta_t, p1, p2);
+                    }
                     dst[0] = p1 * sn_mva;
                     dst[2] = p2 * sn_mva;
                 }
@@ -1143,6 +1175,15 @@ class LS2G_API BaseBatchSolverSynch : protected BaseConstants
         // trafos) -- `connected` false for a disconnection, else the row's own end
         // buses. Read by _flows_of_row and the current-limit checks; empty otherwise.
         std::vector<std::vector<BranchBusOverride> > _row_branch_overrides_;
+        // ScenarioSweep set_line_parameters / set_trafo_parameters: per row, the branches
+        // the row gives parameters of its own, with their pi model then (sorted by branch
+        // id, gridmodel numbering). Read by the flow kernels and the current-limit checks
+        // in place of the container's coefficients; empty otherwise.
+        std::vector<std::vector<BranchRowModel> > _row_branch_models_;
+        // row i's branch models, null for none
+        const std::vector<BranchRowModel> * _row_models(size_t i) const {
+            return (i < _row_branch_models_.size() && !_row_branch_models_[i].empty()) ? &_row_branch_models_[i] : nullptr;
+        }
         // with outer loops: per row, the transformers whose taps the loops left elsewhere
         // than the grid has them, with their pi block there (y11, y12, y21, y22, pu), sorted
         // by transformer id. Read by the flow kernels in place of the container's

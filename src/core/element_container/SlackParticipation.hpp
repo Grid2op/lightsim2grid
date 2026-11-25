@@ -31,6 +31,29 @@
 namespace ls2g {
 
 /**
+ * Raw slack weights standing for the elements' own, for ONE state the caller solves (a
+ * batch row giving units weights of their own, see ScenarioSweep::set_gen_slack_weights):
+ * the element `el_id` takes `row[col_of_el[el_id]]` where that column exists and holds a
+ * number, its own weight where it does not (no column, or a NaN cell). A positive value
+ * makes a connected element a participant, flagged or not; 0 takes it out. Reads only:
+ * `col_of_el` (one entry per element, -1 for none) and `row` belong to the caller.
+ */
+struct SlackWeightOverride
+{
+    const std::vector<int> * col_of_el = nullptr;
+    const real_type * row = nullptr;
+
+    /// whether `el_id` has a weight of its own here
+    bool has(int el_id) const {
+        if(col_of_el == nullptr || row == nullptr) return false;
+        const int col = (*col_of_el)[static_cast<std::size_t>(el_id)];
+        return col >= 0 && !std::isnan(row[col]);
+    }
+    /// that weight (only meaningful where `has`)
+    real_type of(int el_id) const { return row[(*col_of_el)[static_cast<std::size_t>(el_id)]]; }
+};
+
+/**
  * Which elements of ONE container take part in the distributed slack, and with what
  * (un-normalised) weight.
  *
@@ -278,20 +301,32 @@ class SlackParticipation
         }
 
         /// with `can_participate`, the "can participate in the slack" units and weights
-        /// (set_can_participate) stand for the slack's own ones: see accumulate_raw / split
-        [[nodiscard]] bool participates(int el_id, const std::vector<bool> & status, bool can_participate) const {
-            if(!can_participate) return participates(el_id, status);
+        /// (set_can_participate) stand for the slack's own ones: see accumulate_raw / split.
+        /// `over` (nullable, ignored with `can_participate`): the weights a caller's state
+        /// gives some elements instead of theirs (see SlackWeightOverride)
+        [[nodiscard]] bool participates(int el_id, const std::vector<bool> & status, bool can_participate,
+                                        const SlackWeightOverride * over = nullptr) const {
+            if(!can_participate){
+                if(over != nullptr && over->has(el_id)){
+                    return status[el_id] && over->of(el_id) >= BaseConstants::_tol_equal_float;
+                }
+                return participates(el_id, status);
+            }
             return status[el_id] && can_participate_weight_[el_id] > 0.;
         }
-        [[nodiscard]] real_type weight(int el_id, bool can_participate) const {
-            return can_participate ? can_participate_weight_[el_id] : weight_[el_id];
+        [[nodiscard]] real_type weight(int el_id, bool can_participate,
+                                       const SlackWeightOverride * over = nullptr) const {
+            if(can_participate) return can_participate_weight_[el_id];
+            if(over != nullptr && over->has(el_id)) return over->of(el_id);
+            return weight_[el_id];
         }
 
         /**
          * Add every participant's raw weight to its solver bus in `res` (sized by the
          * number of solver buses). `off`, when non-null, is a nb()-sized mask of
          * elements to leave out on top of the participation rule -- what a batch sweep
-         * uses for a row whose contingency disconnects a participant.
+         * uses for a row whose contingency disconnects a participant. `over` (nullable):
+         * the weights that row gives some elements instead of theirs.
          */
         void accumulate_raw(Eigen::Ref<RealVect> res,
                             const std::vector<bool> & status,
@@ -299,11 +334,12 @@ class SlackParticipation
                             const SolverBusIdVect & id_grid_to_solver,
                             const std::vector<bool> * off,
                             const char * element_name,
-                            bool can_participate = false) const
+                            bool can_participate = false,
+                            const SlackWeightOverride * over = nullptr) const
         {
             const int nb_el = static_cast<int>(slackbus_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id){
-                if(!participates(el_id, status, can_participate)) continue;
+                if(!participates(el_id, status, can_participate, over)) continue;
                 if(off != nullptr && (*off)[el_id]) continue;
                 const int bus_me = bus_id(el_id).cast_int();
                 const int bus_solver = bus_me == BaseConstants::_deactivated_bus_id ?
@@ -319,7 +355,7 @@ class SlackParticipation
                          << " is connected to a disconnected bus while being connected to the grid.";
                     throw std::runtime_error(exc_.str());
                 }
-                res.coeffRef(bus_solver) += weight(el_id, can_participate);
+                res.coeffRef(bus_solver) += weight(el_id, can_participate, over);
             }
         }
 
@@ -344,7 +380,8 @@ class SlackParticipation
          * bus) onto its participants, proportionally to their raw weight over
          * `bus_raw_total` -- the raw weight of EVERY participant of that bus, all
          * families included. `sign` is +1 for a container in generator convention, -1
-         * for one in load convention.
+         * for one in load convention. `over` (nullable): the weights the solved state gave
+         * some elements instead of theirs, the ones `bus_raw_total` was summed with.
          */
         void split(Eigen::Ref<RealVect> res_p,
                    real_type sign,
@@ -354,7 +391,8 @@ class SlackParticipation
                    const GlobalBusIdVect & bus_id,
                    const SolverBusIdVect & id_grid_to_solver,
                    const char * fun_name,
-                   bool can_participate = false) const
+                   bool can_participate = false,
+                   const SlackWeightOverride * over = nullptr) const
         {
             if(bus_raw_total.size() != node_mismatch.size()){
                 // TODO DEBUG MODE: perform this check only in debug mode
@@ -365,13 +403,13 @@ class SlackParticipation
             }
             const int nb_el = static_cast<int>(slackbus_.size());
             for(int el_id = 0; el_id < nb_el; ++el_id){
-                if(!participates(el_id, status, can_participate)) continue;
+                if(!participates(el_id, status, can_participate, over)) continue;
                 const int bus_me = bus_id(el_id).cast_int();
                 if(can_participate && bus_me == BaseConstants::_deactivated_bus_id) continue;
                 const int bus_solver = id_grid_to_solver[bus_me].cast_int();
                 if(can_participate && bus_solver == BaseConstants::_deactivated_bus_id) continue;
                 // TODO DEBUG MODE: check bus_solver >= 0 and bus_raw_total[bus_solver] > 0
-                res_p(el_id) += sign * node_mismatch(bus_solver) * weight(el_id, can_participate) / bus_raw_total(bus_solver);
+                res_p(el_id) += sign * node_mismatch(bus_solver) * weight(el_id, can_participate, over) / bus_raw_total(bus_solver);
             }
         }
 

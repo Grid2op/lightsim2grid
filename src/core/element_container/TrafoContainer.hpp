@@ -313,6 +313,18 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
     public:
         Eigen::Ref<const RealVect> dc_x_tau_shift() const {return dc_x_tau_shift_;}
 
+        /**
+         * The pi model transformer `el_id` would have with these parameters, without
+         * changing it: r, x, h1, h2 (pu) the NEUTRAL values update_physical_parameters takes
+         * (its tap changers' corrections at their current positions, and the shift-dependent
+         * impedance of set_shift_dependent_rx at `shift_rad`, applied on top), `ratio` and
+         * `shift_rad` what change_ratio / change_shift take. A NaN keeps the transformer's
+         * own value (a complex one when either part is NaN): with every argument NaN,
+         * exactly the coefficients the transformer has.
+         */
+        BranchPiModel pi_model_with(int el_id, real_type r, real_type x, cplx_type h1, cplx_type h2,
+                                    real_type ratio, real_type shift_rad) const;
+
         void change_ratio(
             int el_id,
             real_type new_ratio,
@@ -430,6 +442,16 @@ class LS2G_API TrafoContainer final : public BranchContainer, public IteratorAdd
         std::vector<std::pair<real_type, real_type> > results_saved_values_;
         std::vector<std::pair<int, int> > results_saved_positions_;
 
+        bool _tapped(int el_id) const { return ratio_taps_.has(el_id) || phase_taps_.has(el_id); }
+        bool _shift_dependent(int el_id) const { return shift_dependent_rx_ && !rx_corr_alpha_[el_id].empty(); }
+        // r, x, h1, h2 (neutral on input) at the tap positions and at the shift `shift`
+        // (the shift-dependent impedance): unchanged for a transformer with neither
+        void _at_taps_and_shift(int el_id, real_type shift, real_type & r, real_type & x,
+                                cplx_type & h1, cplx_type & h2) const;
+        // the pi model (AC and DC) of the given parameters, at the taps already
+        static BranchPiModel _trafo_pi_model(real_type r, real_type x, cplx_type h1, cplx_type h2,
+                                             real_type ratio, real_type shift, bool tap_side1,
+                                             bool ignore_tap_side_for_shift);
         // the AC pi block (y11, y12, y21, y22) of the given parameters
         static std::array<cplx_type, 4> _pi_coeffs(real_type r, real_type x, cplx_type h1, cplx_type h2,
                                                    real_type ratio, real_type shift, bool tap_side1,

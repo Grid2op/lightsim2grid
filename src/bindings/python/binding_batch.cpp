@@ -485,7 +485,9 @@ void bind_row_ybus(py::class_<T> & cls)
              },
              py::arg("row"), py::arg("solver_numbering") = false,
              "The admittance matrix row `row` of the last compute() was solved with (AC "
-             "algorithm only): the base one without the branches that row disconnects. An entry "
+             "algorithm only): the base one without the branches that row disconnects, and with "
+             "the parameters it gives its branches (ScenarioSweep set_line_parameters / "
+             "set_trafo_parameters). An entry "
              "only those branches contributed to is removed, not kept as an explicit zero, so "
              "the pattern is the one a one-at-a-time solve of that topology builds. Grid bus "
              "numbering, shape (total_bus, total_bus) like LSGrid.get_Ybus, or the solver one "
@@ -1083,6 +1085,50 @@ void bind_batch(py::module_& m) {
         .def("set_contingency_trafos", &ScenarioSweep::set_contingency_trafos<>, py::arg("mask"),
              "Per-step trafo contingency mask, shape (n_simul, n_trafo), dtype bool. "
              "See set_contingency_lines().")
+        .def("set_line_parameters", &ScenarioSweep::set_line_parameters<>,
+             py::arg("line_ids"), py::arg("r"), py::arg("x"), py::arg("h1"), py::arg("h2"),
+             "The parameters of the powerlines `line_ids` in each simulation: r, x (float) and "
+             "h1, h2 (complex, g + j.b at side 1 / side 2), pu, each of shape "
+             "(n_simul, len(line_ids)). A NaN keeps the grid's value (a complex one when either "
+             "part is NaN). Same meaning as LSGrid.update_powerlines_parameters. Locks / checks "
+             "the number of simulations; replaces an earlier call; an empty `line_ids` clears it. "
+             "The rows keep one symbolic analysis: only values of existing Ybus entries change.")
+        .def("set_trafo_parameters", &ScenarioSweep::set_trafo_parameters<>,
+             py::arg("trafo_ids"), py::arg("r"), py::arg("x"), py::arg("h1"), py::arg("h2"),
+             py::arg("ratio"), py::arg("shift_rad"),
+             "The parameters of the transformers `trafo_ids` in each simulation, as "
+             "set_line_parameters, plus their ratio and shift (radian, side 1), each of shape "
+             "(n_simul, len(trafo_ids)). r, x, h1, h2 are the NEUTRAL values (those "
+             "LSGrid.update_trafos_parameters_full takes): the tap changers' corrections at "
+             "their current positions are applied on top. ratio and shift_rad are what "
+             "change_ratio_trafo / change_shift_trafo take. A row changing a transformer whose "
+             "taps an outer loop of the algorithm regulates is left out of the batch "
+             "(BATCH_UNSUPPORTED).")
+        .def("set_gen_slack_weights", &ScenarioSweep::set_gen_slack_weights<>,
+             py::arg("gen_ids"), py::arg("weights"),
+             "The distributed-slack weight of the generators `gen_ids` in each simulation: "
+             "`weights` has shape (n_simul, len(gen_ids)), raw weights as "
+             "LSGrid.add_gen_slackbus takes them, 0 taking the generator out of that row's "
+             "slack, NaN keeping the grid's weight. The row solves, and reports its "
+             "generators' active power and limit violations, as the grid would with those "
+             "weights; the Jacobian keeps its pattern (the weights are values of its slack "
+             "column).\n\n"
+             "The buses sharing the slack are the grid's: compute() raises ValueError for a "
+             "positive weight to a unit on a bus with no participant of the grid's slack (make "
+             "it one with add_gen_slackbus and give it 0 in the rows where it takes no share), "
+             "or to one the row's topological action places. redistribute_slack shares with the "
+             "row's weights too. A "
+             "row leaving no participant puts the whole slack on the reference bus. Under outer "
+             "loops the DistributedSlack loop shares with the row's weights: only a unit that can "
+             "take part in the grid's slack may get a positive weight, and with "
+             "init_from_n_powerflow such a row starts from the grid's targets, not from where the "
+             "\"n\" solve's loops left them. "
+             "Locks / checks the number of simulations; replaces an earlier call; an empty "
+             "`gen_ids` clears it.")
+        .def("set_storage_slack_weights", &ScenarioSweep::set_storage_slack_weights<>,
+             py::arg("storage_ids"), py::arg("weights"),
+             "The same as set_gen_slack_weights for the storage units `storage_ids` "
+             "(LSGrid.add_storage_slackbus).")
         .def("set_topo_actions", &ScenarioSweep::set_topo_actions<>, py::arg("actions"),
              "One topological action (TopoAction, grid2op semantics: set_bus on loads / "
              "generators / storage units / line and trafo ends, set_line_status) per row, "

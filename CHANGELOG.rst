@@ -232,6 +232,11 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 
 [1.3.2] 20xx-xx-xx
 --------------------
+- [ADDED] ``ScenarioSweep.set_line_parameters`` / ``set_trafo_parameters``: per-row r, x, h (and a
+  transformer's ratio and shift), keeping the batch's single symbolic analysis.
+- [ADDED] ``ScenarioSweep.set_gen_slack_weights`` / ``set_storage_slack_weights``: per-row
+  distributed-slack weights, on the buses the grid's slack already covers, ``redistribute_slack``
+  and the outer loops (``DistributedSlack``) included.
 - [ADDED] doc page ``docs/add_linear_solver.rst``: how to add a linear solver (C or C++ API), as a
   plugin or in a fork, with an example plugin (``examples/linear_solver_plugin``).
 - [FIXED] a DC algorithm selected by name only (a plugin, or a built-in with no ``AlgorithmType``

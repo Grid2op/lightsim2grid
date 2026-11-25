@@ -2577,7 +2577,9 @@ void LSGrid::generator_results(bool ac,
                                RealVect & p_mw,
                                RealVect & q_mvar,
                                const std::vector<std::pair<int, int> > & gen_placed,
-                               const std::vector<real_type> & outer_gen_target_p) const
+                               const std::vector<real_type> & outer_gen_target_p,
+                               const SlackWeightOverride * gen_weights,
+                               const SlackWeightOverride * storage_weights) const
 {
     const int nb_gen = static_cast<int>(generators_.nb());
     const auto check_size = [nb_gen](std::size_t size, const char * what){
@@ -2622,8 +2624,9 @@ void LSGrid::generator_results(bool ac,
     }
     const RealVect raw_weights = _raw_slack_weights_solver(static_cast<size_t>(active_mismatch_mw.size()),
                                                            id_me_to_solver, &slack_off,
-                                                           storage_no_slack_share.empty() ? nullptr : &storage_no_slack_share);
-    generators_.add_p_slack(p_mw, active_mismatch_mw, id_me_to_solver, raw_weights, slack_off);
+                                                           storage_no_slack_share.empty() ? nullptr : &storage_no_slack_share,
+                                                           false, gen_weights, storage_weights);
+    generators_.add_p_slack(p_mw, active_mismatch_mw, id_me_to_solver, raw_weights, slack_off, gen_weights);
 
     // ---- Q: what needs no powerflow, the residual shares, the write-back -------------
     q_mvar = RealVect::Zero(nb_gen);
@@ -3472,17 +3475,21 @@ RealVect LSGrid::_raw_slack_weights_solver(size_t nb_bus_solver,
                                            const SolverBusIdVect & id_me_to_solver,
                                            const std::vector<bool> * gen_off,
                                            const std::vector<bool> * storage_off,
-                                           bool can_participate) const{
+                                           bool can_participate,
+                                           const SlackWeightOverride * gen_weights,
+                                           const SlackWeightOverride * storage_weights) const{
     RealVect res = RealVect::Zero(static_cast<Eigen::Index>(nb_bus_solver));
-    generators_.accumulate_slack_weights_solver(res, id_me_to_solver, gen_off, can_participate);
-    storages_.accumulate_slack_weights_solver(res, id_me_to_solver, storage_off, can_participate);
+    generators_.accumulate_slack_weights_solver(res, id_me_to_solver, gen_off, can_participate, gen_weights);
+    storages_.accumulate_slack_weights_solver(res, id_me_to_solver, storage_off, can_participate, storage_weights);
     return res;
 }
 
 RealVect LSGrid::get_slack_weights_solver_without(size_t nb_bus_solver,
                                                   const SolverBusIdVect & id_me_to_solver,
                                                   const std::vector<bool> & gen_off,
-                                                  const std::vector<bool> & storage_off) const{
+                                                  const std::vector<bool> & storage_off,
+                                                  const SlackWeightOverride * gen_weights,
+                                                  const SlackWeightOverride * storage_weights) const{
     if(gen_off.size() != static_cast<std::size_t>(generators_.nb())){
         std::ostringstream exc_;
         exc_ << "LSGrid::get_slack_weights_solver_without: 'gen_off' has " << gen_off.size()
@@ -3496,7 +3503,8 @@ RealVect LSGrid::get_slack_weights_solver_without(size_t nb_bus_solver,
         throw std::runtime_error(exc_.str());
     }
     RealVect res = _raw_slack_weights_solver(nb_bus_solver, id_me_to_solver, &gen_off,
-                                             storage_off.empty() ? nullptr : &storage_off);
+                                             storage_off.empty() ? nullptr : &storage_off,
+                                             false, gen_weights, storage_weights);
     const real_type sum_res = res.sum();
     // no participant left: leave the vector at zero rather than dividing by it, and let
     // the caller decide (see BaseBatchSweep::_row_slack_weights)
