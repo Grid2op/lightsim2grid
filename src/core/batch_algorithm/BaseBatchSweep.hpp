@@ -9,6 +9,8 @@
 #ifndef BASEBATCHSWEEP_H
 #define BASEBATCHSWEEP_H
 
+#include <functional>
+
 #include "BaseBatchSolverSynch.hpp"
 #include "YbusPolicy.hpp"
 #include "TopoPlan.hpp"
@@ -136,6 +138,33 @@ below directly, essentially all of them are defined inline, right here, rather t
 split out to `BaseBatchSweep.cpp` -- only `compute()`, `_run_range()` and
 `_run_one_step()` are ordinary (non-template) members and live in the .cpp.
  **/
+// ScenarioSweep set_gen_slack_weights / set_storage_slack_weights: per row, the raw
+// slack weight of some units (NaN: the grid's), a registration (L0, like the
+// injections). `col_of_el` is per element its column (-1: none), `row_has` per row
+// whether some cell holds a number.
+struct SlackWeightTable {
+    std::vector<int> ids;
+    ::ls2g::YbusPolicy::ParamRealMat w;  // (nb_rows, ids.size()), row-major
+    std::vector<int> col_of_el;
+    std::vector<char> row_has;
+    bool empty() const { return ids.empty(); }
+    void clear(){ ids.clear(); w = ::ls2g::YbusPolicy::ParamRealMat(); col_of_el.clear(); row_has.clear(); }
+    bool has_row(size_t i) const { return i < row_has.size() && row_has[i]; }
+    // row i's weights as SlackParticipation reads them (inactive where the row has none)
+    SlackWeightOverride row(size_t i) const {
+        SlackWeightOverride res;
+        if(!has_row(i)) return res;
+        res.col_of_el = &col_of_el;
+        res.row = w.data() + static_cast<Eigen::Index>(i) * w.cols();
+        return res;
+    }
+    // row i's weight of element `el_id`, `own` where the row gives none
+    real_type weight(size_t i, int el_id, real_type own) const {
+        const SlackWeightOverride over = row(i);
+        return over.has(el_id) ? over.of(el_id) : own;
+    }
+};
+
 template<class YbusPolicy, class SbusPolicy, BatchInitKind INIT>
 class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
 {
@@ -280,6 +309,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         void clear() override {
             BaseBatchSolverSynch::clear();   // -> L1 -> L2 -> L3
             _reset_ybus_policy();
+            _gen_slack_weights_.clear();
+            _storage_slack_weights_.clear();
             sbus_policy_.clear();
             topo_actions_.clear();
             _status = 1;
@@ -369,6 +400,97 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             clear_batch_inputs();
 
             ybus_policy_.trafo_mask = mask;
+        }
+
+        // ============ per-row branch parameters (Contingency && Vary only) =======
+        /**
+         * ScenarioSweep only: the parameters of the lines `line_ids` in each row, one row
+         * per simulation and one column per id (r, x real; h1, h2 the complex shunt
+         * admittance at each end, g + j.b), in pu -- what update_powerlines_parameters
+         * takes. A NaN cell keeps the grid's value (a complex one when either part is NaN).
+         * The row solves, and reports flows and violations, as the grid would with those
+         * values: its Ybus entries change value, never pattern, so the batch keeps its one
+         * symbolic analysis. A row that also disconnects the line ignores its parameters.
+         *
+         * Locks / checks the number of simulations. Replaces what an earlier call gave;
+         * an empty `line_ids` clears it (the matrices are not read then). Refuses an id out
+         * of range or named twice, a matrix of another shape, an infinite value and r and x
+         * both 0. compute() refuses a row whose values give a non-finite admittance (x 0 in
+         * DC, say).
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_line_parameters(const Eigen::Ref<const IntVect> & line_ids,
+                                 const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & r,
+                                 const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & x,
+                                 const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h1,
+                                 const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h2) {
+            _set_branch_parameters(ybus_policy_.line_params, n_line_, "set_line_parameters",
+                                   line_ids, r, x, h1, h2, nullptr, nullptr);
+        }
+        /**
+         * ScenarioSweep only: the same for the transformers `trafo_ids`, with their ratio
+         * and their shift (radian) too. r, x, h1, h2 are the NEUTRAL values, those
+         * update_trafos_parameters_full takes: a transformer with tap changers (or a
+         * shift-dependent impedance) gets their corrections at their current positions
+         * applied on top, exactly as the grid applies them. `ratio` and `shift_rad` are the
+         * values change_ratio_trafo / change_shift_trafo take (the shift on side 1). Also
+         * refuses a ratio that is not positive. compute() leaves out of the batch
+         * (BATCH_UNSUPPORTED) a row changing a transformer whose taps an outer loop of the
+         * algorithm regulates.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_trafo_parameters(const Eigen::Ref<const IntVect> & trafo_ids,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & r,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & x,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h1,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h2,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & ratio,
+                                  const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & shift_rad) {
+            _set_branch_parameters(ybus_policy_.trafo_params, n_trafos_, "set_trafo_parameters",
+                                   trafo_ids, r, x, h1, h2, &ratio, &shift_rad);
+        }
+
+        // ============ per-row slack weights (Contingency && Vary only) ===========
+        /**
+         * ScenarioSweep only: the distributed-slack weight of the generators `gen_ids` in
+         * each row, one row per simulation and one column per id: the raw (un-normalised)
+         * weight add_gen_slackbus takes, 0 taking the generator out of that row's slack. A
+         * NaN cell keeps the grid's weight. The row solves, and reports its generators'
+         * active power and their limit violations, as the grid would with those weights:
+         * they are values of the Jacobian's slack column, never its pattern.
+         *
+         * Which buses share the slack is the grid's, fixed for the batch: compute() refuses
+         * a positive weight to a generator standing on a bus without a slack participant
+         * in the grid (make it one with add_gen_slackbus, and give it 0 in the rows where
+         * it takes no share), and one the row's topological action moves or reactivates. A
+         * row leaving no participant puts the whole slack on the reference bus. A row
+         * disconnecting a generator ignores its weight.
+         *
+         * Locks / checks the number of simulations. Replaces what an earlier call gave; an
+         * empty `gen_ids` clears it. Refuses an id out of range or named twice, a matrix
+         * of another shape and a value that is negative or infinite. With redistribute_slack
+         * the bounded pre-pass shares with the row's weights too. Under outer loops the
+         * DistributedSlack loop shares with them; only a unit able to take part in the grid's
+         * slack ("can participate") may get a positive weight there, and such a row does not
+         * resume the "n" solve's loops (init_from_n_powerflow): it starts from the grid's
+         * targets.
+         */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_gen_slack_weights(const Eigen::Ref<const IntVect> & gen_ids,
+                                   const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & weights) {
+            _set_slack_weights(_gen_slack_weights_, static_cast<size_t>(_grid_model.get_generators_as_data().nb()),
+                               "set_gen_slack_weights", gen_ids, weights);
+        }
+        /** ScenarioSweep only: the same for the storage units `storage_ids` (add_storage_slackbus). */
+        template<class Y = YbusPolicy, class S = SbusPolicy,
+                 typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
+        void set_storage_slack_weights(const Eigen::Ref<const IntVect> & storage_ids,
+                                       const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & weights) {
+            _set_slack_weights(_storage_slack_weights_, static_cast<size_t>(_grid_model.get_storages().nb()),
+                               "set_storage_slack_weights", storage_ids, weights);
         }
         /**
          * ScenarioSweep only: row i, column g True means "disconnect generator g for
@@ -1708,6 +1830,159 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 throw std::runtime_error(exc_.str());
             }
         }
+        // set_line_parameters / set_trafo_parameters: everything checked before anything
+        // is locked or registered (`ratio` and `shift` null for lines)
+        void _set_branch_parameters(::ls2g::YbusPolicy::BranchParams & table, size_t nb_el, const char * setter_name,
+                                    const Eigen::Ref<const IntVect> & ids,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & r,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & x,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h1,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamCplxMat> & h2,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> * ratio,
+                                    const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> * shift){
+            const auto fail = [this, setter_name](const std::string & what){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::" << setter_name << ": " << what;
+                throw std::invalid_argument(exc_.str());
+            };
+            if(ids.size() == 0){
+                // cleared: what the rows were given goes, as a registration does
+                clear_batch_inputs();
+                table.clear();
+                return;
+            }
+            const Eigen::Index nb_ids = ids.size();
+            std::vector<int> sorted(ids.data(), ids.data() + nb_ids);
+            for(int id : sorted){
+                if(id < 0 || static_cast<size_t>(id) >= nb_el){
+                    std::ostringstream msg;
+                    msg << "id " << id << " is out of range, the grid has " << nb_el << " of them.";
+                    fail(msg.str());
+                }
+            }
+            std::sort(sorted.begin(), sorted.end());
+            const auto dup = std::adjacent_find(sorted.begin(), sorted.end());
+            if(dup != sorted.end()){
+                std::ostringstream msg;
+                msg << "id " << *dup << " is named twice.";
+                fail(msg.str());
+            }
+            const Eigen::Index nb_rows = r.rows();
+            const auto check_shape = [&](Eigen::Index rows, Eigen::Index cols, const char * name){
+                if(rows == nb_rows && cols == nb_ids) return;
+                std::ostringstream msg;
+                msg << "`" << name << "` has shape (" << rows << ", " << cols << "), expected (" << nb_rows
+                    << ", " << nb_ids << "): one row per simulation, one column per id (the rows of `r` set the count).";
+                fail(msg.str());
+            };
+            check_shape(r.rows(), r.cols(), "r");
+            check_shape(x.rows(), x.cols(), "x");
+            check_shape(h1.rows(), h1.cols(), "h1");
+            check_shape(h2.rows(), h2.cols(), "h2");
+            if(ratio != nullptr) check_shape(ratio->rows(), ratio->cols(), "ratio");
+            if(shift != nullptr) check_shape(shift->rows(), shift->cols(), "shift_rad");
+            const auto cell = [](Eigen::Index row, Eigen::Index col){
+                std::ostringstream msg;
+                msg << "(row " << row << ", column " << col << ")";
+                return msg.str();
+            };
+            for(Eigen::Index row = 0; row < nb_rows; ++row){
+                for(Eigen::Index col = 0; col < nb_ids; ++col){
+                    const cplx_type h1_ = h1(row, col), h2_ = h2(row, col);
+                    if(std::isinf(r(row, col)) || std::isinf(x(row, col)) ||
+                       std::isinf(std::real(h1_)) || std::isinf(std::imag(h1_)) ||
+                       std::isinf(std::real(h2_)) || std::isinf(std::imag(h2_)) ||
+                       (shift != nullptr && std::isinf((*shift)(row, col)))){
+                        fail("an infinite value at " + cell(row, col) + ". Use NaN to keep the grid's value.");
+                    }
+                    if(r(row, col) == 0. && x(row, col) == 0.){
+                        fail("r and x are both 0 at " + cell(row, col) + ": the series impedance would be 0.");
+                    }
+                    if(ratio != nullptr){
+                        const real_type rho = (*ratio)(row, col);
+                        if(!std::isnan(rho) && !(rho > 0. && std::isfinite(rho))){
+                            fail("a ratio that is not a positive number at " + cell(row, col) + ".");
+                        }
+                    }
+                }
+            }
+            _lock_or_check_nb_steps(nb_rows, setter_name);
+            // a registration (L2), as the masks: what was built for the batch goes with it
+            clear_batch_inputs();
+            table.ids.assign(ids.data(), ids.data() + nb_ids);
+            table.r = r;
+            table.x = x;
+            table.h1 = h1;
+            table.h2 = h2;
+            if(ratio != nullptr){ table.ratio = *ratio; table.shift = *shift; }
+            else { table.ratio = ::ls2g::YbusPolicy::ParamRealMat(); table.shift = ::ls2g::YbusPolicy::ParamRealMat(); }
+        }
+
+        // set_gen_slack_weights / set_storage_slack_weights: everything checked before
+        // anything is locked or registered
+        void _set_slack_weights(SlackWeightTable & table, size_t nb_el, const char * setter_name,
+                                const Eigen::Ref<const IntVect> & ids,
+                                const Eigen::Ref<const ::ls2g::YbusPolicy::ParamRealMat> & weights){
+            const auto fail = [this, setter_name](const std::string & what){
+                std::ostringstream exc_;
+                exc_ << algo_name() << "::" << setter_name << ": " << what;
+                throw std::invalid_argument(exc_.str());
+            };
+            if(ids.size() == 0){
+                clear_batch_inputs();
+                table.clear();
+                return;
+            }
+            const Eigen::Index nb_ids = ids.size();
+            std::vector<int> sorted(ids.data(), ids.data() + nb_ids);
+            for(int id : sorted){
+                if(id < 0 || static_cast<size_t>(id) >= nb_el){
+                    std::ostringstream msg;
+                    msg << "id " << id << " is out of range, the grid has " << nb_el << " of them.";
+                    fail(msg.str());
+                }
+            }
+            std::sort(sorted.begin(), sorted.end());
+            const auto dup = std::adjacent_find(sorted.begin(), sorted.end());
+            if(dup != sorted.end()){
+                std::ostringstream msg;
+                msg << "id " << *dup << " is named twice.";
+                fail(msg.str());
+            }
+            if(weights.cols() != nb_ids){
+                std::ostringstream msg;
+                msg << "`weights` has " << weights.cols() << " columns for " << nb_ids
+                    << " ids: one row per simulation, one column per id.";
+                fail(msg.str());
+            }
+            const Eigen::Index nb_rows = weights.rows();
+            for(Eigen::Index row = 0; row < nb_rows; ++row){
+                for(Eigen::Index col = 0; col < nb_ids; ++col){
+                    const real_type w = weights(row, col);
+                    if(std::isnan(w)) continue;
+                    if(!std::isfinite(w) || w < 0.){
+                        std::ostringstream msg;
+                        msg << "a weight that is negative or infinite at (row " << row << ", column " << col
+                            << "): " << w << ". Use 0 to take the unit out of the slack, NaN to keep the grid's weight.";
+                        fail(msg.str());
+                    }
+                }
+            }
+            _lock_or_check_nb_steps(nb_rows, setter_name);
+            // a registration (L2): what was built for the batch goes with it
+            clear_batch_inputs();
+            table.ids.assign(ids.data(), ids.data() + nb_ids);
+            table.w = weights;
+            table.col_of_el.assign(nb_el, -1);
+            for(Eigen::Index col = 0; col < nb_ids; ++col) table.col_of_el[static_cast<size_t>(ids(col))] = static_cast<int>(col);
+            table.row_has.assign(static_cast<size_t>(nb_rows), 0);
+            for(Eigen::Index row = 0; row < nb_rows; ++row){
+                for(Eigen::Index col = 0; col < nb_ids; ++col){
+                    if(!std::isnan(weights(row, col))){ table.row_has[static_cast<size_t>(row)] = 1; break; }
+                }
+            }
+        }
+
         void _lock_or_check_nb_steps(Eigen::Index rows, const char * setter_name){
             _results_stale_ = true;
             if(_nb_steps_locked < 0){ _nb_steps_locked = rows; return; }
@@ -1716,7 +1991,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 exc_ << algo_name() << "::" << setter_name << ": got " << rows
                      << " rows, but a previous call already fixed the number of "
                         "simulations to " << _nb_steps_locked << ". Every modify_* / "
-                        "set_contingency_* call must agree on the number of rows.";
+                        "set_contingency_* / set_*_parameters call must agree on the number of rows.";
                 throw std::runtime_error(exc_.str());
             }
         }
@@ -2016,7 +2291,11 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
         void _prepare_ybus_varying(bool ac_solver_used, Eigen::Index nb_steps) {
-            ybus_policy_.init_li_coeffs_from_masks(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_, nb_steps);
+            // each row's own branch parameters, as pi models: the matrix edit below and every
+            // result of the row (flows, violations) read them
+            ybus_policy_.resolve_branch_models(_grid_model, ac_solver_used, n_line_, nb_steps, _row_branch_models_);
+            ybus_policy_.init_li_coeffs_from_masks(_grid_model, ac_solver_used, active_layout().id_me_to_solver, n_line_, nb_steps,
+                                                   _row_branch_models_);
         }
 
         // ----- Sbus-varying preparation: 2-way --------------------------------
@@ -2055,6 +2334,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             ybus_policy_.storage_mask = BoolMat();
             ybus_policy_.svc_mask = BoolMat();
             ybus_policy_.hvdc_mask = BoolMat();
+            ybus_policy_.line_params.clear();
+            ybus_policy_.trafo_params.clear();
         }
         template<class Y = YbusPolicy, typename std::enable_if<!Y::supports_contingency, int>::type = 0>
         void _reset_ybus_policy() {}
@@ -2538,6 +2819,21 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             _fill_outer_row_trips(i, v);
             _fill_outer_row_topo(i, v);
             _fill_outer_row_branches(i, v);
+            _fill_outer_row_slack_weights(i, v);
+        }
+        // the weights row i gives some units (set_gen_slack_weights): what the DistributedSlack
+        // loop shares the slack with (OuterGridView::gen_slack_weight). Nothing allocated on a
+        // row giving none.
+        void _fill_outer_row_slack_weights(size_t i, OuterRowView & v) const {
+            const auto fill = [i](const SlackWeightTable & table, size_t nb_el, std::vector<real_type> & out){
+                if(!table.has_row(i)) return;
+                out.assign(nb_el, std::numeric_limits<real_type>::quiet_NaN());
+                for(size_t col = 0; col < table.ids.size(); ++col){
+                    out[static_cast<size_t>(table.ids[col])] = table.w(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(col));
+                }
+            };
+            fill(_gen_slack_weights_, static_cast<size_t>(_grid_model.get_generators().nb()), v.gens.slack_weight);
+            fill(_storage_slack_weights_, static_cast<size_t>(_grid_model.get_storages().nb()), v.storages.slack_weight);
         }
         // the generators a ContingencyAnalysis contingency trips (a ScenarioSweep's come
         // with its injections above) and the loads a row's contingency trips, both
@@ -2572,6 +2868,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // this row does not call for); a row seeded from the "n" solve (init_from_n_powerflow,
         // a TimeSeries' first one included) from that solve's; any other from the grid
         void _set_outer_row_resume(size_t i, OuterRowView & v) const {
+            // a row giving units slack weights of its own starts from the grid's targets: the
+            // "n" solve's loops shared its imbalance with the grid's weights, which the row's
+            // would then only complete (see set_gen_slack_weights)
+            if(_gen_slack_weights_.has_row(i) || _storage_slack_weights_.has_row(i)){
+                v.resume = false;
+                v.resume_from = nullptr;
+                return;
+            }
             const bool chained = INIT == BatchInitKind::FromPreviousStep && i > 0;
             v.resume_from = chained ? nullptr : _seeded_row_resume_point();
             v.resume = chained || v.resume_from != nullptr;
@@ -2678,7 +2982,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_powerlines_as_data().get_limit_a1_ka(),
                                      _grid_model.get_powerlines_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_lines, _violations[i],
-                                     overrides, 0);
+                                     overrides, 0, nullptr, _row_models(i));
             // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks)
             const auto * blocks = (i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty())
                                   ? &_row_trafo_blocks_[i] : nullptr;
@@ -2687,7 +2991,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                      _grid_model.get_trafos_as_data().get_limit_a1_ka(),
                                      _grid_model.get_trafos_as_data().get_limit_a2_ka(),
                                      _violation_threshold_, _violation_rel_tol_, skip_trafos, _violations[i],
-                                     overrides, n_line_, blocks);
+                                     overrides, n_line_, blocks, _row_models(i));
         }
         template<class Y = YbusPolicy, typename std::enable_if<Y::supports_contingency, int>::type = 0>
         void _record_row_violations_dispatch(size_t i, const CplxVect & V, const std::vector<int> * masked_ids) {
@@ -3068,6 +3372,83 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         }
         template<class InIsland, class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
         void _append_topo_storage_participants(size_t, const InIsland &, std::vector<slack_redistribution::Participant> &) const {}
+        // The pre-pass's participants of row i with the weights the row gives some units
+        // (ScenarioSweep set_gen_slack_weights / set_storage_slack_weights), as the grid
+        // would list them holding those weights: a positive weight makes the unit a slack
+        // participant with it (add_gen_slackbus: in the slack, its "can participate" weight
+        // the same), 0 takes it out of both (remove_gen_slackbus). A unit only the row's
+        // weight brings in is added where the grid would list it: connected, on its bus, on
+        // a bus `keep_bus` keeps, not disconnected by the row (one the row's action places
+        // with a positive weight is refused, see _check_slack_weight_rows).
+        template<class KeepBus>
+        void _apply_row_slack_weights(size_t i, const KeepBus & keep_bus,
+                                      std::vector<slack_redistribution::Participant> & units) const {
+            using slack_redistribution::UnitKind;
+            const SlackWeightOverride gen_w = _gen_slack_weights_.row(i);
+            const SlackWeightOverride storage_w = _storage_slack_weights_.row(i);
+            if(gen_w.row == nullptr && storage_w.row == nullptr) return;
+            const auto over_of = [&](UnitKind kind) -> const SlackWeightOverride & {
+                return kind == UnitKind::GENERATOR ? gen_w : storage_w;
+            };
+            // the units already listed: re-weighted, or dropped
+            std::vector<char> listed_gen(static_cast<size_t>(_grid_model.get_generators().nb()), 0);
+            std::vector<char> listed_storage(static_cast<size_t>(_grid_model.get_storages().nb()), 0);
+            std::vector<slack_redistribution::Participant> kept;
+            kept.reserve(units.size());
+            for(slack_redistribution::Participant & unit : units){
+                (unit.kind == UnitKind::GENERATOR ? listed_gen : listed_storage)[static_cast<size_t>(unit.el_id)] = 1;
+                const SlackWeightOverride & over = over_of(unit.kind);
+                if(over.has(unit.el_id)){
+                    const real_type w = over.of(unit.el_id);
+                    if(!(w >= BaseConstants::_tol_equal_float)) continue;
+                    unit.weight = w;
+                    unit.in_slack = true;
+                    unit.overshoot_mw = 0.;
+                }
+                kept.push_back(unit);
+            }
+            // the units only the row's weight brings in
+            bool added = false;
+            const auto add_family = [&](const auto & container, UnitKind kind, const SlackWeightTable & table,
+                                        const std::vector<char> & listed, real_type target_sign,
+                                        const auto & is_off, const auto & injection_of){
+                const SlackWeightOverride & over = over_of(kind);
+                if(over.row == nullptr) return;
+                const std::vector<bool> & status = container.get_status();
+                const GlobalBusIdVect & buses = container.get_bus_id();
+                for(int el_id : table.ids){
+                    if(listed[static_cast<size_t>(el_id)] || !over.has(el_id)) continue;
+                    const real_type w = over.of(el_id);
+                    if(!(w >= BaseConstants::_tol_equal_float)) continue;
+                    if(!status[static_cast<size_t>(el_id)] || is_off(el_id)) continue;
+                    const int bus_me = buses(el_id).cast_int();
+                    if(bus_me == BaseConstants::_deactivated_bus_id || !keep_bus(bus_me)) continue;
+                    slack_redistribution::Participant unit;
+                    unit.kind = kind;
+                    unit.el_id = el_id;
+                    unit.bus = bus_me;
+                    unit.injection_mw = target_sign * injection_of(el_id);
+                    unit.weight = w;
+                    unit.min_p_mw = container.get_min_p(el_id);
+                    unit.max_p_mw = container.get_max_p(el_id);
+                    unit.in_slack = true;
+                    unit.overshoot_mw = 0.;
+                    kept.push_back(unit);
+                    added = true;
+                }
+            };
+            const auto & storages = _grid_model.get_storages();
+            add_family(_grid_model.get_generators(), UnitKind::GENERATOR, _gen_slack_weights_, listed_gen, 1.,
+                       [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id) || this->_gen_placed_in_row(i, gen_id); },
+                       [this, i](int gen_id){ return this->_gen_target_p_in_row(i, gen_id); });
+            add_family(storages, UnitKind::STORAGE, _storage_slack_weights_, listed_storage, -1.,
+                       [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id) ||
+                                                         this->_storage_placed_in_row(i, storage_id); },
+                       [&storages](int storage_id){ return storages.get_target_p()(storage_id); });
+            units.swap(kept);
+            if(added) _sort_participants(units);
+        }
+
         static void _sort_participants(std::vector<slack_redistribution::Participant> & units){
             std::stable_sort(units.begin(), units.end(),
                              [](const slack_redistribution::Participant & a, const slack_redistribution::Participant & b){
@@ -3179,14 +3560,57 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             std::vector<real_type> outer_gen_target_p, outer_storage_target_p;
             if(ac && algo.supports_outer_loops()) algo.get_outer_target_p(outer_gen_target_p, outer_storage_target_p);
 
+            // the weights the row gives some units (set_gen_slack_weights): a bus' share is
+            // split with them
+            const SlackWeightOverride gen_w = _gen_slack_weights_.row(i);
+            const SlackWeightOverride storage_w = _storage_slack_weights_.row(i);
             RealVect p_mw, q_mvar;
             _grid_model.generator_results(ac, target_p, gen_off, no_share, storage_no_share, me_to_solver,
                                           active_mismatch, reactive_mismatch, ctrl_q, ctrl_kind, ctrl_elem,
-                                          p_mw, q_mvar, gen_placed_me, outer_gen_target_p);
+                                          p_mw, q_mvar, gen_placed_me, outer_gen_target_p,
+                                          gen_w.row != nullptr ? &gen_w : nullptr,
+                                          storage_w.row != nullptr ? &storage_w : nullptr);
             for(int gen_id = 0; gen_id < nb_gen; ++gen_id){
                 _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id) = p_mw(gen_id);
                 _gen_results_(static_cast<Eigen::Index>(i), 2 * gen_id + 1) = q_mvar(gen_id);
             }
+        }
+
+        // the transformer blocks an outer loop's detection reads for row i (see
+        // OuterRowView::moved_trafo_blocks), null where it reads the container's: the taps
+        // the row's loops left elsewhere (_record_row_trafo_blocks), else the stamped block
+        // of a transformer the row gives parameters of its own, built into `scratch`
+        const std::vector<std::pair<int, std::array<cplx_type, 4> > > * _row_detect_trafo_blocks(
+            size_t i, std::vector<std::pair<int, std::array<cplx_type, 4> > > & scratch) const {
+            const auto * moved = (i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty()) ? &_row_trafo_blocks_[i] : nullptr;
+            const std::vector<BranchRowModel> * models = _row_models(i);
+            if(models == nullptr) return moved;
+            const int nb_lines = static_cast<int>(n_line_);
+            const TrafoContainer & trafos = _grid_model.get_trafos_as_data();
+            scratch.clear();
+            if(moved != nullptr) scratch = *moved;
+            const auto moved_has = [moved](int t){
+                return moved != nullptr && std::binary_search(moved->begin(), moved->end(), std::make_pair(t, std::array<cplx_type, 4>()),
+                    [](const std::pair<int, std::array<cplx_type, 4> > & a, const std::pair<int, std::array<cplx_type, 4> > & b){ return a.first < b.first; });
+            };
+            for(const BranchRowModel & m : *models){
+                if(m.branch_id < nb_lines) continue;
+                const int t = m.branch_id - nb_lines;
+                if(moved_has(t)) continue;
+                // the row's placement of it (a topological action) closes both ends
+                bool on = trafos.get_status_global()[static_cast<size_t>(t)];
+                bool s1 = trafos.get_status_side_1()[static_cast<size_t>(t)];
+                bool s2 = trafos.get_status_side_2()[static_cast<size_t>(t)];
+                if(i < _row_branch_overrides_.size()){
+                    for(const BranchBusOverride & ov : _row_branch_overrides_[i]){
+                        if(ov.branch_id == m.branch_id){ on = ov.connected; s1 = s2 = true; }
+                    }
+                }
+                scratch.emplace_back(t, BranchContainer::kron_block(m.model.yac, on, s1, s2));
+            }
+            std::sort(scratch.begin(), scratch.end(),
+                      [](const std::pair<int, std::array<cplx_type, 4> > & a, const std::pair<int, std::array<cplx_type, 4> > & b){ return a.first < b.first; });
+            return &scratch;
         }
 
         void _record_row_physical(size_t i, AlgorithmSelector & algo,
@@ -3201,8 +3625,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             OuterRowView row;
             _fill_outer_row_view(i, masked, row);
             _take_moved_targets(algo, row);
-            // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks)
-            if(i < _row_trafo_blocks_.size() && !_row_trafo_blocks_[i].empty()) row.moved_trafo_blocks = &_row_trafo_blocks_[i];
+            // the taps this row's outer loops left its transformers at (_record_row_trafo_blocks),
+            // and the transformers it gives parameters of its own
+            std::vector<std::pair<int, std::array<cplx_type, 4> > > row_trafo_blocks;
+            row.moved_trafo_blocks = _row_detect_trafo_blocks(i, row_trafo_blocks);
             _record_outer_detect(algo, V_solver, row, _physical_violations_[i]);
             if(_gen_pv_release_check_on_ && !_gen_pv_release_plan_.empty()){
                 // the row's converged voltage, against the target this row gives the machine
@@ -3232,6 +3658,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         return (el_type == ViolationElementType::GENERATOR) ? this->_gen_off_in_row(i, el_id)
                                                                             : this->_storage_leaves_base_bus(i, el_id); },
                     [this, i](ViolationElementType el_type, int el_id){ return this->_row_takes_no_share(i, el_type, el_id); },
+                    [this, i](ViolationElementType el_type, int el_id, real_type own){
+                        return (el_type == ViolationElementType::GENERATOR) ? this->_gen_slack_weights_.weight(i, el_id, own)
+                                                                            : this->_storage_slack_weights_.weight(i, el_id, own); },
                     _physical_violations_[i]);
             }
         }
@@ -3334,8 +3763,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 gen_pv_release_check::build_gen_pv_release_plan(
                     _grid_model, active_layout().id_me_to_solver, _gen_pv_release_plan_);
             }
-            gen_p_check::build_gen_p_plan(_grid_model, active_layout().id_me_to_solver,
-                                          _gen_p_plan_);
+            gen_p_check::build_gen_p_plan(_grid_model, active_layout().id_me_to_solver, _gen_p_plan_,
+                                          _gen_slack_weights_.empty() ? nullptr : &_gen_slack_weights_.col_of_el,
+                                          _storage_slack_weights_.empty() ? nullptr : &_storage_slack_weights_.col_of_el);
             _outer_detect_loops_ = detection_loops(_grid_model.get_outer_loops());
         }
 
@@ -4743,6 +5173,155 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             return lost;
         }
 
+        // A transformer a row gives parameters of its own (ScenarioSweep set_trafo_parameters)
+        // must not be one whose taps an outer loop of the algorithm moves: the
+        // TransformerVoltageControl / PhaseControl loops (and the Newton's BranchControl
+        // they act through) stamp its block at a new tap from the GRID's parameters
+        // (TrafoContainer::pi_block_at), patching Ybus by the difference with what they
+        // believe is stamped there, so they would undo the row's values. Such a row is left
+        // out of the batch (_mark_row_batch_unsupported), as a regulating shunt a row trips is.
+        void _check_trafo_param_rows(size_t nb_steps){
+            if(_row_branch_models_.empty() || !_algo.supports_outer_loops()) return;
+            bool ratio_loop = false, phase_loop = false;
+            for(const auto & loop : _grid_model.get_outer_loops()){
+                if(loop == nullptr) continue;
+                if(loop->name() == "TransformerVoltageControl") ratio_loop = true;
+                if(loop->name() == "PhaseControl") phase_loop = true;
+            }
+            if(!ratio_loop && !phase_loop) return;
+            const TrafoContainer & trafos = _grid_model.get_trafos();
+            const TapChangers & ratio_taps = trafos.get_tap_changers(false);
+            const TapChangers & phase_taps = trafos.get_tap_changers(true);
+            const int nb_lines = static_cast<int>(n_line_);
+            for(size_t row = 0; row < nb_steps && row < _row_branch_models_.size(); ++row){
+                for(const BranchRowModel & m : _row_branch_models_[row]){
+                    if(m.branch_id < nb_lines) continue;
+                    const int t = m.branch_id - nb_lines;
+                    const bool by_ratio = ratio_loop && t < ratio_taps.nb() && ratio_taps.has(t) && ratio_taps.regulating(t);
+                    const bool by_phase = phase_loop && t < phase_taps.nb() && phase_taps.has(t) && phase_taps.regulating(t);
+                    if(!by_ratio && !by_phase) continue;
+                    std::ostringstream msg;
+                    msg << "gives transformer " << t << " parameters of its own, with an algorithm running outer "
+                           "loops (" << _algo.get_name() << "): the " << (by_ratio ? "TransformerVoltageControl" : "PhaseControl")
+                        << " loop moves its taps from the grid's parameters and does not support a row changing them yet";
+                    _mark_row_batch_unsupported(row, msg.str());
+                    break;
+                }
+            }
+        }
+
+        // The weights a row gives units of its own (ScenarioSweep set_gen_slack_weights /
+        // set_storage_slack_weights), checked once the layout and the rows' topological
+        // actions and generator contingencies are known. Which buses share the slack is
+        // the grid's, fixed for the batch -- the AC Newton's slack column has an entry
+        // only there (the DC is held to the same contract) -- so a positive weight to a
+        // unit on another bus is refused, as is one to a unit the row's action places
+        // somewhere (set_topo_actions refuses that of a grid participant). The bounded
+        // redistribution pre-pass shares with the row's weights (_apply_row_slack_weights).
+        // Under outer loops the DistributedSlack loop shares the slack, with the row's
+        // weights (OuterRowView::Units::slack_weight), but the buses its Newton share uses
+        // are reserved once for the batch, from the units that can take part in the grid's
+        // slack (DistributedSlackLoop::_declare): a positive weight is refused to any other.
+        void _check_slack_weight_rows(size_t nb_steps){
+            if(_gen_slack_weights_.empty() && _storage_slack_weights_.empty()) return;
+            if(_algo.supports_outer_loops()){
+                const auto check_outer = [&](const SlackWeightTable & table, const char * what, const char * setter,
+                                             const std::function<real_type(int)> & grid_weight,
+                                             const std::function<bool(size_t, int)> & placed){
+                    for(size_t row = 0; row < nb_steps; ++row){
+                        if(!table.has_row(row)) continue;
+                        for(size_t col = 0; col < table.ids.size(); ++col){
+                            const int el_id = table.ids[col];
+                            const real_type w = table.w(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col));
+                            if(!(w >= BaseConstants::_tol_equal_float)) continue;  // NaN, or out of the slack
+                            std::ostringstream exc_;
+                            if(placed(row, el_id)){
+                                exc_ << algo_name() << "::" << setter << ": row " << row << " gives " << what << " " << el_id
+                                     << " a slack weight, and its topological action places that unit on a bus: the slack set "
+                                        "would change with the row, not supported.";
+                                throw std::invalid_argument(exc_.str());
+                            }
+                            if(grid_weight(el_id) > 0.) continue;
+                            exc_ << algo_name() << "::" << setter << ": row " << row << " gives " << what << " " << el_id
+                                 << " a slack weight, but it takes no part in the grid's distributed slack, with an algorithm "
+                                    "running outer loops (" << _algo.get_name() << "): the units sharing the slack are reserved "
+                                    "once for the batch. Make that unit a participant of the grid's slack (add_gen_slackbus / "
+                                    "add_storage_slackbus) and give it 0 in the rows where it should take no share.";
+                            throw std::invalid_argument(exc_.str());
+                        }
+                    }
+                };
+                const auto & gens = _grid_model.get_generators();
+                const auto & stos = _grid_model.get_storages();
+                check_outer(_gen_slack_weights_, "generator", "set_gen_slack_weights",
+                            [&gens](int gen_id){ return gens.get_can_participate_slack_weight(gen_id); },
+                            [this](size_t row, int gen_id){ return this->_gen_placed_in_row(row, gen_id); });
+                check_outer(_storage_slack_weights_, "storage unit", "set_storage_slack_weights",
+                            [&stos](int storage_id){ return stos.get_can_participate_slack_weight(storage_id); },
+                            [this](size_t row, int storage_id){ return this->_storage_placed_in_row(row, storage_id); });
+                return;
+            }
+            const SolverBusLayout & layout = active_layout();
+            const SolverBusIdVect & me_to_solver = layout.id_me_to_solver;
+            std::vector<char> slack_bus(static_cast<size_t>(layout.slack_weights.size()), 0);
+            for(size_t k = 0; k < layout.slack_bus_id_solver.size(); ++k){
+                const int b = layout.slack_bus_id_solver[static_cast<int>(k)].cast_int();
+                if(b >= 0 && static_cast<size_t>(b) < slack_bus.size()) slack_bus[static_cast<size_t>(b)] = 1;
+            }
+            const auto check_family = [&](const SlackWeightTable & table, const char * what, const char * setter,
+                                          const std::vector<bool> & status, const GlobalBusIdVect & buses,
+                                          const std::function<bool(size_t, int)> & placed,
+                                          const std::function<bool(size_t, int)> & off){
+                for(size_t row = 0; row < nb_steps; ++row){
+                    if(!table.has_row(row)) continue;
+                    for(size_t col = 0; col < table.ids.size(); ++col){
+                        const int el_id = table.ids[col];
+                        const real_type w = table.w(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col));
+                        if(!(w >= BaseConstants::_tol_equal_float)) continue;  // NaN, or out of the slack
+                        if(placed(row, el_id)){
+                            std::ostringstream exc_;
+                            exc_ << algo_name() << "::" << setter << ": row " << row << " gives " << what << " " << el_id
+                                 << " a slack weight, and its topological action places that unit on a bus: the slack set "
+                                    "would change with the row, not supported.";
+                            throw std::invalid_argument(exc_.str());
+                        }
+                        if(!status[static_cast<size_t>(el_id)] || off(row, el_id)) continue;  // takes no share
+                        const int bus_me = buses(el_id).cast_int();
+                        if(bus_me == BaseConstants::_deactivated_bus_id) continue;
+                        const int bus_solver = me_to_solver[bus_me].cast_int();
+                        if(bus_solver == BaseConstants::_deactivated_bus_id) continue;  // outside the solved grid
+                        if(bus_solver >= 0 && static_cast<size_t>(bus_solver) < slack_bus.size() &&
+                           slack_bus[static_cast<size_t>(bus_solver)]) continue;
+                        std::ostringstream exc_;
+                        exc_ << algo_name() << "::" << setter << ": row " << row << " gives " << what << " " << el_id
+                             << " a slack weight, but it stands on bus " << bus_me << ", where no unit takes part in "
+                                "the grid's distributed slack. The buses sharing the slack are fixed for the batch: make "
+                                "that unit a participant of the grid's slack (add_gen_slackbus / add_storage_slackbus) "
+                                "and give it 0 in the rows where it should take no share.";
+                        throw std::invalid_argument(exc_.str());
+                    }
+                }
+            };
+            const auto & generators = _grid_model.get_generators();
+            check_family(_gen_slack_weights_, "generator", "set_gen_slack_weights",
+                         generators.get_status(), generators.get_bus_id(),
+                         [this](size_t row, int gen_id){ return this->_gen_placed_in_row(row, gen_id); },
+                         [this](size_t row, int gen_id){ return this->_gen_off_in_row(row, gen_id); });
+            const auto & storages = _grid_model.get_storages();
+            check_family(_storage_slack_weights_, "storage unit", "set_storage_slack_weights",
+                         storages.get_status(), storages.get_bus_id(),
+                         [this](size_t row, int storage_id){ return this->_storage_placed_in_row(row, storage_id); },
+                         [this](size_t row, int storage_id){ return this->_storage_leaves_base_bus(row, storage_id); });
+        }
+        template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
+        bool _storage_placed_in_row(size_t i, int storage_id) const {
+            if(i >= sbus_policy_.topo_storages_on.size()) return false;
+            for(const auto & storage_bus : sbus_policy_.topo_storages_on[i]) if(storage_bus.first == storage_id) return true;
+            return false;
+        }
+        template<class S = SbusPolicy, typename std::enable_if<!S::supports_vary, int>::type = 0>
+        bool _storage_placed_in_row(size_t, int) const { return false; }
+
         // A shunt a row trips must not be one the ShuntVoltageControl outer loop moves:
         // its sections are that loop's (NRSystem's ShuntControl patches the diagonal by
         // the difference with what it believes is stamped there), and it does not know
@@ -4948,7 +5527,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 return false;
             };
             return any_row(_row_slack_gens_off_) || any_row(_row_slack_storages_off_) ||
-                   any_row(_row_sat_gens_) || any_row(_row_sat_storages_);
+                   any_row(_row_sat_gens_) || any_row(_row_sat_storages_) ||
+                   !_gen_slack_weights_.empty() || !_storage_slack_weights_.empty();
         }
 
         // the buses to pin PV in row i: the switchable buses that are STILL PV there
@@ -4989,19 +5569,37 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const bool has_sat_gens = (i < _row_sat_gens_.size()) && !_row_sat_gens_[i].empty();
             const bool has_sat_storages = (i < _row_sat_storages_.size()) && !_row_sat_storages_[i].empty();
             const bool has_storages_off = (i < _row_slack_storages_off_.size()) && !_row_slack_storages_off_[i].empty();
-            if(!has_gens_off && !has_sat_gens && !has_sat_storages && !has_storages_off) return base_w;
+            // ... and the weights the row gives some units (set_gen_slack_weights)
+            const SlackWeightOverride gen_w = _gen_slack_weights_.row(i);
+            const SlackWeightOverride storage_w = _storage_slack_weights_.row(i);
+            const bool has_gen_w = gen_w.row != nullptr, has_storage_w = storage_w.row != nullptr;
+            if(!has_gens_off && !has_sat_gens && !has_sat_storages && !has_storages_off &&
+               !has_gen_w && !has_storage_w) return base_w;
             const auto & generators = _grid_model.get_generators();
             std::vector<bool> gen_off(generators.nb(), false);
             if(has_gens_off) for(int gen_id : _row_slack_gens_off_[i]) gen_off[gen_id] = true;
             if(has_sat_gens) for(int gen_id : _row_sat_gens_[i]) gen_off[gen_id] = true;
+            // a unit only the row's weight brings in is not in _row_slack_gens_off_: one
+            // the row disconnects takes no share all the same
+            if(has_gen_w){
+                for(int gen_id : _gen_slack_weights_.ids){
+                    if(gen_w.has(gen_id) && _gen_off_in_row(i, gen_id)) gen_off[gen_id] = true;
+                }
+            }
             std::vector<bool> storage_off;
-            if(has_sat_storages || has_storages_off){
+            if(has_sat_storages || has_storages_off || has_storage_w){
                 storage_off.assign(_grid_model.get_storages().nb(), false);
                 if(has_sat_storages) for(int storage_id : _row_sat_storages_[i]) storage_off[storage_id] = true;
                 if(has_storages_off) for(int storage_id : _row_slack_storages_off_[i]) storage_off[storage_id] = true;
+                if(has_storage_w){
+                    for(int storage_id : _storage_slack_weights_.ids){
+                        if(storage_w.has(storage_id) && _storage_leaves_base_bus(i, storage_id)) storage_off[storage_id] = true;
+                    }
+                }
             }
             scratch = _grid_model.get_slack_weights_solver_without(
-                static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off, storage_off);
+                static_cast<size_t>(base_w.size()), active_layout().id_me_to_solver, gen_off, storage_off,
+                has_gen_w ? &gen_w : nullptr, has_storage_w ? &storage_w : nullptr);
             if(abs(scratch.sum()) < BaseConstants::_tol_equal_float){
                 scratch.setZero();
                 if(active_layout().slack_bus_id_solver.size() > 0){
@@ -5306,6 +5904,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                     [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); },
                     [&storages](int storage_id){ return storages.get_target_p()(storage_id); }, units);
                 _append_topo_storage_participants(i, in_island_solver, units);
+                // the weights the row gives some units (set_gen_slack_weights) stand for theirs
+                _apply_row_slack_weights(i, keep_bus, units);
                 if(units.empty()) continue;  // the row's own fallback stays (see _row_slack_weights)
 
                 const slack_redistribution::Report report = slack_redistribution::distribute(
@@ -5702,6 +6302,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
         // the option, and the per-row data it builds at each compute()
         bool _redistribute_slack_ = false;
         std::vector<std::vector<std::pair<int, real_type> > > _row_slack_dp_pu_;
+        SlackWeightTable _gen_slack_weights_;
+        SlackWeightTable _storage_slack_weights_;
 
         // per-row solve statistics of the last compute(): see get_row_nb_iter
         std::vector<double> _row_solve_time_;

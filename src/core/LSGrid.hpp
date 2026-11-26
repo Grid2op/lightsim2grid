@@ -1107,11 +1107,16 @@ class LS2G_API LSGrid final
          * the two can never drift apart. Returns an ALL-ZERO vector when no participant
          * is left -- there is no meaningful normalisation then, and it is the caller's
          * business to decide what to do about it.
+         *
+         * `gen_weights` / `storage_weights` (nullable): the raw weights that state gives
+         * some units instead of their own (a ScenarioSweep row, see SlackWeightOverride).
          */
         [[nodiscard]] RealVect get_slack_weights_solver_without(size_t nb_bus_solver,
                                                                 const SolverBusIdVect & id_me_to_solver,
                                                                 const std::vector<bool> & gen_off,
-                                                                const std::vector<bool> & storage_off = std::vector<bool>()) const;
+                                                                const std::vector<bool> & storage_off = std::vector<bool>(),
+                                                                const SlackWeightOverride * gen_weights = nullptr,
+                                                                const SlackWeightOverride * storage_weights = nullptr) const;
 
         /**
          * The active and reactive output of every generator (MW, MVAr) at a state the
@@ -1144,6 +1149,10 @@ class LS2G_API LSGrid final
          * targets the state's outer loops moved (an NROuter_* algorithm's
          * get_outer_target_p), which a unit's reactive limits and a non-regulating unit's
          * target Q follow, as compute_results reads them.
+         *
+         * `gen_weights` / `storage_weights` (nullable): the raw slack weights that state
+         * gives some units instead of their own (see get_slack_weights_solver_without):
+         * a bus' share is split with them.
          */
         /**
          * Each generator's share of the distributed slack (one per generator, summing to 1
@@ -1170,7 +1179,9 @@ class LS2G_API LSGrid final
                                RealVect & p_mw,
                                RealVect & q_mvar,
                                const std::vector<std::pair<int, int> > & gen_placed = std::vector<std::pair<int, int> >(),
-                               const std::vector<real_type> & outer_gen_target_p = std::vector<real_type>()) const;
+                               const std::vector<real_type> & outer_gen_target_p = std::vector<real_type>(),
+                               const SlackWeightOverride * gen_weights = nullptr,
+                               const SlackWeightOverride * storage_weights = nullptr) const;
 
         //pickle
         LSGrid::StateRes get_state() const ;
@@ -3188,12 +3199,15 @@ class LS2G_API LSGrid final
         // units' not already in
         [[nodiscard]] GlobalBusIdVect _slack_bus_id_me() const;
         // the raw (un-normalised) slack weight per solver bus, every participant of both
-        // families summed; `gen_off` / `storage_off` (nullable) take units out as if disconnected
+        // families summed; `gen_off` / `storage_off` (nullable) take units out as if
+        // disconnected, `gen_weights` / `storage_weights` (nullable) give some theirs
         [[nodiscard]] RealVect _raw_slack_weights_solver(size_t nb_bus_solver,
                                                          const SolverBusIdVect & id_me_to_solver,
                                                          const std::vector<bool> * gen_off,
                                                          const std::vector<bool> * storage_off = nullptr,
-                                                         bool can_participate = false) const;
+                                                         bool can_participate = false,
+                                                         const SlackWeightOverride * gen_weights = nullptr,
+                                                         const SlackWeightOverride * storage_weights = nullptr) const;
         // the active power (MW, generator convention) the elements on the buses NOT in
         // `bus_in_main_cc` inject, from their setpoints (see consider_only_main_component)
         [[nodiscard]] real_type _lost_setpoints_mw(const std::vector<bool> & bus_in_main_cc) const;
