@@ -101,11 +101,17 @@ struct OuterRowView
         std::vector<real_type> target_p;
         std::vector<real_type> target_vm;
         std::vector<real_type> target_q;
+        /// NaN where the row keeps the grid's: the weight the unit shares the slack with (the
+        /// DistributedSlack loop's, a ScenarioSweep row's set_gen_slack_weights), 0 for none
+        std::vector<real_type> slack_weight;
 
         bool empty() const {
-            return off.empty() && bus_solver.empty() && target_p.empty() && target_vm.empty() && target_q.empty();
+            return off.empty() && bus_solver.empty() && target_p.empty() && target_vm.empty() && target_q.empty() &&
+                   slack_weight.empty();
         }
-        void clear() { off.clear(); bus_solver.clear(); target_p.clear(); target_vm.clear(); target_q.clear(); }
+        void clear() {
+            off.clear(); bus_solver.clear(); target_p.clear(); target_vm.clear(); target_q.clear(); slack_weight.clear();
+        }
     };
     /// One branch kind's overrides. Each vector is empty, or sized by the branch count.
     struct Branches
@@ -184,6 +190,9 @@ class LS2G_API OuterGridView
         /// whether the row sets the unit's active target (else it is the grid's)
         bool row_sets_gen_target_p(int gen_id) const;
         real_type gen_target_vm(int gen_id) const;  ///< pu
+        /// the weight it shares the slack with in this row: the row's, the grid's "can
+        /// participate" one otherwise (0: it takes no part)
+        real_type gen_slack_weight(int gen_id) const;
 
         // ----- storage units (load convention for P, as the container) ------------------
         bool storage_on(int storage_id) const;
@@ -194,6 +203,8 @@ class LS2G_API OuterGridView
         real_type storage_target_p(int storage_id) const;
         bool row_sets_storage_target_p(int storage_id) const;
         real_type storage_target_vm(int storage_id) const;
+        /// see gen_slack_weight
+        real_type storage_slack_weight(int storage_id) const;
 
         // ----- loads (load convention) --------------------------------------------------
         bool load_on(int load_id) const;

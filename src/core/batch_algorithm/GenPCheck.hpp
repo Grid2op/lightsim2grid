@@ -139,7 +139,8 @@ inline void add_family_to_gen_p_plan(const Container & container,
                                      ViolationElementType el_type,
                                      real_type target_sign,
                                      const SolverBusIdVect & id_me_to_solver,
-                                     GenPPlan & out)
+                                     GenPPlan & out,
+                                     const std::vector<int> * row_weighted = nullptr)
 {
     const int nb_el = container.nb();
     if(nb_el == 0) return;
@@ -155,9 +156,14 @@ inline void add_family_to_gen_p_plan(const Container & container,
 
     for(int el_id = 0; el_id < nb_el; ++el_id){
         if(!status[el_id]) continue;
-        if(!container.is_slack(el_id)) continue;              // takes no part in the distribution
-        const real_type weight = container.get_slack_weight(el_id);
-        if(std::abs(weight) < 1e-12) continue;                // ... nor does a zero weight
+        // a unit some row gives a weight of its own may take part in that row, whatever its
+        // own (the check reads the row's, see check_gen_p_violations' `weight_of`)
+        const bool row_weighted_el = row_weighted != nullptr && (*row_weighted)[static_cast<std::size_t>(el_id)] >= 0;
+        const real_type weight = container.is_slack(el_id) ? container.get_slack_weight(el_id) : 0.;
+        if(!row_weighted_el){
+            if(!container.is_slack(el_id)) continue;          // takes no part in the distribution
+            if(std::abs(weight) < 1e-12) continue;            // ... nor does a zero weight
+        }
 
         const int bus_me = buses(el_id).cast_int();
         if(bus_me == BaseConstants::_deactivated_bus_id) continue;
@@ -200,15 +206,18 @@ inline void add_family_to_gen_p_plan(const Container & container,
  */
 inline void build_gen_p_plan(const LSGrid & grid_model,
                              const SolverBusIdVect & id_me_to_solver,
-                             GenPPlan & out)
+                             GenPPlan & out,
+                             const std::vector<int> * gen_row_weighted = nullptr,
+                             const std::vector<int> * storage_row_weighted = nullptr)
 {
     out.clear();
     // the generators first, so that a report's order follows the container order of each
-    // family and stays stable
+    // family and stays stable. `*_row_weighted` (nullable, one entry per element, >= 0
+    // for a unit some row gives a slack weight of its own): those are in the plan too
     add_family_to_gen_p_plan(grid_model.get_generators(), ViolationElementType::GENERATOR,
-                             1., id_me_to_solver, out);
+                             1., id_me_to_solver, out, gen_row_weighted);
     add_family_to_gen_p_plan(grid_model.get_storages(), ViolationElementType::STORAGE,
-                             -1., id_me_to_solver, out);
+                             -1., id_me_to_solver, out, storage_row_weighted);
     // no machine can be reported: the participants alone are of no use to anyone
     if(out.gens.empty()) out.clear();
 }
@@ -273,7 +282,10 @@ struct SlackShareInputs
  * BaseBatchSweep::_prepare_slack_redistribution). `masked_solver_ids` is this row's
  * masked (stranded) solver buses -- sorted, may be nullptr.
  */
-template<class TargetPOf, class IsOff, class TakesNoShare>
+/// `weight_of(el_type, el_id, own_weight)` is this row's raw weight of a unit, `own_weight`
+/// the one the plan holds (the grid's): a ScenarioSweep row may give some their own
+/// (set_gen_slack_weights). A unit of weight 0 there takes no share and is not reported.
+template<class TargetPOf, class IsOff, class TakesNoShare, class WeightOf>
 inline void check_gen_p_violations(const GenPPlan & plan,
                                    const SlackShareInputs & slack,
                                    real_type tol_mw,
@@ -281,6 +293,7 @@ inline void check_gen_p_violations(const GenPPlan & plan,
                                    TargetPOf target_p_of,
                                    IsOff is_off,
                                    TakesNoShare takes_no_share,
+                                   WeightOf weight_of,
                                    std::vector<LimitViolation> & out)
 {
     if(plan.empty()) return;
@@ -301,7 +314,9 @@ inline void check_gen_p_violations(const GenPPlan & plan,
         if(is_masked(part.bus_solver)) continue;
         if(is_off(part.el_type, part.el_id)) continue;
         if(takes_no_share(part.el_type, part.el_id)) continue;
-        total_raw_w += part.slack_weight;
+        const real_type w = weight_of(part.el_type, part.el_id, part.slack_weight);
+        if(std::abs(w) < 1e-12) continue;
+        total_raw_w += w;
     }
     const bool anything_shared = std::abs(total_raw_w) > 1e-12;
 
@@ -309,6 +324,8 @@ inline void check_gen_p_violations(const GenPPlan & plan,
         const GenPEntry & entry = plan.gens[k];
         if(is_masked(entry.bus_solver)) continue;
         if(is_off(entry.el_type, entry.el_id)) continue;  // disconnected by this row: produces nothing
+        const real_type entry_w = weight_of(entry.el_type, entry.el_id, entry.slack_weight);
+        if(std::abs(entry_w) < 1e-12) continue;           // out of this row's distribution
 
         // its target, plus its share of what its bus had to make up -- exactly as
         // GeneratorContainer::set_p_slack computes it after a single solve, the raw per-bus
@@ -320,7 +337,7 @@ inline void check_gen_p_violations(const GenPPlan & plan,
            && entry.bus_solver < static_cast<int>(slack.bus_slack_weight.size())){
             const real_type bus_raw_w = slack.bus_slack_weight(entry.bus_solver) * total_raw_w;
             if(std::abs(bus_raw_w) > 1e-12){
-                p_mw += slack.node_mismatch_mw(entry.bus_solver) * entry.slack_weight / bus_raw_w;
+                p_mw += slack.node_mismatch_mw(entry.bus_solver) * entry_w / bus_raw_w;
             }
         }
         if(!std::isfinite(p_mw)) continue;
@@ -335,6 +352,21 @@ inline void check_gen_p_violations(const GenPPlan & plan,
                                          entry.name});
         }
     }
+}
+
+/// the same, every unit with the plan's (the grid's) own weight
+template<class TargetPOf, class IsOff, class TakesNoShare>
+inline void check_gen_p_violations(const GenPPlan & plan,
+                                   const SlackShareInputs & slack,
+                                   real_type tol_mw,
+                                   const std::vector<int> * masked_solver_ids,
+                                   TargetPOf target_p_of,
+                                   IsOff is_off,
+                                   TakesNoShare takes_no_share,
+                                   std::vector<LimitViolation> & out)
+{
+    check_gen_p_violations(plan, slack, tol_mw, masked_solver_ids, target_p_of, is_off, takes_no_share,
+                           [](ViolationElementType, int, real_type own){ return own; }, out);
 }
 
 }  // namespace gen_p_check

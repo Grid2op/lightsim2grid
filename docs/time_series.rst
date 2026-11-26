@@ -99,6 +99,26 @@ Two things follow:
     away for independence -- and buys back much more than it costs as soon as you use
     several threads.
 
+.. note:: Changing branch parameters per scenario
+
+    `InjectionSweep` keeps the grid's branches as they are. To give some lines or
+    transformers their own `r`, `x`, `h`, ratio or shift in each scenario, use
+    :class:`lightsim2grid.scenarioSweep.ScenarioSweep` with the injections and the branch
+    parameters, and no contingency. It solves the same independent scenarios, from the
+    same starting voltage, on as many threads (see :ref:`sweep_branch_parameters_injections`):
+
+    .. code-block:: python
+
+        from lightsim2grid import ScenarioSweep
+
+        sweep = ScenarioSweep(env)
+        sweep.modify_gen_p(gen_p)    # (n_simul, n_gen)
+        sweep.modify_load_p(load_p)  # (n_simul, n_load)
+        sweep.modify_load_q(load_q)
+        sweep.set_line_parameters([7], x=line_7_x)  # (n_simul, 1): line 7's reactance, per scenario
+        sweep.nb_thread = 4
+        sweep.compute()
+
 .. note::
 
     `TimeSerie` / `InjectionSweep` also expose a newer, setter-based API

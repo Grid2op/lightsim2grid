@@ -155,6 +155,13 @@ real_type OuterGridView::gen_target_vm(int gen_id) const
     return grid_.get_generators().get_target_vm_pu(gen_id);
 }
 
+real_type OuterGridView::gen_slack_weight(int gen_id) const
+{
+    real_type res;
+    if (row_ != nullptr && _value(row_->gens.slack_weight, gen_id, res)) return res;
+    return grid_.get_generators().get_can_participate_slack_weight(gen_id);
+}
+
 real_type OuterGridView::gen_target_p_override(const std::vector<real_type> & loops, int gen_id) const
 {
     real_type res;
@@ -184,6 +191,13 @@ int OuterGridView::storage_bus_solver(int storage_id) const
 bool OuterGridView::storage_is_local_voltage_controller(int storage_id) const
 {
     return storage_on(storage_id) && grid_.get_storages().would_be_local_voltage_controller(storage_id);
+}
+
+real_type OuterGridView::storage_slack_weight(int storage_id) const
+{
+    real_type res;
+    if (row_ != nullptr && _value(row_->storages.slack_weight, storage_id, res)) return res;
+    return grid_.get_storages().get_can_participate_slack_weight(storage_id);
 }
 
 real_type OuterGridView::storage_target_p(int storage_id) const

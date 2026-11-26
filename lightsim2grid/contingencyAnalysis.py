@@ -159,6 +159,11 @@ class ContingencyAnalysis(object):
 
     In grid2op, it would be, in this case, 0. for the flows and 0. for the voltages.
 
+    A contingency here disconnects elements; to change the parameters of some branches
+    instead (``set_line_parameters`` / ``set_trafo_parameters``), together with line or
+    trafo contingencies, see :class:`lightsim2grid.scenarioSweep.ScenarioSweep` and
+    :ref:`sweep_branch_parameters_contingencies`.
+
     By default, a contingency that splits the grid in multiple connected components is not
     simulated (its voltages are left at 0.). If you set the `handle_disconnected_grid` attribute
     to ``True``, such contingencies are instead simulated on their largest connected component:

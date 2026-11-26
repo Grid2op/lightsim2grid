@@ -614,9 +614,12 @@ void bind_gridmodel(py::module_& m) {
         .def("change_q_shunt", &LSGrid::change_q_shunt, DocLSGrid::change_q_shunt.c_str())
         .def("set_shunt_sections", &LSGrid::set_shunt_sections,
              py::arg("shunt_id"), py::arg("section_count"), py::arg("p_mw"), py::arg("q_mvar"),
+             py::arg("min_section_count") = 0,
              "The sections of a shunt: for k = 1 .. max, the p (MW) and q (MVar) at 1 pu with k sections on "
              "(cumulative, as IIDM's non-linear model; the same convention as init_shunt), and the number on "
-             "now. Its p and q become those of that count.")
+             "now. Its p and q become those of that count. `min_section_count` is the fewest sections the "
+             "ShuntVoltageControl outer loop may leave on (default 0; 1 mirrors OpenLoadFlow's "
+             "allowNonLinearShuntZeroSection=false).")
         .def("set_shunt_section_regulation", &LSGrid::set_shunt_section_regulation,
              py::arg("shunt_id"), py::arg("regulating"), py::arg("target_vm_pu"), py::arg("deadband_pu"),
              py::arg("regulated_bus"),

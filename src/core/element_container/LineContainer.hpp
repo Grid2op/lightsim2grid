@@ -87,6 +87,21 @@ class LS2G_API LineContainer final: public BranchContainer, public IteratorAdder
         static LineContainer load_binary(const std::string & path);
         static const char * binary_type_tag() { return "LineContainer"; }  // written into / checked against the binary file header
 
+        /**
+         * The pi model line `el_id` would have with these parameters (pu, the meaning
+         * update_physical_parameters gives them), without changing it. A NaN keeps the
+         * line's own value (a complex one when either part is NaN): with every argument
+         * NaN, exactly the coefficients the line has.
+         */
+        BranchPiModel pi_model_with(int el_id, real_type r, real_type x, cplx_type h1, cplx_type h2) const {
+            _check_in_range(el_id, r_, "LineContainer::pi_model_with");
+            const auto keep = [](cplx_type v){ return std::isnan(std::real(v)) || std::isnan(std::imag(v)); };
+            return _line_pi_model(std::isnan(r) ? r_(el_id) : r,
+                                  std::isnan(x) ? x_(el_id) : x,
+                                  keep(h1) ? h_side_1_(el_id) : h1,
+                                  keep(h2) ? h_side_2_(el_id) : h2);
+        }
+
         // for consistency with trafo, when used for example in BaseMultiplePowerflow...
         // lines never have a phase shift: the Ref must point at something with a
         // lifetime that outlives the call, not a temporary (a plain `return RealVect();`

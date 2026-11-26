@@ -250,6 +250,8 @@ void bind_containers(py::module_& m) {
              "Whether it has sections (LSGrid.set_shunt_sections); the next fields are meaningless otherwise.")
         .def_readonly("section_count", &ShuntInfo::section_count, "The number of sections on.")
         .def_readonly("max_section_count", &ShuntInfo::max_section_count, "Its number of sections.")
+        .def_readonly("min_section_count", &ShuntInfo::min_section_count,
+             "The fewest sections the ShuntVoltageControl outer loop may leave on.")
         .def_readonly("regulating", &ShuntInfo::regulating,
              "Whether its sections regulate a voltage (LSGrid.set_shunt_section_regulation).")
         .def_readonly("target_vm_pu", &ShuntInfo::target_vm_pu,
