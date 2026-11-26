@@ -27,6 +27,7 @@ class LS2G_API ShuntInfo : public OneSideContainer_PQ::OneSidePQInfo
         bool has_sections;
         int section_count;
         int max_section_count;
+        int min_section_count;
         // what they regulate, data only (see ShuntContainer::set_section_regulation)
         bool regulating;
         real_type target_vm_pu;
@@ -256,6 +257,7 @@ OneSidePQInfo(r_data_shunt, my_id),
 has_sections(false),
 section_count(0),
 max_section_count(0),
+min_section_count(0),
 regulating(false),
 target_vm_pu(0.),
 target_deadband_pu(0.),
@@ -268,6 +270,7 @@ res_section_count(0)
     has_sections = r_data_shunt.has_sections(my_id);
     section_count = r_data_shunt.section_count_[k];
     max_section_count = r_data_shunt.get_max_section_count(my_id);
+    min_section_count = r_data_shunt.get_min_section_count(my_id);
     regulating = r_data_shunt.regulating_[k];
     target_vm_pu = r_data_shunt.target_vm_pu_[k];
     target_deadband_pu = r_data_shunt.target_deadband_pu_[k];
