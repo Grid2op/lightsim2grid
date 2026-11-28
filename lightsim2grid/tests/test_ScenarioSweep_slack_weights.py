@@ -16,6 +16,7 @@ common rotation: the batch keeps the angle reference it picked for the whole swe
 grid taking its first slack bus out of the slack moves its reference elsewhere.
 """
 
+import itertools
 import unittest
 import warnings
 
@@ -27,7 +28,7 @@ from grid2op.Parameters import Parameters
 from lightsim2grid import LightSimBackend
 from lightsim2grid.algorithm import AlgorithmType
 from lightsim2grid.scenarioSweep import ScenarioSweep, ScenarioSweepCPP, LimitViolationType
-from lightsim2grid.lightsim2grid_cpp import DistributedSlack
+from lightsim2grid.lightsim2grid_cpp import DistributedSlack, LSGrid, ViolationElementType
 from lightsim2grid.network import init_from_pandapower
 
 try:
@@ -204,6 +205,42 @@ class TestScenarioSweepSlackWeightsCPP(unittest.TestCase):
         self.assertEqual(len(broken[high_row]), 1)
         self.assertEqual(len(broken[1 - high_row]), 0)
         self.assertAlmostEqual(broken[high_row][0].value, sweep.get_gen_results()[high_row, 0, 0], places=8)
+
+    def test_gen_p_violations_ignore_a_weight_the_solve_ignores(self):
+        """issue #317: a row weight below the threshold at which the solve takes a unit out of the
+        slack (BaseConstants::_tol_equal_float) solves exactly as 0, but the active-power check
+        still counted the unit as sharing the slack, and reported a generator whose target is
+        already above its maximum. The 4-bus feeder of the GenPCheck tests (80 MW on bus 3),
+        generators 0 and 1 sharing the slack, generator 2 (bus 0) out of it with its target above
+        its maximum; the rows give it 0, 1e-8 and 1."""
+        grid = LSGrid()
+        grid.set_sn_mva(100.)
+        grid.set_init_vm_pu(1.0)
+        grid.init_bus(4, 1, np.full(4, 138.), 0, 0)
+        grid.init_powerlines(np.full(3, 0.01), np.full(3, 0.1), np.zeros(3, dtype=complex),
+                             np.array([0, 1, 2]), np.array([1, 2, 3]))
+        grid.init_loads(np.array([80.]), np.array([60.]), np.array([3]))
+        grid.init_generators(np.array([0., 10., 5.]), np.array([1.02, 1.05, 1.02]),
+                             np.full(3, -1e3), np.full(3, 1e3), np.array([0, 1, 0]))
+        grid.add_gen_slackbus(0, 1.)
+        grid.add_gen_slackbus(1, 1.)
+        grid.set_gen_p_limits(np.zeros(3), np.array([30., 30., 3.]))
+        grid.tell_solver_need_reset()
+        V0 = grid.ac_pf(np.ones(4, dtype=complex), 20, 1e-10)
+        self.assertEqual(V0.size, 4)
+        sweep = ScenarioSweepCPP(grid)
+        sweep.compute_physical_violations = True
+        sweep.physical_violation_tol_mva = 0.
+        sweep.modify_load_p(np.full((3, 1), 80.))
+        sweep.set_gen_slack_weights(np.array([2]), np.array([[0.], [1e-8], [1.]]))
+        sweep.compute(V0, 20, 1e-10)
+        self.assertTrue(np.all(sweep.converged_mask()))
+        Vs = sweep.get_voltages()
+        np.testing.assert_array_equal(Vs[1], Vs[0])  # the solve ignores the 1e-8
+        gen_2 = [[v.violation_type for v in viols
+                  if v.element_type == ViolationElementType.GENERATOR and v.element_id == 2]
+                 for viols in sweep.get_physical_violations()]
+        self.assertEqual(gen_2, [[], [], [LimitViolationType.HIGH_P]])
 
     def test_setters_check_their_input(self):
         sweep = self._sweep(weights=False)
@@ -445,6 +482,51 @@ class TestScenarioSweepSlackWeightsOuter(unittest.TestCase):
                     self.assertLess(_gap_up_to_rotation(sweep.get_voltages()[row], V_ref), 1e-9, f"row {row}")
                     np.testing.assert_allclose(P[row], p_ref, atol=1e-7, rtol=0, err_msg=f"row {row}")
 
+    def test_seeded_from_n_a_row_with_weights_starts_from_the_set_points(self):
+        """issue #316: with init_from_n_powerflow a row giving weights does not resume the "n"
+        solve's loops, so its generator buses start PV again -- but from the "n" solve's voltages,
+        where the buses that solve froze at a reactive limit sit off their set-point, and a PV bus
+        keeps the magnitude it starts from. With less load the row's machines stay within their
+        limits, nothing freezes those buses again, and the row converged holding the frozen
+        magnitude instead of the target. Here the narrow reactive limits make the "n" solve freeze
+        buses, and the row only gives generator 0 the weight it already has. The reference is the
+        grid at the row's load, solved from the "n" voltages; a row giving set-points of its own
+        (modify_gen_v) keeps those. Both row loops: the plain one and the masked one
+        (handle_disconnected_grid)."""
+        for algo in (OUTER, OUTER_DIST):
+            make = lambda: self._grid(algo, tight=True)  # noqa: E731
+            V_n = make().ac_pf(self.V0, self.MAX_IT, self.TOL)
+            targets = np.array([el.target_vm_pu for el in make().get_generators()])
+            buses = np.array([el.bus_id for el in make().get_generators()])
+            # the premise: the "n" solve left some generator bus off its set-point
+            self.assertGreater(np.max(np.abs(np.abs(V_n[buses]) - targets)), 1e-3)
+            load_p = np.tile(0.6 * self.load_targets, (2, 1))
+            gen_v = np.tile(targets, (2, 1))
+            gen_v[1, 2] += 0.01
+            for with_gen_v, masked in itertools.product((False, True), (False, True)):
+                with self.subTest(algo=algo, with_gen_v=with_gen_v, masked=masked):
+                    sweep = ScenarioSweepCPP(make())
+                    sweep.init_from_n_powerflow = True
+                    sweep.handle_disconnected_grid = masked
+                    sweep.modify_load_p(load_p)
+                    if with_gen_v:
+                        sweep.modify_gen_v(gen_v)
+                    # row 0 resumes the "n" solve's loops, row 1 gives weights
+                    sweep.set_gen_slack_weights(np.array([0]), np.array([[np.nan], [300.]]))
+                    sweep.compute(self.V0, self.MAX_IT, self.TOL)
+                    self.assertTrue(np.all(sweep.converged_mask()))
+                    for row in range(2):
+                        ref = make()
+                        ref.set_uniform_voltage_start(False)
+                        for load_id, p in enumerate(load_p[row]):
+                            ref.change_p_load(load_id, float(p))
+                        if with_gen_v:
+                            for gen_id, v in enumerate(gen_v[row]):
+                                ref.change_v_gen(gen_id, float(v))
+                        V_ref = ref.ac_pf(V_n, self.MAX_IT, self.TOL)
+                        self.assertGreater(V_ref.shape[0], 0, "the one-off reference diverged")
+                        self.assertLess(_gap_up_to_rotation(sweep.get_voltages()[row], V_ref), 1e-9, f"row {row}")
+
     def test_a_unit_outside_the_grid_slack_is_refused(self):
         grid = self._grid(OUTER)
         # generator 2 can no longer take part in the grid's slack
@@ -460,6 +542,40 @@ class TestScenarioSweepSlackWeightsOuter(unittest.TestCase):
         sweep.set_gen_slack_weights(np.array([2]), np.array([[np.nan], [0.]]))
         sweep.compute(self.V0, self.MAX_IT, self.TOL)
         self.assertTrue(np.all(sweep.converged_mask()))
+
+    def test_a_row_disconnecting_the_unit_ignores_its_weight(self):
+        """issue #318: a row disconnecting a unit ignores the weight it gives it (the unit takes no
+        share), and without outer loops compute() accepts it. Under outer loops the check that a
+        weighted unit takes part in the grid's slack did not skip it, and refused the whole batch.
+        Generator 2 cannot take part in the grid's slack, both rows disconnect it, row 1 gives it
+        a weight: row 1 solves as row 0, seeded from the "n" solve or not. A row keeping it
+        connected is still refused."""
+        grid = self._grid(OUTER)
+        flags = [True] * self.n_gen
+        flags[2] = False
+        grid.set_gen_can_participate_slack(flags, np.where(flags, 300., 0.))
+        gen_off = np.zeros((2, self.n_gen), dtype=bool)
+        gen_off[:, 2] = True
+        for init_from_n in (False, True):
+            with self.subTest(init_from_n=init_from_n):
+                sweep = ScenarioSweepCPP(grid)
+                sweep.init_from_n_powerflow = init_from_n
+                sweep.modify_load_p(self.load_p[:2])
+                sweep.set_contingency_gens(gen_off)
+                sweep.set_gen_slack_weights(np.array([2]), np.array([[np.nan], [50.]]))
+                sweep.compute(self.V0, self.MAX_IT, self.TOL)
+                self.assertTrue(np.all(sweep.converged_mask()))
+                self.assertEqual(set(sweep.get_batch_unsupported_reasons()), {""})
+                Vs = sweep.get_voltages()
+                np.testing.assert_array_equal(Vs[1], Vs[0])
+        # ... a row keeping it connected is still refused
+        gen_off[1, 2] = False
+        sweep = ScenarioSweepCPP(grid)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_contingency_gens(gen_off)
+        sweep.set_gen_slack_weights(np.array([2]), np.array([[np.nan], [50.]]))
+        with self.assertRaises(ValueError):
+            sweep.compute(self.V0, self.MAX_IT, self.TOL)
 
 
 class TestScenarioSweepSlackWeights(unittest.TestCase):

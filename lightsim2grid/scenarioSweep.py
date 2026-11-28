@@ -691,7 +691,8 @@ class ScenarioSweep:
         to a generator the step's topological action moves or reactivates. With
         ``redistribute_slack`` the bounded pre-pass shares with the step's weights too. Under
         outer loops (``NROuter_*``) the DistributedSlack loop shares with them: only a generator
-        that can take part in the grid's slack may get a positive weight, and with
+        that can take part in the grid's slack may get a positive weight in a step keeping it
+        connected, and with
         ``init_from_n_powerflow`` such a step starts from the grid's targets, not from where the
         "n" solve's loops left them (see the warning in :ref:`sweep_slack_weights`).
 

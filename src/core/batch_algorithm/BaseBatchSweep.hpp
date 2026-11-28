@@ -158,10 +158,13 @@ struct SlackWeightTable {
         res.row = w.data() + static_cast<Eigen::Index>(i) * w.cols();
         return res;
     }
-    // row i's weight of element `el_id`, `own` where the row gives none
+    // row i's weight of element `el_id` as the row's solve takes it: `own` where the row gives
+    // none, 0 for one below _tol_equal_float (out of the slack, see SlackParticipation::participates)
     real_type weight(size_t i, int el_id, real_type own) const {
         const SlackWeightOverride over = row(i);
-        return over.has(el_id) ? over.of(el_id) : own;
+        if(!over.has(el_id)) return own;
+        const real_type w = over.of(el_id);
+        return w >= BaseConstants::_tol_equal_float ? w : 0.;
     }
 };
 
@@ -473,9 +476,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * of another shape and a value that is negative or infinite. With redistribute_slack
          * the bounded pre-pass shares with the row's weights too. Under outer loops the
          * DistributedSlack loop shares with them; only a unit able to take part in the grid's
-         * slack ("can participate") may get a positive weight there, and such a row does not
-         * resume the "n" solve's loops (init_from_n_powerflow): it starts from the grid's
-         * targets.
+         * slack ("can participate") may get a positive weight there in a row keeping it
+         * connected, and such a row does not resume the "n" solve's loops
+         * (init_from_n_powerflow): it starts from the grid's targets.
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -2871,7 +2874,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // a row giving units slack weights of its own starts from the grid's targets: the
             // "n" solve's loops shared its imbalance with the grid's weights, which the row's
             // would then only complete (see set_gen_slack_weights)
-            if(_gen_slack_weights_.has_row(i) || _storage_slack_weights_.has_row(i)){
+            if(_row_gives_slack_weights(i)){
                 v.resume = false;
                 v.resume_from = nullptr;
                 return;
@@ -2879,6 +2882,45 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const bool chained = INIT == BatchInitKind::FromPreviousStep && i > 0;
             v.resume_from = chained ? nullptr : _seeded_row_resume_point();
             v.resume = chained || v.resume_from != nullptr;
+        }
+        // whether row i gives a slack weight of its own to a unit it keeps: one it gives a unit it
+        // (or the grid) disconnects takes no share, and changes nothing in the row
+        bool _row_gives_slack_weights(size_t i) const {
+            const auto gives = [i](const SlackWeightTable & table, const std::vector<bool> & status, const auto & off){
+                if(!table.has_row(i)) return false;
+                for(size_t col = 0; col < table.ids.size(); ++col){
+                    const int el_id = table.ids[col];
+                    if(std::isnan(table.w(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(col)))) continue;
+                    if(status[static_cast<size_t>(el_id)] && !off(el_id)) return true;
+                }
+                return false;
+            };
+            return gives(_gen_slack_weights_, _grid_model.get_generators().get_status(),
+                         [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); }) ||
+                   gives(_storage_slack_weights_, _grid_model.get_storages().get_status(),
+                         [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); });
+        }
+        // whether row i's outer loops start from the grid's targets (see _set_outer_row_resume)
+        // while its voltage is a solved state's -- the "n" solve's (init_from_n_powerflow) or the
+        // previous row's -- where a bus those loops froze at a reactive limit sits off its
+        // set-point. Restarted PV, such a bus would hold that magnitude: nothing in the row's own
+        // loops has to freeze it again.
+        bool _row_restarts_outer_loops_from_solved_v(size_t i) const {
+            if(!_row_gives_slack_weights(i)) return false;
+            const bool chained = INIT == BatchInitKind::FromPreviousStep && i > 0;
+            return chained || _init_from_n_powerflow;
+        }
+        // |V| at every regulated bus back to its set-point, as the batch seeds the caller's
+        // starting voltage (LSGrid::build_solver_input), the buses
+        // set_keep_vinit_at_group_controlled_buses holds left alone
+        void _seed_vm_at_set_points(CplxVect & V) const {
+            const SolverBusIdVect & me_to_solver = active_layout().id_me_to_solver;
+            seed_vm_keeping(V, _vm_held_buses(), [this, &me_to_solver](CplxVect & V_seed){
+                _grid_model.get_generators().set_vm(V_seed, me_to_solver);
+                _grid_model.get_dclines().set_vm(V_seed, me_to_solver);
+                _grid_model.get_svcs().set_vm(V_seed, me_to_solver);
+                _grid_model.get_storages().set_vm(V_seed, me_to_solver);
+            });
         }
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void _fill_outer_row_injections(size_t i, OuterRowView & v) const {
@@ -5226,8 +5268,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(_gen_slack_weights_.empty() && _storage_slack_weights_.empty()) return;
             if(_algo.supports_outer_loops()){
                 const auto check_outer = [&](const SlackWeightTable & table, const char * what, const char * setter,
+                                             const std::vector<bool> & status,
                                              const std::function<real_type(int)> & grid_weight,
-                                             const std::function<bool(size_t, int)> & placed){
+                                             const std::function<bool(size_t, int)> & placed,
+                                             const std::function<bool(size_t, int)> & off){
                     for(size_t row = 0; row < nb_steps; ++row){
                         if(!table.has_row(row)) continue;
                         for(size_t col = 0; col < table.ids.size(); ++col){
@@ -5241,6 +5285,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                         "would change with the row, not supported.";
                                 throw std::invalid_argument(exc_.str());
                             }
+                            // a unit the row disconnects takes no share, under the DistributedSlack loop too
+                            if(!status[static_cast<size_t>(el_id)] || off(row, el_id)) continue;
                             if(grid_weight(el_id) > 0.) continue;
                             exc_ << algo_name() << "::" << setter << ": row " << row << " gives " << what << " " << el_id
                                  << " a slack weight, but it takes no part in the grid's distributed slack, with an algorithm "
@@ -5253,12 +5299,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 };
                 const auto & gens = _grid_model.get_generators();
                 const auto & stos = _grid_model.get_storages();
-                check_outer(_gen_slack_weights_, "generator", "set_gen_slack_weights",
+                check_outer(_gen_slack_weights_, "generator", "set_gen_slack_weights", gens.get_status(),
                             [&gens](int gen_id){ return gens.get_can_participate_slack_weight(gen_id); },
-                            [this](size_t row, int gen_id){ return this->_gen_placed_in_row(row, gen_id); });
-                check_outer(_storage_slack_weights_, "storage unit", "set_storage_slack_weights",
+                            [this](size_t row, int gen_id){ return this->_gen_placed_in_row(row, gen_id); },
+                            [this](size_t row, int gen_id){ return this->_gen_off_in_row(row, gen_id); });
+                check_outer(_storage_slack_weights_, "storage unit", "set_storage_slack_weights", stos.get_status(),
                             [&stos](int storage_id){ return stos.get_can_participate_slack_weight(storage_id); },
-                            [this](size_t row, int storage_id){ return this->_storage_placed_in_row(row, storage_id); });
+                            [this](size_t row, int storage_id){ return this->_storage_placed_in_row(row, storage_id); },
+                            [this](size_t row, int storage_id){ return this->_storage_leaves_base_bus(row, storage_id); });
                 return;
             }
             const SolverBusLayout & layout = active_layout();
@@ -6035,6 +6083,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         const bool flips = _row_flips_pv(cont_id);
                         if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(cont_id));
                         V = Vinit_solver;
+                        if(outer && _row_restarts_outer_loops_from_solved_v(cont_id)) _seed_vm_at_set_points(V);
                         _apply_step_gen_v(cont_id, V);
                         _apply_step_topo_seed(cont_id, V);
                         _apply_step_dc_vm_reset(cont_id, V);

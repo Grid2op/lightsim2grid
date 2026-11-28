@@ -51,6 +51,9 @@ void BaseBatchSweep<YbusPolicy, SbusPolicy, INIT>::_run_one_step(
         return;
     }
 
+    // a row whose outer loops restart from the grid's targets starts from its set-points too,
+    // as without init_from_n_powerflow; the row's own gen_v and topology seeds come after it
+    if(row_view != nullptr && _row_restarts_outer_loops_from_solved_v(i)) _seed_vm_at_set_points(V);
     _apply_step_gen_v(i, V);
     _apply_step_topo_seed(i, V);
     _apply_step_dc_vm_reset(i, V);

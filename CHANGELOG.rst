@@ -262,6 +262,13 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] ``init_from_pandapower``: a pandapower grid whose ``sgen`` limit columns (``min_p_mw``, ``max_p_mw``,
   ``min_q_mvar``, ``max_q_mvar``) have ``object`` dtype, as the SimBench grids do, raised a ``TypeError``
   from ``np.isfinite``. The columns are read as float, as the generator converter already does.
+- [FIXED] ``ScenarioSweep`` under outer loops with ``init_from_n_powerflow``: a row giving slack weights
+  of its own kept the "n" solve's voltage magnitude at the buses it froze, and could converge there
+  instead of at the set-point (#316).
+- [FIXED] ``ScenarioSweep``: a row slack weight below the solve's threshold (``_tol_equal_float``), which
+  the solve ignores, still made the active-power check treat the unit as sharing the slack (#317).
+- [FIXED] ``ScenarioSweep`` under outer loops: a row weighting a unit it disconnects made ``compute()``
+  refuse the whole batch, and stopped that row resuming the "n" solve's loops; the weight is ignored (#318).
 
 
 [1.3.1] 2026-11-13
