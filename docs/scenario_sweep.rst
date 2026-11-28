@@ -295,8 +295,9 @@ Other points:
     With outer loops and `init_from_n_powerflow = True`, a row normally resumes the outer
     loops where the "n" solve left them: the units' targets the `DistributedSlack` loop moved
     there, sharing the base case's imbalance with the **grid's** weights. A row giving weights
-    of its own does **not** resume: its loops start from the grid's targets (its voltages still
-    start from the "n" solve's), so that it solves as the grid holding its weights would. Such
+    of its own does **not** resume: its loops start from the grid's targets, and its voltages
+    from the "n" solve's with the regulated buses back at their set-points, so that it solves as
+    the grid holding its weights would. Such
     a row can therefore end slightly apart from a row of the same weights that resumed, within
     the loops' own tolerances, and takes a few more iterations.
 

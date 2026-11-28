@@ -16,6 +16,7 @@ common rotation: the batch keeps the angle reference it picked for the whole swe
 grid taking its first slack bus out of the slack moves its reference elsewhere.
 """
 
+import itertools
 import unittest
 import warnings
 
@@ -444,6 +445,51 @@ class TestScenarioSweepSlackWeightsOuter(unittest.TestCase):
                     V_ref, p_ref = self._reference(make, row, V_n, uniform_start=False)
                     self.assertLess(_gap_up_to_rotation(sweep.get_voltages()[row], V_ref), 1e-9, f"row {row}")
                     np.testing.assert_allclose(P[row], p_ref, atol=1e-7, rtol=0, err_msg=f"row {row}")
+
+    def test_seeded_from_n_a_row_with_weights_starts_from_the_set_points(self):
+        """issue #316: with init_from_n_powerflow a row giving weights does not resume the "n"
+        solve's loops, so its generator buses start PV again -- but from the "n" solve's voltages,
+        where the buses that solve froze at a reactive limit sit off their set-point, and a PV bus
+        keeps the magnitude it starts from. With less load the row's machines stay within their
+        limits, nothing freezes those buses again, and the row converged holding the frozen
+        magnitude instead of the target. Here the narrow reactive limits make the "n" solve freeze
+        buses, and the row only gives generator 0 the weight it already has. The reference is the
+        grid at the row's load, solved from the "n" voltages; a row giving set-points of its own
+        (modify_gen_v) keeps those. Both row loops: the plain one and the masked one
+        (handle_disconnected_grid)."""
+        for algo in (OUTER, OUTER_DIST):
+            make = lambda: self._grid(algo, tight=True)  # noqa: E731
+            V_n = make().ac_pf(self.V0, self.MAX_IT, self.TOL)
+            targets = np.array([el.target_vm_pu for el in make().get_generators()])
+            buses = np.array([el.bus_id for el in make().get_generators()])
+            # the premise: the "n" solve left some generator bus off its set-point
+            self.assertGreater(np.max(np.abs(np.abs(V_n[buses]) - targets)), 1e-3)
+            load_p = np.tile(0.6 * self.load_targets, (2, 1))
+            gen_v = np.tile(targets, (2, 1))
+            gen_v[1, 2] += 0.01
+            for with_gen_v, masked in itertools.product((False, True), (False, True)):
+                with self.subTest(algo=algo, with_gen_v=with_gen_v, masked=masked):
+                    sweep = ScenarioSweepCPP(make())
+                    sweep.init_from_n_powerflow = True
+                    sweep.handle_disconnected_grid = masked
+                    sweep.modify_load_p(load_p)
+                    if with_gen_v:
+                        sweep.modify_gen_v(gen_v)
+                    # row 0 resumes the "n" solve's loops, row 1 gives weights
+                    sweep.set_gen_slack_weights(np.array([0]), np.array([[np.nan], [300.]]))
+                    sweep.compute(self.V0, self.MAX_IT, self.TOL)
+                    self.assertTrue(np.all(sweep.converged_mask()))
+                    for row in range(2):
+                        ref = make()
+                        ref.set_uniform_voltage_start(False)
+                        for load_id, p in enumerate(load_p[row]):
+                            ref.change_p_load(load_id, float(p))
+                        if with_gen_v:
+                            for gen_id, v in enumerate(gen_v[row]):
+                                ref.change_v_gen(gen_id, float(v))
+                        V_ref = ref.ac_pf(V_n, self.MAX_IT, self.TOL)
+                        self.assertGreater(V_ref.shape[0], 0, "the one-off reference diverged")
+                        self.assertLess(_gap_up_to_rotation(sweep.get_voltages()[row], V_ref), 1e-9, f"row {row}")
 
     def test_a_unit_outside_the_grid_slack_is_refused(self):
         grid = self._grid(OUTER)

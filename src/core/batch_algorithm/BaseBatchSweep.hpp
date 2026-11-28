@@ -2871,7 +2871,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             // a row giving units slack weights of its own starts from the grid's targets: the
             // "n" solve's loops shared its imbalance with the grid's weights, which the row's
             // would then only complete (see set_gen_slack_weights)
-            if(_gen_slack_weights_.has_row(i) || _storage_slack_weights_.has_row(i)){
+            if(_row_gives_slack_weights(i)){
                 v.resume = false;
                 v.resume_from = nullptr;
                 return;
@@ -2879,6 +2879,31 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             const bool chained = INIT == BatchInitKind::FromPreviousStep && i > 0;
             v.resume_from = chained ? nullptr : _seeded_row_resume_point();
             v.resume = chained || v.resume_from != nullptr;
+        }
+        bool _row_gives_slack_weights(size_t i) const {
+            return _gen_slack_weights_.has_row(i) || _storage_slack_weights_.has_row(i);
+        }
+        // whether row i's outer loops start from the grid's targets (see _set_outer_row_resume)
+        // while its voltage is a solved state's -- the "n" solve's (init_from_n_powerflow) or the
+        // previous row's -- where a bus those loops froze at a reactive limit sits off its
+        // set-point. Restarted PV, such a bus would hold that magnitude: nothing in the row's own
+        // loops has to freeze it again.
+        bool _row_restarts_outer_loops_from_solved_v(size_t i) const {
+            if(!_row_gives_slack_weights(i)) return false;
+            const bool chained = INIT == BatchInitKind::FromPreviousStep && i > 0;
+            return chained || _init_from_n_powerflow;
+        }
+        // |V| at every regulated bus back to its set-point, as the batch seeds the caller's
+        // starting voltage (LSGrid::build_solver_input), the buses
+        // set_keep_vinit_at_group_controlled_buses holds left alone
+        void _seed_vm_at_set_points(CplxVect & V) const {
+            const SolverBusIdVect & me_to_solver = active_layout().id_me_to_solver;
+            seed_vm_keeping(V, _vm_held_buses(), [this, &me_to_solver](CplxVect & V_seed){
+                _grid_model.get_generators().set_vm(V_seed, me_to_solver);
+                _grid_model.get_dclines().set_vm(V_seed, me_to_solver);
+                _grid_model.get_svcs().set_vm(V_seed, me_to_solver);
+                _grid_model.get_storages().set_vm(V_seed, me_to_solver);
+            });
         }
         template<class S = SbusPolicy, typename std::enable_if<S::supports_vary, int>::type = 0>
         void _fill_outer_row_injections(size_t i, OuterRowView & v) const {
@@ -6035,6 +6060,7 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                         const bool flips = _row_flips_pv(cont_id);
                         if(flips) algo.set_pv_pinned_buses(_row_pv_pinned(cont_id));
                         V = Vinit_solver;
+                        if(outer && _row_restarts_outer_loops_from_solved_v(cont_id)) _seed_vm_at_set_points(V);
                         _apply_step_gen_v(cont_id, V);
                         _apply_step_topo_seed(cont_id, V);
                         _apply_step_dc_vm_reset(cont_id, V);
