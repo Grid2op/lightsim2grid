@@ -158,10 +158,13 @@ struct SlackWeightTable {
         res.row = w.data() + static_cast<Eigen::Index>(i) * w.cols();
         return res;
     }
-    // row i's weight of element `el_id`, `own` where the row gives none
+    // row i's weight of element `el_id` as the row's solve takes it: `own` where the row gives
+    // none, 0 for one below _tol_equal_float (out of the slack, see SlackParticipation::participates)
     real_type weight(size_t i, int el_id, real_type own) const {
         const SlackWeightOverride over = row(i);
-        return over.has(el_id) ? over.of(el_id) : own;
+        if(!over.has(el_id)) return own;
+        const real_type w = over.of(el_id);
+        return w >= BaseConstants::_tol_equal_float ? w : 0.;
     }
 };
 

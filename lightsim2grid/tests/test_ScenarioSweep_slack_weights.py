@@ -28,7 +28,7 @@ from grid2op.Parameters import Parameters
 from lightsim2grid import LightSimBackend
 from lightsim2grid.algorithm import AlgorithmType
 from lightsim2grid.scenarioSweep import ScenarioSweep, ScenarioSweepCPP, LimitViolationType
-from lightsim2grid.lightsim2grid_cpp import DistributedSlack
+from lightsim2grid.lightsim2grid_cpp import DistributedSlack, LSGrid, ViolationElementType
 from lightsim2grid.network import init_from_pandapower
 
 try:
@@ -205,6 +205,42 @@ class TestScenarioSweepSlackWeightsCPP(unittest.TestCase):
         self.assertEqual(len(broken[high_row]), 1)
         self.assertEqual(len(broken[1 - high_row]), 0)
         self.assertAlmostEqual(broken[high_row][0].value, sweep.get_gen_results()[high_row, 0, 0], places=8)
+
+    def test_gen_p_violations_ignore_a_weight_the_solve_ignores(self):
+        """issue #317: a row weight below the threshold at which the solve takes a unit out of the
+        slack (BaseConstants::_tol_equal_float) solves exactly as 0, but the active-power check
+        still counted the unit as sharing the slack, and reported a generator whose target is
+        already above its maximum. The 4-bus feeder of the GenPCheck tests (80 MW on bus 3),
+        generators 0 and 1 sharing the slack, generator 2 (bus 0) out of it with its target above
+        its maximum; the rows give it 0, 1e-8 and 1."""
+        grid = LSGrid()
+        grid.set_sn_mva(100.)
+        grid.set_init_vm_pu(1.0)
+        grid.init_bus(4, 1, np.full(4, 138.), 0, 0)
+        grid.init_powerlines(np.full(3, 0.01), np.full(3, 0.1), np.zeros(3, dtype=complex),
+                             np.array([0, 1, 2]), np.array([1, 2, 3]))
+        grid.init_loads(np.array([80.]), np.array([60.]), np.array([3]))
+        grid.init_generators(np.array([0., 10., 5.]), np.array([1.02, 1.05, 1.02]),
+                             np.full(3, -1e3), np.full(3, 1e3), np.array([0, 1, 0]))
+        grid.add_gen_slackbus(0, 1.)
+        grid.add_gen_slackbus(1, 1.)
+        grid.set_gen_p_limits(np.zeros(3), np.array([30., 30., 3.]))
+        grid.tell_solver_need_reset()
+        V0 = grid.ac_pf(np.ones(4, dtype=complex), 20, 1e-10)
+        self.assertEqual(V0.size, 4)
+        sweep = ScenarioSweepCPP(grid)
+        sweep.compute_physical_violations = True
+        sweep.physical_violation_tol_mva = 0.
+        sweep.modify_load_p(np.full((3, 1), 80.))
+        sweep.set_gen_slack_weights(np.array([2]), np.array([[0.], [1e-8], [1.]]))
+        sweep.compute(V0, 20, 1e-10)
+        self.assertTrue(np.all(sweep.converged_mask()))
+        Vs = sweep.get_voltages()
+        np.testing.assert_array_equal(Vs[1], Vs[0])  # the solve ignores the 1e-8
+        gen_2 = [[v.violation_type for v in viols
+                  if v.element_type == ViolationElementType.GENERATOR and v.element_id == 2]
+                 for viols in sweep.get_physical_violations()]
+        self.assertEqual(gen_2, [[], [], [LimitViolationType.HIGH_P]])
 
     def test_setters_check_their_input(self):
         sweep = self._sweep(weights=False)

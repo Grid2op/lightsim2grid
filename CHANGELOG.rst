@@ -265,6 +265,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
 - [FIXED] ``ScenarioSweep`` under outer loops with ``init_from_n_powerflow``: a row giving slack weights
   of its own kept the "n" solve's voltage magnitude at the buses it froze, and could converge there
   instead of at the set-point (#316).
+- [FIXED] ``ScenarioSweep``: a row slack weight below the solve's threshold (``_tol_equal_float``), which
+  the solve ignores, still made the active-power check treat the unit as sharing the slack (#317).
 
 
 [1.3.1] 2026-11-13
