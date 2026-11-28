@@ -288,7 +288,7 @@ Other points:
   slack with the row's weights. The units it may share with are reserved once for the batch:
   only a unit that can take part in the grid's slack (a slack participant, or one flagged
   with `set_gen_can_participate_slack`) may get a positive weight; `compute()` raises for any
-  other.
+  other the row keeps connected.
 
 .. warning::
 

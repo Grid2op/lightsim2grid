@@ -267,6 +267,8 @@ TODO: a "combine mode" axis for ``ScenarioSweepCPP`` choosing between the curren
   instead of at the set-point (#316).
 - [FIXED] ``ScenarioSweep``: a row slack weight below the solve's threshold (``_tol_equal_float``), which
   the solve ignores, still made the active-power check treat the unit as sharing the slack (#317).
+- [FIXED] ``ScenarioSweep`` under outer loops: a row weighting a unit it disconnects made ``compute()``
+  refuse the whole batch, and stopped that row resuming the "n" solve's loops; the weight is ignored (#318).
 
 
 [1.3.1] 2026-11-13

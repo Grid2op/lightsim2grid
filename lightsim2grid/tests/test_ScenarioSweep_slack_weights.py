@@ -543,6 +543,40 @@ class TestScenarioSweepSlackWeightsOuter(unittest.TestCase):
         sweep.compute(self.V0, self.MAX_IT, self.TOL)
         self.assertTrue(np.all(sweep.converged_mask()))
 
+    def test_a_row_disconnecting_the_unit_ignores_its_weight(self):
+        """issue #318: a row disconnecting a unit ignores the weight it gives it (the unit takes no
+        share), and without outer loops compute() accepts it. Under outer loops the check that a
+        weighted unit takes part in the grid's slack did not skip it, and refused the whole batch.
+        Generator 2 cannot take part in the grid's slack, both rows disconnect it, row 1 gives it
+        a weight: row 1 solves as row 0, seeded from the "n" solve or not. A row keeping it
+        connected is still refused."""
+        grid = self._grid(OUTER)
+        flags = [True] * self.n_gen
+        flags[2] = False
+        grid.set_gen_can_participate_slack(flags, np.where(flags, 300., 0.))
+        gen_off = np.zeros((2, self.n_gen), dtype=bool)
+        gen_off[:, 2] = True
+        for init_from_n in (False, True):
+            with self.subTest(init_from_n=init_from_n):
+                sweep = ScenarioSweepCPP(grid)
+                sweep.init_from_n_powerflow = init_from_n
+                sweep.modify_load_p(self.load_p[:2])
+                sweep.set_contingency_gens(gen_off)
+                sweep.set_gen_slack_weights(np.array([2]), np.array([[np.nan], [50.]]))
+                sweep.compute(self.V0, self.MAX_IT, self.TOL)
+                self.assertTrue(np.all(sweep.converged_mask()))
+                self.assertEqual(set(sweep.get_batch_unsupported_reasons()), {""})
+                Vs = sweep.get_voltages()
+                np.testing.assert_array_equal(Vs[1], Vs[0])
+        # ... a row keeping it connected is still refused
+        gen_off[1, 2] = False
+        sweep = ScenarioSweepCPP(grid)
+        sweep.modify_load_p(self.load_p[:2])
+        sweep.set_contingency_gens(gen_off)
+        sweep.set_gen_slack_weights(np.array([2]), np.array([[np.nan], [50.]]))
+        with self.assertRaises(ValueError):
+            sweep.compute(self.V0, self.MAX_IT, self.TOL)
+
 
 class TestScenarioSweepSlackWeights(unittest.TestCase):
     """the python wrapper: ids or names"""

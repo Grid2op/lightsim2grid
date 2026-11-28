@@ -476,9 +476,9 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
          * of another shape and a value that is negative or infinite. With redistribute_slack
          * the bounded pre-pass shares with the row's weights too. Under outer loops the
          * DistributedSlack loop shares with them; only a unit able to take part in the grid's
-         * slack ("can participate") may get a positive weight there, and such a row does not
-         * resume the "n" solve's loops (init_from_n_powerflow): it starts from the grid's
-         * targets.
+         * slack ("can participate") may get a positive weight there in a row keeping it
+         * connected, and such a row does not resume the "n" solve's loops
+         * (init_from_n_powerflow): it starts from the grid's targets.
          */
         template<class Y = YbusPolicy, class S = SbusPolicy,
                  typename std::enable_if<Y::supports_contingency && S::supports_vary, int>::type = 0>
@@ -2883,8 +2883,22 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             v.resume_from = chained ? nullptr : _seeded_row_resume_point();
             v.resume = chained || v.resume_from != nullptr;
         }
+        // whether row i gives a slack weight of its own to a unit it keeps: one it gives a unit it
+        // (or the grid) disconnects takes no share, and changes nothing in the row
         bool _row_gives_slack_weights(size_t i) const {
-            return _gen_slack_weights_.has_row(i) || _storage_slack_weights_.has_row(i);
+            const auto gives = [i](const SlackWeightTable & table, const std::vector<bool> & status, const auto & off){
+                if(!table.has_row(i)) return false;
+                for(size_t col = 0; col < table.ids.size(); ++col){
+                    const int el_id = table.ids[col];
+                    if(std::isnan(table.w(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(col)))) continue;
+                    if(status[static_cast<size_t>(el_id)] && !off(el_id)) return true;
+                }
+                return false;
+            };
+            return gives(_gen_slack_weights_, _grid_model.get_generators().get_status(),
+                         [this, i](int gen_id){ return this->_gen_off_in_row(i, gen_id); }) ||
+                   gives(_storage_slack_weights_, _grid_model.get_storages().get_status(),
+                         [this, i](int storage_id){ return this->_storage_leaves_base_bus(i, storage_id); });
         }
         // whether row i's outer loops start from the grid's targets (see _set_outer_row_resume)
         // while its voltage is a solved state's -- the "n" solve's (init_from_n_powerflow) or the
@@ -5254,8 +5268,10 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
             if(_gen_slack_weights_.empty() && _storage_slack_weights_.empty()) return;
             if(_algo.supports_outer_loops()){
                 const auto check_outer = [&](const SlackWeightTable & table, const char * what, const char * setter,
+                                             const std::vector<bool> & status,
                                              const std::function<real_type(int)> & grid_weight,
-                                             const std::function<bool(size_t, int)> & placed){
+                                             const std::function<bool(size_t, int)> & placed,
+                                             const std::function<bool(size_t, int)> & off){
                     for(size_t row = 0; row < nb_steps; ++row){
                         if(!table.has_row(row)) continue;
                         for(size_t col = 0; col < table.ids.size(); ++col){
@@ -5269,6 +5285,8 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                                         "would change with the row, not supported.";
                                 throw std::invalid_argument(exc_.str());
                             }
+                            // a unit the row disconnects takes no share, under the DistributedSlack loop too
+                            if(!status[static_cast<size_t>(el_id)] || off(row, el_id)) continue;
                             if(grid_weight(el_id) > 0.) continue;
                             exc_ << algo_name() << "::" << setter << ": row " << row << " gives " << what << " " << el_id
                                  << " a slack weight, but it takes no part in the grid's distributed slack, with an algorithm "
@@ -5281,12 +5299,14 @@ class LS2G_API BaseBatchSweep: public BaseBatchSolverSynch
                 };
                 const auto & gens = _grid_model.get_generators();
                 const auto & stos = _grid_model.get_storages();
-                check_outer(_gen_slack_weights_, "generator", "set_gen_slack_weights",
+                check_outer(_gen_slack_weights_, "generator", "set_gen_slack_weights", gens.get_status(),
                             [&gens](int gen_id){ return gens.get_can_participate_slack_weight(gen_id); },
-                            [this](size_t row, int gen_id){ return this->_gen_placed_in_row(row, gen_id); });
-                check_outer(_storage_slack_weights_, "storage unit", "set_storage_slack_weights",
+                            [this](size_t row, int gen_id){ return this->_gen_placed_in_row(row, gen_id); },
+                            [this](size_t row, int gen_id){ return this->_gen_off_in_row(row, gen_id); });
+                check_outer(_storage_slack_weights_, "storage unit", "set_storage_slack_weights", stos.get_status(),
                             [&stos](int storage_id){ return stos.get_can_participate_slack_weight(storage_id); },
-                            [this](size_t row, int storage_id){ return this->_storage_placed_in_row(row, storage_id); });
+                            [this](size_t row, int storage_id){ return this->_storage_placed_in_row(row, storage_id); },
+                            [this](size_t row, int storage_id){ return this->_storage_leaves_base_bus(row, storage_id); });
                 return;
             }
             const SolverBusLayout & layout = active_layout();
